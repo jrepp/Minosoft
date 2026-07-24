@@ -438,7 +438,7 @@ class SkeletalLoader(private val loader: ModelLoader) {
         val materialOverrides: MutableMap<ResourceLocation, SkeletalTextureMap> = linkedMapOf(),
     )
 
-    private class ContentReloadCandidate(
+    private inner class ContentReloadCandidate(
         val models: Map<ResourceLocation, BakedSkeletalModel>,
         val entities: Map<ResourceLocation, ResourceLocation>,
     ) {

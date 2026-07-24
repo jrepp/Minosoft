@@ -11,6 +11,7 @@ import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
 enum class FabricResourceReloadType(val wireName: String) {
     SESSION_ASSETS("session-assets"),
+    CONTENT_FIDELITY("content-fidelity"),
     SHADERS("shaders"),
     TEXTURES("textures"),
 }

@@ -22,13 +22,14 @@ object ReloadCommand : RenderingCommand {
         .addChild(LiteralNode("content", executor = {
             val context = it.session.rendering?.context ?: throw IllegalStateException("Rendering is not loaded!")
             context.queue += {
-                val generation = FabricResourceReloadEvents.run(
+                var generation: Long? = null
+                FabricResourceReloadEvents.run(
                     session = it.session,
                     type = FabricResourceReloadType.CONTENT_FIDELITY,
                     prepare = { Unit },
-                    apply = { context.models.skeletal.reloadContentFidelity() },
+                    apply = { generation = context.models.skeletal.reloadContentFidelity() },
                 )
-                it.session.util.sendDebugMessage("Content fidelity reloaded as generation $generation!")
+                it.session.util.sendDebugMessage("Content fidelity reloaded as generation ${requireNotNull(generation)}!")
             }
         }))
         .addChild(LiteralNode("shaders", executor = {
