@@ -1,0 +1,52 @@
+/*
+ * Minosoft
+ * Copyright (C) 2026 Jacob Repp
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
+ *
+ * This software is not affiliated with Mojang AB, the original developer of Minecraft.
+ */
+
+package de.bixilon.minosoft.data.entities.entities.display
+
+import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.kmath.vec.vec4.f.Vec4f
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.time.Duration.Companion.milliseconds
+
+class DisplayTransformationTest {
+
+    @Test
+    fun `interpolation clamps vectors and normalizes quaternions`() {
+        val start = DisplayTransformation()
+        val end = DisplayTransformation(
+            translation = Vec3f(2, 4, 6),
+            scale = Vec3f(3),
+            leftRotation = Vec4f(0, 1, 0, 0),
+        )
+        val middle = start.interpolate(end, 0.5f)
+
+        assertEquals(Vec3f(1, 2, 3), middle.translation)
+        assertEquals(Vec3f(2), middle.scale)
+        val length = middle.leftRotation.run { x * x + y * y + z * z + w * w }
+        assertEquals(1.0f, length, 0.0001f)
+        assertEquals(end, start.interpolate(end, 2.0f))
+        assertEquals(start, start.interpolate(end, Float.NaN))
+    }
+
+    @Test
+    fun `stateful interpolation honors start delay and tick duration`() {
+        val state = DisplayTransformationInterpolator()
+        val target = DisplayTransformation(translation = Vec3f(4, 0, 0))
+        state.target(target, startDelayTicks = 2, durationTicks = 4)
+
+        assertEquals(Vec3f.EMPTY, state.advance(100.milliseconds).translation)
+        assertEquals(Vec3f(1, 0, 0), state.advance(50.milliseconds).translation)
+        assertEquals(target, state.advance(1_000.milliseconds))
+    }
+}

@@ -13,6 +13,7 @@
 package de.bixilon.minosoft.data.entities.entities.display
 
 import de.bixilon.kmath.vec.vec3.d.Vec3d
+import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.entities.EntityRotation
 import de.bixilon.minosoft.data.entities.data.EntityData
 import de.bixilon.minosoft.data.entities.data.EntityDataField
@@ -21,12 +22,12 @@ import de.bixilon.minosoft.data.registries.entities.EntityType
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
-@Deprecated("TODO")
 class BlockDisplayEntity(session: PlaySession, entityType: EntityType, data: EntityData, position: Vec3d, rotation: EntityRotation) : DisplayEntity(session, entityType, data, position, rotation) {
+    val blockState: BlockState? by data(BLOCK_STATE, null)
 
     companion object : EntityFactory<BlockDisplayEntity> {
         override val identifier = minecraft("block_display")
-        private val BLOCK_STATE = EntityDataField("BLOCK_STATE")
+        val BLOCK_STATE = EntityDataField("BLOCK_STATE")
 
         override fun build(session: PlaySession, entityType: EntityType, data: EntityData, position: Vec3d, rotation: EntityRotation): BlockDisplayEntity {
             return BlockDisplayEntity(session, entityType, data, position, rotation)

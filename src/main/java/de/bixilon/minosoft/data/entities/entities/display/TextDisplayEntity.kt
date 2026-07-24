@@ -13,6 +13,7 @@
 package de.bixilon.minosoft.data.entities.entities.display
 
 import de.bixilon.kmath.vec.vec3.d.Vec3d
+import de.bixilon.minosoft.data.text.ChatComponent
 import de.bixilon.minosoft.data.entities.EntityRotation
 import de.bixilon.minosoft.data.entities.data.EntityData
 import de.bixilon.minosoft.data.entities.data.EntityDataField
@@ -21,19 +22,38 @@ import de.bixilon.minosoft.data.registries.entities.EntityType
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
-@Deprecated("TODO")
 class TextDisplayEntity(session: PlaySession, entityType: EntityType, data: EntityData, position: Vec3d, rotation: EntityRotation) : DisplayEntity(session, entityType, data, position, rotation) {
+    val text: ChatComponent by data(TEXT, ChatComponent.EMPTY) { ChatComponent.of(it) }
+    val lineWidth: Int by data(LINE_WIDTH, 200)
+    val background: Int by data(BACKGROUND, 0x40000000)
+    val textOpacity: Byte by data(TEXT_OPACITY, -1)
+    val flags: Byte by data(TEXT_DISPLAY_FLAGS, 0)
+
+    val shadow get() = flags.toInt() and 0x01 != 0
+    val seeThrough get() = flags.toInt() and 0x02 != 0
+    val defaultBackground get() = flags.toInt() and 0x04 != 0
+    val alignment get() = when {
+        flags.toInt() and 0x08 != 0 -> TextDisplayAlignment.LEFT
+        flags.toInt() and 0x10 != 0 -> TextDisplayAlignment.RIGHT
+        else -> TextDisplayAlignment.CENTER
+    }
 
     companion object : EntityFactory<TextDisplayEntity> {
         override val identifier = minecraft("text_display")
-        private val TEXT = EntityDataField("TEXT")
-        private val LINE_WIDTH = EntityDataField("LINE_WIDTH")
-        private val BACKGROUND = EntityDataField("BACKGROUND")
-        private val TEXT_OPACITY = EntityDataField("TEXT_OPACITY")
-        private val TEXT_DISPLAY_FLAGS = EntityDataField("TEXT_DISPLAY_FLAGS")
+        val TEXT = EntityDataField("TEXT")
+        val LINE_WIDTH = EntityDataField("LINE_WIDTH")
+        val BACKGROUND = EntityDataField("BACKGROUND")
+        val TEXT_OPACITY = EntityDataField("TEXT_OPACITY")
+        val TEXT_DISPLAY_FLAGS = EntityDataField("TEXT_DISPLAY_FLAGS")
 
         override fun build(session: PlaySession, entityType: EntityType, data: EntityData, position: Vec3d, rotation: EntityRotation): TextDisplayEntity {
             return TextDisplayEntity(session, entityType, data, position, rotation)
         }
     }
+}
+
+enum class TextDisplayAlignment {
+    CENTER,
+    LEFT,
+    RIGHT,
 }

@@ -13,6 +13,7 @@
 package de.bixilon.minosoft.data.entities.entities.display
 
 import de.bixilon.kmath.vec.vec3.d.Vec3d
+import de.bixilon.minosoft.data.container.stack.ItemStack
 import de.bixilon.minosoft.data.entities.EntityRotation
 import de.bixilon.minosoft.data.entities.data.EntityData
 import de.bixilon.minosoft.data.entities.data.EntityDataField
@@ -21,16 +22,36 @@ import de.bixilon.minosoft.data.registries.entities.EntityType
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
-@Deprecated("TODO")
 class ItemDisplayEntity(session: PlaySession, entityType: EntityType, data: EntityData, position: Vec3d, rotation: EntityRotation) : DisplayEntity(session, entityType, data, position, rotation) {
+    val stack: ItemStack? by data(ITEM, null)
+    val displayContext: ItemDisplayContext by data(ITEM_DISPLAY, ItemDisplayContext.NONE) {
+        ItemDisplayContext.of((it as Number).toInt())
+    }
 
     companion object : EntityFactory<ItemDisplayEntity> {
         override val identifier = minecraft("item_display")
-        private val ITEM = EntityDataField("ITEM")
-        private val ITEM_DISPLAY = EntityDataField("ITEM_DISPLAY")
+        val ITEM = EntityDataField("ITEM")
+        val ITEM_DISPLAY = EntityDataField("ITEM_DISPLAY")
 
         override fun build(session: PlaySession, entityType: EntityType, data: EntityData, position: Vec3d, rotation: EntityRotation): ItemDisplayEntity {
             return ItemDisplayEntity(session, entityType, data, position, rotation)
         }
+    }
+}
+
+enum class ItemDisplayContext {
+    NONE,
+    THIRD_PERSON_LEFT_HAND,
+    THIRD_PERSON_RIGHT_HAND,
+    FIRST_PERSON_LEFT_HAND,
+    FIRST_PERSON_RIGHT_HAND,
+    HEAD,
+    GUI,
+    GROUND,
+    FIXED,
+    ;
+
+    companion object {
+        fun of(value: Int) = entries.getOrElse(value) { NONE }
     }
 }

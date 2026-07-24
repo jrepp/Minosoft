@@ -78,6 +78,8 @@ abstract class Entity(
     protected val versionId: Int get() = session.version.versionId
 
     override val attachment = EntityAttachment(this)
+    /** Server-command tags used by local datapack authority and selectors. */
+    val commandTags: MutableSet<String> = Collections.synchronizedSet(linkedSetOf())
     open val primaryPassenger: Entity? = null
     open val clientControlled: Boolean get() = primaryPassenger is LocalPlayerEntity
 
