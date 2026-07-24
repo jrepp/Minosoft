@@ -2,7 +2,8 @@
 
 This file is deliberately small. Use it as the working contract, then read the
 relevant evidence maps in [`doc/agents/`](doc/agents/README.md) before changing
-code.
+code. Repository-wide contribution, review, and commit expectations are in
+[`Contributing.md`](Contributing.md).
 
 ## Start here
 

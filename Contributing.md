@@ -1,33 +1,162 @@
-# How to contribute
+<!--
+  Minosoft
+  Copyright (C) 2026 Jacob Repp
 
-First, thank you for visiting this page and for even thinking about contributing.
+  This program is free software: you can redistribute it and/or modify it under
+  the terms of the GNU General Public License as published by the Free Software
+  Foundation, either version 3 of the License, or (at your option) any later
+  version.
 
-## Things you can do
+  This program is distributed in the hope that it will be useful, but WITHOUT
+  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+  FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
-### Issues
-If you find a bug (in **master**), feel free to follow these steps:
-1. Check if this bug is a bug and can be recreated.
-2. Check if this bug is already reported (use the issue search or google).
-3. Open the issue and describe the problem as much as needed (not as you can!)
-4. Include the version of minosoft (or commit name), your OS and all information like that
-5. Include a log. If you know what you are doing, include the interesting paths (and the **first** exception that happened).
-   If you don't know much about that stuff, just include the whole log (You may need to censor email addresses, ...). Paste the log into a code block and do not use other 3rd party sites!
-6. Describe the bug and follow the rules
+  You should have received a copy of the GNU General Public License along with
+  this program. If not, see <https://www.gnu.org/licenses/>.
+-->
 
-### Development
-Please take a look at [/doc/contributing/Development.md](doc/contributing/Development.md)
+# Contributing to Minosoft
 
-### Share
-Minosoft is an open source project, it helps if you recommend it and share it more users (probably) use it. I'll feel good, that I developed something useful, and people start contributing.
+Contributions are welcome. Keep each change focused, preserve multi-version and
+headless behavior, and make the evidence for correctness easy to review.
 
-### Donating
+## Ways to contribute
 
-Just doing it to learn stuff and have fun. I started this in mind, that I'll never earn money from it.
+Code, tests, documentation, reproducible bug reports, feedback, and project
+recommendations are all useful contributions. For development setup and coding
+details, also read the [development guide](doc/contributing/Development.md).
 
-## Help
+### Report an issue
 
-If you want to ask me, the team or whoever in this project a question, you can do the following things:
- - Issues: Just open an issue if you want to ask it, or suggest something. If it is a really short thing, this is not recommended, but even if, it is no problem.
- - E-mail: You can contact me here: [bixilon@bixilon.de](mailto:bixilon@bixilon.de)
-- Matrix: [#minosoft:matrix.org](https://matrix.to/#/#minosoft:matrix.org)
+When reporting a bug against `master`:
 
+1. Confirm that the behavior is reproducible and search existing issues first.
+2. Describe the expected behavior, actual behavior, and minimal reproduction.
+3. Include the Minosoft version or commit, operating system, Java version, and
+   any other relevant environment details.
+4. Include the first relevant exception and enough surrounding log context to
+   diagnose it. A complete log is useful when the relevant section is unclear.
+5. Remove email addresses, access tokens, account identifiers, server addresses,
+   and other sensitive data before posting a log.
+6. Put logs directly in a fenced code block or repository attachment instead of
+   an unrelated third-party paste service.
+
+Questions and suggestions can also be raised through the issue tracker, by
+email at [bixilon@bixilon.de](mailto:bixilon@bixilon.de), or in the
+[#minosoft:matrix.org](https://matrix.to/#/#minosoft:matrix.org) Matrix room.
+
+## Contribution license
+
+Unless a file clearly states different terms, contributions are submitted under
+the same license terms that apply to that file. Core Minosoft code is distributed
+under the GNU General Public License, version 3 or, at your option, any later
+version; see [`LICENSE.md`](LICENSE.md).
+
+By submitting a contribution, you represent that you have the right to license
+it on those terms and agree that the project may distribute it under those
+terms. You retain your copyright. The project does not currently require a
+copyright assignment, Contributor License Agreement, or Developer Certificate
+of Origin sign-off.
+
+Preserve valid copyright and license notices. New nontrivial files should copy
+the nearest applicable project license header and name their actual author.
+Use `Copyright (C) 2026 Jacob Repp` for Jacob Repp's original work completed in
+2026. Add that separate line to an existing file only for a substantial original
+contribution, not for a small patch, mechanical edit, or minor refactor. Never
+replace another copyright holder's valid notice. For formats that cannot safely
+contain comments, rely on the nearest applicable directory or project notice
+instead of adding invalid syntax.
+
+Do not submit code, assets, or generated output that you cannot redistribute
+under the applicable terms. Identify copied or adapted material and preserve
+its required attribution and license information.
+
+## Before changing code
+
+1. Read [`AGENTS.md`](AGENTS.md) and select every relevant evidence map from
+   [`doc/agents/`](doc/agents/README.md).
+2. Inspect the current implementation and focused tests. Documentation is a map,
+   not a substitute for source behavior.
+3. Start at the earliest affected layer when a boundary is unclear.
+4. Keep generated output and runtime state out of the change unless the task
+   explicitly targets them.
+
+## Implementation and tests
+
+- Keep changes narrowly scoped and preserve unrelated work already in the tree.
+- Follow the [Java and Kotlin implementation guidance](doc/agents/guides/java-kotlin.md)
+  for JVM changes.
+- Put focused tests beside the behavior they cover. Use
+  `src/integration-test/kotlin` when real assets, packet fixtures, or subsystem
+  integration are required.
+- Update the applicable evidence map when an entry point, invariant, decision,
+  or recommended validation changes.
+- Run the smallest relevant check first, then broaden verification in
+  proportion to risk. CI uses Java 17 while emitted bytecode targets Java 11.
+
+Common verification commands are:
+
+```sh
+./gradlew compileKotlin
+./gradlew test
+./gradlew integrationTest
+./gradlew assemble
+./gradlew :debug-core:test :play-util:installDist :debug-server-fabric:remapJar
+```
+
+Document checks that could not be run and explain why.
+
+## Review guidance
+
+Before requesting review, inspect the complete diff line by line, including new
+files, tests, configuration, and documentation. Review for:
+
+- correctness at success, failure, boundary, and cleanup paths;
+- bounded and validated external input before allocation or expansion;
+- finite numeric state and checked allocation arithmetic;
+- explicit ownership and complete cleanup of native, GPU, file, callback, and
+  generation resources;
+- atomic state transitions, safe callback concurrency, and last-known-good
+  transactional publication;
+- avoidable work or allocation in render, tick, packet, and other hot paths;
+- consistent naming, nullability, exception handling, and established
+  Java/Kotlin idioms;
+- preserved multi-version, headless, license, and copyright behavior;
+- focused regression coverage and documentation claims supported by current
+  code or repeatable evidence.
+
+Resolve review findings in the commit that introduces the affected behavior
+when practical. Use a separate follow-up commit when doing so preserves review
+history or keeps an already-reviewed change stable. Do not hide unrelated
+cleanup inside a review fix.
+
+## Commit guidance
+
+Use small, targeted
+[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
+that each express one coherent behavior or concern:
+
+```text
+fix(rendering): preserve the active model on reload failure
+test(datapack): cover bounded execute fanout
+docs(agents): record JVM resource ownership rules
+```
+
+- Use `type(scope): imperative summary`; keep the summary concise and omit a
+  trailing period.
+- Prefer `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, or
+  `chore` according to the change's primary purpose.
+- Include a behavior's focused tests in the same commit when they prove that
+  behavior.
+- Separate mechanical formatting, generated metadata, documentation, and
+  unrelated fixes from behavior changes.
+- Order layered work from foundational contracts and data structures through
+  implementation and integration, followed by documentation or packaging
+  metadata.
+- Keep commits buildable and reviewable independently where practical. Explain
+  an intentional dependency on an earlier commit in the commit body.
+- Never amend, squash, reorder, or commit another contributor's unrelated
+  working-tree changes without their explicit approval.
+
+Commit messages and repository history record authorship, but they do not
+replace required file-level copyright and license notices.
