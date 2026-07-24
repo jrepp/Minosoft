@@ -135,6 +135,21 @@ class LocalDisplayEntityFactory(private val session: PlaySession) {
         owned.remove(entity)
     }
 
+    @Synchronized
+    internal fun owns(entity: Entity): Boolean = entity in owned
+
+    @Synchronized
+    internal fun restore(entity: Entity, id: Int?, uuid: UUID?, wasOwned: Boolean) {
+        require(id == null || session.world.entities[id] == null) {
+            "Can not restore local datapack entity id $id because it is already occupied."
+        }
+        require(uuid == null || session.world.entities[uuid] == null) {
+            "Can not restore local datapack entity UUID $uuid because it is already occupied."
+        }
+        session.world.entities.add(id, uuid, entity)
+        if (wasOwned) owned += entity
+    }
+
     private fun applyKnownData(type: ResourceLocation, data: EntityData, nbt: Map<String, Any>) {
         if (type.path in DISPLAY_TYPES) {
             data[DisplayEntity.INTERPOLATION_START] = nbt.number("start_interpolation")?.toInt()

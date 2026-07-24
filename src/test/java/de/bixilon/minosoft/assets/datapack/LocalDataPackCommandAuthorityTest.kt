@@ -9,10 +9,12 @@
 
 package de.bixilon.minosoft.assets.datapack
 
+import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 
 class LocalDataPackCommandAuthorityTest {
     private val context = DataPackCommandContext(ResourceLocation.of("test:load"), 0, 0)
@@ -64,5 +66,46 @@ class LocalDataPackCommandAuthorityTest {
         assertFailsWith<IllegalArgumentException> {
             authority.execute("summon minecraft:item_display ^Infinity ^ ^ {}", context)
         }
+    }
+
+    @Test
+    fun `execute facing and anchored retain bounded command context`() {
+        val authority = LocalDataPackCommandAuthority()
+        var nested: DataPackCommandContext? = null
+
+        assertEquals(
+            1,
+            authority.execute(
+                "execute anchored eyes facing 10 10 0 run say oriented",
+                context.copy(position = Vec3d.EMPTY),
+            ) { _, current ->
+                nested = current
+                1
+            },
+        )
+
+        val captured = assertNotNull(nested)
+        val rotation = assertNotNull(captured.rotation)
+        assertEquals(DataPackCommandAnchor.EYES, captured.anchor)
+        assertEquals(-90.0f, rotation.yaw, 0.0001f)
+        assertEquals(-45.0f, rotation.pitch, 0.0001f)
+    }
+
+    @Test
+    fun `positioned resets an anchored context to feet`() {
+        val authority = LocalDataPackCommandAuthority()
+        var nested: DataPackCommandContext? = null
+
+        authority.execute(
+            "execute anchored eyes positioned 1 2 3 run say moved",
+            context.copy(position = Vec3d.EMPTY),
+        ) { _, current ->
+            nested = current
+            1
+        }
+
+        val captured = assertNotNull(nested)
+        assertEquals(Vec3d(1.0, 2.0, 3.0), captured.position)
+        assertEquals(DataPackCommandAnchor.FEET, captured.anchor)
     }
 }

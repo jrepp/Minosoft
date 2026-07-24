@@ -54,12 +54,24 @@ class SessionDataPackRuntime(
             return false
         }
 
+        val transaction = try {
+            (sink as? DataPackTransactionalSink)?.beginTransaction()
+        } catch (error: Throwable) {
+            closeSuppressing(candidateLease, error)
+            throw error
+        }
         val candidateRuntime = DataPackFunctionRuntime(candidateLease.value.dataPackFunctions, sink, limits)
         try {
             candidateRuntime.load()
+            transaction?.commit()
         } catch (error: Throwable) {
+            try {
+                transaction?.rollback()
+            } catch (rollback: Throwable) {
+                error.addSuppressed(rollback)
+            }
             rejectedGenerationId = candidateLease.generationId
-            candidateLease.close()
+            closeSuppressing(candidateLease, error)
             throw error
         }
 
@@ -92,5 +104,16 @@ class SessionDataPackRuntime(
         runtime = null
         lease?.close()
         lease = null
+    }
+
+    private fun closeSuppressing(
+        lease: ContentGenerationLease<ContentFidelitySnapshot>,
+        original: Throwable,
+    ) {
+        try {
+            lease.close()
+        } catch (cleanup: Throwable) {
+            original.addSuppressed(cleanup)
+        }
     }
 }

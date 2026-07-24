@@ -104,6 +104,10 @@ class LocalDisplayEntityFactoryTest {
                 """summon minecraft:marker ^ ^ ^2 {Tags:["demo.locator"]}""",
                 base,
             )
+            authority.execute(
+                """summon minecraft:marker ^ ^ ^3 {Tags:["demo.locator"]}""",
+                base,
+            )
 
             val root = entities.select("@e[type=minecraft:item_display,tag=demo.root,limit=1,distance=..1]", base).single() as ItemDisplayEntity
             val context = base.copy(executor = root, position = root.physics.position)
@@ -128,6 +132,20 @@ class LocalDisplayEntityFactoryTest {
             ).single() as InteractionEntity
             assertEquals(interaction.width, 2.0f)
             assertEquals(interaction.height, 3.0f)
+            var anchored: DataPackCommandContext? = null
+            authority.execute(
+                "execute anchored eyes positioned ^ ^ ^1 run say anchored",
+                base.copy(executor = interaction, position = interaction.physics.position),
+            ) { _, current ->
+                anchored = current
+                1
+            }
+            val anchoredContext = requireNotNull(anchored)
+            assertEquals(
+                anchoredContext.position,
+                interaction.physics.position.plus(y = interaction.eyeHeight.toDouble(), z = 1.0),
+            )
+            assertEquals(anchoredContext.anchor, de.bixilon.minosoft.assets.datapack.DataPackCommandAnchor.FEET)
             assertEquals(
                 entities.select("@e[type=marker,tag=demo.locator,distance=..2]", base).single().physics.position,
                 Vec3d(4.0, 5.0, 8.0),
@@ -143,6 +161,8 @@ class LocalDisplayEntityFactoryTest {
                             listOf(
                                 "execute as @e[type=item_display,tag=demo.root] at @s run tag @s add demo.executed",
                                 "execute as @e[type=item_display,tag=demo.root] on passengers if entity @s[tag=demo.node] run data merge entity @s {interpolation_duration:9}",
+                                "execute store result score #count demo.frame if entity @e[type=marker,tag=demo.locator]",
+                                """execute rotated 90 0 positioned 4 5 6 run summon minecraft:marker ^ ^ ^1 {Tags:["demo.rotated"]}""",
                             ),
                         ),
                     ),
@@ -152,11 +172,63 @@ class LocalDisplayEntityFactoryTest {
             ).execute("demo:tick")
             assertTrue("demo.executed" in root.commandTags)
             assertEquals((node as TextDisplayEntity).interpolationDurationTicks, 9)
+            assertEquals(authority.score("#count", "demo.frame"), 2)
+            val rotated = entities.select("@e[tag=demo.rotated]", base).single().physics.position
+            assertEquals(rotated.x, 3.0, 0.000001)
+            assertEquals(rotated.y, 5.0, 0.000001)
+            assertEquals(rotated.z, 6.0, 0.000001)
+
+            authority.execute("rotate @s ~5 ~-2", context)
+            assertEquals(root.physics.rotation.yaw, 15.0f)
+            assertEquals(root.physics.rotation.pitch, -7.0f)
 
             authority.execute("ride @s mount ${root.uuid}", base.copy(executor = node))
             assertSame(node.attachment.vehicle, root)
             assertEquals(authority.execute("kill @e[tag=demo.hitbox]", base), 1)
             assertTrue(entities.select("@e[tag=demo.hitbox]", base).isEmpty())
+        } finally {
+            RenderingOptions.disabled = previous
+        }
+    }
+
+    @Test
+    fun `rolls entity mutations and lifecycle back as one transaction`() {
+        val previous = RenderingOptions.disabled
+        RenderingOptions.disabled = true
+        try {
+            IT.VERSION
+            val session = createSession(version = "1.20.4")
+            val origin = Vec3d(1.0, 2.0, 3.0)
+            val factory = LocalDisplayEntityFactory(session)
+            val entities = LocalDataPackEntityAccess(session, factory) { origin }
+            val authority = LocalDataPackCommandAuthority(
+                origin = { origin },
+                spawn = { type, data, position -> factory.summon(type, data, position) },
+                entities = entities,
+            )
+            val context = DataPackCommandContext(ResourceLocation.of("demo:load"), 0, 0)
+            authority.execute(
+                """summon minecraft:item_display ~ ~ ~ {Tags:["stable"],item:{id:"minecraft:carrot_on_a_stick",Count:1b,tag:{CustomModelData:4}},Passengers:[{id:"minecraft:text_display",Tags:["stable.node"],text:'{"text":"Stable"}'}]}""",
+                context,
+            )
+            val root = entities.select("@e[tag=stable]", context).single() as ItemDisplayEntity
+            val passenger = root.attachment.passengers.single()
+
+            val transaction = authority.beginTransaction()
+            authority.execute("tag @e[tag=stable] add candidate", context)
+            authority.execute("data merge entity @e[tag=stable] {interpolation_duration:40}", context)
+            authority.execute("tp @e[tag=stable] ~10 ~ ~", context)
+            authority.execute("""summon minecraft:marker ~ ~ ~ {Tags:["candidate.created"]}""", context)
+            authority.execute("kill @e[tag=stable]", context)
+            transaction.rollback()
+
+            val restored = entities.select("@e[tag=stable]", context).single()
+            assertSame(root, restored)
+            assertEquals(root.physics.position, origin)
+            assertEquals(root.interpolationDurationTicks, 0)
+            assertTrue("candidate" !in root.commandTags)
+            assertSame(root, passenger.attachment.vehicle)
+            assertTrue(entities.select("@e[tag=candidate.created]", context).isEmpty())
         } finally {
             RenderingOptions.disabled = previous
         }

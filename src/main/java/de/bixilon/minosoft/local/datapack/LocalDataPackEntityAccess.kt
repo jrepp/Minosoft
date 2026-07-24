@@ -12,7 +12,9 @@ package de.bixilon.minosoft.local.datapack
 import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.kutil.concurrent.lock.LockUtil.acquired
 import de.bixilon.minosoft.assets.datapack.DataPackCommandContext
+import de.bixilon.minosoft.assets.datapack.DataPackCommandTransaction
 import de.bixilon.minosoft.assets.datapack.DataPackEntityAccess
+import de.bixilon.minosoft.data.entities.EntityRotation
 import de.bixilon.minosoft.data.entities.entities.Entity
 import de.bixilon.minosoft.data.entities.entities.player.PlayerEntity
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
@@ -66,6 +68,61 @@ class LocalDataPackEntityAccess(
     override fun synchronize(entity: Entity) = factory.synchronize(entity)
 
     override fun remove(entity: Entity) = factory.remove(entity)
+
+    override fun beginTransaction(): DataPackCommandTransaction {
+        val world = session.world.entities
+        val current = world.lock.acquired { world.entities.toList() }
+        val snapshots = current.associateWithTo(linkedMapOf()) { entity ->
+            EntitySnapshot(
+                id = world.getId(entity),
+                uuid = world.getUUID(entity),
+                position = entity.physics.position,
+                rotation = entity.physics.rotation,
+                tags = synchronized(entity.commandTags) { entity.commandTags.toSet() },
+                nbt = synchronized(entity.commandNbt) { entity.commandNbt.deepMutableMap() },
+                vehicle = entity.attachment.vehicle,
+                owned = factory.owns(entity),
+            )
+        }
+        return object : DataPackCommandTransaction {
+            private var completed = false
+
+            @Synchronized
+            override fun commit() {
+                check(!completed) { "Data-pack entity transaction is already complete." }
+                completed = true
+            }
+
+            @Synchronized
+            override fun rollback() {
+                if (completed) return
+                val current = world.lock.acquired { world.entities.toList() }
+                current.forEach { it.attachment.vehicle = null }
+                current.filter { it !in snapshots }.forEach(factory::remove)
+
+                for ((entity, snapshot) in snapshots) {
+                    if (world.lock.acquired { entity !in world.entities }) {
+                        factory.restore(entity, snapshot.id, snapshot.uuid, snapshot.owned)
+                    }
+                    synchronized(entity.commandTags) {
+                        entity.commandTags.clear()
+                        entity.commandTags.addAll(snapshot.tags)
+                    }
+                    synchronized(entity.commandNbt) {
+                        entity.commandNbt.clear()
+                        entity.commandNbt.putAll(snapshot.nbt.deepMutableMap())
+                    }
+                    entity.forceTeleport(snapshot.position)
+                    entity.forceRotate(snapshot.rotation)
+                    factory.synchronize(entity)
+                }
+                for ((entity, snapshot) in snapshots) {
+                    entity.attachment.vehicle = snapshot.vehicle
+                }
+                completed = true
+            }
+        }
+    }
 
     private fun parseFilters(source: String): Filters {
         if (source.isEmpty()) return Filters()
@@ -126,6 +183,29 @@ class LocalDataPackEntityAccess(
         val limit: Int? = null,
         val sort: String? = null,
     )
+
+    private data class EntitySnapshot(
+        val id: Int?,
+        val uuid: UUID?,
+        val position: Vec3d,
+        val rotation: EntityRotation,
+        val tags: Set<String>,
+        val nbt: MutableMap<String, Any>,
+        val vehicle: Entity?,
+        val owned: Boolean,
+    )
+
+    private fun Map<String, Any>.deepMutableMap(): MutableMap<String, Any> {
+        return entries.associateTo(linkedMapOf()) { (key, value) -> key to value.deepMutable() }
+    }
+
+    private fun Any.deepMutable(): Any = when (this) {
+        is Map<*, *> -> entries.associateTo(linkedMapOf()) {
+            it.key.toString() to requireNotNull(it.value).deepMutable()
+        }
+        is List<*> -> mapTo(mutableListOf()) { requireNotNull(it).deepMutable() }
+        else -> this
+    }
 
     private companion object {
         val SELECTOR = Regex("""@([seanp])(?:\[(.*)])?""")

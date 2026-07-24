@@ -15,7 +15,9 @@ import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.minosoft.data.entities.EntityRotation
 import de.bixilon.minosoft.data.entities.entities.Entity
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
+import kotlin.math.atan2
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 class UnsupportedDataPackCommandException(command: String) :
     IllegalArgumentException("Unsupported local data-pack command: $command")
@@ -31,7 +33,7 @@ class LocalDataPackCommandAuthority(
     private val rotation: () -> EntityRotation = { EntityRotation.EMPTY },
     private val spawn: ((ResourceLocation, Map<String, Any>, Vec3d) -> Unit)? = null,
     private val entities: DataPackEntityAccess? = null,
-) : DataPackCommandSink, DataPackMacroSource, DataPackExecuteEnvironment {
+) : DataPackCommandSink, DataPackMacroSource, DataPackExecuteEnvironment, DataPackTransactionalSink {
     private enum class StoreMode { RESULT, SUCCESS }
 
     private sealed class ExecuteStore(val mode: StoreMode) {
@@ -55,6 +57,60 @@ class LocalDataPackCommandAuthority(
 
     private val objectives = linkedMapOf<String, MutableMap<String, Int>>()
     private val storage = linkedMapOf<ResourceLocation, MutableMap<String, Any>>()
+
+    @Synchronized
+    override fun beginTransaction(): DataPackCommandTransaction {
+        val objectiveSnapshot = objectives.mapValuesTo(linkedMapOf()) { (_, scores) ->
+            scores.toMutableMap()
+        }
+        val storageSnapshot = storage.mapValuesTo(linkedMapOf()) { (_, value) ->
+            @Suppress("UNCHECKED_CAST")
+            (value.deepMutable() as MutableMap<String, Any>)
+        }
+        val entityTransaction = entities?.beginTransaction()
+        return object : DataPackCommandTransaction {
+            private var completed = false
+
+            @Synchronized
+            override fun commit() {
+                check(!completed) { "Data-pack command transaction is already complete." }
+                entityTransaction?.commit()
+                completed = true
+            }
+
+            @Synchronized
+            override fun rollback() {
+                if (completed) return
+                var failure: Throwable? = null
+                try {
+                    restore(objectiveSnapshot, storageSnapshot)
+                } catch (error: Throwable) {
+                    failure = error
+                }
+                try {
+                    entityTransaction?.rollback()
+                } catch (error: Throwable) {
+                    failure?.addSuppressed(error) ?: run { failure = error }
+                }
+                completed = true
+                failure?.let { throw it }
+            }
+        }
+    }
+
+    @Synchronized
+    private fun restore(
+        objectiveSnapshot: Map<String, Map<String, Int>>,
+        storageSnapshot: Map<ResourceLocation, Map<String, Any>>,
+    ) {
+        objectives.clear()
+        objectiveSnapshot.mapValuesTo(objectives) { (_, scores) -> scores.toMutableMap() }
+        storage.clear()
+        storageSnapshot.mapValuesTo(storage) { (_, value) ->
+            @Suppress("UNCHECKED_CAST")
+            (value.deepMutable() as MutableMap<String, Any>)
+        }
+    }
 
     override fun execute(command: String, context: DataPackCommandContext): Int {
         scoreboard(command, context)?.let { return it }
@@ -87,13 +143,14 @@ class LocalDataPackCommandAuthority(
             ?: throw IllegalArgumentException("Execute command is missing its run command: $command")
         var contexts = listOf(context)
         val stores = mutableListOf<ExecuteStore>()
+        var terminalResult: Int? = null
         var index = 0
         while (index < clauses.size) {
             when (clauses[index]) {
                 "as" -> {
                     val selector = clauses.required(index + 1, command)
                     val access = entities ?: throw UnsupportedDataPackCommandException(command)
-                    contexts = contexts.flatMap { current ->
+                    contexts = expandContexts(contexts, command) { current ->
                         access.select(selector, current).map {
                             current.copy(executor = it)
                         }
@@ -103,9 +160,12 @@ class LocalDataPackCommandAuthority(
                 "at" -> {
                     val selector = clauses.required(index + 1, command)
                     val access = entities ?: throw UnsupportedDataPackCommandException(command)
-                    contexts = contexts.flatMap { current ->
+                    contexts = expandContexts(contexts, command) { current ->
                         access.select(selector, current).map {
-                            current.copy(position = it.physics.position)
+                            current.copy(
+                                position = it.physics.position,
+                                rotation = it.physics.rotation,
+                            )
                         }
                     }
                     index += 2
@@ -114,9 +174,9 @@ class LocalDataPackCommandAuthority(
                     require(clauses.required(index + 1, command) == "passengers") {
                         "Only execute on passengers is supported: $command"
                     }
-                    contexts = contexts.flatMap { current ->
+                    contexts = expandContexts(contexts, command) { current ->
                         current.executor?.attachment?.passengers?.map {
-                            current.copy(executor = it, position = it.physics.position)
+                            current.copy(executor = it)
                         } ?: emptyList()
                     }
                     index += 2
@@ -126,11 +186,80 @@ class LocalDataPackCommandAuthority(
                     val y = clauses.required(index + 2, command)
                     val z = clauses.required(index + 3, command)
                     contexts = contexts.map { current ->
-                        val base = current.position ?: current.executor?.physics?.position ?: origin()
-                        val facing = current.executor?.physics?.rotation ?: rotation()
-                        current.copy(position = position(x, y, z, base, facing))
+                        val base = anchoredPosition(current)
+                        val facing = current.rotation ?: current.executor?.physics?.rotation ?: rotation()
+                        current.copy(
+                            position = position(x, y, z, base, facing),
+                            anchor = DataPackCommandAnchor.FEET,
+                        )
                     }
                     index += 4
+                }
+                "anchored" -> {
+                    val anchor = when (clauses.required(index + 1, command)) {
+                        "feet" -> DataPackCommandAnchor.FEET
+                        "eyes" -> DataPackCommandAnchor.EYES
+                        else -> throw UnsupportedDataPackCommandException(command)
+                    }
+                    contexts = contexts.map { it.copy(anchor = anchor) }
+                    index += 2
+                }
+                "facing" -> {
+                    if (clauses.required(index + 1, command) == "entity") {
+                        val selector = clauses.required(index + 2, command)
+                        val targetAnchor = when (clauses.required(index + 3, command)) {
+                            "feet" -> DataPackCommandAnchor.FEET
+                            "eyes" -> DataPackCommandAnchor.EYES
+                            else -> throw UnsupportedDataPackCommandException(command)
+                        }
+                        val access = entities ?: throw UnsupportedDataPackCommandException(command)
+                        contexts = expandContexts(contexts, command) { current ->
+                            access.select(selector, current).map { target ->
+                                current.copy(
+                                    rotation = lookAt(
+                                        anchoredPosition(current),
+                                        entityPosition(target, targetAnchor),
+                                        current.rotation ?: current.executor?.physics?.rotation ?: rotation(),
+                                    ),
+                                )
+                            }
+                        }
+                        index += 4
+                    } else {
+                        val x = clauses.required(index + 1, command)
+                        val y = clauses.required(index + 2, command)
+                        val z = clauses.required(index + 3, command)
+                        contexts = contexts.map { current ->
+                            val source = anchoredPosition(current)
+                            val facing = current.rotation ?: current.executor?.physics?.rotation ?: rotation()
+                            val target = position(x, y, z, source, facing)
+                            current.copy(rotation = lookAt(source, target, facing))
+                        }
+                        index += 4
+                    }
+                }
+                "rotated" -> {
+                    if (clauses.required(index + 1, command) == "as") {
+                        val selector = clauses.required(index + 2, command)
+                        val access = entities ?: throw UnsupportedDataPackCommandException(command)
+                        contexts = expandContexts(contexts, command) { current ->
+                            access.select(selector, current).map {
+                                current.copy(rotation = it.physics.rotation)
+                            }
+                        }
+                        index += 3
+                    } else {
+                        val yaw = clauses.required(index + 1, command)
+                        val pitch = clauses.required(index + 2, command)
+                        contexts = contexts.map { current ->
+                            val base = current.rotation ?: current.executor?.physics?.rotation ?: rotation()
+                            current.copy(rotation = EntityRotation(
+                                angle(yaw, base.yaw),
+                                angle(pitch, base.pitch),
+                            ))
+                        }
+                        index += 3
+                    }
                 }
                 "if", "unless" -> {
                     val positive = clauses[index] == "if"
@@ -138,8 +267,17 @@ class LocalDataPackCommandAuthority(
                         "entity" -> {
                             val selector = clauses.required(index + 2, command)
                             val access = entities ?: throw UnsupportedDataPackCommandException(command)
-                            contexts = contexts.filter { (access.select(selector, it).isNotEmpty()) == positive }
+                            val selections = contexts.map { it to access.select(selector, it).size }
+                            val matching = selections.filter { (_, count) -> (count > 0) == positive }
+                            contexts = matching.map { it.first }
                             index += 3
+                            if (index == clauses.size) {
+                                terminalResult = if (positive) {
+                                    matching.sumOf { it.second }
+                                } else {
+                                    matching.size
+                                }
+                            }
                         }
                         "score" -> {
                             val holder = clauses.required(index + 2, command)
@@ -221,11 +359,37 @@ class LocalDataPackCommandAuthority(
             stores.forEach { applyStore(it, 0, context) }
             return 0
         }
-        var result = if (nested == null) 1 else 0
+        if (nested == null) {
+            val result = terminalResult ?: contexts.size
+            if (contexts.size == 1) {
+                stores.forEach { applyStore(it, result, contexts.single()) }
+            } else {
+                contexts.forEach { current -> stores.forEach { applyStore(it, 1, current) } }
+            }
+            return result
+        }
+        var result = 0
         for (current in contexts) {
-            val currentResult = nested?.let { continuation(it, current) } ?: 1
+            val currentResult = continuation(nested, current)
             stores.forEach { applyStore(it, currentResult, current) }
-            result += if (nested == null) 0 else currentResult
+            result += currentResult
+        }
+        return result
+    }
+
+    private fun expandContexts(
+        contexts: List<DataPackCommandContext>,
+        command: String,
+        expand: (DataPackCommandContext) -> List<DataPackCommandContext>,
+    ): List<DataPackCommandContext> {
+        val result = ArrayList<DataPackCommandContext>()
+        for (context in contexts) {
+            for (expanded in expand(context)) {
+                require(result.size < MAX_EXECUTE_CONTEXTS) {
+                    "Execute command expands beyond $MAX_EXECUTE_CONTEXTS contexts: $command"
+                }
+                result += expanded
+            }
         }
         return result
     }
@@ -350,7 +514,7 @@ class LocalDataPackCommandAuthority(
             match.groupValues[3],
             match.groupValues[4],
             base,
-            context.executor?.physics?.rotation ?: rotation(),
+            context.rotation ?: context.executor?.physics?.rotation ?: rotation(),
         )
         val nbt = match.groupValues[5].takeIf(String::isNotBlank)?.let(SnbtParser::compound) ?: emptyMap()
         target(ResourceLocation.of(match.groupValues[1]), nbt, position)
@@ -400,6 +564,34 @@ class LocalDataPackCommandAuthority(
             "Local entity position must be finite."
         }
         return result
+    }
+
+    private fun anchoredPosition(context: DataPackCommandContext): Vec3d {
+        val base = context.position ?: context.executor?.physics?.position ?: origin()
+        if (context.anchor != DataPackCommandAnchor.EYES) return base
+        val eyeHeight = context.executor?.eyeHeight?.toDouble() ?: return base
+        return base.plus(y = eyeHeight)
+    }
+
+    private fun entityPosition(entity: Entity, anchor: DataPackCommandAnchor): Vec3d {
+        val position = entity.physics.position
+        return if (anchor == DataPackCommandAnchor.EYES) {
+            position.plus(y = entity.eyeHeight.toDouble())
+        } else {
+            position
+        }
+    }
+
+    private fun lookAt(source: Vec3d, target: Vec3d, fallback: EntityRotation): EntityRotation {
+        val x = target.x - source.x
+        val y = target.y - source.y
+        val z = target.z - source.z
+        val horizontal = sqrt(x * x + z * z)
+        if (horizontal == 0.0 && y == 0.0) return fallback
+        val yaw = Math.toDegrees(atan2(-x, z)).toFloat()
+        val pitch = Math.toDegrees(atan2(-y, horizontal)).toFloat()
+        require(yaw.isFinite() && pitch.isFinite()) { "Facing rotation must be finite." }
+        return EntityRotation(yaw, pitch)
     }
 
     private fun localCoordinate(source: String): Double {
@@ -540,6 +732,7 @@ class LocalDataPackCommandAuthority(
             !command.startsWith("kill ") &&
             !command.startsWith("tp ") &&
             !command.startsWith("teleport ") &&
+            !command.startsWith("rotate ") &&
             !command.startsWith("ride ") &&
             !command.startsWith("data ")
         ) return null
@@ -584,6 +777,17 @@ class LocalDataPackCommandAuthority(
                         angle(match.groupValues[6], rotation.pitch),
                     ))
                 }
+            }
+            return selected.size
+        }
+        ROTATE.matchEntire(command)?.let { match ->
+            val selected = access.select(match.groupValues[1], context)
+            for (entity in selected) {
+                val current = entity.physics.rotation
+                entity.forceRotate(EntityRotation(
+                    angle(match.groupValues[2], current.yaw),
+                    angle(match.groupValues[3], current.pitch),
+                ))
             }
             return selected.size
         }
@@ -936,9 +1140,11 @@ class LocalDataPackCommandAuthority(
         val TAG = Regex("""tag\s+(\S+)\s+(add|remove)\s+(\S+)""")
         val KILL = Regex("""kill\s+(\S+)""")
         val TELEPORT = Regex("""(?:tp|teleport)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(\S+)\s+(\S+))?""")
+        val ROTATE = Regex("""rotate\s+(\S+)\s+(\S+)\s+(\S+)""")
         val RIDE = Regex("""ride\s+(\S+)\s+mount\s+(\S+)""")
         val DATA_ENTITY_MERGE = Regex("""data merge entity\s+(\S+)\s+(\{.*})""")
         val DATA_ENTITY_REMOVE = Regex("""data remove entity\s+(\S+)\s+(\S+)""")
+        const val MAX_EXECUTE_CONTEXTS = 65_536
         val DATA_ENTITY_GET = Regex("""data get entity\s+(\S+)\s+(\S+)(?:\s+([-+]?\d+(?:\.\d+)?))?""")
         val DATA_ENTITY_MODIFY = Regex("""data modify entity\s+(\S+)\s+(\S+)\s+(set|merge|append)\s+(value|from storage)\s+(.+)""")
     }

@@ -22,6 +22,24 @@ fun interface DataPackCommandSink {
     fun execute(command: String, context: DataPackCommandContext): Int
 }
 
+/**
+ * A reversible command-side state change. Transactions are intentionally
+ * explicit rather than [AutoCloseable]: callers must decide whether a
+ * successfully evaluated content generation is published or rolled back.
+ */
+interface DataPackCommandTransaction {
+    fun commit()
+    fun rollback()
+}
+
+/**
+ * Implemented by command authorities whose mutable state can be changed by a
+ * data-pack load tag.
+ */
+interface DataPackTransactionalSink {
+    fun beginTransaction(): DataPackCommandTransaction
+}
+
 interface DataPackMacroSource {
     fun arguments(storage: ResourceLocation, path: String): Map<String, String>
 }
@@ -40,7 +58,14 @@ data class DataPackCommandContext(
     val tick: Long,
     val executor: Entity? = null,
     val position: Vec3d? = null,
+    val rotation: de.bixilon.minosoft.data.entities.EntityRotation? = null,
+    val anchor: DataPackCommandAnchor = DataPackCommandAnchor.FEET,
 )
+
+enum class DataPackCommandAnchor {
+    FEET,
+    EYES,
+}
 
 class DataPackFunctionRuntime(
     val library: DataPackFunctionLibrary,
@@ -94,6 +119,8 @@ class DataPackFunctionRuntime(
             tick = tick,
             executor = inheritedContext?.executor,
             position = inheritedContext?.position,
+            rotation = inheritedContext?.rotation,
+            anchor = inheritedContext?.anchor ?: DataPackCommandAnchor.FEET,
         )
         var result = 0
         for (source in function.commands) {

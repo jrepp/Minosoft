@@ -20,4 +20,5 @@ interface DataPackEntityAccess {
     fun select(selector: String, context: DataPackCommandContext): List<Entity>
     fun synchronize(entity: Entity)
     fun remove(entity: Entity)
+    fun beginTransaction(): DataPackCommandTransaction
 }

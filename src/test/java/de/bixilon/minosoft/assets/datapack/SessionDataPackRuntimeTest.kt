@@ -55,10 +55,45 @@ class SessionDataPackRuntimeTest {
         assertEquals(listOf("first", "rejected"), cleaned)
     }
 
-    private fun snapshot(loadCommand: String): ContentFidelitySnapshot {
+    @Test
+    fun `rolls command state back when a candidate load tag fails`() {
+        val store = ContentGenerationStore<ContentFidelitySnapshot>()
+        val authority = LocalDataPackCommandAuthority()
+        val host = SessionDataPackRuntime(store, authority)
+        val storage = ResourceLocation.of("test:state")
+
+        val first = store.reload {
+            PreparedContent(snapshot(
+                "scoreboard objectives add frame dummy",
+                "scoreboard players set rig frame 7",
+                """data merge storage test:state {phase:"stable",frame:7}""",
+            ))
+        }
+        assertTrue(host.refresh())
+        assertEquals(first, host.activeGenerationId)
+        assertEquals(7, authority.score("rig", "frame"))
+        assertEquals(mapOf("phase" to "stable", "frame" to 7), authority.storage(storage))
+
+        store.reload {
+            PreparedContent(snapshot(
+                "scoreboard players set rig frame 99",
+                """data merge storage test:state {phase:"candidate",frame:99,leaked:1b}""",
+                "unsupported candidate command",
+            ))
+        }
+        assertFailsWith<UnsupportedDataPackCommandException> { host.refresh() }
+
+        assertEquals(first, host.activeGenerationId)
+        assertEquals(7, authority.score("rig", "frame"))
+        assertEquals(mapOf("phase" to "stable", "frame" to 7), authority.storage(storage))
+        host.close()
+        store.close()
+    }
+
+    private fun snapshot(vararg loadCommands: String): ContentFidelitySnapshot {
         val load = ResourceLocation.of("test:load")
         val library = DataPackFunctionLibrary(
-            functions = mapOf(load to DataPackFunction(load, listOf(loadCommand))),
+            functions = mapOf(load to DataPackFunction(load, loadCommands.toList())),
             tags = mapOf(
                 ResourceLocation.of("minecraft:load") to DataPackFunctionTag(
                     ResourceLocation.of("minecraft:load"),
