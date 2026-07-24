@@ -45,6 +45,7 @@ class DebugMenu(guiRenderer: GUIRenderer) : Menu(guiRenderer) {
         }
         this += ButtonElement(guiRenderer, "Toggle allow flight") { session.player.apply { abilities = abilities.copy(allowFly = !abilities.allowFly) } }
         this += ButtonElement(guiRenderer, TextComponent("☀").color(ChatColors.YELLOW)) { session.world.weather = WorldWeather.SUNNY }
+        this += ButtonElement(guiRenderer, "Debug rendering...") { guiRenderer.gui.push(DebugRenderingMenu) }
 
         this += ButtonElement(guiRenderer, "Back") { guiRenderer.gui.pop() }
     }

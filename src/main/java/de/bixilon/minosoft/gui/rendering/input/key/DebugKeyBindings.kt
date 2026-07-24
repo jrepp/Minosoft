@@ -20,8 +20,8 @@ import de.bixilon.minosoft.config.key.KeyBinding
 import de.bixilon.minosoft.config.key.KeyCodes
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.gui.rendering.RenderContext
+import de.bixilon.minosoft.gui.rendering.debug.DebugRenderingControls
 import de.bixilon.minosoft.gui.rendering.input.key.manager.binding.BindingsManager
-import de.bixilon.minosoft.gui.rendering.system.base.PolygonModes
 import de.bixilon.minosoft.gui.rendering.system.window.CursorModes
 import de.bixilon.minosoft.protocol.network.NetworkConnection
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
@@ -70,7 +70,7 @@ object DebugKeyBindings {
             KeyActions.MODIFIER to setOf(KeyCodes.KEY_F4),
             KeyActions.STICKY to setOf(KeyCodes.KEY_P),
         )) {
-            val nextMode = if(it) PolygonModes.LINE else PolygonModes.FILL
+            val nextMode = DebugRenderingControls.toggleWireframe(context.framebuffer.world.polygonMode)
             context.framebuffer.world.polygonMode = nextMode
             session.util.sendDebugMessage("Polygon mode: ${nextMode.format()}")
         }
