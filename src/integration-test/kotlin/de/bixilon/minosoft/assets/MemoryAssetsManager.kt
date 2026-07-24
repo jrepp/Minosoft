@@ -32,6 +32,10 @@ class MemoryAssetsManager : AssetsManager {
         return entries[path]?.let { ByteArrayInputStream(it) }
     }
 
+    override fun list(pathPrefix: String): Set<ResourceLocation> {
+        return entries.keys.filterTo(linkedSetOf()) { it.path.startsWith(pathPrefix) }
+    }
+
     override fun load(latch: AbstractLatch?) {
     }
 
