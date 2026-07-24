@@ -29,6 +29,10 @@ import de.bixilon.minosoft.protocol.network.session.play.tick.TickUtil
 import de.bixilon.minosoft.protocol.packets.c2s.play.entity.player.LegacySwingArmC2SP
 import de.bixilon.minosoft.protocol.packets.c2s.play.entity.player.SwingArmC2SP
 import de.bixilon.minosoft.protocol.protocol.ProtocolVersions
+import de.bixilon.minosoft.modding.loader.fabric.FabricInteractionDecision
+import de.bixilon.minosoft.modding.loader.fabric.FabricPlayerInteractionContext
+import de.bixilon.minosoft.modding.loader.fabric.FabricPlayerInteractionHooks
+import de.bixilon.minosoft.modding.loader.fabric.FabricPlayerInteractionType
 
 class InteractionManager(val camera: SessionCamera) : Tickable {
     val session = camera.session
@@ -102,10 +106,14 @@ class InteractionManager(val camera: SessionCamera) : Tickable {
         when (val target = camera.target.target) {
             is EntityTarget -> {
                 breaking.release()
+                if (FabricPlayerInteractionHooks.decide(FabricPlayerInteractionContext(session, FabricPlayerInteractionType.ATTACK_ENTITY, target)) == FabricInteractionDecision.DENY) return
                 attack.tryAttack(target)
             }
 
-            is BlockTarget -> breaking.press()
+            is BlockTarget -> {
+                if (FabricPlayerInteractionHooks.decide(FabricPlayerInteractionContext(session, FabricPlayerInteractionType.ATTACK_BLOCK, target)) == FabricInteractionDecision.DENY) return
+                breaking.press()
+            }
             else -> swingHand(Hands.MAIN)
         }
     }

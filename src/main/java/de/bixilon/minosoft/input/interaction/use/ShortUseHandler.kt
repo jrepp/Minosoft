@@ -30,6 +30,10 @@ import de.bixilon.minosoft.protocol.packets.c2s.play.entity.interact.EntityInter
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
+import de.bixilon.minosoft.modding.loader.fabric.FabricInteractionDecision
+import de.bixilon.minosoft.modding.loader.fabric.FabricPlayerInteractionContext
+import de.bixilon.minosoft.modding.loader.fabric.FabricPlayerInteractionHooks
+import de.bixilon.minosoft.modding.loader.fabric.FabricPlayerInteractionType
 
 class ShortUseHandler(
     private val interactionHandler: UseHandler,
@@ -145,16 +149,24 @@ class ShortUseHandler(
     }
 
     fun tryUse(hand: Hands, target: GenericTarget, item: ItemStack?): Boolean {
-        when (target) {
-            is EntityTarget -> return tryUse(hand, target, item)
-            is BlockTarget -> return tryUse(hand, target, item)
+        val type = when (target) {
+            is EntityTarget -> FabricPlayerInteractionType.USE_ENTITY
+            is BlockTarget -> FabricPlayerInteractionType.USE_BLOCK
+            else -> {
+                Log.log(LogMessageType.OTHER, LogLevels.VERBOSE) { "Can not handle target: $target" }
+                return false
+            }
         }
-
-        Log.log(LogMessageType.OTHER, LogLevels.VERBOSE) { "Can not handle target: $target" }
-        return false
+        if (FabricPlayerInteractionHooks.decide(FabricPlayerInteractionContext(session, type, target, hand, item)) == FabricInteractionDecision.DENY) return true
+        return when (target) {
+            is EntityTarget -> tryUse(hand, target, item)
+            is BlockTarget -> tryUse(hand, target, item)
+            else -> false
+        }
     }
 
     fun tryUse(hand: Hands, stack: ItemStack): Boolean {
+        if (FabricPlayerInteractionHooks.decide(FabricPlayerInteractionContext(session, FabricPlayerInteractionType.USE_ITEM, hand = hand, stack = stack)) == FabricInteractionDecision.DENY) return true
         val item = stack.item
 
         if (item !is ItemUseHandler) {
