@@ -26,6 +26,7 @@ import de.bixilon.minosoft.gui.rendering.font.manager.FontManager
 import de.bixilon.minosoft.gui.rendering.input.key.DebugKeyBindings
 import de.bixilon.minosoft.gui.rendering.input.key.DefaultKeyBindings
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.DefaultRenderer
+import de.bixilon.minosoft.modding.loader.fabric.FabricRendererRegistry
 import de.bixilon.minosoft.protocol.network.session.play.PlaySessionStates
 import de.bixilon.minosoft.util.Stopwatch
 import de.bixilon.minosoft.util.collections.MemoryOptions
@@ -46,6 +47,9 @@ object RenderLoader {
 
     private fun RenderContext.registerRenderer() {
         for (builder in DefaultRenderer.list) {
+            this.renderer.register(builder)
+        }
+        for (builder in FabricRendererRegistry.snapshot()) {
             this.renderer.register(builder)
         }
     }

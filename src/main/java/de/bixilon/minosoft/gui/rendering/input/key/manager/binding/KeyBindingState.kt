@@ -13,14 +13,17 @@
 
 package de.bixilon.minosoft.gui.rendering.input.key.manager.binding
 
-import de.bixilon.kutil.time.TimeUtil
 import de.bixilon.minosoft.config.key.KeyBinding
+import java.util.concurrent.CopyOnWriteArraySet
+import kotlin.time.TimeSource.Monotonic.ValueTimeMark
 
 data class KeyBindingState(
+    @Volatile
     var binding: KeyBinding,
     val default: KeyBinding = binding,
     val pressed: Boolean = false,
-    val callback: MutableSet<KeyBindingCallback> = mutableSetOf(),
+    val callback: MutableSet<KeyBindingCallback> = CopyOnWriteArraySet(),
 ) {
-    var lastChange = TimeUtil.NULL
+    @Volatile
+    var lastChange: ValueTimeMark? = null
 }

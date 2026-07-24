@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -42,6 +43,7 @@ import de.bixilon.minosoft.gui.rendering.gui.hud.elements.wawla.WawlaHUDElement
 import de.bixilon.minosoft.gui.rendering.renderer.drawable.AsyncDrawable
 import de.bixilon.minosoft.gui.rendering.renderer.drawable.Drawable
 import de.bixilon.minosoft.util.Initializable
+import de.bixilon.minosoft.modding.loader.fabric.FabricHudLayers
 
 class HUDManager(
     override val guiRenderer: GUIRenderer,
@@ -54,6 +56,7 @@ class HUDManager(
     var enabled: Boolean = true
 
     private var values: Collection<HUDElement> = emptyList()
+    private var fabricLayers: AutoCloseable? = null
 
     fun register(hudBuilder: HUDBuilder<*>) {
         val hudElement = hudBuilder.build(guiRenderer)
@@ -111,6 +114,20 @@ class HUDManager(
         for (element in this.hudElements.toSynchronizedMap().values) {
             element.postInit()
         }
+        fabricLayers = FabricHudLayers.attach(this)
+    }
+
+    fun registerFabricLayer(builder: HUDBuilder<*>): AutoCloseable {
+        require(hudElements[builder.identifier] == null) { "HUD element is already registered: ${builder.identifier}" }
+        val element = builder.build(guiRenderer)
+        element.init()
+        element.postInit()
+        hudElements[builder.identifier] = element
+        return AutoCloseable {
+            if (hudElements[builder.identifier] !== element) return@AutoCloseable
+            hudElements.remove(builder.identifier)
+            element.unload()
+        }
     }
 
     override fun drawAsync() {
@@ -126,12 +143,24 @@ class HUDManager(
     }
 
     fun unload() {
+        var failure: Throwable? = null
+        try {
+            fabricLayers?.close()
+        } catch (throwable: Throwable) {
+            failure = throwable
+        }
+        fabricLayers = null
         val iterator = hudElements.entries.iterator()
         while (iterator.hasNext()) {
             val (_, element) = iterator.next()
             iterator.remove()
-            element.unload()
+            try {
+                element.unload()
+            } catch (throwable: Throwable) {
+                failure?.addSuppressed(throwable) ?: run { failure = throwable }
+            }
         }
+        failure?.let { throw it }
     }
 
     operator fun <T : HUDElement> get(hudBuilder: HUDBuilder<T>): T? {

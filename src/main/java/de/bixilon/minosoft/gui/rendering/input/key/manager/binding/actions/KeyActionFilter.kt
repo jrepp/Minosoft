@@ -118,7 +118,8 @@ interface KeyActionFilter {
                 filter.satisfied = false
                 return
             }
-            if (time - state.lastChange <= DELAY_BETWEEN_PRESSED) {
+            val lastChange = state.lastChange
+            if (lastChange != null && time - lastChange <= DELAY_BETWEEN_PRESSED) {
                 filter.satisfied = false
                 return
             }

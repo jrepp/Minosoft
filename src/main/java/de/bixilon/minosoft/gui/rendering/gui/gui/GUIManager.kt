@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -275,40 +276,68 @@ class GUIManager(
         onMouseMove(guiRenderer.currentMousePosition)
     }
 
-    fun push(element: LayoutedElement) {
+    fun push(element: LayoutedElement): GUIElement {
         val layouted = LayoutedGUIElement(element)
         layouted.init()
         layouted.postInit()
         _push(layouted)
+        return layouted
+    }
+
+    fun popIfOpen(element: GUIElement): Boolean {
+        return popInternal(element, missingIsNoop = true)
     }
 
     fun pop(element: GUIElement) {
-        if (elementOrder.isEmpty() || !element.canPop) {
-            return
-        }
+        popInternal(element, missingIsNoop = false)
+    }
 
+    private fun popInternal(element: GUIElement, missingIsNoop: Boolean): Boolean {
+        val first: GUIElement?
         orderLock.lock()
-        val index = elementOrder.indexOf(element)
-        if (index < 0) {
+        try {
+            if (elementOrder.isEmpty() || !element.canPop) return false
+            val index = elementOrder.indexOf(element)
+            if (index < 0) {
+                if (missingIsNoop) return false
+                throw IllegalArgumentException("Can not pop element $element: Not opened!")
+            }
+            elementOrder.removeAt(index)
+            first = if (index == 0) elementOrder.firstOrNull() else null
+        } finally {
             orderLock.unlock()
-            throw IllegalArgumentException("Can not pop element $element: Not opened!")
         }
-        elementOrder.removeAt(index)
-        var first: GUIElement? = null
-        if (index == 0) {
-            first = elementOrder.firstOrNull()
-        }
-        orderLock.unlock()
-        element.onClose()
-        first?.onOpen()
 
-        orderLock.acquire()
-        if (elementOrder.isEmpty()) {
-            context.input.handler.handler = null
-            guiRenderer.popper.clear()
-            guiRenderer.dragged.element = null
+        var failure: Throwable? = null
+        try {
+            element.onClose()
+        } catch (throwable: Throwable) {
+            failure = throwable
         }
-        orderLock.release()
+        try {
+            first?.onOpen()
+        } catch (throwable: Throwable) {
+            failure?.addSuppressed(throwable) ?: run { failure = throwable }
+        }
+
+        val empty: Boolean
+        orderLock.acquire()
+        try {
+            empty = elementOrder.isEmpty()
+        } finally {
+            orderLock.release()
+        }
+        if (empty) {
+            try {
+                context.input.handler.handler = null
+                guiRenderer.popper.clear()
+                guiRenderer.dragged.element = null
+            } catch (throwable: Throwable) {
+                failure?.addSuppressed(throwable) ?: run { failure = throwable }
+            }
+        }
+        failure?.let { throw it }
+        return true
     }
 
     fun pop() {

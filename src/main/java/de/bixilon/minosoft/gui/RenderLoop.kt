@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -24,6 +25,9 @@ import de.bixilon.minosoft.gui.rendering.RenderingOptions
 import de.bixilon.minosoft.gui.rendering.RenderingStates
 import de.bixilon.minosoft.gui.rendering.events.WindowCloseEvent
 import de.bixilon.minosoft.gui.rendering.system.base.IntegratedBufferTypes
+import de.bixilon.minosoft.modding.loader.fabric.FabricFrameHooks
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientEventPhase
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientEvents
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
 import de.bixilon.minosoft.terminal.RunConfiguration
 import de.bixilon.minosoft.util.logging.Log
@@ -53,6 +57,9 @@ class RenderLoop(
 
         context.profiler = if (RenderingOptions.profileFrames) StackedProfiler() else null
         context.renderStats.startFrame()
+        FabricFrameHooks.beforeFrame(context)
+        var frameFailure: Throwable? = null
+        try {
 
         context.profiler("window poll events") { context.window.pollEvents() }
 
@@ -75,7 +82,10 @@ class RenderLoop(
         context.profiler("post draw") { context.renderer.forEach { it.postDraw() } }
 
         // handle opengl context tasks, but limit it per frame
-        context.profiler("queue") { context.queue.workTimeLimited(RenderConstants.MAXIMUM_QUEUE_TIME_PER_FRAME) }
+        context.profiler("queue") {
+            FabricFrameHooks.beforeQueueFlush(context)
+            context.queue.workTimeLimited(RenderConstants.MAXIMUM_QUEUE_TIME_PER_FRAME)
+        }
 
         context.renderStats.endDraw()
 
@@ -115,17 +125,33 @@ class RenderLoop(
                 FileOutputStream("minosoft.perf").use { it.write(segment.toPerf().toByteArray()) }
             }
         }
+        } catch (throwable: Throwable) {
+            frameFailure = throwable
+            throw throwable
+        } finally {
+            context.frameNumber++
+            try {
+                FabricFrameHooks.afterFrame(context)
+            } catch (cleanup: Throwable) {
+                frameFailure?.addSuppressed(cleanup) ?: throw cleanup
+            }
+        }
     }
 
 
     fun startLoop() {
         Log.log(LogMessageType.RENDERING) { "Starting loop" }
         context.session.events.listen<WindowCloseEvent> { context.state = RenderingStates.QUITTING }
-        while (true) {
-            if (context.state == RenderingStates.QUITTING || context.session.established || !context.state.active) {
-                break
+        FabricClientEvents.dispatch(FabricClientEventPhase.CLIENT_STARTED, context)
+        try {
+            while (true) {
+                if (context.state == RenderingStates.QUITTING || context.session.established || !context.state.active) {
+                    break
+                }
+                loop()
             }
-            loop()
+        } finally {
+            FabricClientEvents.dispatch(FabricClientEventPhase.CLIENT_STOPPING, context)
         }
     }
 }

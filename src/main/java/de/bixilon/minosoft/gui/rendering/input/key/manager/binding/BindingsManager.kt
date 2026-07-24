@@ -23,6 +23,7 @@ import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.input.InputHandler
 import de.bixilon.minosoft.gui.rendering.input.key.manager.InputManager
 import de.bixilon.minosoft.gui.rendering.input.key.manager.binding.actions.KeyActionFilter.Companion.filter
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.TimeSource.Monotonic.ValueTimeMark
 
 class BindingsManager(
@@ -32,7 +33,7 @@ class BindingsManager(
     private val profile = session.profiles.controls
 
     private val bindings: SynchronizedMap<ResourceLocation, KeyBindingState> = synchronizedMapOf()
-    private val pressed: MutableSet<ResourceLocation> = mutableSetOf()
+    private val pressed: MutableSet<ResourceLocation> = ConcurrentHashMap.newKeySet()
 
 
     init {
@@ -111,13 +112,23 @@ class BindingsManager(
         }
     }
 
-    fun register(name: ResourceLocation, default: KeyBinding, pressed: Boolean = false, callback: KeyBindingCallback) {
+    fun register(name: ResourceLocation, default: KeyBinding, pressed: Boolean = false, callback: KeyBindingCallback): AutoCloseable {
         val keyBinding = profile.bindings.getOrPut(name) { default }
         val callbackPair = bindings.synchronizedGetOrPut(name) { KeyBindingState(keyBinding, default, pressed) }
-        callbackPair.callback += callback
+        synchronized(callbackPair) {
+            callbackPair.callback += callback
+            if (keyBinding.action.containsKey(KeyActions.STICKY) && pressed) {
+                this.pressed += name
+            }
+        }
 
-        if (keyBinding.action.containsKey(KeyActions.STICKY) && pressed) {
-            this.pressed += name
+        return AutoCloseable {
+            synchronized(callbackPair) {
+                val current = bindings[name]
+                if (current === callbackPair && current.callback.remove(callback) && current.callback.isEmpty()) {
+                    this.pressed.remove(name)
+                }
+            }
         }
     }
 

@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -29,6 +30,13 @@ import de.bixilon.minosoft.gui.rendering.input.key.manager.binding.BindingsManag
 import de.bixilon.minosoft.gui.rendering.system.window.KeyChangeTypes
 import de.bixilon.minosoft.modding.EventPriorities
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
+import de.bixilon.minosoft.modding.loader.fabric.FabricCharInput
+import de.bixilon.minosoft.modding.loader.fabric.FabricInputEventType
+import de.bixilon.minosoft.modding.loader.fabric.FabricInputEvents
+import de.bixilon.minosoft.modding.loader.fabric.FabricKeyBindings
+import de.bixilon.minosoft.modding.loader.fabric.FabricKeyInput
+import de.bixilon.minosoft.modding.loader.fabric.FabricMouseMoveInput
+import de.bixilon.minosoft.modding.loader.fabric.FabricMouseScrollInput
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import java.util.*
 import kotlin.time.TimeSource.Monotonic.ValueTimeMark
@@ -46,12 +54,14 @@ class InputManager(
 
     private val pressed: BitEnumSet<KeyCodes> = KeyCodes.set()
     private val times: EnumMap<KeyCodes, ValueTimeMark> = EnumMap(KeyCodes::class.java)
+    private var fabricKeyBindings: AutoCloseable? = null
 
     var mousePosition: Vec2f = Vec2f.EMPTY
         private set
 
 
     fun init() {
+        check(fabricKeyBindings == null) { "Input manager is already initialized." }
         interaction.register()
 
         session.events.listen<CharInputEvent> { onChar(it.char) }
@@ -59,7 +69,17 @@ class InputManager(
         session.events.listen<MouseScrollEvent>(priority = EventPriorities.LOW) { scroll(it.offset) }
         session.events.listen<MouseMoveEvent> { onMouse(it.delta, it.position) }
 
+        fabricKeyBindings = FabricKeyBindings.attach(this)
         cameraInput.init()
+    }
+
+    fun unload() {
+        try {
+            fabricKeyBindings?.close()
+        } finally {
+            fabricKeyBindings = null
+            clear()
+        }
     }
 
     fun clear() {
@@ -70,8 +90,12 @@ class InputManager(
 
     private fun onMouse(delta: Vec2f, position: Vec2f) {
         this.mousePosition = position
-        if (handler.onMouse(position)) return
-        cameraInput.updateMouse(delta)
+        val consumed = handler.onMouse(position)
+        if (!consumed) cameraInput.updateMouse(delta)
+        FabricInputEvents.dispatch(
+            FabricInputEventType.MOUSE_MOVE,
+            FabricMouseMoveInput(context, position, delta, consumed),
+        )
     }
 
     private fun onKey(code: KeyCodes, change: KeyChangeTypes) {
@@ -81,7 +105,13 @@ class InputManager(
         val pressed = when (change) {
             KeyChangeTypes.PRESS -> true
             KeyChangeTypes.RELEASE -> false
-            KeyChangeTypes.REPEAT -> return
+            KeyChangeTypes.REPEAT -> {
+                FabricInputEvents.dispatch(
+                    FabricInputEventType.KEY,
+                    FabricKeyInput(context, code, change, handler != null),
+                )
+                return
+            }
         }
 
         val time = now()
@@ -100,14 +130,24 @@ class InputManager(
         }
 
         this.handler.checkSkip(code, pressed, handler)
+        FabricInputEvents.dispatch(
+            FabricInputEventType.KEY,
+            FabricKeyInput(context, code, change, handler != null),
+        )
     }
 
     private fun onChar(char: Int) {
+        val consumed = handler.handler != null
         handler.onChar(char)
+        FabricInputEvents.dispatch(FabricInputEventType.CHAR, FabricCharInput(context, char, consumed))
     }
 
     private fun scroll(scrollOffset: Vec2f) {
-        if (!handler.onScroll(scrollOffset)) return
+        val consumed = handler.onScroll(scrollOffset)
+        FabricInputEvents.dispatch(
+            FabricInputEventType.MOUSE_SCROLL,
+            FabricMouseScrollInput(context, scrollOffset, consumed),
+        )
     }
 
     fun areKeysDown(vararg keys: KeyCodes): Boolean {

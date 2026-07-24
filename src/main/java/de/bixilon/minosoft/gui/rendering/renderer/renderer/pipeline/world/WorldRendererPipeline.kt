@@ -16,6 +16,8 @@ package de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world
 import de.bixilon.minosoft.gui.rendering.renderer.drawable.Drawable
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererManager
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientEventPhase
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientEvents
 
 class WorldRendererPipeline(val renderer: RendererManager) : Drawable {
     private val framebuffer = renderer.context.framebuffer.world
@@ -40,9 +42,21 @@ class WorldRendererPipeline(val renderer: RendererManager) : Drawable {
 
     override fun draw() {
         framebuffer.bind()
-
-        for (element in elements) {
-            element.draw(renderer.context)
+        FabricClientEvents.dispatch(FabricClientEventPhase.BEFORE_WORLD_RENDER, renderer.context)
+        var renderFailure: Throwable? = null
+        try {
+            for (element in elements) {
+                element.draw(renderer.context)
+            }
+        } catch (throwable: Throwable) {
+            renderFailure = throwable
+            throw throwable
+        } finally {
+            try {
+                FabricClientEvents.dispatch(FabricClientEventPhase.AFTER_WORLD_RENDER, renderer.context)
+            } catch (cleanup: Throwable) {
+                renderFailure?.addSuppressed(cleanup) ?: throw cleanup
+            }
         }
     }
 }

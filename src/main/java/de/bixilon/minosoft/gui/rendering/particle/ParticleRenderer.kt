@@ -34,6 +34,8 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
+import de.bixilon.minosoft.modding.loader.fabric.FabricParticleEventContext
+import de.bixilon.minosoft.modding.loader.fabric.FabricParticleEvents
 import de.bixilon.minosoft.util.collections.floats.FloatListUtil
 import java.util.*
 
@@ -125,6 +127,7 @@ class ParticleRenderer(
             return
         }
 
+        FabricParticleEvents.dispatch(FabricParticleEventContext(session, particle))
         queue += particle
     }
 

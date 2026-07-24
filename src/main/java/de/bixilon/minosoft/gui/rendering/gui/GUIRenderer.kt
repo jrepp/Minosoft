@@ -33,6 +33,8 @@ import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.window.KeyChangeTypes
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientEventPhase
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientEvents
 import de.bixilon.minosoft.util.delegate.RenderingDelegate.observeRendering
 
 class GUIRenderer(
@@ -127,7 +129,20 @@ class GUIRenderer(
     }
 
     override fun draw() {
-        hud.draw()
+        FabricClientEvents.dispatch(FabricClientEventPhase.BEFORE_HUD_RENDER, context)
+        var hudFailure: Throwable? = null
+        try {
+            hud.draw()
+        } catch (throwable: Throwable) {
+            hudFailure = throwable
+            throw throwable
+        } finally {
+            try {
+                FabricClientEvents.dispatch(FabricClientEventPhase.AFTER_HUD_RENDER, context)
+            } catch (cleanup: Throwable) {
+                hudFailure?.addSuppressed(cleanup) ?: throw cleanup
+            }
+        }
         gui.draw()
         popper.draw()
         dragged.draw()

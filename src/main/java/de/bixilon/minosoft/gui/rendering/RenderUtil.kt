@@ -52,12 +52,22 @@ object RenderUtil {
     }
 
     fun RenderContext.unload() {
-        renderer.unload()
-        models.unload()
-        skeletal.unload()
-
-        light.unload()
-
-        queue.work()
+        var failure: Throwable? = null
+        val cleanup = listOf<() -> Unit>(
+            input::unload,
+            renderer::unload,
+            models::unload,
+            skeletal::unload,
+            light::unload,
+            { queue.work() },
+        )
+        for (action in cleanup) {
+            try {
+                action()
+            } catch (throwable: Throwable) {
+                failure?.addSuppressed(throwable) ?: run { failure = throwable }
+            }
+        }
+        failure?.let { throw it }
     }
 }
