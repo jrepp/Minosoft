@@ -63,6 +63,12 @@ interface AssetsManager {
     }
 
     /**
+     * Lists known resource locations whose path begins with [pathPrefix].
+     * Managers that cannot enumerate their backing store return an empty set.
+     */
+    fun list(pathPrefix: String = ""): Set<ResourceLocation> = emptySet()
+
+    /**
      * Loads all assets
      */
     fun load(latch: AbstractLatch? = null)

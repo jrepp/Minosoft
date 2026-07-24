@@ -38,6 +38,8 @@ abstract class FileAssetsManager(private val canUnload: Boolean = true) : Assets
         return ByteArrayInputStream(assets[path] ?: return null)
     }
 
+    override fun list(pathPrefix: String): Set<ResourceLocation> = assets.keys.filterTo(linkedSetOf()) { it.path.startsWith(pathPrefix) }
+
     override fun unload() {
         if (!canUnload) {
             return

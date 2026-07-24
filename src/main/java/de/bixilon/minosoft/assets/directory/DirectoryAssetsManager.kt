@@ -95,6 +95,8 @@ class DirectoryAssetsManager(
         return FileUtil.safeReadFile(path.filePath, false)
     }
 
+    override fun list(pathPrefix: String): Set<ResourceLocation> = assets.filterTo(linkedSetOf()) { it.path.startsWith(pathPrefix) }
+
     override fun getAssetsManager(path: ResourceLocation): AssetsManager? {
         return if (path in assets) this else null
     }

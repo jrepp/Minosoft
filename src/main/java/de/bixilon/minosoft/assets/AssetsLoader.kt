@@ -21,8 +21,12 @@ import de.bixilon.minosoft.assets.properties.manager.pack.PackProperties
 import de.bixilon.minosoft.assets.properties.version.AssetsVersionProperties
 import de.bixilon.minosoft.assets.properties.version.AssetsVersionProperty
 import de.bixilon.minosoft.assets.session.SessionAssetsManager
+import de.bixilon.minosoft.assets.session.SessionDataPackManager
 import de.bixilon.minosoft.config.profile.profiles.resources.ResourcesProfile
 import de.bixilon.minosoft.protocol.versions.Version
+import de.bixilon.minosoft.util.logging.Log
+import de.bixilon.minosoft.util.logging.LogLevels
+import de.bixilon.minosoft.util.logging.LogMessageType
 
 object AssetsLoader {
 
@@ -37,9 +41,19 @@ object AssetsLoader {
 
     private fun SessionAssetsManager.addResourcePacks(profile: ResourcesProfile) {
         for (pack in profile.assets.resourcePacks.reversed()) {
-            val manager = pack.type.creator.invoke(pack)
+            Log.log(LogMessageType.ASSETS, LogLevels.INFO) { "Mounting ${pack.type.name.lowercase()} resource pack: ${pack.path}" }
+            val manager = pack.type.create(pack)
             this += manager
         }
+    }
+
+    fun createDataPacks(profile: ResourcesProfile): SessionDataPackManager {
+        val manager = SessionDataPackManager()
+        for (pack in profile.assets.dataPacks.reversed()) {
+            Log.log(LogMessageType.ASSETS, LogLevels.INFO) { "Mounting ${pack.type.name.lowercase()} data pack: ${pack.path}" }
+            manager += pack.type.create(pack, prefix = "data")
+        }
+        return manager
     }
 
     fun create(profile: ResourcesProfile, version: Version, property: AssetsVersionProperty = AssetsVersionProperties[version] ?: throw IllegalAccessException("$version has no assets!")): SessionAssetsManager {
@@ -56,10 +70,13 @@ object AssetsLoader {
         }
 
         if (!profile.assets.disableIndexAssets) {
-            manager += IndexAssetsManager(profile, property.indexVersion, property.indexHash, profile.assets.indexAssetsTypes.toSet(), version.packFormat)
+            manager += IndexAssetsManager(profile, property.indexHash, profile.assets.indexAssetsTypes.toSet(), version.packFormat)
         }
         if (!profile.assets.disableJarAssets) {
             manager += JarAssetsManager(property.jarAssetsHash, property.clientJarHash, profile, version, property.jarAssetsTarBytes ?: JarAssetsManager.DEFAULT_TAR_BYTES)
+        }
+        for (provider in ExternalAssetProviders.snapshot()) {
+            manager += provider.create()
         }
         manager += IntegratedAssets.DEFAULT
 

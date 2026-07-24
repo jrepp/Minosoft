@@ -15,16 +15,14 @@ package de.bixilon.minosoft.assets.minecraft
 
 import com.fasterxml.jackson.databind.JsonNode
 import de.bixilon.kutil.latch.AbstractLatch
-import de.bixilon.kutil.string.StringUtil.formatPlaceholder
-import de.bixilon.kutil.url.URLUtil.toURL
 import de.bixilon.minosoft.assets.AssetsManager
 import de.bixilon.minosoft.assets.InvalidAssetException
 import de.bixilon.minosoft.assets.minecraft.MinecraftPackFormat.packFormat
 import de.bixilon.minosoft.assets.properties.manager.AssetsManagerProperties
 import de.bixilon.minosoft.assets.properties.manager.pack.PackProperties
+import de.bixilon.minosoft.assets.source.LocalAssetSource
 import de.bixilon.minosoft.assets.util.FileAssetsTypes
 import de.bixilon.minosoft.assets.util.FileAssetsUtil
-import de.bixilon.minosoft.assets.util.HashTypes
 import de.bixilon.minosoft.assets.util.InputStreamUtil.readTarArchive
 import de.bixilon.minosoft.assets.util.InputStreamUtil.readZipArchive
 import de.bixilon.minosoft.assets.util.PathUtil
@@ -34,9 +32,6 @@ import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.protocol.versions.Version
 import de.bixilon.minosoft.util.KUtil.toResourceLocation
 import de.bixilon.minosoft.util.json.Jackson
-import de.bixilon.minosoft.util.logging.Log
-import de.bixilon.minosoft.util.logging.LogLevels
-import de.bixilon.minosoft.util.logging.LogMessageType
 import org.kamranzafar.jtar.TarEntry
 import org.kamranzafar.jtar.TarHeader
 import org.kamranzafar.jtar.TarOutputStream
@@ -47,9 +42,8 @@ import java.io.InputStream
 
 
 /**
- * Integrated assets-manager, that provides the assets in the minecraft.jar file
- * First downloads the original minecraft jar, then removes all unnecessary files
- * Then stores it in another archive (just done once)
+ * Local assets-manager that imports compatible assets from an existing local
+ * client archive and stores the filtered result in Minosoft's local cache.
  */
 class JarAssetsManager(
     val jarAssetsHash: String,
@@ -76,19 +70,8 @@ class JarAssetsManager(
     }
 
     private fun readClientJar(): Map<String, ByteArray> {
-        val clientJar = FileAssetsUtil.readOrNull(clientJarHash, FileAssetsTypes.GAME, verify = profile.verify)?.let { ByteArrayInputStream(it).readZipArchive() }
-        if (clientJar != null) {
-            return clientJar
-        }
-
-        Log.log(LogMessageType.ASSETS, LogLevels.VERBOSE) { "Downloading minecraft jar ($clientJarHash)" }
-        val downloaded = FileAssetsUtil.read(profile.source.pistonObjects.formatPlaceholder(
-            "fullHash" to clientJarHash,
-            "filename" to "client.jar",
-        ).toURL().openStream(), FileAssetsTypes.GAME, compress = false, hash = HashTypes.SHA1)
-        check(downloaded.hash == clientJarHash) { "Minecraft client.jar verification failed!" }
-
-        return ByteArrayInputStream(downloaded.data).readZipArchive()
+        val local = FileAssetsUtil.readOrNull(clientJarHash, FileAssetsTypes.GAME, verify = profile.verify)
+        return ByteArrayInputStream(LocalAssetSource.require("client asset archive", clientJarHash, local)).readZipArchive()
     }
 
     override fun load(latch: AbstractLatch?) {
@@ -155,6 +138,10 @@ class JarAssetsManager(
         }
         return ByteArrayInputStream(assets[path.path] ?: return null)
     }
+
+    override fun list(pathPrefix: String): Set<ResourceLocation> = assets.keys.asSequence()
+        .filter { it.startsWith(pathPrefix) }
+        .mapTo(linkedSetOf()) { ResourceLocation(Namespaces.MINECRAFT, it) }
 
     override fun unload() {
         assets = mutableMapOf()

@@ -21,28 +21,21 @@ import de.bixilon.kutil.concurrent.worker.unconditional.UnconditionalWorker
 import de.bixilon.kutil.json.JsonUtil.asJsonObject
 import de.bixilon.kutil.latch.AbstractLatch
 import de.bixilon.kutil.primitive.LongUtil.toLong
-import de.bixilon.kutil.string.StringUtil.formatPlaceholder
-import de.bixilon.kutil.url.URLUtil.toURL
 import de.bixilon.minosoft.assets.AssetsManager
 import de.bixilon.minosoft.assets.error.AssetCorruptedError
 import de.bixilon.minosoft.assets.error.AssetNotFoundError
 import de.bixilon.minosoft.assets.minecraft.MinecraftAssetsManager
 import de.bixilon.minosoft.assets.properties.manager.AssetsManagerProperties
 import de.bixilon.minosoft.assets.properties.manager.pack.PackProperties
+import de.bixilon.minosoft.assets.source.LocalAssetSource
 import de.bixilon.minosoft.assets.util.FileAssetsTypes
 import de.bixilon.minosoft.assets.util.FileAssetsUtil
 import de.bixilon.minosoft.assets.util.FileAssetsUtil.toAssetName
-import de.bixilon.minosoft.assets.util.HashTypes
 import de.bixilon.minosoft.assets.util.InputStreamUtil.readJsonObject
 import de.bixilon.minosoft.config.profile.profiles.resources.ResourcesProfile
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
-import de.bixilon.minosoft.util.json.Jackson
-import de.bixilon.minosoft.util.logging.Log
-import de.bixilon.minosoft.util.logging.LogLevels
-import de.bixilon.minosoft.util.logging.LogMessageType
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet
 import java.io.ByteArrayInputStream
-import java.io.IOException
 import java.io.InputStream
 
 /**
@@ -50,7 +43,6 @@ import java.io.InputStream
  */
 class IndexAssetsManager(
     private val profile: ResourcesProfile,
-    private val assetsVersion: String,
     private val indexHash: String,
     private val types: Set<IndexAssetsType>,
     packFormat: Int,
@@ -62,34 +54,15 @@ class IndexAssetsManager(
     override val properties = AssetsManagerProperties(PackProperties(format = packFormat))
 
     private fun readAssetsIndex(): Map<String, Any> {
-        return FileAssetsUtil.readOrNull(indexHash, FileAssetsTypes.GAME, verify = verify)?.let { ByteArrayInputStream(it).readJsonObject() } ?: downloadAssetsIndex()
-    }
-
-    private fun downloadAssetsIndex(): Map<String, Any> {
-        Log.log(LogMessageType.ASSETS, LogLevels.VERBOSE) { "Downloading assets index ($indexHash)" }
-        val data = FileAssetsUtil.read(profile.source.mojangPackages.formatPlaceholder(
-            "fullHash" to indexHash,
-            "filename" to "$assetsVersion.json",
-        ).toURL().openStream(), FileAssetsTypes.GAME, hash = HashTypes.SHA1).data
-
-        return Jackson.MAPPER.readValue(data, Jackson.JSON_MAP_TYPE)
+        val local = FileAssetsUtil.readOrNull(indexHash, FileAssetsTypes.GAME, verify = verify)
+        return ByteArrayInputStream(LocalAssetSource.require("asset index", indexHash, local)).readJsonObject()
     }
 
     fun verifyAsset(property: AssetsProperty) {
         if (FileAssetsUtil.verify(property.hash, type = property.type.type, lazy = !verify)) {
             return
         }
-        val url = profile.source.minecraftResources.formatPlaceholder(
-            "hashPrefix" to property.hash.substring(0, 2),
-            "fullHash" to property.hash,
-        ).toURL()
-
-        Log.log(LogMessageType.ASSETS, LogLevels.VERBOSE) { "Downloading asset $url" }
-
-        val hash = FileAssetsUtil.save(url.openStream(), type = property.type.type, hash = HashTypes.SHA1)
-        if (hash != property.hash) {
-            throw IOException("Verification of asset failed (expected=${property.hash}, hash=$hash)!")
-        }
+        LocalAssetSource.require<ByteArray>("indexed asset", property.hash, null)
     }
 
     override fun load(latch: AbstractLatch?) {
@@ -147,6 +120,8 @@ class IndexAssetsManager(
         val property = assets[path] ?: return null
         return FileAssetsUtil.readOrNull(property.hash, type = property.type.type, verify = verify)?.let { ByteArrayInputStream(it) }
     }
+
+    override fun list(pathPrefix: String): Set<ResourceLocation> = assets.keys.filterTo(linkedSetOf()) { it.path.startsWith(pathPrefix) }
 
     override fun getAssetsManager(path: ResourceLocation): AssetsManager? {
         return if (path in assets) this else null

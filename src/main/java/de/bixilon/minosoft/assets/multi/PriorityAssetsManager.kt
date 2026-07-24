@@ -72,6 +72,14 @@ open class PriorityAssetsManager(
         }
     }
 
+    override fun list(pathPrefix: String): Set<ResourceLocation> {
+        val resources = linkedSetOf<ResourceLocation>()
+        for (manager in managers) {
+            resources += manager.list(pathPrefix)
+        }
+        return resources
+    }
+
     override fun load(latch: AbstractLatch?) {
         for (manager in managers) {
             if (manager.loaded) {
