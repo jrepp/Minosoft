@@ -22,26 +22,38 @@ class ContainerTransactionManager(
     val container: Container,
 ) {
     private val transactions = Int2ObjectOpenHashMap<ContainerTransaction>(10)
+    private val order = LinkedHashSet<Int>(MAX_TRANSACTIONS)
     private val id = AtomicInteger(0)
 
-    fun create(transaction: ContainerTransaction): Int {
-        container.lock.lock()
+    fun create(transaction: ContainerTransaction): Int = container.lock.locked {
         val id = this.id.getAndIncrement()
 
         while (transactions.size >= MAX_TRANSACTIONS) {
-            transactions.iterator().remove()
+            val oldest = order.first()
+            order.remove(oldest)
+            transactions.remove(oldest)
         }
 
         transactions[id] = transaction
-        container.lock.unlock()
+        order += id
 
-        return id
+        id
     }
 
-    fun clear() = container.lock.locked { this.transactions.clear() }
+    fun clear() = container.lock.locked {
+        transactions.clear()
+        order.clear()
+    }
 
-    fun acknowledge(id: Int) = container.lock.locked { transactions -= id }
-    fun revert(id: Int) = container.lock.locked { transactions.remove(id).revert() }
+    fun acknowledge(id: Int) = container.lock.locked {
+        transactions -= id
+        order -= id
+    }
+
+    fun revert(id: Int) = container.lock.locked {
+        order -= id
+        transactions.remove(id)?.revert()
+    }
 
 
     companion object {

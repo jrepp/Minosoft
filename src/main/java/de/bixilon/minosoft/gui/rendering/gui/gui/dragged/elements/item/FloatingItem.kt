@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -15,11 +16,14 @@ package de.bixilon.minosoft.gui.rendering.gui.gui.dragged.elements.item
 
 import de.bixilon.kmath.vec.vec2.f.Vec2f
 import de.bixilon.minosoft.data.container.Container
+import de.bixilon.minosoft.data.container.actions.types.DistributeContainerAction
 import de.bixilon.minosoft.data.container.actions.types.DropFloatingContainerAction
+import de.bixilon.minosoft.data.container.actions.types.SimpleContainerAction
 import de.bixilon.minosoft.data.container.actions.types.SlotCounts
 import de.bixilon.minosoft.data.container.stack.ItemStack
 import de.bixilon.minosoft.gui.rendering.gui.GUIRenderer
 import de.bixilon.minosoft.gui.rendering.gui.elements.Element
+import de.bixilon.minosoft.gui.rendering.gui.elements.items.ItemElement
 import de.bixilon.minosoft.gui.rendering.gui.elements.items.RawItemElement
 import de.bixilon.minosoft.gui.rendering.gui.gui.dragged.Dragged
 import de.bixilon.minosoft.gui.rendering.gui.input.mouse.MouseActions
@@ -34,6 +38,7 @@ class FloatingItem(
     size: Vec2f = RawItemElement.DEFAULT_SIZE,
 ) : Dragged(guiRenderer) {
     private val itemElement = RawItemElement(guiRenderer, size, stack, this)
+    private val rightDrag = RightDragDistribution()
 
     init {
         forceSilentApply()
@@ -48,10 +53,11 @@ class FloatingItem(
     }
 
     override fun onDragMouseAction(position: Vec2f, button: MouseButtons, action: MouseActions, count: Int, target: Element?) {
-        if (action != MouseActions.PRESS) {
+        if (button == MouseButtons.RIGHT && action == MouseActions.RELEASE && rightDrag.active) {
+            finishRightDrag()
             return
         }
-        if (button != MouseButtons.LEFT && button != MouseButtons.RIGHT) {
+        if (action != MouseActions.PRESS || button != MouseButtons.LEFT && button != MouseButtons.RIGHT) {
             return
         }
         if (target == null) {
@@ -59,5 +65,45 @@ class FloatingItem(
             guiRenderer.dragged.element = null
             return
         }
+        if (button == MouseButtons.RIGHT && target is ItemElement) {
+            if (!startRightDrag(target)) {
+                target.itemsElement.container.execute(SimpleContainerAction(target.slotId, SlotCounts.PART))
+            }
+        }
+    }
+
+    override fun onDragMove(position: Vec2f, target: Element?) {
+        if (!rightDrag.active || target !is ItemElement) {
+            return
+        }
+        val container = container ?: return
+        if (target.itemsElement.container !== container) {
+            return
+        }
+        if (!DistributeContainerAction.canDistribute(container, target.slotId) || !rightDrag.add(target.slotId)) {
+            return
+        }
+        container.execute(DistributeContainerAction.addRight(target.slotId))
+    }
+
+    override fun onDragEnd(position: Vec2f, target: Element?) {
+        rightDrag.cancel()
+    }
+
+    private fun startRightDrag(target: ItemElement): Boolean {
+        val container = container ?: return false
+        if (target.itemsElement.container !== container || !DistributeContainerAction.canDistribute(container, target.slotId)) {
+            return false
+        }
+
+        rightDrag.start(target.slotId)
+        container.execute(DistributeContainerAction.startRight())
+        container.execute(DistributeContainerAction.addRight(target.slotId))
+        return true
+    }
+
+    private fun finishRightDrag() {
+        val slots = rightDrag.finish()
+        container?.execute(DistributeContainerAction.endRight(slots))
     }
 }

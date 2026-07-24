@@ -14,11 +14,11 @@
 package de.bixilon.minosoft.data.container
 
 import de.bixilon.minosoft.data.container.sections.RangeSection
-import de.bixilon.minosoft.data.container.stack.ItemStack
 import de.bixilon.minosoft.data.container.types.PlayerInventory
 import de.bixilon.minosoft.data.registries.containers.ContainerType
 import de.bixilon.minosoft.data.text.ChatComponent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
+import de.bixilon.kutil.observer.map.MapObserver.Companion.observeMap
 
 abstract class InventorySynchronizedContainer(
     session: PlaySession,
@@ -32,27 +32,18 @@ abstract class InventorySynchronizedContainer(
 
     init {
         check(synchronizedSlots.count == inventorySlots.count) { "Synchronized inventory slots must have the same size!" }
-        // ToDo: Add initial slots from inventory
+        items::slots.observeMap(this) { changes ->
+            for ((slotId, _) in changes.removes) {
+                synchronizedInventorySlot(slotId)?.let { inventory.items -= it }
+            }
+            for ((slotId, stack) in changes.adds) {
+                synchronizedInventorySlot(slotId)?.let { inventory.items[it] = stack }
+            }
+        }
     }
 
-    override fun onRemove(slotId: Int, stack: ItemStack): Boolean {
-        if (slotId in synchronizedSlots) {
-            inventory.items -= slotId - synchronizedSlots.first + inventorySlots.first
-        }
-        return super.onRemove(slotId, stack)
-    }
-
-    override fun onSet(slotId: Int, previous: ItemStack, next: ItemStack): Boolean {
-        if (slotId in synchronizedSlots) {
-            inventory.items[slotId - synchronizedSlots.first + inventorySlots.first] = next
-        }
-        return super.onSet(slotId, previous, next)
-    }
-
-    override fun onAdd(slotId: Int, stack: ItemStack): Boolean {
-        if (slotId in synchronizedSlots) {
-            inventory.items[slotId - synchronizedSlots.first + inventorySlots.first] = stack
-        }
-        return super.onAdd(slotId, stack)
+    private fun synchronizedInventorySlot(slotId: Int): Int? {
+        if (slotId !in synchronizedSlots) return null
+        return slotId - synchronizedSlots.first + inventorySlots.first
     }
 }
