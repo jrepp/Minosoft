@@ -24,6 +24,7 @@ import de.bixilon.minosoft.data.world.time.DayPhases
 import de.bixilon.minosoft.data.world.time.MoonPhases
 import de.bixilon.minosoft.data.world.time.WorldTime
 import de.bixilon.minosoft.data.world.weather.WorldWeather
+import de.bixilon.minosoft.gui.rendering.sky.NightLighting
 import de.bixilon.minosoft.gui.rendering.sky.SkyRenderer
 import de.bixilon.minosoft.gui.rendering.sky.box.SkyboxRenderer.Companion.DEFAULT_SKY_COLOR
 import de.bixilon.minosoft.gui.rendering.tint.sampler.gaussian.GaussianTintSampler
@@ -123,7 +124,7 @@ class SkyboxColor(
         val base = this.baseColor?.toVec3f()?.unsafe ?: return null
         base *= 0.1
 
-        return interpolateLinear((abs(progress - 0.5f) * 2.0f), NIGHT_BASE_COLOR, base.unsafe) * moon.light
+        return interpolateLinear((abs(progress - 0.5f) * 2.0f), NIGHT_BASE_COLOR, base.unsafe) * NightLighting.moonVisibility(moon)
     }
 
     private fun clear(time: WorldTime) = when (time.phase) {
@@ -150,7 +151,9 @@ class SkyboxColor(
 
 
     fun calculate(): RGBColor? {
-        sky.context.camera.fog.state.color?.let { return it.rgb() }
+        if (sky.context.camera.fog.overridesSkyColor) {
+            sky.context.camera.fog.state.color?.let { return it.rgb() }
+        }
         val properties = sky.effects
         val time = sky.time
         if (properties.fixedTexture != null) {

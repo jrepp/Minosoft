@@ -28,6 +28,7 @@ import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.shader.AbstractShader
 import de.bixilon.minosoft.gui.rendering.shader.types.FogShader
+import de.bixilon.minosoft.gui.rendering.sky.SkyRenderer
 import de.bixilon.minosoft.gui.rendering.tint.sampler.gaussian.GaussianTintSampler
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource.Monotonic.ValueTimeMark
@@ -43,6 +44,8 @@ class FogManager(
     private var options: FogOptions? = null
 
     private var updateShaders = false
+    var overridesSkyColor = false
+        private set
 
 
     init {
@@ -61,16 +64,18 @@ class FogManager(
         val fluid = player.physics.submersion.eye
 
         return when {
-            fluid is FoggedFluid -> fluid.getFogOptions(context.session.world, player.physics.positionInfo)
-            player.effects[VisionEffect.Blindness] != null -> VisionEffect.Blindness.FOG_OPTIONS
-            player.physics.positionInfo.eyePosition.y + 3 < context.session.world.dimension.minY -> VOID_FOG
+            fluid is FoggedFluid -> fluid.getFogOptions(context.session.world, player.physics.positionInfo).also { overridesSkyColor = true }
+            player.effects[VisionEffect.Blindness] != null -> VisionEffect.Blindness.FOG_OPTIONS.also { overridesSkyColor = true }
+            player.physics.positionInfo.eyePosition.y + 3 < context.session.world.dimension.minY -> VOID_FOG.also { overridesSkyColor = true }
             // TODO: powder snow
             else -> {
+                overridesSkyColor = false
                 val end = context.session.world.view.viewDistance.toFloat() * ChunkSize.SECTION_WIDTH_X
                 val distance = end / 8.0f
 
                 val position = context.session.camera.entity.physics.positionInfo
-                val color = position.chunk?.let { sampler.getCustomColor(it, position.eyePosition, Biome::fogColor) }
+                val color = context.renderer[SkyRenderer]?.box?.color?.color
+                    ?: position.chunk?.let { sampler.getCustomColor(it, position.eyePosition, Biome::fogColor) }
 
                 FogOptions(effects.start * (end - distance), end, color = color)
             }
@@ -84,7 +89,10 @@ class FogManager(
             state.revision++
         }
         state.enabled = enabled
-        if (!enabled) return
+        if (!enabled) {
+            overridesSkyColor = false
+            return
+        }
 
         val options = getOptions(effects)
         if (this.options == options) {

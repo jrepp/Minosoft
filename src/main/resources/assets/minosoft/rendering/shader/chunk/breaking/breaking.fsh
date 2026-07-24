@@ -23,10 +23,12 @@ out lowp vec4 foutColor;
 #include "minosoft:alpha"
 #include "minosoft:fog"
 #include "minosoft:animation"
+#include "minosoft:player_light"
 
 void main() {
     applyDefaults();
     applyTint();
+    foutColor.rgb = max(foutColor.rgb, vec3(playerLightContribution(finFragmentPosition)));
     applyTexel();
 
     if (foutColor.a < 0.1f) discard;

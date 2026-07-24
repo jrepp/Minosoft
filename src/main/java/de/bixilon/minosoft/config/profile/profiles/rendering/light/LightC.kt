@@ -32,6 +32,12 @@ class LightC(profile: RenderingProfile) {
     var fullbright by BooleanDelegate(profile, false)
 
     /**
+     * Peak contribution of the short-range light centered on the player.
+     * A value of zero disables it.
+     */
+    var playerLightIntensity by FloatDelegate(profile, 0.15f, arrayOf(0.0f..0.3f))
+
+    /**
      * Ambient occlusion effect (corners are darker)
      */
     var ambientOcclusion by BooleanDelegate(profile, true)

@@ -1,6 +1,6 @@
 /*
  * Minosoft
- * Copyright (C) 2020 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -11,22 +11,21 @@
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
 
-#version 330 core
+#ifndef PLAYER_LIGHT
+#define PLAYER_LIGHT
 
-#define FOG
+uniform vec3 uPlayerLightPosition;
+uniform float uPlayerLightIntensity;
+uniform float uPlayerLightRadius;
 
-out lowp vec4 foutColor;
-
-#include "minosoft:tint"
-#include "minosoft:texture"
-#include "minosoft:alpha"
-#include "minosoft:fog"
-#include "minosoft:animation"
-#include "minosoft:player_light"
-
-void main() {
-    applyDefaults();
-    applyTint();
-    foutColor.rgb = max(foutColor.rgb, vec3(playerLightContribution(finFragmentPosition)));
-    applyTexel();
+float playerLightContribution(vec3 position) {
+    float distanceRatio = clamp(distance(position, uPlayerLightPosition) / max(uPlayerLightRadius, 0.001f), 0.0f, 1.0f);
+    float falloff = 1.0f - distanceRatio;
+    return uPlayerLightIntensity * falloff * falloff;
 }
+
+lowp vec3 applyPlayerLight(lowp vec3 light, vec3 position) {
+    return max(light, vec3(playerLightContribution(position)));
+}
+
+#endif

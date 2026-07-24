@@ -39,6 +39,7 @@ class Lightmap(private val light: RenderLight) {
         // defaultUpdater = LegacyLightmapUpdater(light.context.session)
         buffer.init()
         profile.light::fullbright.observe(this) { setLightmapUpdater() }
+        profile.light::gamma.observe(this) { force = true }
         setLightmapUpdater()
     }
 

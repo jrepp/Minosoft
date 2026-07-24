@@ -16,6 +16,7 @@
 #define FOG
 
 out lowp vec4 foutColor;
+in lowp vec3 finPlayerLightTint;
 
 
 #include "minosoft:tint"
@@ -23,9 +24,11 @@ out lowp vec4 foutColor;
 #include "minosoft:alpha"
 #include "minosoft:fog"
 #include "minosoft:animation"
+#include "minosoft:player_light"
 
 void main() {
     applyDefaults();
     applyTint();
+    foutColor.rgb = max(foutColor.rgb, finPlayerLightTint * playerLightContribution(finFragmentPosition));
     applyTexel();
 }

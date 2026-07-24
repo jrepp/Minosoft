@@ -19,6 +19,7 @@ layout (location = 2) in float vinTexture;
 layout (location = 3) in float vinLightTint; // Light (0xFF000000); 3 bytes color (0x00FFFFFF)
 
 out vec3 finFragmentPosition;
+out lowp vec3 finPlayerLightTint;
 
 uniform mat4 uViewProjectionMatrix;
 
@@ -51,12 +52,15 @@ vec3(0.60f)
 void main() {
     gl_Position = uViewProjectionMatrix * vec4(vinPosition, 1.0f);
     uint lightTint = floatBitsToUint(vinLightTint);
-    finTintColor = getRGBColor(lightTint & 0xFFFFFFu) * getLight(lightTint >> 24u);
+    vec4 materialTint = getRGBColor(lightTint & 0xFFFFFFu);
+    finTintColor = materialTint * getLight(lightTint >> 24u);
     finFragmentPosition = vinPosition;
 
 
     uint ambientUV = floatBitsToUint(vinAmbientUV);
-    finTintColor.rgb *= AMBIENT_OCCLUSION[(ambientUV >> 24u) & 0x3u];
+    vec3 ambientOcclusion = AMBIENT_OCCLUSION[(ambientUV >> 24u) & 0x3u];
+    finTintColor.rgb *= ambientOcclusion;
+    finPlayerLightTint = materialTint.rgb * ambientOcclusion;
 
     vec2 uv = uv_unpack(ambientUV);
 

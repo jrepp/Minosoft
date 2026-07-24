@@ -25,6 +25,7 @@ layout (location = 6) in float vinLight;
 
 #include "minosoft:vsh"
 #include "minosoft:light"
+#include "minosoft:player_light"
 
 
 out Vertex
@@ -47,7 +48,9 @@ void main() {
     ginVertex.minUV = uv_unpack(floatBitsToUint(vinMinUV));
 
     ginVertex.scale = vinScale;
-    ginVertex.tintColor = getRGBAColor(floatBitsToUint(vinTintColor)) * getLight(floatBitsToUint(vinLight) & 0xFFu);
+    vec4 light = getLight(floatBitsToUint(vinLight) & 0xFFu);
+    light.rgb = applyPlayerLight(light.rgb, vinPosition);
+    ginVertex.tintColor = getRGBAColor(floatBitsToUint(vinTintColor)) * light;
 
     setTexture(vinTexture);
     ginVertex.array = textureArray;

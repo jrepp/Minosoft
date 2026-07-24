@@ -27,6 +27,7 @@ import de.bixilon.minosoft.data.world.time.WorldTime
 import de.bixilon.minosoft.data.world.weather.WorldWeather
 import de.bixilon.minosoft.gui.rendering.light.LightmapBuffer
 import de.bixilon.minosoft.gui.rendering.light.updater.LightmapUpdater
+import de.bixilon.minosoft.gui.rendering.sky.NightLighting
 import de.bixilon.minosoft.gui.rendering.sky.SkyRenderer
 import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3fUtil.interpolateLinear
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
@@ -115,21 +116,22 @@ class NormalLightmapUpdater(
         return interpolateLinear((abs(progress - 0.5f) * 2.0f), base, base * 0.9f) * brightness
     }
 
-    private fun calculateSunset(brightness: Float, progress: Float, time: WorldTime): Vec3f {
+    private fun calculateSunset(brightness: Float, progress: Float): Vec3f {
         val day = calculateDayBase(brightness, 1.0f)
-        val night = calculateNightBase(brightness, 0.0f, time)
+        val night = calculateNightBase(brightness, 0.0f)
 
         return interpolateLinear(progress, day, night)
     }
 
-    private fun calculateNightBase(brightness: Float, progress: Float, time: WorldTime): Vec3f {
-        val max = NIGHT_MAX
-
-        return interpolateLinear((abs(progress - 0.6f) + 0.4f), max * 0.1f, max) * brightness * time.moonPhase.light
+    private fun calculateNightBase(brightness: Float, progress: Float): Vec3f {
+        // Moon phase controls the moon and sky appearance, not whether outdoor
+        // terrain receives any usable skylight. In particular, a new moon must
+        // not collapse the complete terrain lightmap to black.
+        return NightLighting.terrainLight(brightness, progress)
     }
 
-    private fun calculateSunrise(brightness: Float, progress: Float, time: WorldTime): Vec3f {
-        val night = calculateNightBase(brightness, 1.0f, time)
+    private fun calculateSunrise(brightness: Float, progress: Float): Vec3f {
+        val night = calculateNightBase(brightness, 1.0f)
         val day = calculateDayBase(brightness, 0.0f)
 
         return interpolateLinear(progress, night, day)
@@ -155,9 +157,9 @@ class NormalLightmapUpdater(
     private fun calculateSky(brightness: Float, weather: WorldWeather, time: WorldTime): Vec3f {
         var color = when (time.phase) {
             DayPhases.DAY -> calculateDayBase(brightness, time.progress)
-            DayPhases.NIGHT -> calculateNightBase(brightness, time.progress, time)
-            DayPhases.SUNRISE -> calculateSunrise(brightness, time.progress, time)
-            DayPhases.SUNSET -> calculateSunset(brightness, time.progress, time)
+            DayPhases.NIGHT -> calculateNightBase(brightness, time.progress)
+            DayPhases.SUNRISE -> calculateSunrise(brightness, time.progress)
+            DayPhases.SUNSET -> calculateSunset(brightness, time.progress)
         }
         if (weather.thunder > 0.0f) {
             color = calculateThunder(color, brightness, weather.thunder)
@@ -228,7 +230,6 @@ class NormalLightmapUpdater(
 
     private companion object {
         val DAY_BASE = Vec3f(0.98f)
-        val NIGHT_MAX = Vec3f(0.10f, 0.10f, 0.30f)
         val THUNDER_BASE = Vec3f(0.55f, 0.35f, 0.58f)
         val THUNDER_BRIGHT = Vec3f(0.65f, 0.4f, 0.7f)
         val RAIN_BASE = Vec3f(0.4f, 0.4f, 0.8f)

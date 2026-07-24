@@ -30,6 +30,7 @@ import de.bixilon.minosoft.gui.rendering.camera.shaking.CameraShaking
 import de.bixilon.minosoft.gui.rendering.events.CameraMatrixChangeEvent
 import de.bixilon.minosoft.gui.rendering.events.CameraPositionChangeEvent
 import de.bixilon.minosoft.gui.rendering.shader.types.CameraPositionShader
+import de.bixilon.minosoft.gui.rendering.shader.types.PlayerLightShader
 import de.bixilon.minosoft.gui.rendering.shader.types.ViewProjectionShader
 import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3dUtil.blockPosition
 import de.bixilon.minosoft.protocol.network.session.play.tick.Ticks.Companion.ticks
@@ -107,6 +108,7 @@ class MatrixHandler(
             calculateProjectionMatrix(calculateFOV(), Vec2f(it))
             invalidate()
         }
+        session.profiles.rendering.light::playerLightIntensity.observe(this) { invalidate() }
         draw() // set initial values
     }
 
@@ -151,6 +153,7 @@ class MatrixHandler(
         ))
 
         updateShaders(useMatrixPosition)
+        updatePlayerLightShaders(Vec3f(session.player.renderInfo.eyePosition - context.camera.offset.offset))
         invalid = false
     }
 
@@ -172,6 +175,18 @@ class MatrixHandler(
             if (shader is CameraPositionShader) {
                 shader.cameraPosition = cameraPosition
             }
+        }
+    }
+
+    private fun updatePlayerLightShaders(position: Vec3f) {
+        val intensity = session.profiles.rendering.light.playerLightIntensity
+            .takeIf(Float::isFinite)
+            ?.coerceIn(0.0f, 0.3f)
+            ?: 0.0f
+        for (shader in context.system.shader) {
+            if (shader !is PlayerLightShader) continue
+            shader.playerLightPosition = position
+            shader.playerLightIntensity = intensity
         }
     }
 

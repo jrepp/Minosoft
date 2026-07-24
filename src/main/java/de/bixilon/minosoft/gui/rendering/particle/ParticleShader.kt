@@ -20,6 +20,7 @@ import de.bixilon.minosoft.gui.rendering.light.LightmapBuffer
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.types.FogShader
 import de.bixilon.minosoft.gui.rendering.shader.types.LightShader
+import de.bixilon.minosoft.gui.rendering.shader.types.PlayerLightShader
 import de.bixilon.minosoft.gui.rendering.shader.types.TextureShader
 import de.bixilon.minosoft.gui.rendering.shader.types.ViewProjectionShader
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
@@ -28,12 +29,15 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 
 class ParticleShader(
     native: NativeShader,
-) : Shader(native), TextureShader, LightShader, ViewProjectionShader, FogShader {
+) : Shader(native), TextureShader, LightShader, PlayerLightShader, ViewProjectionShader, FogShader {
     override var textures: TextureManager by textureManager()
     override val lightmap: LightmapBuffer by lightmap()
     override var viewProjectionMatrix: Mat4f by viewProjectionMatrix()
     override var fog: FogManager by fog()
     override var cameraPosition: Vec3f by cameraPosition()
+    override var playerLightPosition: Vec3f by playerLightPosition()
+    override var playerLightIntensity: Float by playerLightIntensity()
+    override var playerLightRadius: Float by playerLightRadius()
 
     var cameraRight by uniform(ShaderUniforms.CAMERA_RIGHT, Vec3f(), NativeShader::setVec3f)
     var cameraUp by uniform(ShaderUniforms.CAMERA_UP, Vec3f(), NativeShader::setVec3f)
