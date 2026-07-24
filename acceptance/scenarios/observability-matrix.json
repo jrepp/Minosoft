@@ -1,0 +1,19 @@
+{
+  "name": "observability-matrix",
+  "matrix": {
+    "role": ["client", "server"]
+  },
+  "repeat": 5,
+  "steps": [
+    {
+      "name": "${role} metrics",
+      "type": "request",
+      "role": "${role}",
+      "operation": "metrics.snapshot",
+      "assert": [
+        { "pointer": "/schema", "equals": 1 },
+        { "pointer": "/operations", "exists": true }
+      ]
+    }
+  ]
+}

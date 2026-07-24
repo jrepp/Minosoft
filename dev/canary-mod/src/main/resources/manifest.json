@@ -1,0 +1,5 @@
+{
+  "name": "hot_reload_canary",
+  "version": "1.0.0",
+  "main": "de.bixilon.minosoft.dev.canary.HotReloadCanary"
+}

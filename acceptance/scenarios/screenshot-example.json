@@ -1,0 +1,13 @@
+{
+  "name": "screenshot-example",
+  "steps": [
+    {
+      "name": "stable-frame",
+      "type": "screenshot",
+      "baseline": "../baselines/stable-frame.png",
+      "pixelThreshold": 8,
+      "maxChangedRatio": 0.01,
+      "maxMeanError": 1.0
+    }
+  ]
+}

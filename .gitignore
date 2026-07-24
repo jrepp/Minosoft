@@ -13,6 +13,17 @@ hs_err_pid*.log
 # Ignore Gradle build output directory
 build
 
+# Local Minecraft server used by play.sh
+server/
+
+# Runtime state and logs used by play.sh
+.run/
+
+# Modpack manifests are tracked; resolved third-party artifacts are not
+modpacks/**/*.jar
+modpacks/**/*.zip
+modpacks/**/*.mrpack
+
 it/
 
 .*~

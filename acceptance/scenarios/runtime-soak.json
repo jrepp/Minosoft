@@ -1,0 +1,42 @@
+{
+  "name": "runtime-soak",
+  "duration": "15m",
+  "jfr": {
+    "mode": "slow",
+    "slowThreshold": "10m"
+  },
+  "steps": [
+    {
+      "name": "both endpoints remain ready",
+      "type": "wait",
+      "predicate": "both.ready",
+      "timeout": "15s"
+    },
+    {
+      "name": "client state remains readable",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.player" },
+      "assert": [
+        { "pointer": "/ready", "equals": true },
+        { "pointer": "/player/health", "min": 0 }
+      ]
+    },
+    {
+      "name": "server state remains readable",
+      "type": "request",
+      "role": "server",
+      "operation": "state.sample",
+      "body": { "view": "server.summary" },
+      "assert": [
+        { "pointer": "/ready", "equals": true }
+      ]
+    },
+    {
+      "name": "sampling interval",
+      "type": "sleep",
+      "duration": "5s"
+    }
+  ]
+}

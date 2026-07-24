@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -69,6 +70,7 @@ val ikonliVersion = getProperty("ikonli.version")
 val nettyVersion = getProperty("netty.version")
 val jacksonVersion = getProperty("jackson.version")
 val kutilVersion = getProperty("kutil.version")
+val fabricLoaderVersion = getProperty("fabric.loader.version")
 
 val updates = properties["minosoft.updates"]?.toBoolean() ?: false
 
@@ -79,6 +81,7 @@ logger.info("Building for ${os.name.lowercase()}, ${architecture.name.lowercase(
 
 repositories {
     mavenCentral()
+    maven("https://maven.fabricmc.net/")
 }
 
 buildscript {
@@ -370,6 +373,7 @@ fun DependencyHandler.lwjgl(name: String? = null, classpath: Boolean = true) {
 }
 
 dependencies {
+    implementation(project(":debug-core"))
     implementation("org.slf4j", "slf4j-api", "2.0.18")
     implementation("dnsjava", "dnsjava", "3.6.5")
     implementation("com.github.ajalt.clikt", "clikt", "5.1.0")
@@ -380,6 +384,9 @@ dependencies {
     implementation("org.kamranzafar", "jtar", "2.3")
     implementation("it.unimi.dsi", "fastutil-core", "8.5.18")
     implementation("org.xeustechnologies", "jcl-core", "2.8")
+    implementation("net.fabricmc", "fabric-loader", fabricLoaderVersion) {
+        isTransitive = false
+    }
 
     compileOnly("org.jspecify", "jspecify", "1.0.0")
 
@@ -564,6 +571,33 @@ tasks.withType<JavaCompile> {
 
 application {
     mainClass.set("de.bixilon.minosoft.Minosoft")
+}
+
+// Development-only native mod fixture. Its source and manifest are tracked, but
+// the play parent publishes each built JAR into the out-of-source artifact store.
+val canaryMod = sourceSets.create("canaryMod") {
+    resources.srcDir("dev/canary-mod/src/main/resources")
+    compileClasspath += sourceSets.main.get().output + configurations.compileClasspath.get()
+    runtimeClasspath += output + compileClasspath
+}
+kotlin.sourceSets.named(canaryMod.name) {
+    kotlin.srcDir("dev/canary-mod/src/main/kotlin")
+}
+tasks.named(canaryMod.classesTaskName) {
+    dependsOn(tasks.named(sourceSets.main.get().classesTaskName))
+}
+val canaryModJar = tasks.register<Jar>("canaryModJar") {
+    group = "development"
+    description = "Builds the native hot-reload canary mod for publication by play.sh."
+    archiveFileName.set("hot-reload-canary.jar")
+    destinationDirectory.set(layout.buildDirectory.dir("dev-mods"))
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+    from(canaryMod.output)
+}
+
+tasks.test {
+    dependsOn(canaryModJar, ":play-util:installDist")
 }
 
 var destination: File? = null

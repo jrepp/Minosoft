@@ -1,6 +1,6 @@
 /*
  * Minosoft
- * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -11,16 +11,29 @@
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
 
-rootProject.name = "minosoft"
-include("debug-core")
-include("play-util")
-project(":play-util").projectDir = file("util/play")
-include("debug-server-fabric")
+plugins {
+    application
+}
 
-pluginManagement {
-    repositories {
-        gradlePluginPortal()
-        mavenCentral()
-        maven("https://maven.fabricmc.net/")
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation(project(":debug-core"))
+}
+
+sourceSets {
+    main {
+        java.setSrcDirs(listOf("."))
+        java.include("Play.java")
     }
+}
+
+application {
+    mainClass.set("Play")
+}
+
+java {
+    toolchain.languageVersion.set(JavaLanguageVersion.of(17))
 }

@@ -1,0 +1,58 @@
+{
+  "name": "runtime-smoke",
+  "steps": [
+    {
+      "name": "server is game-ready",
+      "type": "wait",
+      "predicate": "server.game-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "client lifecycle state",
+      "type": "request",
+      "role": "client",
+      "operation": "core.status",
+      "assert": [
+        { "pointer": "/ready", "equals": true },
+        { "pointer": "/renderReady", "equals": true },
+        { "pointer": "/frame", "min": 1 }
+      ]
+    },
+    {
+      "name": "server lifecycle state",
+      "type": "request",
+      "role": "server",
+      "operation": "core.status",
+      "assert": [
+        { "pointer": "/ready", "equals": true },
+        { "pointer": "/worldCount", "min": 1 }
+      ]
+    },
+    {
+      "name": "client metrics",
+      "type": "request",
+      "role": "client",
+      "operation": "metrics.snapshot",
+      "assert": [
+        { "pointer": "/runtime/renderReady", "equals": true },
+        { "pointer": "/latencyBucketUpperBoundsNanos/0", "exists": true }
+      ]
+    },
+    {
+      "name": "server metrics",
+      "type": "request",
+      "role": "server",
+      "operation": "metrics.snapshot",
+      "assert": [
+        { "pointer": "/runtime/ready", "equals": true },
+        { "pointer": "/latencyBucketUpperBoundsNanos/0", "exists": true }
+      ]
+    }
+  ]
+}
