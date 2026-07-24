@@ -16,6 +16,7 @@ package de.bixilon.minosoft.modding.loader
 import de.bixilon.kutil.file.PathUtil.div
 import de.bixilon.minosoft.modding.loader.mod.source.ModSource
 import de.bixilon.minosoft.terminal.RunConfiguration
+import java.nio.file.Path
 
 object ModOptions {
     var disabled = false
@@ -23,4 +24,7 @@ object ModOptions {
     var ignorePhases = setOf<String>()
     var ignoreMods = setOf<String>()
     val additional: MutableMap<String, MutableSet<ModSource>> = mutableMapOf()
+    var fabricPack: Path? = null
+    var trajectory: String = "default"
+    var hotReloadGeneration: Int = 1
 }

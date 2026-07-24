@@ -74,6 +74,10 @@ class RenderContext(
 
     var profiler: StackedProfiler? = null
 
+    @Volatile
+    var frameNumber: Long = 0
+        internal set
+
     init {
         profile.experimental::fps.observe(this, true) { renderStats = if (it) ExperimentalRenderStats() else RenderStats() }
     }
