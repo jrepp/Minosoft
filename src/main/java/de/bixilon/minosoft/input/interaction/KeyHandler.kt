@@ -23,18 +23,22 @@ abstract class KeyHandler {
 
     private fun queueTick() {
         var skip = true // first tick is scheduled instantly, avoid double ticking
-        val task = RepeatedTask(TickUtil.INTERVAL, priority = ThreadPool.Priorities.HIGH) {
+        lateinit var scheduled: RepeatedTask
+        scheduled = RepeatedTask(TickUtil.INTERVAL, priority = ThreadPool.Priorities.HIGH) {
             if (skip) {
                 skip = false
                 return@RepeatedTask
             }
-            if (task == null) return@RepeatedTask
-            onTick()
+            synchronized(this) {
+                if (task !== scheduled) return@RepeatedTask
+                onTick()
+            }
         }
-        this.task = task
-        TaskScheduler += task
+        this.task = scheduled
+        TaskScheduler += scheduled
     }
 
+    @Synchronized
     fun press() {
         val task = task
         if (task != null) return
@@ -42,6 +46,7 @@ abstract class KeyHandler {
         queueTick()
     }
 
+    @Synchronized
     fun release() {
         val task = this.task ?: return
         TaskScheduler -= task

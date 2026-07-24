@@ -13,12 +13,12 @@
 
 package de.bixilon.minosoft.input.interaction
 
-import de.bixilon.kutil.environment.Environment
-import de.bixilon.kutil.time.TimeUtil.sleep
-import de.bixilon.minosoft.input.interaction.KeyHandlerUtil.awaitTicks
 import org.testng.AssertJUnit.assertEquals
+import org.testng.AssertJUnit.assertTrue
 import org.testng.annotations.Test
-import kotlin.time.Duration.Companion.milliseconds
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @Test(groups = ["interaction"])
 class KeyHandlerTest {
@@ -26,33 +26,30 @@ class KeyHandlerTest {
     fun `single press`() {
         val handler = TestKeyHandler()
         handler.press()
-        assertEquals(handler.actions.toList(), listOf(
+        assertEquals(handler.actions(), listOf(
             TestKeyHandler.Actions.PRESS,
         ))
         handler.release()
     }
 
     fun `tick once`() {
-        if (Environment.isInCI()) return // TODO: Broken there???
-        val handler = TestKeyHandler()
+        val handler = TestKeyHandler(expectedTicks = 1)
         handler.press()
-        handler.awaitTicks(1)
-        sleep(5.milliseconds) // no clue
-        assertEquals(handler.actions.toList(), listOf(
+        assertTrue(handler.awaitExpectedTicks())
+        handler.release()
+        assertEquals(handler.actions(), listOf(
             TestKeyHandler.Actions.PRESS,
             TestKeyHandler.Actions.TICK,
+            TestKeyHandler.Actions.RELEASE,
         ))
-        handler.release()
     }
 
     fun `tick twice`() {
-        if (Environment.isInCI()) return // TODO: Broken there???
-        val handler = TestKeyHandler()
+        val handler = TestKeyHandler(expectedTicks = 2)
         handler.press()
-        handler.awaitTicks(2)
-        sleep(5.milliseconds) // no clue
+        assertTrue(handler.awaitExpectedTicks())
         handler.release()
-        assertEquals(handler.actions.toList(), listOf(
+        assertEquals(handler.actions(), listOf(
             TestKeyHandler.Actions.PRESS,
             TestKeyHandler.Actions.TICK,
             TestKeyHandler.Actions.TICK,
@@ -64,19 +61,24 @@ class KeyHandlerTest {
         val handler = TestKeyHandler()
         handler.press()
         handler.release()
-        assertEquals(handler.actions.toList(), listOf(
+        assertEquals(handler.actions(), listOf(
             TestKeyHandler.Actions.PRESS,
             TestKeyHandler.Actions.RELEASE,
         ))
     }
 
 
-    class TestKeyHandler : KeyHandler() {
-        val actions: MutableList<Actions> = mutableListOf()
+    class TestKeyHandler(expectedTicks: Int = 0) : KeyHandler() {
+        private val actions: MutableList<Actions> = Collections.synchronizedList(mutableListOf())
+        private val expectedTicks = CountDownLatch(expectedTicks)
 
         enum class Actions {
             PRESS, TICK, RELEASE,
         }
+
+        fun actions(): List<Actions> = synchronized(actions) { actions.toList() }
+
+        fun awaitExpectedTicks(): Boolean = expectedTicks.await(2L, TimeUnit.SECONDS)
 
         override fun onPress() {
             this.actions += Actions.PRESS
@@ -88,6 +90,7 @@ class KeyHandlerTest {
 
         override fun onTick() {
             this.actions += Actions.TICK
+            expectedTicks.countDown()
         }
     }
 }
