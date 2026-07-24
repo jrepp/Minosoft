@@ -21,4 +21,10 @@ import de.bixilon.minosoft.util.Initializable
 abstract class ModMain : Initializable {
     val assets: AssetsManager = unsafeNull()
     val logger: ModLogger = unsafeNull()
+
+    /**
+     * Releases every listener, callback, screen, task, and resource owned by this
+     * mod generation. Implementations must be idempotent.
+     */
+    open fun unload() = Unit
 }

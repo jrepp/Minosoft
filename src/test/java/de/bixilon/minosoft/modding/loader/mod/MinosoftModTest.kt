@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -24,8 +25,19 @@ import de.bixilon.minosoft.terminal.RunConfiguration
 import java.io.FileOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 internal class MinosoftModTest {
+
+    private class UnloadTrackingMain : ModMain() {
+        var unloaded = false
+
+        override fun init() = Unit
+
+        override fun unload() {
+            unloaded = true
+        }
+    }
 
     private fun createMod(): MinosoftMod {
         val zip = RunConfiguration.temp.resolve("test.zip").toFile()
@@ -121,5 +133,44 @@ internal class MinosoftModTest {
 
 
         assertEquals(list.sorted(), mutableListOf(dependency, c, b))
+    }
+
+    @Test
+    fun `removing a mod invokes its owned unload lifecycle`() {
+        val main = UnloadTrackingMain()
+        val mod = createMod().apply {
+            manifest = ModManifest("unloadable", version = "1", main = "")
+            this.main = main
+        }
+        val list = ModList().apply { this += mod }
+
+        list -= mod
+
+        assertTrue(main.unloaded)
+        assertTrue("unloadable" !in list)
+    }
+
+    @Test
+    fun `clearing the mod list unloads every generation`() {
+        val firstMain = UnloadTrackingMain()
+        val secondMain = UnloadTrackingMain()
+        val first = createMod().apply {
+            manifest = ModManifest("first", version = "1", main = "")
+            main = firstMain
+        }
+        val second = createMod().apply {
+            manifest = ModManifest("second", version = "1", main = "")
+            main = secondMain
+        }
+        val list = ModList().apply {
+            this += first
+            this += second
+        }
+
+        list.clear()
+
+        assertTrue(firstMain.unloaded)
+        assertTrue(secondMain.unloaded)
+        assertTrue(list.none())
     }
 }

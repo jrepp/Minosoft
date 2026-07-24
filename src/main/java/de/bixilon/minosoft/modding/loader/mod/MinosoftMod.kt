@@ -33,13 +33,31 @@ class MinosoftMod(
 
 
     fun unload() {
-        try {
-            main = null
-            classLoader.unloadAll()
-            assetsManager?.unload()
-        } catch (error: Throwable) {
-            error.printStackTrace()
+        var failure: Throwable? = null
+
+        fun unloadResource(action: () -> Unit) {
+            try {
+                action()
+            } catch (error: Throwable) {
+                val previous = failure
+                if (previous == null) {
+                    failure = error
+                } else {
+                    previous.addSuppressed(error)
+                }
+            }
         }
+
+        val main = main
+        this.main = null
+        unloadResource { main?.unload() }
+        unloadResource { classLoader.unloadAll() }
+
+        val assetsManager = assetsManager
+        this.assetsManager = null
+        unloadResource { assetsManager?.unload() }
+
+        failure?.let { throw it }
     }
 
     override fun compareTo(other: MinosoftMod): Int {

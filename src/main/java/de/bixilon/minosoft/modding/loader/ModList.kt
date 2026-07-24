@@ -76,8 +76,10 @@ class ModList(
 
     @Synchronized
     fun clear() {
-        this.mods.clear()
-        this.virtual.clear()
+        val loaded = this.mods.values.distinct().toList()
+        for (mod in loaded) {
+            remove(mod)
+        }
     }
 
     override fun iterator(): Iterator<MinosoftMod> {
