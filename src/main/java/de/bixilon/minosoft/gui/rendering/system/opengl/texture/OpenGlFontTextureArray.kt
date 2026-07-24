@@ -42,6 +42,13 @@ class OpenGlFontTextureArray(
 
 
     override fun upload(latch: AbstractLatch?) {
+        val arraySize = OpenGlTextureSizing.arraySize(RESOLUTION, textures.map { it.size })
+        val width = arraySize.x
+        val height = arraySize.y
+        val maximumSize = gl { glGetInteger(GL_MAX_TEXTURE_SIZE) }
+        require(width <= maximumSize && height <= maximumSize) {
+            "Font texture array ${width}x$height exceeds the OpenGL maximum texture size $maximumSize"
+        }
         this.handle = OpenGlTextureUtil.createTextureArray(index, 0)
 
         // Texture alpha format is also available in OpenGL compatibility profile and WebGL but was removed in OpenGL core profile. An alternative is to rely on texture red format and texture swizzle as shown with the following code samples. (see https://www.g-truc.net/post-0734.html)
@@ -54,13 +61,13 @@ class OpenGlFontTextureArray(
             gl { glTexParameteriv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_SWIZZLE_RGBA, intArrayOf(GL_ONE, GL_ONE, GL_ONE, GL_RED)) }
         }
 
-        gl { glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, RESOLUTION, RESOLUTION, textures.size, 0, GL_RGBA, GL_UNSIGNED_BYTE, null as ByteBuffer?) }
+        gl { glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, width, height, textures.size, 0, GL_RGBA, GL_UNSIGNED_BYTE, null as ByteBuffer?) }
 
         var index = 0
         for (texture in textures) {
             val size = texture.size
 
-            val uvEnd = if (size.x == resolution && size.y == resolution) null else Vec2f(size) / resolution
+            val uvEnd = if (size.x == width && size.y == height) null else Vec2f(size.x.toFloat() / width, size.y.toFloat() / height)
 
             texture.renderData = OpenGlTextureData(this.index, index++, uvEnd)
 
@@ -73,7 +80,7 @@ class OpenGlFontTextureArray(
             gl { glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, index - 1, buffer.size.x, buffer.size.y, 1, buffer.glFormat, buffer.glType, buffer.data) }
         }
 
-        Log.log(LogMessageType.RENDERING, LogLevels.VERBOSE) { "Loaded ${textures.size} font textures" }
+        Log.log(LogMessageType.RENDERING, LogLevels.VERBOSE) { "Loaded ${textures.size} font textures into a ${width}x$height array" }
         state = TextureArrayStates.UPLOADED
     }
 

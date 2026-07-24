@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -45,7 +46,27 @@ class AnimationPropertiesTest {
             AnimationProperties.Frame(0.2.seconds, 1),
             AnimationProperties.Frame(0.2.seconds, 2),
             AnimationProperties.Frame(0.2.seconds, 3),
-        ), 4, Vec2i(16, 16)))
+        ), 4, Vec2i(16, 16), 1))
+    }
+
+    fun `honor explicit frame geometry and default object frame time`() {
+        val properties = AnimationProperties(
+            width = 16,
+            height = 8,
+            frameTime = 4,
+            frames = listOf(mapOf("index" to 3)),
+        )
+
+        val data = properties.create(Vec2i(32, 16))
+
+        assertEquals(data.frames, listOf(AnimationProperties.Frame(0.2.seconds, 3)))
+        assertEquals(data.textures, 4)
+        assertEquals(data.size, Vec2i(16, 8))
+        assertEquals(data.columns, 2)
+        assertEquals(data.origin(0), Vec2i(0, 0))
+        assertEquals(data.origin(1), Vec2i(16, 0))
+        assertEquals(data.origin(2), Vec2i(0, 8))
+        assertEquals(data.origin(3), Vec2i(16, 8))
 
     }
 }

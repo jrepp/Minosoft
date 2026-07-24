@@ -53,7 +53,7 @@ abstract class TextureManager {
         skins.initialize(session.account, session.assets)
     }
 
-    fun use(shader: TextureShader, name: String = ShaderUniforms.TEXTURES) {
+    open fun use(shader: TextureShader, name: String = ShaderUniforms.TEXTURES) {
         static.use(shader, name)
         dynamic.use(shader, name)
         font.use(shader, name)

@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -23,6 +24,7 @@ import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Compan
 import de.bixilon.minosoft.gui.rendering.system.opengl.error.MemoryLeakException
 import de.bixilon.minosoft.gui.rendering.system.opengl.shader.OpenGlNativeShader
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureUtil
+import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureSizing
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureUtil.glFormat
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureUtil.glType
 import de.bixilon.minosoft.util.logging.Log
@@ -40,15 +42,40 @@ class OpenGlDynamicTextureArray(
     val system: OpenGlRenderSystem,
     val index: Int = system.nextTextureIndex++,
     initialSize: Int = 32,
-    val resolution: Int,
+    resolution: Int,
     mipmaps: Int,
 ) : DynamicTextureArray(system.context, initialSize, mipmaps) {
-    private val empty = IntArray(resolution * resolution) { 0x00 }
+    var resolution = resolution.also {
+        require(it in 1..MAX_DYNAMIC_TEXTURE_RESOLUTION) {
+            "Dynamic texture resolution must be between 1 and $MAX_DYNAMIC_TEXTURE_RESOLUTION: $it"
+        }
+    }
+        private set
+    private var empty = IntArray(Math.multiplyExact(resolution, resolution))
     private var handle = -1
 
     override fun upload(index: Int, texture: DynamicTexture) {
         if (Thread.currentThread() != context.thread) {
             context.queue += { upload(index, texture) }
+            return
+        }
+
+        val data = texture.data ?: throw IllegalArgumentException("No texture data?")
+        val requiredResolution = maxOf(data.size.x, data.size.y)
+        if (requiredResolution > resolution) {
+            val newResolution = OpenGlTextureSizing.growPowerOfTwo(resolution, requiredResolution)
+            val maximumSize = gl { glGetInteger(GL_MAX_TEXTURE_SIZE) }
+            if (newResolution > maximumSize || newResolution > MAX_DYNAMIC_TEXTURE_RESOLUTION) {
+                Log.log(LogMessageType.LOADING, LogLevels.WARN) {
+                    "Dynamic texture $texture requires ${data.size}, exceeding the supported maximum ${minOf(maximumSize, MAX_DYNAMIC_TEXTURE_RESOLUTION)}"
+                }
+                texture.state = DynamicTextureState.ERROR
+                return
+            }
+            Log.log(LogMessageType.LOADING) { "Growing dynamic texture array from ${resolution}x$resolution to ${newResolution}x$newResolution for $texture" }
+            resolution = newResolution
+            empty = IntArray(resolution * resolution)
+            reload()
             return
         }
 
@@ -63,10 +90,6 @@ class OpenGlDynamicTextureArray(
 
     private fun unsafeUpload(index: Int, texture: DynamicTexture) {
         val data = texture.data ?: throw IllegalArgumentException("No texture data?")
-        if (data.size.x > resolution || data.size.y > resolution) {
-            Log.log(LogMessageType.LOADING, LogLevels.WARN) { "Dynamic texture is too big: $texture" }
-        }
-
         for ((level, buffer) in data.collect().withIndex()) {
             if (data.size.x != resolution || data.size.y != resolution) {
                 // clear first
@@ -91,6 +114,7 @@ class OpenGlDynamicTextureArray(
             val texture = textureReference?.get() ?: continue
             if (texture.data == null) continue
             unsafeUpload(index, texture)
+            texture.state = DynamicTextureState.LOADED
         }
         this.handle = handle
 
@@ -122,5 +146,9 @@ class OpenGlDynamicTextureArray(
 
     override fun createTexture(identifier: Any, index: Int): DynamicTexture {
         return OpenGlDynamicTexture(identifier, createShaderIdentifier(index = index))
+    }
+
+    private companion object {
+        const val MAX_DYNAMIC_TEXTURE_RESOLUTION = 4_096
     }
 }
