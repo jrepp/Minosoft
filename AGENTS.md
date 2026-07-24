@@ -22,13 +22,15 @@ code.
 - Preserve Minosoft's multi-version and headless behavior unless the task
   explicitly changes it.
 - Preserve valid copyright and license notices. For each new, nontrivial file
-  whose format supports a header, credit its actual author; use
-  `Copyright (C) 2026 Jacob Repp` for Jacob Repp's 2026 work. In an existing
-  file, add a separate `Copyright (C) 2026 Jacob Repp` line only for a
-  substantial, original contribution such as a new feature, coherent
-  implementation, or major test/documentation body. Do not add or extend a
-  copyright line for a small patch, mechanical change, or minor refactor, and
-  never replace another holder's valid notice.
+  whose format supports a header, copy the nearest applicable project GPL
+  license notice and credit its actual author; use `Copyright (C) 2026 Jacob
+  Repp` for Jacob Repp's 2026 work. Cover comment-hostile files through the
+  nearest directory-level or project-level license notice instead of inserting
+  invalid syntax. In an existing file, add a separate `Copyright (C) 2026 Jacob
+  Repp` line only for a substantial, original contribution such as a new
+  feature, coherent implementation, or major test/documentation body. Do not
+  add or extend a copyright line for a small patch, mechanical change, or minor
+  refactor, and never replace another holder's valid notice.
 - Do not hand-edit generated output or local runtime state (`build/`, `.gradle/`,
   `.run/`, `it/`, or `server/`) unless the task explicitly targets it.
 - Keep pack definitions under `modpacks/`; keep third-party artifacts and
