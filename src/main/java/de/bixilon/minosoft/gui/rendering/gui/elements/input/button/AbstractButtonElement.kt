@@ -96,6 +96,12 @@ abstract class AbstractButtonElement(
     override val canFocus: Boolean
         get() = !disabled
 
+    var text: Any
+        get() = textElement.text
+        set(value) {
+            textElement.text = value
+        }
+
 
     init {
         size = textElement.size + Vec2f(TEXT_PADDING * 2, TEXT_PADDING * 2)
