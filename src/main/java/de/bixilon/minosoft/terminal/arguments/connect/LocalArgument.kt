@@ -18,12 +18,14 @@ import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.defaultLazy
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.enum
+import com.github.ajalt.clikt.parameters.types.long
 import de.bixilon.kutil.enums.ValuesEnum
 import de.bixilon.kutil.enums.ValuesEnum.Companion.names
 import de.bixilon.minosoft.data.accounts.Account
 import de.bixilon.minosoft.local.LocalConnection
 import de.bixilon.minosoft.local.generator.ChunkGenerator
 import de.bixilon.minosoft.local.generator.DebugGenerator
+import de.bixilon.minosoft.local.generator.TechRebornGenerator
 import de.bixilon.minosoft.local.generator.VoidGenerator
 import de.bixilon.minosoft.local.generator.flat.FlatGenerator
 import de.bixilon.minosoft.local.storage.DebugStorage
@@ -38,14 +40,19 @@ import de.bixilon.minosoft.util.logging.LogMessageType
 
 class LocalArgument : OptionGroup(), AutoConnectFactory {
     val generator by option("--world-generator").enum<WorldGenerators>().default(WorldGenerators.DEFAULT)
+    val seed by option("--world-seed").long().default(TechRebornGenerator.DEFAULT_SEED)
     val storage by option("--world-storage").enum<WorldStorages>().defaultLazy { if (generator == WorldGenerators.DEBUG) WorldStorages.DEBUG else WorldStorages.MEMORY }
 
 
     override fun create(version: Version, account: Account): PlaySession {
         val version = if (version == Versions.AUTOMATIC) Versions["1.20.4"]!! else version
         Log.log(LogMessageType.AUTO_CONNECT, LogLevels.INFO) { "Starting local world (generator=${generator.name.lowercase()}, storage=${storage.name.lowercase()}) with version $version using account $account..." }
+        val generatorFactory: (PlaySession) -> ChunkGenerator = when (generator) {
+            WorldGenerators.TECH_REBORN -> { session -> TechRebornGenerator(session, seed) }
+            else -> generator.factory
+        }
         return PlaySession(
-            connection = LocalConnection(generator.factory, storage.factory),
+            connection = LocalConnection(generatorFactory, storage.factory),
             account = account,
             version = version,
         )
@@ -54,6 +61,7 @@ class LocalArgument : OptionGroup(), AutoConnectFactory {
     enum class WorldGenerators(val factory: (PlaySession) -> ChunkGenerator) {
         DEBUG(::DebugGenerator),
         FLAT(FlatGenerator.Companion::default),
+        TECH_REBORN(::TechRebornGenerator),
         VOID({ VoidGenerator })
         ;
 
