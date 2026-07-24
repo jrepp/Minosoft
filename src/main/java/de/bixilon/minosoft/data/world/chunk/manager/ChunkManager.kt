@@ -28,6 +28,9 @@ import de.bixilon.minosoft.data.world.chunk.update.chunk.ChunkLightUpdate
 import de.bixilon.minosoft.data.world.chunk.update.chunk.ChunkUnloadUpdate
 import de.bixilon.minosoft.data.world.chunk.update.chunk.NeighbourSetUpdate
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
+import de.bixilon.minosoft.modding.loader.fabric.FabricChunkEventContext
+import de.bixilon.minosoft.modding.loader.fabric.FabricChunkEventPhase
+import de.bixilon.minosoft.modding.loader.fabric.FabricChunkEvents
 
 class ChunkManager(
     val world: World,
@@ -62,16 +65,19 @@ class ChunkManager(
         for (update in updates) {
             world.session.events.fire(WorldUpdateEvent(world.session, update))
         }
+        FabricChunkEvents.dispatch(FabricChunkEventContext(world.session, FabricChunkEventPhase.UNLOADED, position, chunk))
         revision++
     }
 
     operator fun minusAssign(position: ChunkPosition) = unload(position)
 
-    fun clear() {
+    fun clear(): Int {
+        val cleared = chunks.unsafe.size
         chunks.unsafe.clear()
         size.clear()
         world.view.updateServerDistance()
         revision++
+        return cleared
     }
 
     private fun create(position: ChunkPosition): Chunk {
@@ -133,6 +139,18 @@ class ChunkManager(
                 if (neighbour == null) continue
                 NeighbourSetUpdate(neighbour).fire(world.session)
             }
+        }
+
+        if (created || affected.isNotEmpty()) {
+            FabricChunkEvents.dispatch(
+                FabricChunkEventContext(
+                    world.session,
+                    if (created) FabricChunkEventPhase.CREATED else FabricChunkEventPhase.UPDATED,
+                    position,
+                    chunk,
+                    affectedSections = affected.size,
+                ),
+            )
         }
 
 

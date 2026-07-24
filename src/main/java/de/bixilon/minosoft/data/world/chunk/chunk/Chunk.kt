@@ -30,6 +30,7 @@ import de.bixilon.minosoft.data.world.chunk.update.chunk.ChunkLightUpdate.Causes
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.data.world.positions.InChunkPosition
 import de.bixilon.minosoft.data.world.positions.SectionHeight
+import de.bixilon.minosoft.modding.loader.fabric.FabricBlockMutationEvents
 
 /**
  * Collection of chunk sections (height aligned)
@@ -64,7 +65,10 @@ class Chunk(
     }
 
     fun apply(update: ProposedBlockChange) {
+        val previous = this[update.position]
+        if (previous == update.state) return
         this[update.position] = update.state
+        FabricBlockMutationEvents.dispatch(this, listOf(ChunkLocalBlockUpdate.Change(update.position, previous, update.state)))
     }
 
     private fun unsafeApply(vararg updates: ProposedBlockChange): Set<ChunkLocalBlockUpdate.Change> {
@@ -123,6 +127,7 @@ class Chunk(
         }
 
         ChunkLocalBlockUpdate(this, executed).fire(world.session)
+        FabricBlockMutationEvents.dispatch(this, executed)
     }
 
     @Deprecated("sections.create")
@@ -135,5 +140,4 @@ class Chunk(
 
     override fun toString() = "Chunk($position)"
 }
-
 

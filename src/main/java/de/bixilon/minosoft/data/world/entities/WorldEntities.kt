@@ -23,6 +23,10 @@ import de.bixilon.minosoft.data.entities.entities.player.PlayerEntity
 import de.bixilon.minosoft.data.entities.entities.player.local.LocalPlayerEntity
 import de.bixilon.minosoft.data.registries.shapes.shape.Shape
 import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3dUtil
+import de.bixilon.minosoft.modding.loader.fabric.FabricEntityChange
+import de.bixilon.minosoft.modding.loader.fabric.FabricEntityEventContext
+import de.bixilon.minosoft.modding.loader.fabric.FabricEntityEventPhase
+import de.bixilon.minosoft.modding.loader.fabric.FabricEntityEvents
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap
@@ -43,6 +47,7 @@ class WorldEntities : Iterable<Entity> {
 
 
     fun add(entityId: Int?, entityUUID: UUID?, entity: Entity) {
+        var added = false
         try {
             lock.lock()
             if (entityId != null) {
@@ -53,10 +58,11 @@ class WorldEntities : Iterable<Entity> {
                 uuidEntityMap[entityUUID] = entity
                 entityUUIDMap[entity] = entityUUID
             }
-            entities += entity
+            added = entities.add(entity)
         } finally {
             lock.unlock()
         }
+        if (added) FabricEntityEvents.dispatch(FabricEntityEventContext(entity.session, FabricEntityEventPhase.ADDED, listOf(FabricEntityChange(entity, entityId, entityUUID))))
     }
 
     operator fun get(id: Int?): Entity? {
@@ -72,7 +78,7 @@ class WorldEntities : Iterable<Entity> {
     fun getId(entity: Entity): Int? {
         try {
             lock.acquire()
-            return entityIdMap[entity]
+            return if (entityIdMap.containsKey(entity)) entityIdMap.getInt(entity) else null
         } finally {
             lock.release()
         }
@@ -97,39 +103,54 @@ class WorldEntities : Iterable<Entity> {
     }
 
     fun remove(entity: Entity) {
+        var change: FabricEntityChange? = null
         lock.lock()
-        entity._id = null
-        entity._uuid = null
-        if (entity !is LocalPlayerEntity && !entities.remove(entity)) {
+        try {
+            if (entity !is LocalPlayerEntity && !entities.remove(entity)) return
+            val entityId = if (entityIdMap.containsKey(entity)) entityIdMap.getInt(entity) else null
+            val entityUUID = entityUUIDMap[entity]
+            entity._id = null
+            entity._uuid = null
+            if (entityId != null) {
+                entityIdMap.removeInt(entity)
+                idEntityMap.remove(entityId)
+            }
+            if (entityUUID != null) {
+                entityUUIDMap.remove(entity)
+                uuidEntityMap.remove(entityUUID)
+            }
+            change = FabricEntityChange(entity, entityId, entityUUID)
+        } finally {
             lock.unlock()
-            return
         }
-        entityIdMap.remove(entity)?.let { idEntityMap -= it }
-        entityUUIDMap.remove(entity)?.let { uuidEntityMap -= it }
-        lock.unlock()
+        val removed = change ?: return
+        FabricEntityEvents.dispatch(FabricEntityEventContext(entity.session, FabricEntityEventPhase.REMOVED, listOf(removed)))
     }
 
     fun remove(entityId: Int) {
+        var change: FabricEntityChange? = null
         lock.lock()
-        val entity = idEntityMap.remove(entityId)
-        if (entity == null) {
+        try {
+            val entity = idEntityMap.remove(entityId) ?: return
+            val entityUUID = entityUUIDMap[entity]
+            entity._id = null
+            entity._uuid = null
+            if (entity is LocalPlayerEntity) {
+                idEntityMap[entityId] = entity
+                return
+            }
+            entities -= entity
+            entityIdMap.removeInt(entity)
+            if (entityUUID != null) {
+                entityUUIDMap.remove(entity)
+                uuidEntityMap.remove(entityUUID)
+            }
+            change = FabricEntityChange(entity, entityId, entityUUID)
+        } finally {
             lock.unlock()
-            return
         }
-        entity._id = null
-        entity._uuid = null
-        if (entity is LocalPlayerEntity) {
-            idEntityMap.put(entityId, entity)
-            lock.unlock()
-            return
-        }
-        entities -= entity
-        entityIdMap.removeInt(entity)
-        val uuid = entityUUIDMap.remove(entity)
-        if (uuid != null) {
-            uuidEntityMap.remove(uuid)
-        }
-        lock.unlock()
+        val removed = change ?: return
+        FabricEntityEvents.dispatch(FabricEntityEventContext(removed.entity.session, FabricEntityEventPhase.REMOVED, listOf(removed)))
     }
 
     override fun iterator(): Iterator<Entity> {
@@ -140,17 +161,19 @@ class WorldEntities : Iterable<Entity> {
         // ToDo: Improve performance
         val entities: MutableList<Entity> = mutableListOf()
         lock.acquire()
-
-        val distance2 = distance * distance
-        for (entity in this) {
-            if (Vec3dUtil.distance2(entity.physics.position, position) > distance2) {
-                continue
+        try {
+            val distance2 = distance * distance
+            for (entity in this) {
+                if (Vec3dUtil.distance2(entity.physics.position, position) > distance2) {
+                    continue
+                }
+                if (check(entity)) {
+                    entities += entity
+                }
             }
-            if (check(entity)) {
-                entities += entity
-            }
+        } finally {
+            lock.release()
         }
-        lock.release()
         return entities
     }
 
@@ -186,23 +209,40 @@ class WorldEntities : Iterable<Entity> {
 
     fun tick() {
         lock.acquire()
-        ticker.tick()
-        lock.release()
+        try {
+            ticker.tick()
+        } finally {
+            lock.release()
+        }
     }
 
     fun clear(session: PlaySession, local: Boolean = false) {
+        val changes = mutableListOf<FabricEntityChange>()
         this.lock.lock()
-        for (entity in this.entities) {
-            entity._id = null
-            entity._uuid = null
-            if (!local && entity is LocalPlayerEntity) continue
-            entityIdMap.remove(entity)?.let { idEntityMap.remove(it) }
-            entityUUIDMap.remove(entity)?.let { uuidEntityMap.remove(it) }
+        try {
+            for (entity in this.entities) {
+                val entityId = if (entityIdMap.containsKey(entity)) entityIdMap.getInt(entity) else null
+                val entityUUID = entityUUIDMap[entity]
+                if (entity !== session.player) changes += FabricEntityChange(entity, entityId, entityUUID)
+                entity._id = null
+                entity._uuid = null
+                if (!local && entity is LocalPlayerEntity) continue
+                if (entityId != null) {
+                    entityIdMap.removeInt(entity)
+                    idEntityMap.remove(entityId)
+                }
+                if (entityUUID != null) {
+                    entityUUIDMap.remove(entity)
+                    uuidEntityMap.remove(entityUUID)
+                }
+            }
+            val remove = this.entities.toMutableSet()
+            remove -= session.player
+            this.entities.removeAll(remove)
+        } finally {
+            this.lock.unlock()
         }
-        val remove = this.entities.toMutableSet()
-        remove -= session.player
-        this.entities.removeAll(remove)
-        this.lock.unlock()
+        FabricEntityEvents.dispatch(FabricEntityEventContext(session, FabricEntityEventPhase.CLEARED, changes))
     }
 
     companion object {

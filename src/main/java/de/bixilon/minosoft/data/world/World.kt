@@ -43,6 +43,11 @@ import de.bixilon.minosoft.data.world.time.WorldTime
 import de.bixilon.minosoft.data.world.view.WorldView
 import de.bixilon.minosoft.data.world.weather.WorldWeather
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
+import de.bixilon.minosoft.data.world.chunk.update.block.ChunkLocalBlockUpdate
+import de.bixilon.minosoft.modding.loader.fabric.FabricBlockMutationEvents
+import de.bixilon.minosoft.modding.loader.fabric.FabricChunkEventContext
+import de.bixilon.minosoft.modding.loader.fabric.FabricChunkEventPhase
+import de.bixilon.minosoft.modding.loader.fabric.FabricChunkEvents
 import de.bixilon.minosoft.util.Backports.nextIntPort
 import java.util.*
 
@@ -84,12 +89,19 @@ class World(
     }
 
     fun clear() {
+        val cleared: Int
         lock.lock()
-        chunks.clear()
-        time = WorldTime()
-        weather = WorldWeather.SUNNY
-        border.reset()
-        lock.unlock()
+        try {
+            cleared = chunks.clear()
+            time = WorldTime()
+            weather = WorldWeather.SUNNY
+            border.reset()
+        } finally {
+            lock.unlock()
+        }
+        if (cleared > 0) {
+            FabricChunkEvents.dispatch(FabricChunkEventContext(session, FabricChunkEventPhase.CLEARED, null, null, clearedChunks = cleared))
+        }
     }
 
     operator fun set(x: Int, y: Int, z: Int, state: BlockState?) = set(BlockPosition(x, y, z), state)
@@ -97,7 +109,10 @@ class World(
     operator fun set(position: BlockPosition, state: BlockState?) {
         if (!isValidPosition(position)) return
         val chunk = chunks[position.chunkPosition] ?: return
+        val previous = chunk[position.inChunkPosition]
+        if (previous == state) return
         chunk[position.inChunkPosition] = state
+        FabricBlockMutationEvents.dispatch(chunk, listOf(ChunkLocalBlockUpdate.Change(position.inChunkPosition, previous, state)))
     }
 
     fun isPositionChangeable(blockPosition: BlockPosition): Boolean {
