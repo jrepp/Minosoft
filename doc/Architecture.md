@@ -47,11 +47,16 @@ Personally I really like that design, it allows design decisions far away from v
 
 ## Assets
 
-Assets are downloaded directly from mojang. Those assets are then hashed (to prevent duplicated saving) and compressed with
-[zstd](https://en.wikipedia.org/wiki/Zstd). There are assets functions (e.g. sound). You can disable downloading of those assets
-if you don't need them. The textures and models are stored in the original minecraft jar, this file is getting downloaded,
-uncompressed and striped down. Original minecraft code never gets executed.
+Assets are resolved through a per-session priority stack. Integrated
+compatibility layers, profile resource packs, local Minecraft archives/indexes,
+and generation-owned mod assets all implement the same byte-stream lookup
+contract. Resource locations are compatibility keys, not proof of content
+ownership.
 
-Assets are getting manged by assets managers. There are a few of them. Because of that design, you can easily load resource packs.
+Missing Minecraft archives, indexes, or indexed objects are local-only failures:
+the asset managers do not fetch them from official Minecraft services. The play
+parent may download user-selected, hash-pinned Packwiz mod/resource-pack
+artifacts into an out-of-source content store.
 
-You can find more about assets [here](/doc/Assets.md)
+See the [content and asset system](/doc/Assets.md) for priority, model/texture
+support, animation behavior, mod-format boundaries, and reload ownership.

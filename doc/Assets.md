@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026 Jacob Repp -->
+
 # Minosoft content and asset system
 
 This document describes how Minosoft resolves Minecraft content, which
@@ -160,9 +162,10 @@ precise Minosoft renderers; other known vanilla block-item families receive a
 visible particle-texture fallback and structured audit output. That fallback is
 diagnostic, not model parity.
 
-Item `overrides` and predicate-based model selection, including general
-`custom_model_data` dispatch, are not implemented. This is a direct blocker for
-many Blockbench and Animated Java resource-pack exports.
+Item `overrides` use vanilla last-match selection for `custom_model_data`,
+`damage`, and `damaged`; selected element-backed models retain their cuboid
+geometry. The remaining vanilla predicate catalog and modern component-based
+item-model dispatch still need explicit compatibility fixtures.
 
 ## Textures
 
@@ -229,10 +232,14 @@ At render initialization, the neutral geometry bridge creates retained
 `SkeletalModel` instances, preserves direct OptiFine texture paths, and maps
 CEM filenames such as `cow.jem` to matching entity IDs. Existing animal and
 humanoid renderers prefer that mapped CEM model. Static bone rotation/scale and
-face UV rotation survive the bridge. This is an initial renderer binding, not
-full EMF: the complete entity-part alias catalog, all expression variables,
-per-entity attachments, live model replacement, and visual reference fixtures
-remain gates.
+face UV rotation survive the bridge. Version/entity aliases now rename bound
+geometry, transforms, and expression targets. A per-instance, reflection-free
+runtime applies ordered CEM transform/visibility expressions with persistent
+`var.*`/`varb.*` state and an initial entity/render variable set. This is still
+partial EMF. Native entity parts survive targeted CEM replacement and
+`attach:true` roots use isolated child transforms, but the complete alias and
+variable catalogs, exact absolute part-property/complex attachment semantics,
+live model replacement, and visual reference fixtures remain gates.
 
 ## Higher-fidelity compatibility trajectory
 
@@ -241,11 +248,11 @@ for Blockbench-related content:
 
 | Component | Role | License/distribution | Prepared state | Missing behavior |
 | --- | --- | --- | --- | --- |
-| Entity Model Features (EMF) | Fabric replacement for OptiFine CEM geometry and expressions | LGPL-3.0 | Exact 3.0.17 adapter activates; JEM/JPM, aliases, bounded expressions, discovery, and initial skeletal binding are source-native. | Complete version/entity part catalog and variable inputs, attachment semantics, live renderer replacement, fallback/visual fixtures, and configuration. |
-| Entity Texture Features (ETF) | OptiFine-style random, emissive, and variant entity textures | LGPL-3.0 | Exact 7.0.13 adapter activates; property parsing, deterministic variants, entity-context construction, finite material discovery, generation-owned caching, and retained skeletal base/emissive passes with state restoration exist. | Complete NBT/environment predicates, player/feature textures, configuration, live reload, and visuals. |
-| GeckoLib | Runtime library for mod-authored geo models and keyframe animations | MIT | Exact 4.4.4 adapter activates; geo and animation JSON parse into the neutral model, matching clips attach to geometry, and a native evaluator/controller can apply deterministic poses to retained bones. | Complete easing, concurrent layers, events, automatic routing, animatable cache/binary API, object/block/item/armor coverage, and dependent-mod compatibility. |
+| Entity Model Features (EMF) | Fabric replacement for OptiFine CEM geometry and expressions | LGPL-3.0 | Exact 3.0.17 adapter activates; JEM/JPM, live version/entity aliases, bounded per-instance expressions, targeted native-part replacement, isolated attach roots, discovery, and initial skeletal binding are source-native. | Complete part/variable catalogs, exact part-property and complex attachment semantics, live renderer replacement, fallback/visual fixtures, and configuration. |
+| Entity Texture Features (ETF) | OptiFine-style random, emissive, and variant entity textures | LGPL-3.0 | Exact 7.0.13 adapter activates; property parsing, deterministic variants, expanded entity/environment plus bounded nested-NBT context, finite material discovery, generation-owned caching, and retained skeletal base/emissive passes with state restoration exist. | Complete ETF predicate parity, player/feature textures, configuration, live reload, and visuals. |
+| GeckoLib | Runtime library for mod-authored geo models and keyframe animations | MIT | Exact 4.4.4 adapter activates; geo and animation JSON parse into the neutral model, matching clips attach to geometry, and a source-native API supplies predicate controllers, concurrent replace/add layers, transitions, and generation-owned animatable caches. | Complete easing, events, automatic routing, binary API compatibility, object/block/item/armor coverage, and dependent-mod validation. |
 | OptiFine | Original CEM and extended resource-pack implementation | Official-site distribution; no Packwiz redistribution | Catalogued as a format reference only. | Its runtime transforms Mojang/Forge classes that Minosoft does not expose, so the JAR cannot be activated as an ordinary mod. Selected OptiFine content formats require Minosoft-native parsers and render bindings, surfaced through exact EMF/ETF compatibility adapters. |
-| Animated Java | Blockbench authoring/export workflow producing resource-pack and data-pack content | Authoring tool; no runtime artifact staged | Last-match custom-model-data/damage overrides, arbitrary cuboid item geometry, item/block/text display rendering, transformation interpolation, billboards/light/text state, and a bounded function/tag/macro scheduler are native foundations; this remains an import workflow, not a runtime JAR. | Mount exported packs into a local command authority, implement the exporter's command subset and complete display lifecycle, then accept a pinned export fixture. |
+| Animated Java | Blockbench authoring/export workflow producing resource-pack and data-pack content | Authoring tool; no runtime artifact staged | Resource and data namespaces mount separately into one session content generation. Local sessions run bounded functions, tags, macros, schedules, scoreboards/storage, selectors, an exporter-oriented `execute` subset including feet/eyes anchors and coordinate/entity facing, and display/entity mutation commands. Session-owned display/interaction/passenger trees support load→summon→tick→remove in a reduced fixture pinned to Animated Java 1.10.2. Failed candidate load tags atomically restore command and entity state. This remains an import workflow, not a runtime JAR. | Complete target/attacker relationships and data-manager/UUID utilities, wire interaction callbacks, accept an unmodified raw exporter fixture, and prove remote-server, visual, and repeated GPU-reload behavior. |
 
 All four pinned artifacts now preflight as `ADAPTED` at the artifact layer.
 That label means their exact metadata surfaces select Minosoft-owned adapters;
@@ -253,6 +260,12 @@ it does not execute upstream bytecode and it is not a full behavioral claim.
 The inspection output separately reports mapped, partial, and unmapped
 functionality. EMF, ETF, and GeckoLib remain partial until their runtime and
 visual gates below pass.
+
+A durable headless fixture loads one CEM/ETF/Gecko content set against both
+Minecraft 1.19.4 and 1.20.4 protocol identities. It verifies version-specific
+part aliases, CEM expression evaluation, Gecko clip evaluation, and ETF
+variant/emissive discovery. This is a data/runtime compatibility gate, not
+rendered visual or live-reload acceptance.
 
 Prepare and inspect the trajectory with:
 
@@ -282,6 +295,13 @@ binding:
    through one generation-owned scope.
 7. **Dispose** callbacks, caches, meshes, textures, and GPU buffers before the
    generation classloader is released.
+
+Retained skeletal models implement the first GPU-lifetime half of this
+contract: retirement prevents new instances, active instances keep the old
+mesh alive, and the final release unloads uploaded buffers or drops an
+unuploaded candidate. Content models retain their exact ETF catalog/cache lease
+through the same boundary. Atomic live candidate bake/swap and repeated
+real-OpenGL accounting remain required.
 
 An adapter must declare:
 
@@ -328,8 +348,11 @@ The primary implementation entry points are:
   construction;
 - `assets/model/generation/` for discovery, immutable snapshots, leases, and
   transactional generation ownership;
-- `assets/datapack/` for headless function/tag discovery, macros, scheduling,
-  and bounded execution independently of a command authority;
+- `assets/datapack/` for data-namespace discovery, function/tag loading, SNBT,
+  macros, scheduling, scoreboard/storage state, bounded execute/command
+  evaluation, transactional load, and the generation-leased local runtime;
+- `local/datapack/` for selectors and the headless command bridge to
+  session-owned display/interaction entities, including lifecycle rollback;
 - `assets/model/skeletal/` and `assets/model/texture/entity/` for neutral
   CEM/Gecko/ETF data and headless parsers;
 - `assets/multi/PriorityAssetsManager.kt` for first-match resolution;

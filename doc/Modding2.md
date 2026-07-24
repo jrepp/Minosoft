@@ -1,5 +1,11 @@
 # Modding (v2)
 
+> This file records the original mod-loader goals. For the current Fabric
+> adaptation levels, ownership rules, and compatibility trajectories, use the
+> [mod workflow evidence map](agents/areas/08-modding.md). Model, texture, EMF,
+> GeckoLib, OptiFine-format, and Animated Java boundaries are documented in the
+> [content and asset system](Assets.md).
+
 ## Goals
 
 - Not supported (i.e. no backwards compatibility)

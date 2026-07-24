@@ -35,7 +35,7 @@ Don't expect too much from me. I am still happy to receive feedback and contribu
 - [Headless mode](/doc/Headless.md)
 - Way more stuff
 
-(some ~~technical~~ explanation about the render system is [here](/doc/rendering/ReadMe.md)). You can find information about the architecture design [here](/doc/Architecture.md)
+(some ~~technical~~ explanation about the render system is [here](/doc/rendering/ReadMe.md)). The current resource-pack, model, texture, and higher-fidelity mod boundaries are documented in the [content and asset system](/doc/Assets.md). You can find information about the architecture design [here](/doc/Architecture.md)
 
 ## System requirements
 

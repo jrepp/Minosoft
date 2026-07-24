@@ -18,6 +18,11 @@ The whole render system gets loaded, as soon as you tell eros to connect to a se
 
 ## Textures
 
+The authoritative compatibility matrix for PNG dimensions, texture arrays,
+`.png.mcmeta` animation, vanilla models, and higher-fidelity mod formats is the
+[content and asset system](../Assets.md). The notes below describe the renderer
+storage design.
+
 ### Static textures
 
 Textures that don't get modified anymore (like block textures or items).
