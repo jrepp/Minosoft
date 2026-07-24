@@ -33,7 +33,9 @@ class SkeletalAnimationController(
 
     fun play(name: String, transitionSeconds: Float = 0.0f, restart: Boolean = false) {
         require(name in clips) { "Unknown skeletal animation: $name" }
-        require(transitionSeconds >= 0.0f) { "Animation transition must not be negative." }
+        require(transitionSeconds.isFinite() && transitionSeconds >= 0.0f) {
+            "Animation transition must be finite and non-negative."
+        }
         if (!restart && current == name) return
         previousPose = pose()
         current = name
@@ -42,8 +44,18 @@ class SkeletalAnimationController(
         transitionDuration = transitionSeconds
     }
 
+    fun stop() {
+        previousPose = pose()
+        current = null
+        elapsed = 0.0f
+        transitionElapsed = 0.0f
+        transitionDuration = 0.0f
+    }
+
     fun update(deltaSeconds: Float, context: SkeletalExpressionContext = SkeletalExpressionContext()): SkeletalPose {
-        require(deltaSeconds >= 0.0f) { "Animation delta must not be negative." }
+        require(deltaSeconds.isFinite() && deltaSeconds >= 0.0f) {
+            "Animation delta must be finite and non-negative."
+        }
         elapsed += deltaSeconds
         transitionElapsed += deltaSeconds
         return pose(context)
