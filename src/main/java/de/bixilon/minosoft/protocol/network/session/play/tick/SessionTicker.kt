@@ -13,7 +13,6 @@
 
 package de.bixilon.minosoft.protocol.network.session.play.tick
 
-import de.bixilon.kutil.concurrent.lock.Lock
 import de.bixilon.kutil.concurrent.schedule.RepeatedTask
 import de.bixilon.kutil.concurrent.schedule.TaskScheduler
 import de.bixilon.kutil.concurrent.schedule.TaskScheduler.runLater
@@ -21,15 +20,17 @@ import de.bixilon.kutil.observer.DataObserver.Companion.observe
 import de.bixilon.minosoft.config.DebugOptions
 import de.bixilon.minosoft.data.container.stack.ItemStack
 import de.bixilon.minosoft.data.world.time.WorldTime
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientTickEvents
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientTickPhase
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.network.session.play.PlaySessionStates
 import de.bixilon.minosoft.protocol.network.session.play.tick.TickUtil.INTERVAL
 
 class SessionTicker(private val session: PlaySession) {
-    private val tasks: MutableSet<RepeatedTask> = mutableSetOf()
-    private val lock = Lock.lock()
+    private val tasks = mutableListOf<Runnable>()
+    private val runner = SessionTickRunner()
+    private val scheduledTask = RepeatedTask(INTERVAL) { tick() }
     private var registered = false
-
 
     fun init() {
         addDefault()
@@ -45,21 +46,21 @@ class SessionTicker(private val session: PlaySession) {
     }
 
     private fun addDefault() {
-        tasks += RepeatedTask(INTERVAL) {
+        tasks += Runnable {
             session.world.entities.tick()
         }
-        tasks += RepeatedTask(INTERVAL) {
+        tasks += Runnable {
             session.world.tick()
         }
-        tasks += RepeatedTask(INTERVAL) {
+        tasks += Runnable {
             session.world.randomDisplayTick()
         }
 
         if (DebugOptions.LIGHT_DEBUG_MODE || DebugOptions.INFINITE_TORCHES) {
-            tasks += RepeatedTask(INTERVAL) { session.player.items.inventory.items[44] = ItemStack(session.registries.item["minecraft:torch"]!!, Int.MAX_VALUE) }
+            tasks += Runnable { session.player.items.inventory.items[44] = ItemStack(session.registries.item["minecraft:torch"]!!, Int.MAX_VALUE) }
         }
         if (DebugOptions.SIMULATE_TIME) {
-            tasks += RepeatedTask(INTERVAL) {
+            tasks += Runnable {
                 val time = session.world.time.time
                 val offset = if (time in 11800..13300 || (time < 300 || time > 22800)) {
                     20
@@ -71,47 +72,36 @@ class SessionTicker(private val session: PlaySession) {
         }
     }
 
+    private fun tick() {
+        val snapshot = synchronized(this) { tasks.toList() }
+        runner.run(
+            before = { FabricClientTickEvents.dispatch(FabricClientTickPhase.START, session) },
+            tasks = snapshot,
+            after = { FabricClientTickEvents.dispatch(FabricClientTickPhase.END, session) },
+        )
+    }
 
+    @Synchronized
     private fun register() {
-        if (registered) {
-            return
-        }
-        lock.lock()
-        if (registered || session.state != PlaySessionStates.PLAYING) {
-            lock.unlock()
-            return
-        }
-
-        for (task in tasks) {
-            TaskScheduler += task
-        }
-
+        if (registered || session.state != PlaySessionStates.PLAYING) return
+        TaskScheduler += scheduledTask
         registered = true
-        lock.unlock()
     }
 
+    @Synchronized
     private fun unregister() {
-        if (!registered) {
-            return
-        }
-        lock.lock()
-
-        for (task in tasks) {
-            TaskScheduler -= task
-        }
+        if (!registered) return
+        TaskScheduler -= scheduledTask
         registered = false
-        lock.unlock()
     }
 
-    fun register(runnable: Runnable) {
-        lock.lock()
-        val task = RepeatedTask(INTERVAL, runnable = runnable)
-        this.tasks += task
-        if (registered) {
-            TaskScheduler += task
-        }
-        lock.unlock()
-    }
+    @Synchronized
+    fun register(runnable: Runnable) { tasks += runnable }
+
+    @Synchronized
+    fun unregister(runnable: Runnable) { tasks -= runnable }
 
     operator fun plusAssign(runnable: Runnable) = register(runnable)
+
+    operator fun minusAssign(runnable: Runnable) = unregister(runnable)
 }
