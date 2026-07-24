@@ -109,6 +109,27 @@ class DataPackFunctionRuntimeTest {
     }
 
     @Test
+    fun `nested execute work consumes the command budget`() {
+        val function = ResourceLocation.of("test:nested_execute")
+        val library = DataPackFunctionLibrary(
+            functions = mapOf(
+                function to DataPackFunction(
+                    function,
+                    listOf("execute positioned ~ ~ ~ run say bounded"),
+                ),
+            ),
+            tags = emptyMap(),
+        )
+        val runtime = DataPackFunctionRuntime(
+            library,
+            LocalDataPackCommandAuthority(),
+            DataPackFunctionRuntime.Limits(maxCommands = 1),
+        )
+
+        assertFailsWith<IllegalStateException> { runtime.execute("test:nested_execute") }
+    }
+
+    @Test
     fun `schedule delay overflow does not mutate the queue`() {
         val runtime = DataPackFunctionRuntime(
             DataPackFunctionLibrary(emptyMap(), emptyMap()),

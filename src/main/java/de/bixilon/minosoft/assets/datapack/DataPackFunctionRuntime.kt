@@ -13,6 +13,8 @@
 
 package de.bixilon.minosoft.assets.datapack
 
+import de.bixilon.kmath.vec.vec3.d.Vec3d
+import de.bixilon.minosoft.data.entities.entities.Entity
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import java.util.PriorityQueue
 
@@ -24,10 +26,20 @@ interface DataPackMacroSource {
     fun arguments(storage: ResourceLocation, path: String): Map<String, String>
 }
 
+interface DataPackExecuteEnvironment {
+    fun execute(
+        command: String,
+        context: DataPackCommandContext,
+        continuation: (String, DataPackCommandContext) -> Int,
+    ): Int
+}
+
 data class DataPackCommandContext(
     val function: ResourceLocation,
     val depth: Int,
     val tick: Long,
+    val executor: Entity? = null,
+    val position: Vec3d? = null,
 )
 
 class DataPackFunctionRuntime(
@@ -63,7 +75,7 @@ class DataPackFunctionRuntime(
     private fun execute(reference: String, arguments: Map<String, String>, budget: Budget): Int {
         var result = 0
         for (function in library.resolve(reference)) {
-            result = execute(function, arguments, 0, budget)
+            result = execute(function, arguments, 0, budget, null)
         }
         return result
     }
@@ -73,15 +85,25 @@ class DataPackFunctionRuntime(
         arguments: Map<String, String>,
         depth: Int,
         budget: Budget,
+        inheritedContext: DataPackCommandContext?,
     ): Int {
         require(depth <= limits.maxDepth) { "Data-pack function depth exceeded ${limits.maxDepth} at ${function.id}" }
+        val context = DataPackCommandContext(
+            function = function.id,
+            depth = depth,
+            tick = tick,
+            executor = inheritedContext?.executor,
+            position = inheritedContext?.position,
+        )
         var result = 0
         for (source in function.commands) {
             check(--budget.remaining >= 0) { "Data-pack command budget exceeded ${limits.maxCommands} at ${function.id}" }
             val command = expand(source, arguments)
             RETURN_VALUE.matchEntire(command)?.let { return it.groupValues[1].toInt() }
-            if (command == "return") return 0
-            RETURN_RUN.matchEntire(command)?.let { return executeCommand(it.groupValues[1], function, arguments, depth, budget) }
+            if (command == "return" || command == "return fail") return 0
+            RETURN_RUN.matchEntire(command)?.let {
+                return executeNestedCommand(it.groupValues[1], function, depth, budget, context)
+            }
             val withStorage = FUNCTION_WITH_STORAGE.matchEntire(command)
             if (withStorage != null) {
                 val macroSource = sink as? DataPackMacroSource
@@ -90,7 +112,7 @@ class DataPackFunctionRuntime(
                     ResourceLocation.of(withStorage.groupValues[2]),
                     withStorage.groupValues[3],
                 )
-                result = executeReference(withStorage.groupValues[1], nestedArguments, depth, budget, function.id)
+                result = executeReference(withStorage.groupValues[1], nestedArguments, depth, budget, function.id, context)
                 continue
             }
             val nested = FUNCTION.matchEntire(command)
@@ -101,6 +123,7 @@ class DataPackFunctionRuntime(
                     depth,
                     budget,
                     function.id,
+                    context,
                 )
                 continue
             }
@@ -110,18 +133,41 @@ class DataPackFunctionRuntime(
                 result = 1
                 continue
             }
-            result = sink.execute(command, DataPackCommandContext(function.id, depth, tick))
+            result = executeCommand(command, function, depth, budget, context)
         }
         return result
+    }
+
+    private fun executeNestedCommand(
+        command: String,
+        owner: DataPackFunction,
+        depth: Int,
+        budget: Budget,
+        context: DataPackCommandContext,
+    ): Int {
+        check(--budget.remaining >= 0) { "Data-pack command budget exceeded ${limits.maxCommands} at ${owner.id}" }
+        return executeCommand(command, owner, depth, budget, context)
     }
 
     private fun executeCommand(
         command: String,
         owner: DataPackFunction,
-        arguments: Map<String, String>,
         depth: Int,
         budget: Budget,
+        context: DataPackCommandContext,
     ): Int {
+        RETURN_VALUE.matchEntire(command)?.let { return it.groupValues[1].toInt() }
+        if (command == "return" || command == "return fail") return 0
+        RETURN_RUN.matchEntire(command)?.let {
+            return executeNestedCommand(it.groupValues[1], owner, depth, budget, context)
+        }
+        if (command.startsWith("execute ")) {
+            val environment = sink as? DataPackExecuteEnvironment
+                ?: throw IllegalArgumentException("${owner.id} requires an execute-command environment.")
+            return environment.execute(command, context) { nested, nestedContext ->
+                executeNestedCommand(nested, owner, depth, budget, nestedContext)
+            }
+        }
         FUNCTION_WITH_STORAGE.matchEntire(command)?.let {
             val macroSource = sink as? DataPackMacroSource
                 ?: throw IllegalArgumentException("${owner.id} requires command-storage macro arguments.")
@@ -131,12 +177,13 @@ class DataPackFunctionRuntime(
                 depth,
                 budget,
                 owner.id,
+                context,
             )
         }
         FUNCTION.matchEntire(command)?.let {
-            return executeReference(it.groupValues[1], parseArguments(it.groupValues[2]), depth, budget, owner.id)
+            return executeReference(it.groupValues[1], parseArguments(it.groupValues[2]), depth, budget, owner.id, context)
         }
-        return sink.execute(expand(command, arguments), DataPackCommandContext(owner.id, depth, tick))
+        return sink.execute(command, context)
     }
 
     private fun executeReference(
@@ -145,11 +192,12 @@ class DataPackFunctionRuntime(
         depth: Int,
         budget: Budget,
         owner: ResourceLocation,
+        context: DataPackCommandContext,
     ): Int {
         val targets = library.resolve(reference)
         if (targets.isEmpty()) throw IllegalArgumentException("$owner references missing function $reference")
         var result = 0
-        for (target in targets) result = execute(target, arguments, depth + 1, budget)
+        for (target in targets) result = execute(target, arguments, depth + 1, budget, context)
         return result
     }
 

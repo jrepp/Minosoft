@@ -1,0 +1,7 @@
+{
+  "producer": "Animated Java",
+  "version": "1.10.2",
+  "source_commit": "a5fc548d2a53cc0887fa070db33ccfcef1cd3541",
+  "minecraft": "1.20.4",
+  "purpose": "Reduced exporter-shaped lifecycle fixture retaining current summon, selector, execute, scoreboard, display passenger, item custom-model-data, tick, and removal command forms."
+}
