@@ -154,4 +154,35 @@ class DataPackFunctionRuntimeTest {
         assertEquals(7, result)
         assertEquals(listOf("\"rig loaded\""), messages)
     }
+
+    @Test
+    fun `executes score and storage conditions with result stores`() {
+        val outer = ResourceLocation.of("test:outer")
+        val nested = ResourceLocation.of("test:nested")
+        val library = DataPackFunctionLibrary(
+            functions = mapOf(
+                outer to DataPackFunction(
+                    outer,
+                    listOf(
+                        "scoreboard objectives add test.frame dummy",
+                        "scoreboard players set rig test.frame 1",
+                        "execute if score rig test.frame matches 1 run scoreboard players add rig test.frame 2",
+                        "execute store result storage test:runtime frame int 1 run scoreboard players get rig test.frame",
+                        "execute if data storage test:runtime {frame:3} run function test:nested",
+                        "execute unless score rig test.frame matches 3 run say unreachable",
+                    ),
+                ),
+                nested to DataPackFunction(nested, listOf("say matched")),
+            ),
+            tags = emptyMap(),
+        )
+        val messages = mutableListOf<String>()
+        val authority = LocalDataPackCommandAuthority(messages::add)
+
+        DataPackFunctionRuntime(library, authority).execute("test:outer")
+
+        assertEquals(3, authority.score("rig", "test.frame"))
+        assertEquals(3, authority.storage(ResourceLocation.of("test:runtime"))!!["frame"])
+        assertEquals(listOf("matched"), messages)
+    }
 }

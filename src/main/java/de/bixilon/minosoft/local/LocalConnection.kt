@@ -16,6 +16,8 @@ package de.bixilon.minosoft.local
 import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.kutil.concurrent.pool.DefaultThreadPool
 import de.bixilon.kutil.observer.DataObserver.Companion.observed
+import de.bixilon.minosoft.assets.datapack.LocalDataPackCommandAuthority
+import de.bixilon.minosoft.assets.datapack.SessionDataPackRuntime
 import de.bixilon.minosoft.data.abilities.Gamemodes
 import de.bixilon.minosoft.data.chat.message.SimpleChatMessage
 import de.bixilon.minosoft.data.chat.type.DefaultMessageTypes
@@ -25,12 +27,16 @@ import de.bixilon.minosoft.data.registries.dimension.DimensionProperties
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.text.BaseComponent
 import de.bixilon.minosoft.data.text.ChatComponent
+import de.bixilon.minosoft.local.datapack.LocalDataPackEntityAccess
+import de.bixilon.minosoft.local.datapack.LocalDisplayEntityFactory
 import de.bixilon.minosoft.local.generator.ChunkGenerator
 import de.bixilon.minosoft.local.storage.WorldStorage
 import de.bixilon.minosoft.modding.event.events.TabListEntryChangeEvent
 import de.bixilon.minosoft.modding.event.events.chat.ChatMessageEvent
 import de.bixilon.minosoft.modding.event.events.chat.ChatMessageSendEvent
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
+import de.bixilon.minosoft.modding.loader.fabric.FabricWorldChangeCause
+import de.bixilon.minosoft.modding.loader.fabric.FabricWorldEvents
 import de.bixilon.minosoft.protocol.ServerConnection
 import de.bixilon.minosoft.protocol.network.session.Session
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
@@ -50,6 +56,8 @@ class LocalConnection(
     override var active by observed(false)
     private var detached = false
     private lateinit var session: PlaySession
+    private var dataPackRuntime: SessionDataPackRuntime? = null
+    private var dataPackTickTask: Runnable? = null
     lateinit var chunks: LocalChunkManager
 
     fun sendMessage(message: Any, type: ResourceLocation = DefaultMessageTypes.CHAT) {
@@ -63,14 +71,17 @@ class LocalConnection(
         Log.log(LogMessageType.NETWORK, LogLevels.INFO) { "Establishing local connection" }
         active = true
         this.session = session
-        this.chunks = LocalChunkManager(session, storage.invoke(session), generator.invoke(session))
+        val generator = generator.invoke(session)
 
-
-        session.util.resetWorld()
         session.util.prepareSpawn()
 
 
-        session.world.dimension = DimensionProperties()
+        val dimension = generator.dimension ?: DimensionProperties()
+        FabricWorldEvents.change(session, FabricWorldChangeCause.LOCAL_CONNECT, dimension, session.world.name) {
+            session.util.resetWorld()
+            session.world.dimension = dimension
+        }
+        this.chunks = LocalChunkManager(session, storage.invoke(session), generator)
         session.player.additional.gamemode = Gamemodes.CREATIVE
 
 
@@ -96,6 +107,25 @@ class LocalConnection(
 
         session.player.physics.forceTeleport(Vec3d(0.5, 20.0, 0.5)) // TODO: teleport on ground (after world is loaded)
 
+        val displayFactory = LocalDisplayEntityFactory(session)
+        val dataPackEntities = LocalDataPackEntityAccess(session, displayFactory) { session.player.physics.position }
+        val commandAuthority = LocalDataPackCommandAuthority(
+            message = { sendMessage(it) },
+            origin = { session.player.physics.position },
+            rotation = { session.player.physics.rotation },
+            spawn = { type, nbt, position -> displayFactory.summon(type, nbt, position) },
+            entities = dataPackEntities,
+        )
+        val dataPackRuntime = SessionDataPackRuntime(session.contentFidelity, commandAuthority)
+        this.dataPackRuntime = dataPackRuntime
+        try {
+            dataPackRuntime.refresh()
+        } catch (error: Throwable) {
+            Log.log(LogMessageType.LOADING, LogLevels.WARN, error)
+        }
+        val dataPackTickTask = Runnable { dataPackRuntime.tick() }
+        this.dataPackTickTask = dataPackTickTask
+        session.ticker += dataPackTickTask
 
         session.events.listen<ChatMessageSendEvent> { sendMessage(BaseComponent(session.player.name, "> ", it.message.replace('&', '§'))) }
 
@@ -105,7 +135,15 @@ class LocalConnection(
     }
 
     override fun disconnect() {
-        active = false
+        dataPackTickTask?.let { session.ticker -= it }
+        dataPackTickTask = null
+        val dataPackRuntime = dataPackRuntime
+        this.dataPackRuntime = null
+        try {
+            dataPackRuntime?.close()
+        } finally {
+            active = false
+        }
     }
 
     override fun detach() {

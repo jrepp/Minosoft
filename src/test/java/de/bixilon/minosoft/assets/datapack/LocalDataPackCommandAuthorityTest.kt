@@ -53,4 +53,16 @@ class LocalDataPackCommandAuthorityTest {
             LocalDataPackCommandAuthority().execute("summon minecraft:item_display ~ ~ ~ {}", context)
         }
     }
+
+    @Test
+    fun `rejects non-finite entity coordinates`() {
+        val authority = LocalDataPackCommandAuthority(spawn = { _, _, _ -> })
+
+        assertFailsWith<IllegalArgumentException> {
+            authority.execute("summon minecraft:item_display NaN 0 0 {}", context)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            authority.execute("summon minecraft:item_display ^Infinity ^ ^ {}", context)
+        }
+    }
 }
