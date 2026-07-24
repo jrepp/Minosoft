@@ -4,11 +4,11 @@ hash-format = "sha256"
 
 [[files]]
 file = "fabric.mod.json"
-hash = "18e916cb03d0001071e6181336fb5acf1a781b6e165cccd95ed3d68ff4ecad5b"
+hash = "12dd2b8427bb57d4a6f299aa7ca678c631af5d4020818b72e968fd1e470ef9fa"
 
 [[files]]
 file = "ladder.tsv"
-hash = "1fa38b70a2cbaabb1d338a231a5a7da2ee5af7672abcf0c8a426a9a2e225247f"
+hash = "cba50b93f6e4c91a6ff8b04915c0f1230d001e02c0a7901aa3cfd97bad644b7b"
 
 [[files]]
 file = "mods/fabric-api.pw.toml"

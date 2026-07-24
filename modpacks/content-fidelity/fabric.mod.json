@@ -20,7 +20,7 @@
       "ladder": "ladder.tsv",
       "entry": "content-fidelity",
       "activation": "partial",
-      "scope": "exact artifact adaptation, native CEM/ETF/Gecko ingestion, transactional CPU generations, initial retained rendering, and Animated Java item/display foundations",
+      "scope": "exact artifact adaptation, native CEM/ETF/Gecko ingestion, transactional retained-model reload, and Animated Java item/display foundations",
       "formatReferences": [
         "optifine-cem",
         "entity-texture-features",
@@ -31,11 +31,11 @@
         "fabric-entrypoint-linkage",
         "mixins-and-access-wideners",
         "complete-cem-runtime-bindings-and-visual-parity",
-        "entity-texture-render-context-and-emissive-pass",
+        "complete-etf-player-feature-and-predicate-parity",
         "geckolib-binary-api-events-and-render-layers",
-        "complete-display-entity-rendering",
-        "datapack-execution",
-        "render-thread-transactional-model-reload"
+        "animated-java-interaction-and-raw-exporter-parity",
+        "texture-array-generation-reload",
+        "repeated-real-gl-and-visual-acceptance"
       ]
     }
   }
