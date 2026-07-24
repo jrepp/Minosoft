@@ -28,6 +28,7 @@ class AssetsC(profile: ResourcesProfile) {
     val indexAssetsTypes: MutableSet<IndexAssetsType> by SetDelegate(profile, mutableSetOf(*IndexAssetsType.VALUES))
 
     val resourcePacks: List<ResourcePack> by ListDelegate(profile, mutableListOf())
+    val dataPacks: List<ResourcePack> by ListDelegate(profile, mutableListOf())
 
     val packFormat by IntDelegate(profile, -1, arrayOf(-1..-1, 0..LATEST))
 }

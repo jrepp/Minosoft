@@ -18,8 +18,12 @@ import de.bixilon.minosoft.assets.directory.DirectoryAssetsManager
 import de.bixilon.minosoft.assets.file.ZipAssetsManager
 import java.nio.file.Path
 
-enum class ResourcePackType(val creator: (ResourcePack) -> AssetsManager) {
-    ZIP({ ZipAssetsManager(it.path) }),
-    DIRECTORY({ DirectoryAssetsManager(Path.of(it.path)) }),
+enum class ResourcePackType(private val creator: (ResourcePack, String) -> AssetsManager) {
+    ZIP({ pack, prefix -> ZipAssetsManager(pack.path, prefix = prefix) }),
+    DIRECTORY({ pack, prefix -> DirectoryAssetsManager(Path.of(pack.path), prefix = prefix) }),
     ;
+
+    fun create(pack: ResourcePack, prefix: String = AssetsManager.DEFAULT_ASSETS_PREFIX): AssetsManager {
+        return creator(pack, prefix)
+    }
 }
