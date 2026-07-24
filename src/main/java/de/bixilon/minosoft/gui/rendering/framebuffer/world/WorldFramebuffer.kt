@@ -33,9 +33,10 @@ class WorldFramebuffer(
 ) : IntegratedFramebuffer {
     private val overlay = OverlayManager(context)
     val `fun` = FunEffectManager(context)
+    val postProcessors = WorldPostProcessors<FramebufferShader>()
     private val defaultShader = context.system.shader.create(minosoft("framebuffer/world")) { FramebufferShader(it) }
     override val shader: FramebufferShader
-        get() = `fun`.shader ?: defaultShader
+        get() = `fun`.shader ?: postProcessors.processor ?: defaultShader
     override var framebuffer: Framebuffer = unsafeNull()
     override val mesh = FramebufferMeshBuilder(context).bake()
     override var polygonMode: PolygonModes = PolygonModes.DEFAULT
