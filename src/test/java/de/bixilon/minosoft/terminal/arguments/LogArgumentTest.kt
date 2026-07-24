@@ -16,11 +16,19 @@ package de.bixilon.minosoft.terminal.arguments
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.parameters.groups.provideDelegate
+import de.bixilon.minosoft.util.logging.LogOptions
+import kotlin.test.BeforeTest
 import kotlin.test.Test
-import kotlin.test.assertFalse
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class LogArgumentTest {
+    @BeforeTest
+    fun resetLogOptions() {
+        LogOptions.color = System.getenv("NO_COLOR").isNullOrBlank()
+        LogOptions.relative = false
+        LogOptions.verbose = false
+    }
 
     private class TestCommand : CliktCommand() {
         val log by LogArgument()
@@ -42,7 +50,7 @@ class LogArgumentTest {
     @Test
     fun `default no color`() {
         val command = TestCommand().test()
-        assertFalse(command.log.noColor)
+        assertEquals(!System.getenv("NO_COLOR").isNullOrBlank(), command.log.noColor)
     }
 
     @Test
