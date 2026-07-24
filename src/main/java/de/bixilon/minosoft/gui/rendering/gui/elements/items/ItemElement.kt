@@ -135,8 +135,8 @@ class ItemElement(
         val shiftDown = guiRenderer.isKeyDown(ModifierKeys.SHIFT)
         if (shiftDown && button == MouseButtons.LEFT) {
             itemsElement.container.execute(FastMoveContainerAction(slotId))
-        } else if (button == MouseButtons.LEFT || button == MouseButtons.RIGHT) {
-            itemsElement.container.execute(SimpleContainerAction(slotId, if (button == MouseButtons.LEFT) SlotCounts.ALL else SlotCounts.PART))
+        } else if (button == MouseButtons.LEFT) {
+            itemsElement.container.execute(SimpleContainerAction(slotId, SlotCounts.ALL))
             return this
         }
         return this
