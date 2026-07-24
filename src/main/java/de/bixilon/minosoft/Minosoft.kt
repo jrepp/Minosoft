@@ -39,6 +39,7 @@ import de.bixilon.minosoft.config.profile.profiles.other.OtherProfileManager
 import de.bixilon.minosoft.data.language.IntegratedLanguage
 import de.bixilon.minosoft.data.text.formatting.FormattingCodes
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
+import de.bixilon.minosoft.debug.ClientDebugChannel
 import de.bixilon.minosoft.gui.eros.Eros
 import de.bixilon.minosoft.gui.eros.ErosOptions
 import de.bixilon.minosoft.gui.eros.crash.CrashReportState
@@ -51,6 +52,8 @@ import de.bixilon.minosoft.main.MinosoftBoot
 import de.bixilon.minosoft.modding.event.events.FinishBootEvent
 import de.bixilon.minosoft.modding.event.master.GlobalEventMaster
 import de.bixilon.minosoft.modding.loader.phase.DefaultModPhases
+import de.bixilon.minosoft.modding.loader.fabric.FabricPackLoader
+import de.bixilon.minosoft.modding.loader.ModOptions
 import de.bixilon.minosoft.properties.MinosoftProperties
 import de.bixilon.minosoft.properties.MinosoftPropertiesLoader
 import de.bixilon.minosoft.terminal.RunConfiguration
@@ -76,6 +79,8 @@ object Minosoft {
         DefaultThreadPool += ThreadPoolRunnable(forcePool = true) { Jackson.init(); MinosoftPropertiesLoader.init() }
         DefaultThreadPool += ThreadPoolRunnable(forcePool = true) { KUtil.initBootClasses() }
         CommandLineArguments.parse(args)
+        ClientDebugChannel.start()
+        ShutdownManager += { ClientDebugChannel.close() }
         Log.log(LogMessageType.OTHER, LogLevels.INFO) { "Starting minosoft..." }
         Log.log(LogMessageType.OTHER, LogLevels.VERBOSE) { "We are running on ${PlatformInfo.OS.name.lowercase()} with an ${PlatformInfo.ARCHITECTURE.name.lowercase()} cpu. Java version is ${Runtime.version()}!" }
 
@@ -92,6 +97,10 @@ object Minosoft {
         latch.await()
         DefaultModPhases.PRE.load()
         DefaultModPhases.PRE.await()
+        ModOptions.fabricPack?.let {
+            FabricPackLoader.activate(it)
+            ShutdownManager += { FabricPackLoader.deactivate() }
+        }
 
         if (PlatformInfo.OS == OSTypes.MAC) {
             checkMacOS()

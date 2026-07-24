@@ -16,6 +16,8 @@ package de.bixilon.minosoft.terminal.arguments
 import com.github.ajalt.clikt.parameters.groups.OptionGroup
 import com.github.ajalt.clikt.parameters.options.*
 import com.github.ajalt.clikt.parameters.types.choice
+import com.github.ajalt.clikt.parameters.types.file
+import com.github.ajalt.clikt.parameters.types.int
 import de.bixilon.kutil.uri.URIUtil.toURI
 import de.bixilon.minosoft.modding.loader.ModOptions
 import de.bixilon.minosoft.modding.loader.mod.source.ModSource
@@ -26,11 +28,21 @@ class ModArgument : OptionGroup(), AppliedArgument {
     val ignoreMods by option("--ignore-mod").multiple(required = false).unique()
     val ignorePhases by option("--ignore-mod-phase").choice(DefaultModPhases.PRE.name, DefaultModPhases.BOOT.name, DefaultModPhases.POST.name).multiple(required = false).unique()
     val sources by option("--mod-source").splitPair("=").convert { pair -> Pair(pair.first, ModSource.of(pair.second.toURI())) }.multiple(required = false).unique()
+    val fabricPack by option("--fabric-pack").file(mustExist = true, canBeFile = false, mustBeReadable = true)
+    val trajectory by option("--mod-trajectory").default("default")
+    val hotReloadGeneration by option("--hot-reload-generation").int().default(1)
 
     override fun apply() {
+        require(trajectory.isNotBlank() && trajectory.length <= 256) {
+            "Mod trajectory must contain 1..256 characters."
+        }
+        require(hotReloadGeneration > 0) { "Hot-reload generation must be positive." }
         ModOptions.disabled = disable
         ModOptions.ignoreMods = ignoreMods
         ModOptions.ignorePhases = ignorePhases
+        ModOptions.fabricPack = fabricPack?.toPath()
+        ModOptions.trajectory = trajectory
+        ModOptions.hotReloadGeneration = hotReloadGeneration
 
         for ((phase, source) in sources) {
             ModOptions.additional.getOrPut(phase) { mutableSetOf() } += source
