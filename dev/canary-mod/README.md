@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026 Jacob Repp -->
+
 # Hot-reload canary mod
 
 This is a source-controlled native Minosoft mod used to prove the mod-only

@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026 Jacob Repp -->
+
 # Crafty public API
 
 Minosoft provides an opt-in client for Crafty's bearer-authenticated public API.

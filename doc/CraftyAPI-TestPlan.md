@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026 Jacob Repp -->
+
 # Crafty public API integration test plan
 
 ## Purpose
