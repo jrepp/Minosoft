@@ -14,20 +14,44 @@
 package de.bixilon.minosoft.terminal.commands.rendering
 
 import de.bixilon.minosoft.commands.nodes.LiteralNode
+import de.bixilon.minosoft.modding.loader.fabric.FabricResourceReloadEvents
+import de.bixilon.minosoft.modding.loader.fabric.FabricResourceReloadType
 
 object ReloadCommand : RenderingCommand {
     override var node = LiteralNode("reload", setOf("rl"))
+        .addChild(LiteralNode("content", executor = {
+            val context = it.session.rendering?.context ?: throw IllegalStateException("Rendering is not loaded!")
+            context.queue += {
+                val generation = FabricResourceReloadEvents.run(
+                    session = it.session,
+                    type = FabricResourceReloadType.CONTENT_FIDELITY,
+                    prepare = { Unit },
+                    apply = { context.models.skeletal.reloadContentFidelity() },
+                )
+                it.session.util.sendDebugMessage("Content fidelity reloaded as generation $generation!")
+            }
+        }))
         .addChild(LiteralNode("shaders", executor = {
             val context = it.session.rendering?.context ?: throw IllegalStateException("Rendering is not loaded!")
             context.queue += {
-                context.system.shader.reload()
+                FabricResourceReloadEvents.run(
+                    session = it.session,
+                    type = FabricResourceReloadType.SHADERS,
+                    prepare = { Unit },
+                    apply = { context.system.shader.reload() },
+                )
                 it.session.util.sendDebugMessage("Shaders reloaded!")
             }
         }))
         .addChild(LiteralNode("textures", executor = {
             val context = it.session.rendering?.context ?: throw IllegalStateException("Rendering is not loaded!")
             context.queue += {
-                context.textures.reload()
+                FabricResourceReloadEvents.run(
+                    session = it.session,
+                    type = FabricResourceReloadType.TEXTURES,
+                    prepare = { Unit },
+                    apply = { context.textures.reload() },
+                )
                 it.session.util.sendDebugMessage("Textures reloaded!")
             }
         }))

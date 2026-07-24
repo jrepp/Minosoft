@@ -54,6 +54,24 @@ data class SkeletalModel(
         }
     }
 
+    /**
+     * Binds a reload candidate to textures already present in the uploaded
+     * static array. Live reload fails before GPU model publication when a pack
+     * introduces a texture that requires rebuilding the array.
+     */
+    fun bindLoadedTextures(context: RenderContext, skip: Set<ResourceLocation>) {
+        check(loadedTextures.isEmpty()) { "Skeletal textures are already bound." }
+        for ((name, properties) in textures) {
+            if (name in skip) continue
+            val file = properties.source ?: name.texture()
+            if (file in skip) continue
+            val texture = requireNotNull(context.textures.static[file]) {
+                "Live skeletal reload requires texture $file to exist in the uploaded static array."
+            }
+            loadedTextures[name] = SkeletalTextureInstance(properties, texture)
+        }
+    }
+
     private fun buildTextures(override: SkeletalTextureMap): SkeletalInstanceTextureMap {
         val textures: MutableSkeletalInstanceTextureMap = this.loadedTextures.toMutableMap()
 

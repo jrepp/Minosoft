@@ -43,6 +43,19 @@ class ContentGenerationStore<T> : AutoCloseable {
     fun reload(
         commit: (T) -> Unit = { },
         prepare: (generationId: Long) -> PreparedContent<T>,
+    ): Long = reloadLeased(
+        commit = { value, _ -> commit(value) },
+        prepare = prepare,
+    )
+
+    /**
+     * Transactional reload variant for renderer generations that must attach a
+     * candidate lease before publication. The factory is valid only during
+     * [commit]; any acquired lease must be closed if commit later fails.
+     */
+    fun reloadLeased(
+        commit: (T, acquireCandidateLease: () -> ContentGenerationLease<T>) -> Unit,
+        prepare: (generationId: Long) -> PreparedContent<T>,
     ): Long {
         val id = synchronized(lock) {
             check(!closed) { "Content generation store is closed." }
@@ -65,7 +78,23 @@ class ContentGenerationStore<T> : AutoCloseable {
                     candidate.retired = true
                     false to candidate
                 } else {
-                    commit(candidate.value)
+                    var acceptingCandidateLeases = true
+                    val acquireCandidateLease = {
+                        synchronized(lock) {
+                            check(acceptingCandidateLeases && !candidate.retired) {
+                                "Candidate generation $id can only be leased during commit."
+                            }
+                            candidate.readers++
+                            ContentGenerationLease(candidate.id, candidate.value) {
+                                release(candidate)
+                            }
+                        }
+                    }
+                    try {
+                        commit(candidate.value, acquireCandidateLease)
+                    } finally {
+                        acceptingCandidateLeases = false
+                    }
                     val previous = active
                     active = candidate
                     previous?.retired = true

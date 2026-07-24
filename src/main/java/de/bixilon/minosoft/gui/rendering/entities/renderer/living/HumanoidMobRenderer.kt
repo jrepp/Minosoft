@@ -24,9 +24,26 @@ open class HumanoidMobRenderer<E : LivingEntity>(
     renderer: EntitiesRenderer,
     entity: E,
     private val modelResource: ResourceLocation,
-) : LivingEntityRenderer<E>(renderer, entity) {
+) : LivingEntityRenderer<E>(renderer, entity), ContentModelReloadable {
     var model: HumanoidMobModel? = null
         private set
+    private var unloadModel = false
+
+    override fun enqueueUnload() {
+        super.enqueueUnload()
+        if (!unloadModel) return
+        val model = model
+        this.model = null
+        if (model != null) {
+            features -= model
+            renderer.queue += { model.unload() }
+        }
+        unloadModel = false
+    }
+
+    override fun reloadContentModel() {
+        unloadModel = true
+    }
 
     override fun update(time: ValueTimeMark, delta: Duration) {
         super.update(time, delta)

@@ -22,19 +22,23 @@ import de.bixilon.minosoft.assets.util.InputStreamUtil.readJson
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.assets.model.generation.ContentGenerationLease
 import de.bixilon.minosoft.assets.model.generation.ContentFidelitySnapshot
+import de.bixilon.minosoft.assets.model.generation.ContentFidelityLoader
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureContextFactory
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureMaterialFrame
 import de.bixilon.minosoft.data.entities.entities.Entity
 import de.bixilon.minosoft.data.registries.identified.ResourceLocationUtil.extend
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
+import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
 import de.bixilon.minosoft.gui.rendering.skeletal.mesh.SkeletalMesh
 import de.bixilon.minosoft.gui.rendering.skeletal.mesh.SkeletalMeshBuilder
 import de.bixilon.minosoft.gui.rendering.skeletal.binding.SkeletalModelBinder
 import de.bixilon.minosoft.gui.rendering.skeletal.binding.SkeletalModelComposer
 import de.bixilon.minosoft.gui.rendering.skeletal.model.SkeletalModel
 import de.bixilon.minosoft.gui.rendering.skeletal.model.textures.SkeletalTextureMap
+import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
+import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
@@ -43,6 +47,7 @@ class SkeletalLoader(private val loader: ModelLoader) {
     private val registered: SynchronizedMap<ResourceLocation, RegisteredModel> = synchronizedMapOf()
     private val baked: MutableMap<ResourceLocation, BakedSkeletalModel> = HashMap()
     private val contentByEntity: MutableMap<ResourceLocation, ResourceLocation> = linkedMapOf()
+    private val contentNames: MutableSet<ResourceLocation> = linkedSetOf()
     private var contentLease: ContentGenerationLease<ContentFidelitySnapshot>? = null
     private var loaded = false
 
@@ -93,6 +98,7 @@ class SkeletalLoader(private val loader: ModelLoader) {
                     entityTextureBase = registered.entityTextureBase,
                     contentLease = generationLease,
                 )
+                if (registered.contentFidelity) contentNames += name
             } catch (throwable: Throwable) {
                 generationLease?.close()
                 throw throwable
@@ -177,6 +183,51 @@ class SkeletalLoader(private val loader: ModelLoader) {
 
     fun contentModel(entity: ResourceLocation): ResourceLocation? = contentByEntity[entity]
 
+    /**
+     * Re-parses, CPU-bakes, uploads, and atomically publishes content-fidelity
+     * skeletal models on the render thread. The existing uploaded texture array
+     * is reused; introducing a new texture rejects the candidate and preserves
+     * the active model generation.
+     */
+    fun reloadContentFidelity(): Long {
+        check(loaded) { "Skeletal models are not loaded." }
+        check(Thread.currentThread() === loader.context.thread) {
+            "Content-fidelity renderer reload must run on the render thread."
+        }
+        val session = loader.context.session
+        val prepared = ContentFidelityLoader(session.assets, session.dataPacks).prepare()
+        val candidate = try {
+            prepareContentReload(prepared.value)
+        } catch (error: Throwable) {
+            prepared.cleanup.closeSuppressing(error)
+            throw error
+        }
+        try {
+            candidate.upload()
+        } catch (error: Throwable) {
+            candidate.retireSuppressing(error)
+            prepared.cleanup.closeSuppressing(error)
+            throw error
+        }
+
+        var handedToStore = false
+        return try {
+            session.contentFidelity.reloadLeased(
+                prepare = {
+                    handedToStore = true
+                    prepared
+                },
+                commit = { _, acquireLease ->
+                    applyContentReload(candidate, acquireLease)
+                },
+            )
+        } catch (error: Throwable) {
+            candidate.retireSuppressing(error)
+            if (!handedToStore) prepared.cleanup.closeSuppressing(error)
+            throw error
+        }
+    }
+
     fun entityTexture(entity: Entity, model: BakedSkeletalModel, tick: Long = entity.age.toLong()): EntityTextureMaterialFrame? {
         val base = model.entityTextureBase ?: return null
         val snapshot = model.contentLease?.value ?: return null
@@ -192,6 +243,17 @@ class SkeletalLoader(private val loader: ModelLoader) {
 
     private fun discoverEntityTextureVariants(registered: RegisteredModel, model: SkeletalModel) {
         val snapshot = contentLease?.value ?: return
+        discoverEntityTextureVariants(registered, model, snapshot) {
+            loader.context.textures.static.create(it)
+        }
+    }
+
+    private fun discoverEntityTextureVariants(
+        registered: RegisteredModel,
+        model: SkeletalModel,
+        snapshot: ContentFidelitySnapshot,
+        texture: (ResourceLocation) -> Texture,
+    ) {
         for ((material, properties) in model.textures) {
             val base = properties.source ?: material.texture()
             val entry = snapshot.entityTextureCatalog[base] ?: continue
@@ -202,8 +264,131 @@ class SkeletalLoader(private val loader: ModelLoader) {
                 continue
             }
             registered.entityTextureBase = base
-            for (texture in entry.textures) {
-                registered.materialOverrides[texture] = mapOf(material to loader.context.textures.static.create(texture))
+            for (variant in entry.textures) {
+                registered.materialOverrides[variant] = mapOf(material to texture(variant))
+            }
+        }
+    }
+
+    private fun prepareContentReload(snapshot: ContentFidelitySnapshot): ContentReloadCandidate {
+        val candidate = linkedMapOf<ResourceLocation, BakedSkeletalModel>()
+        val entities = linkedMapOf<ResourceLocation, ResourceLocation>()
+        fun existingTexture(resource: ResourceLocation): Texture = requireNotNull(loader.context.textures.static[resource]) {
+            "Live content-fidelity reload requires texture $resource to exist in the uploaded static array."
+        }
+
+        try {
+            for ((source, contents) in snapshot.skeletal) {
+                for (content in contents) {
+                    val entity = ContentSkeletalModelNames.entity(content)
+                    val binding = SkeletalModelBinder.bind(
+                        content,
+                        versionId = loader.context.session.version.versionId,
+                        entity = entity,
+                    )
+                    val model = if (content.format == SkeletalContentFormat.OPTIFINE_CEM) {
+                        findNativeEntityModel(entity)?.let { SkeletalModelComposer.compose(it, binding) } ?: binding.model
+                    } else {
+                        binding.model
+                    }
+                    val override = model.textures[binding.defaultMaterial]
+                        ?.takeIf { it.source == null }
+                        ?.let { findEntityTexture(entity) }
+                        ?.let { mapOf(binding.defaultMaterial to existingTexture(it)) }
+                        ?: emptyMap()
+                    val registered = RegisteredModel(
+                        template = null,
+                        override = override,
+                        mesh = SkeletalMesh,
+                        model = model,
+                        contentFidelity = true,
+                    )
+                    model.bindLoadedTextures(loader.context, override.keys)
+                    discoverEntityTextureVariants(registered, model, snapshot, ::existingTexture)
+
+                    val name = ContentSkeletalModelNames.model(source, content.identifier)
+                    require(name !in candidate) { "Duplicate content-fidelity model $name." }
+                    val baked = model.bake(override, SkeletalMesh.buildMesh(loader.context))
+                    val materials = linkedMapOf<ResourceLocation, de.bixilon.minosoft.gui.rendering.util.mesh.Mesh>()
+                    try {
+                        for ((material, materialOverride) in registered.materialOverrides) {
+                            materials[material] = model.bake(
+                                override + materialOverride,
+                                SkeletalMesh.buildMesh(loader.context),
+                            ).mesh
+                        }
+                    } catch (error: Throwable) {
+                        baked.retireSuppressing(error)
+                        for (mesh in materials.values) {
+                            if (mesh.state != MeshStates.PREPARING) continue
+                            try {
+                                mesh.drop()
+                            } catch (cleanup: Throwable) {
+                                error.addSuppressed(cleanup)
+                            }
+                        }
+                        throw error
+                    }
+                    val complete = baked.copy(
+                        materialMeshes = materials,
+                        entityTextureBase = registered.entityTextureBase,
+                    )
+                    candidate[name] = complete
+                    if (content.format == SkeletalContentFormat.OPTIFINE_CEM) {
+                        entities[entity] = name
+                    }
+                }
+            }
+            return ContentReloadCandidate(candidate, entities)
+        } catch (error: Throwable) {
+            candidate.values.forEach { it.retireSuppressing(error) }
+            throw error
+        }
+    }
+
+    private fun applyContentReload(
+        candidate: ContentReloadCandidate,
+        acquireLease: () -> ContentGenerationLease<ContentFidelitySnapshot>,
+    ) {
+        try {
+            candidate.models.values.forEach { model ->
+                check(model.contentLease == null) { "Reload candidate already owns a content lease." }
+                model.contentLease = acquireLease()
+            }
+        } catch (error: Throwable) {
+            candidate.retireSuppressing(error)
+            throw error
+        }
+
+        val previousNames = contentNames.toSet()
+        val previousModels = previousNames.mapNotNull { name -> baked[name]?.let { name to it } }.toMap()
+        val previousEntities = contentByEntity.toMap()
+        try {
+            previousNames.forEach(baked::remove)
+            baked.putAll(candidate.models)
+            contentNames.clear()
+            contentNames.addAll(candidate.models.keys)
+            contentByEntity.clear()
+            contentByEntity.putAll(candidate.entities)
+            loader.context.renderer[EntitiesRenderer]?.renderers?.reloadContentModels()
+        } catch (error: Throwable) {
+            candidate.models.keys.forEach(baked::remove)
+            baked.putAll(previousModels)
+            contentNames.clear()
+            contentNames.addAll(previousNames)
+            contentByEntity.clear()
+            contentByEntity.putAll(previousEntities)
+            candidate.retireSuppressing(error)
+            throw error
+        }
+        candidate.published = true
+        for (previous in previousModels.values) {
+            try {
+                previous.retire()
+            } catch (error: Throwable) {
+                Log.log(LogMessageType.RENDERING, LogLevels.WARN) {
+                    "Content-fidelity model retired with a cleanup failure: $error"
+                }
             }
         }
     }
@@ -252,6 +437,45 @@ class SkeletalLoader(private val loader: ModelLoader) {
         var entityTextureBase: ResourceLocation? = null,
         val materialOverrides: MutableMap<ResourceLocation, SkeletalTextureMap> = linkedMapOf(),
     )
+
+    private class ContentReloadCandidate(
+        val models: Map<ResourceLocation, BakedSkeletalModel>,
+        val entities: Map<ResourceLocation, ResourceLocation>,
+    ) {
+        var published = false
+
+        fun upload() {
+            try {
+                models.values.forEach(BakedSkeletalModel::load)
+            } catch (error: Throwable) {
+                retireSuppressing(error)
+                throw error
+            }
+        }
+
+        fun retireSuppressing(error: Throwable) {
+            if (published) return
+            for (model in models.values) {
+                model.retireSuppressing(error)
+            }
+        }
+    }
+
+    private fun BakedSkeletalModel.retireSuppressing(error: Throwable) {
+        try {
+            retire()
+        } catch (cleanup: Throwable) {
+            error.addSuppressed(cleanup)
+        }
+    }
+
+    private fun AutoCloseable.closeSuppressing(error: Throwable) {
+        try {
+            close()
+        } catch (cleanup: Throwable) {
+            error.addSuppressed(cleanup)
+        }
+    }
 
     companion object {
 

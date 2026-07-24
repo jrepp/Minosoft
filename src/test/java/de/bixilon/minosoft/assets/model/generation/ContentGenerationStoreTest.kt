@@ -89,4 +89,54 @@ class ContentGenerationStoreTest {
         store.lease()!!.use { assertEquals("stable", it.value) }
         store.close()
     }
+
+    @Test
+    fun `commit can lease candidate before atomic publication`() {
+        val store = ContentGenerationStore<String>()
+        var firstCleaned = false
+        var secondCleaned = false
+        store.reload { PreparedContent("first", AutoCloseable { firstCleaned = true }) }
+        var renderLease: ContentGenerationLease<String>? = null
+
+        store.reloadLeased(
+            prepare = { PreparedContent("second", AutoCloseable { secondCleaned = true }) },
+            commit = { value, acquire ->
+                assertEquals("second", value)
+                assertEquals("first", store.lease()!!.use { it.value })
+                val candidateLease = acquire()
+                renderLease = candidateLease
+                assertEquals("second", candidateLease.value)
+            },
+        )
+
+        assertTrue(firstCleaned)
+        store.close()
+        assertFalse(secondCleaned)
+        renderLease!!.close()
+        assertTrue(secondCleaned)
+    }
+
+    @Test
+    fun `failed leased commit retires candidate after attached lease closes`() {
+        val store = ContentGenerationStore<String>()
+        var candidateCleaned = false
+        var renderLease: ContentGenerationLease<String>? = null
+        store.reload { PreparedContent("stable") }
+
+        assertFailsWith<IllegalStateException> {
+            store.reloadLeased(
+                prepare = { PreparedContent("candidate", AutoCloseable { candidateCleaned = true }) },
+                commit = { _, acquire ->
+                    renderLease = acquire()
+                    throw IllegalStateException("renderer apply failed")
+                },
+            )
+        }
+
+        assertFalse(candidateCleaned)
+        store.lease()!!.use { assertEquals("stable", it.value) }
+        renderLease!!.close()
+        assertTrue(candidateCleaned)
+        store.close()
+    }
 }

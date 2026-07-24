@@ -35,7 +35,7 @@ data class BakedSkeletalModel(
     val entityTextureBase: ResourceLocation? = null,
     val expressions: List<SkeletalExpressionBinding> = emptyList(),
     val expressionAliases: Map<String, String> = emptyMap(),
-    val contentLease: ContentGenerationLease<ContentFidelitySnapshot>? = null,
+    var contentLease: ContentGenerationLease<ContentFidelitySnapshot>? = null,
 ) {
     private var state = SkeletalModelStates.PREPARING
     private var instances = 0

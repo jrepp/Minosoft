@@ -30,6 +30,7 @@ import de.bixilon.minosoft.gui.rendering.entities.factory.RegisteredEntityModelF
 import de.bixilon.minosoft.gui.rendering.entities.renderer.DummyEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.FallbackLivingEntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.ContentModelReloadable
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.monster.ZombieRenderer
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
@@ -92,6 +93,12 @@ class EntityRendererManager(val renderer: EntitiesRenderer) : Iterable<EntityRen
 
     fun unload(renderer: EntityRenderer<*>) {
         this.renderer.queue += { renderer.unload() }
+    }
+
+    fun reloadContentModels() = lock.acquired {
+        renderers.unsafe.values.forEach {
+            (it as? ContentModelReloadable)?.reloadContentModel()
+        }
     }
 
     override fun iterator(): Iterator<EntityRenderer<*>> {
