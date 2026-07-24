@@ -67,21 +67,23 @@ class BakedModel(
 
 
         for ((directionIndex, faces) in faces.withIndex()) {
-            val neighbour = neighbours[directionIndex]
             val direction = Directions.VALUES[directionIndex]
             if (direction.toMeshDetail() !in details) continue
-            val inverted = direction.inverted
             if (cave && !darkCaveSurface && light[directionIndex] == 0.toByte() && neighbours[directionIndex] == null) continue
 
 
             for (face in faces) {
-                if (FaceCulling.canCull(state, face.properties, inverted, neighbour, aggressive)) {
-                    continue
+                val cullFace = face.cullFace
+                if (cullFace != null) {
+                    val neighbour = neighbours[cullFace.ordinal]
+                    if (FaceCulling.canCull(state, face.properties, cullFace.inverted, neighbour, aggressive)) {
+                        continue
+                    }
                 }
 
                 var aoRaw = AmbientOcclusionUtil.EMPTY
 
-                if (ao != null && face.properties != null) {
+                if (face.ambientOcclusion && ao != null && face.properties != null) {
                     aoRaw = ao.apply(direction, position.inSectionPosition)
                 }
 
@@ -108,7 +110,7 @@ class BakedModel(
 
     override fun render(offset: Vec3f, consumer: BlockVertexConsumer, stack: ItemStack, tints: RGBArray?) = render(offset, consumer, tints, null)
 
-    override fun getDisplay(position: DisplayPositions): ModelDisplay? {
+    override fun getDisplay(position: DisplayPositions, stack: ItemStack?): ModelDisplay? {
         return this.display?.get(position)
     }
 

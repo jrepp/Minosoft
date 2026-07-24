@@ -21,20 +21,49 @@ import de.bixilon.minosoft.gui.rendering.chunk.mesh.BlockVertexConsumer
 import de.bixilon.minosoft.gui.rendering.gui.GUIRenderer
 import de.bixilon.minosoft.gui.rendering.gui.mesh.GUIVertexOptions
 import de.bixilon.minosoft.gui.rendering.gui.mesh.consumer.GuiVertexConsumer
+import de.bixilon.minosoft.gui.rendering.models.raw.display.DisplayPositions
+import de.bixilon.minosoft.gui.rendering.models.raw.display.ModelDisplay
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
+import de.bixilon.minosoft.gui.rendering.models.block.state.apply.SingleBlockStateApply
 
 class ItemModelPrototype(
-    private var layers: Array<Texture>,
+    private var layers: Array<Texture>?,
     override val particle: Texture?,
+    private val display: Map<DisplayPositions, ModelDisplay>?,
+    private var overrides: List<ItemModelOverridePrototype> = emptyList(),
+    private val block: SingleBlockStateApply? = null,
 ) : ItemRender {
+    constructor(block: SingleBlockStateApply) : this(
+        layers = null,
+        particle = null,
+        display = block.model.display,
+        block = block,
+    )
     override fun render(gui: GUIRenderer, offset: Vec2f, consumer: GuiVertexConsumer, options: GUIVertexOptions?, size: Vec2f, stack: ItemStack, tints: RGBArray?) = prototype()
     override fun render(offset: Vec3f, consumer: BlockVertexConsumer, stack: ItemStack, tints: RGBArray?) = prototype()
 
 
     private fun prototype(): Nothing = throw IllegalStateException("prototype")
 
+    override fun getDisplay(position: DisplayPositions, stack: ItemStack?): ModelDisplay? = display?.get(position)
 
     fun bake(): ItemRender {
-        return FlatItemRender(this.layers, this.particle)
+        val base = block?.bake() ?: FlatItemRender(
+            requireNotNull(this.layers) { "Item model prototype has neither layered nor element geometry." },
+            this.particle,
+            this.display,
+        )
+        if (overrides.isEmpty()) return base
+        return PredicateItemRender(base, overrides.map { ItemModelOverrideRender(it.predicate, it.model.bake()) })
+    }
+
+    fun withOverrides(overrides: List<ItemModelOverridePrototype>): ItemModelPrototype {
+        this.overrides = overrides
+        return this
     }
 }
+
+data class ItemModelOverridePrototype(
+    val predicate: ItemPredicate,
+    val model: ItemModelPrototype,
+)

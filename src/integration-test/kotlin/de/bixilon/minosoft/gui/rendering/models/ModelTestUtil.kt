@@ -72,10 +72,13 @@ object ModelTestUtil {
 
     fun SingleBlockStateApply.bake(textures: TextureManager): BakedModel? {
         load(textures)
-
-        named.get<Map<String, Texture>>(textures.static).values.forEach { it::loader.forceSet(DummyTextureLoader); it.load(context); it.renderData = DummyTextureRenderData; it.transparency = TextureTransparencies.OPAQUE }
+        textures.prepareDummyTextures()
 
         return bake()
+    }
+
+    fun TextureManager.prepareDummyTextures() {
+        named.get<Map<String, Texture>>(static).values.forEach { it::loader.forceSet(DummyTextureLoader); it.load(context); it.renderData = DummyTextureRenderData; it.transparency = TextureTransparencies.OPAQUE }
     }
 
 

@@ -33,15 +33,37 @@ class BakedFace(
     val uv: UnpackedUVArray,
     val shade: Shades,
     val tintIndex: Int,
-    cull: Directions?,
+    lightDirection: Directions?,
     val texture: Texture,
     val properties: FaceProperties? = null,
+    val cullFace: Directions? = null,
+    val ambientOcclusion: Boolean = true,
 ) {
     val packedUV = uv.pack()
-    private val lightIndex = cull?.ordinal ?: SELF_LIGHT_INDEX
+    private val lightIndex = lightDirection?.ordinal ?: SELF_LIGHT_INDEX
 
 
-    constructor(positions: FaceVertexData, uv: UnpackedUVArray, shade: Boolean, tintIndex: Int, texture: Texture, direction: Directions, properties: FaceProperties?) : this(positions, uv, if (shade) direction.shade else Shades.NONE, tintIndex, if (properties == null) null else direction, texture, properties)
+    constructor(
+        positions: FaceVertexData,
+        uv: UnpackedUVArray,
+        shade: Boolean,
+        tintIndex: Int,
+        texture: Texture,
+        direction: Directions,
+        properties: FaceProperties?,
+        cullFace: Directions? = null,
+        ambientOcclusion: Boolean = true,
+    ) : this(
+        positions,
+        uv,
+        if (shade) direction.shade else Shades.NONE,
+        tintIndex,
+        if (properties == null) null else direction,
+        texture,
+        properties,
+        cullFace,
+        ambientOcclusion,
+    )
 
     private fun color(tint: RGBColor): RGBColor {
         if (tint.rgb <= 0) return shade.color

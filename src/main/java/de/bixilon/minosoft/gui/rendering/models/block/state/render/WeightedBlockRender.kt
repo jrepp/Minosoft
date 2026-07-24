@@ -87,7 +87,7 @@ class WeightedBlockRender(
         models.first().model.render(offset, consumer, stack, tints)
     }
 
-    override fun getDisplay(position: DisplayPositions): ModelDisplay? {
+    override fun getDisplay(position: DisplayPositions, stack: ItemStack?): ModelDisplay? {
         return models.first().model.getDisplay(position)
     }
 

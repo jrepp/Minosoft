@@ -50,7 +50,7 @@ interface NeighbourBlockRender : BlockRender {
         return default?.getProperties(direction) // both models should have the same properties
     }
 
-    override fun getDisplay(position: DisplayPositions): ModelDisplay? {
+    override fun getDisplay(position: DisplayPositions, stack: ItemStack?): ModelDisplay? {
         return default?.getDisplay(position)
     }
 

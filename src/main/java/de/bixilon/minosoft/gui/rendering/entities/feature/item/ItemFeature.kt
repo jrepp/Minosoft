@@ -33,9 +33,15 @@ import kotlin.time.Duration
 open class ItemFeature(
     renderer: EntityRenderer<*>,
     stack: ItemStack?,
-    val display: DisplayPositions,
+    display: DisplayPositions,
     val many: Boolean = true,
 ) : MeshedFeature<Mesh>(renderer) {
+    var display: DisplayPositions = display
+        set(value) {
+            if (field == value) return
+            field = value
+            unload = true
+        }
     private var matrix = MMat4f()
     private var displayMatrix = Mat4f.EMPTY
     private var distance: ItemRenderDistance? = null
@@ -69,7 +75,7 @@ open class ItemFeature(
     private fun createMesh(stack: ItemStack) {
         val distance = this.distance ?: return
         val model = stack.item.getModel(renderer.renderer.session) ?: return
-        val display = model.getDisplay(display)
+        val display = model.getDisplay(display, stack)
         this.displayMatrix = display?.matrix ?: Mat4f.EMPTY
         val mesh = BlockMeshBuilder(renderer.renderer.context)
         val offset = MVec3f()

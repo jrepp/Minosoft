@@ -27,12 +27,15 @@ import de.bixilon.minosoft.gui.rendering.gui.mesh.GUIVertexOptions
 import de.bixilon.minosoft.gui.rendering.gui.mesh.consumer.GuiVertexConsumer
 import de.bixilon.minosoft.gui.rendering.light.ao.AmbientOcclusionUtil
 import de.bixilon.minosoft.gui.rendering.models.block.element.face.FaceUV
+import de.bixilon.minosoft.gui.rendering.models.raw.display.DisplayPositions
+import de.bixilon.minosoft.gui.rendering.models.raw.display.ModelDisplay
 import de.bixilon.minosoft.gui.rendering.models.util.CuboidUtil
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 
 class FlatItemRender(
     val layers: Array<Texture>,
     override val particle: Texture?,
+    private val display: Map<DisplayPositions, ModelDisplay>? = null,
 ) : ItemRender {
 
     override fun render(gui: GUIRenderer, offset: Vec2f, consumer: GuiVertexConsumer, options: GUIVertexOptions?, size: Vec2f, stack: ItemStack, tints: RGBArray?) {
@@ -49,6 +52,8 @@ class FlatItemRender(
         }
         // TODO: items have depth
     }
+
+    override fun getDisplay(position: DisplayPositions, stack: ItemStack?): ModelDisplay? = display?.get(position)
 
 
     private companion object {

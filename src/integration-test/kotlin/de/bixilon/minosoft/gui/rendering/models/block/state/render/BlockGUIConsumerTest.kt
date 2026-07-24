@@ -28,12 +28,16 @@ import de.bixilon.minosoft.gui.rendering.models.raw.display.ModelDisplay
 import de.bixilon.minosoft.gui.rendering.models.util.CuboidUtil
 import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTexture
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
+import de.bixilon.minosoft.gui.rendering.system.base.buffer.vertex.PrimitiveTypes
 import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTexture
 import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTextureLoader
 import de.bixilon.minosoft.gui.rendering.util.mesh.uv.array.PackedUVArray
 import de.bixilon.minosoft.gui.rendering.util.mesh.uv.array.UnpackedUVArray
 import de.bixilon.minosoft.test.ITUtil.allocate
+import org.testng.Assert.assertEquals
+import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
+import kotlin.math.abs
 
 @Test(groups = ["models"])
 class BlockGUIConsumerTest {
@@ -58,14 +62,27 @@ class BlockGUIConsumerTest {
     }
 
 
-    @Test(enabled = false)
-    fun `south quad with offset and specific size`() {
+    @Test
+    fun `thin button geometry is centered and contained`() {
         val consumer = create()
-        val position = CuboidUtil.positions(Directions.SOUTH, Vec3f(0, 0, 0), Vec3f(1, 1, 1))
         val uv = UnpackedUVArray(floatArrayOf(0f, 0f, 0f, 1f, 1f, 1f, 1f, 0f)).pack()
-        consumer.addQuad(Vec3f.EMPTY, position, uv, DummyTexture(), 0, ChatColors.WHITE.rgb(), AmbientOcclusionUtil.EMPTY)
+        for (direction in Directions.VALUES) {
+            val position = CuboidUtil.positions(direction, Vec3f(0.375f, 0.0f, 0.375f), Vec3f(0.625f, 0.125f, 0.625f))
+            consumer.addQuad(Vec3f.EMPTY, position, uv, DummyTexture(), 0, ChatColors.WHITE.rgb(), AmbientOcclusionUtil.EMPTY)
+        }
+        consumer.flush()
 
-        consumer.assertVertices(arrayOf(Vec2f())) // TODO
+        val vertices = consumer.consumer.unsafeCast<GuiConsumer>().vertices
+        assertEquals(vertices.size, Directions.VALUES.size * 4)
+        val minX = vertices.minOf { it.x }
+        val minY = vertices.minOf { it.y }
+        val maxX = vertices.maxOf { it.x }
+        val maxY = vertices.maxOf { it.y }
+
+        assertTrue(minX >= 11.0f && maxX <= 56.0f)
+        assertTrue(minY >= 12.0f && maxY <= 57.0f)
+        assertTrue(abs((minX + maxX) / 2.0f - 33.5f) < 0.01f)
+        assertTrue(abs((minY + maxY) / 2.0f - 34.5f) < 0.01f)
     }
 
     private class GuiConsumer : GuiVertexConsumer {
@@ -77,6 +94,10 @@ class BlockGUIConsumerTest {
         override fun addQuad(start: Vec2f, end: Vec2f, tint: RGBAColor, options: GUIVertexOptions?) = Broken()
 
         override fun addChar(start: Vec2f, end: Vec2f, texture: ShaderTexture, uvStart: Vec2f, uvEnd: Vec2f, italic: Boolean, tint: RGBAColor, options: GUIVertexOptions?) = Broken()
-        override fun addQuad(positions: FloatArray, uv: PackedUVArray, texture: ShaderTexture, tint: RGBAColor, options: GUIVertexOptions?) = Broken()
+        override fun addQuad(positions: FloatArray, uv: PackedUVArray, texture: ShaderTexture, tint: RGBAColor, options: GUIVertexOptions?) {
+            for (index in 0 until PrimitiveTypes.QUAD.vertices) {
+                vertices += Vec2f(positions[index * Vec2f.LENGTH], positions[index * Vec2f.LENGTH + 1])
+            }
+        }
     }
 }

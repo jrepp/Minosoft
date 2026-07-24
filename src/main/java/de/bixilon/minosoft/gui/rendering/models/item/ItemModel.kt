@@ -15,9 +15,14 @@ package de.bixilon.minosoft.gui.rendering.models.item
 
 import de.bixilon.kutil.json.JsonObject
 import de.bixilon.kutil.json.JsonUtil.toJsonObject
+import de.bixilon.kutil.json.JsonUtil.toJsonList
+import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.models.block.BlockModel
+import de.bixilon.minosoft.gui.rendering.models.block.element.ModelElement
+import de.bixilon.minosoft.gui.rendering.models.block.state.apply.SingleBlockStateApply
 import de.bixilon.minosoft.gui.rendering.models.raw.display.DisplayPositions
 import de.bixilon.minosoft.gui.rendering.models.raw.display.ModelDisplay
+import de.bixilon.minosoft.gui.rendering.models.raw.light.GUILights
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
@@ -26,36 +31,81 @@ import de.bixilon.minosoft.util.KUtil.toResourceLocation
 class ItemModel(
     val display: Map<DisplayPositions, ModelDisplay>? = null,
     val textures: Map<String, Any>?,
+    val builtinEntity: Boolean = false,
+    val overrides: List<ItemModelOverride> = emptyList(),
+    val elements: List<ModelElement>? = null,
+    val guiLight: GUILights = GUILights.SIDE,
+    val ambientOcclusion: Boolean = true,
 ) {
 
-    fun load(textures: TextureManager): ItemModelPrototype? {
+    fun load(textures: TextureManager, useParticleFallback: Boolean = false): ItemModelPrototype? {
+        if (elements != null) {
+            val block = BlockModel(guiLight, display, elements, this.textures, ambientOcclusion)
+            val apply = SingleBlockStateApply(block)
+            apply.load(textures)
+            return ItemModelPrototype(apply)
+        }
         if (this.textures == null) return null
         val particle = this.textures["particle"]?.let { textures.static.create(it.toResourceLocation().texture()) }
 
         val layers: MutableList<IndexedValue<Texture>> = mutableListOf()
         for ((key, texture) in this.textures) {
             if (!key.startsWith("layer")) continue
-            val index = key.removePrefix("layer").toInt()
+            if (layers.size >= MAX_LAYERS) break
+            val index = key.removePrefix("layer").toIntOrNull() ?: continue
             layers += IndexedValue(index, textures.static.create(texture.toResourceLocation().texture()))
         }
-        if (layers.isEmpty()) return null
+        if (layers.isEmpty()) {
+            if (!useParticleFallback || particle == null) return null
+            return ItemModelPrototype(arrayOf(particle), particle, display)
+        }
 
         layers.sortBy { it.index }
         val array = layers.map { it.value }.toTypedArray()
 
-        return ItemModelPrototype(array, particle)
+        return ItemModelPrototype(array, particle, display)
     }
 
     companion object {
 
         fun deserialize(parent: ItemModel?, data: JsonObject): ItemModel {
-            val display = data["display"]?.toJsonObject()?.let { BlockModel.display(it, parent?.display) } ?: parent?.display
-            val textures = data["textures"]?.toJsonObject()?.let { BlockModel.textures(it, parent?.textures) } ?: parent?.textures
+            val blockParent = parent?.let {
+                BlockModel(it.guiLight, it.display, it.elements, it.textures, it.ambientOcclusion)
+            }
+            val block = BlockModel.deserialize(blockParent, data)
 
-            // TODO: overrides, predicates
+            val overrides = data["overrides"]?.toJsonList()?.take(MAX_OVERRIDES)?.map { entry ->
+                val override = entry.toJsonObject()
+                    ?: throw IllegalArgumentException("Item model override must be an object.")
+                val model = override["model"]?.toString()?.toResourceLocation()
+                    ?: throw IllegalArgumentException("Item model override is missing its model.")
+                val predicates = override["predicate"]?.toJsonObject()?.entries?.take(MAX_PREDICATES)?.associate { (key, value) ->
+                    val number = value as? Number
+                        ?: throw IllegalArgumentException("Item model predicate $key must be numeric.")
+                    ResourceLocation.of(key) to number.toFloat()
+                } ?: emptyMap()
+                ItemModelOverride(ItemPredicate(predicates), model)
+            } ?: parent?.overrides ?: emptyList()
 
-            return ItemModel(display, textures)
+            return ItemModel(
+                display = block.display,
+                textures = block.textures,
+                builtinEntity = parent?.builtinEntity == true,
+                overrides = overrides,
+                elements = block.elements,
+                guiLight = block.guiLight,
+                ambientOcclusion = block.ambientOcclusion,
+            )
         }
+
+        private const val MAX_LAYERS = 256
+        const val MAX_OVERRIDES = 4096
+        private const val MAX_PREDICATES = 64
     }
 
 }
+
+data class ItemModelOverride(
+    val predicate: ItemPredicate,
+    val model: ResourceLocation,
+)

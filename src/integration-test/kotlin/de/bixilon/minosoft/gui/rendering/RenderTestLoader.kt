@@ -18,9 +18,13 @@ import de.bixilon.kutil.observer.DataObserver
 import de.bixilon.kutil.reflection.ReflectionUtil.forceSet
 import de.bixilon.kutil.time.TimeUtil.sleep
 import de.bixilon.minosoft.assets.AssetsLoader
+import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
+import de.bixilon.minosoft.gui.rendering.models.item.FlatItemRender
+import de.bixilon.minosoft.gui.rendering.models.raw.display.DisplayPositions
 import de.bixilon.minosoft.gui.rendering.system.dummy.DummyRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.window.dummy.DummyWindow
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil.createSession
+import org.testng.Assert.assertFalse
 import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
 import kotlin.time.Duration.Companion.milliseconds
@@ -46,4 +50,21 @@ class RenderTestLoader {
         assertTrue(context.system is DummyRenderSystem)
         RenderTestUtil.context = context
     }
+
+    @Test(dependsOnMethods = ["init"])
+    fun `dedicated generated block item model overrides world block model`() {
+        val items = RenderTestUtil.context.session.registries.item
+
+        assertTrue(items[minecraft("ladder")]?.model is FlatItemRender)
+        assertFalse(items[minecraft("oak_planks")]?.model is FlatItemRender)
+    }
+
+    @Test(dependsOnMethods = ["init"])
+    fun `generated handheld item preserves first person display`() {
+        val sword = RenderTestUtil.context.session.registries.item[minecraft("wooden_sword")]?.model
+        assertTrue(sword is FlatItemRender)
+        assertTrue(sword?.getDisplay(DisplayPositions.FIRST_PERSON_RIGHT_HAND) != null)
+        assertTrue(sword?.getDisplay(DisplayPositions.FIRST_PERSON_LEFT_HAND) != null)
+    }
+
 }

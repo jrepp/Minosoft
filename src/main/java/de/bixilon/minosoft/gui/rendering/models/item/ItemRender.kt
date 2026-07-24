@@ -32,5 +32,7 @@ interface ItemRender {
     fun render(offset: Vec3f, consumer: BlockVertexConsumer, stack: ItemStack, tints: RGBArray?)
 
     // TODO: is that really a property of ItemRender? not BlockRender
-    fun getDisplay(position: DisplayPositions): ModelDisplay? = null
+    fun getDisplay(position: DisplayPositions, stack: ItemStack? = null): ModelDisplay? = null
+
+    fun isFlat(stack: ItemStack): Boolean = this is FlatItemRender
 }

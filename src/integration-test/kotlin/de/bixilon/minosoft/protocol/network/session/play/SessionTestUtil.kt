@@ -17,6 +17,8 @@ import de.bixilon.kmath.number.IntUtil.pow
 import de.bixilon.kutil.observer.DataObserver
 import de.bixilon.kutil.reflection.ReflectionUtil.field
 import de.bixilon.minosoft.assets.minecraft.MinecraftPackFormat.packFormat
+import de.bixilon.minosoft.assets.model.generation.ContentFidelitySnapshot
+import de.bixilon.minosoft.assets.model.generation.ContentGenerationStore
 import de.bixilon.minosoft.assets.properties.manager.AssetsManagerProperties
 import de.bixilon.minosoft.assets.properties.manager.pack.PackProperties
 import de.bixilon.minosoft.assets.session.SessionAssetsManager
@@ -59,6 +61,7 @@ object SessionTestUtil {
     private val EVENTS = PlaySession::events.field
     private val PROFILES = PlaySession::profiles.field
     private val ASSETS_MANAGER = PlaySession::assets.field
+    private val CONTENT_FIDELITY = PlaySession::contentFidelity.field
     private val STATE = PlaySession::state.field
     private val TAGS = PlaySession::tags.field
     private val LEGACY_TAGS = PlaySession::legacyTags.field
@@ -89,6 +92,7 @@ object SessionTestUtil {
         EVENTS.set(session, EventMaster())
         PROFILES.set(session, profiles)
         ASSETS_MANAGER.set(session, SessionAssetsManager(AssetsManagerProperties(PackProperties(version.packFormat))))
+        CONTENT_FIDELITY.set(session, ContentGenerationStore<ContentFidelitySnapshot>())
         STATE.set(session, DataObserver(PlaySessionStates.PLAYING))
         TAGS.set(session, TagManager())
         LEGACY_TAGS.set(session, FALLBACK_TAGS)

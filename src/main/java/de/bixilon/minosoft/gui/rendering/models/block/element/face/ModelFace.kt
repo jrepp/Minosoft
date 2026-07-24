@@ -32,6 +32,7 @@ data class ModelFace(
     val uv: FaceUV?,
     val rotation: Int,
     val tintIndex: Int = -1,
+    val cullFace: Directions? = null,
 ) {
 
 
@@ -75,8 +76,9 @@ data class ModelFace(
 
             val rotation = data["rotation"]?.toInt()?.rotation() ?: 0
             val tintIndex = data["tintindex"]?.toInt() ?: TintManager.NO_TINT
+            val cullFace = data["cullface"]?.toString()?.let { Directions[it] }
 
-            return ModelFace(texture, uv, rotation, tintIndex)
+            return ModelFace(texture, uv, rotation, tintIndex, cullFace)
         }
 
         fun deserialize(data: Map<String, JsonObject>): Map<Directions, ModelFace>? {

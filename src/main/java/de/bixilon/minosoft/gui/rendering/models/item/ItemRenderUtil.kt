@@ -20,7 +20,12 @@ object ItemRenderUtil {
 
     @Deprecated("please let this be the last fucking hack in this game") // TODO
     fun Item.getModel(session: PlaySession): ItemRender? {
+        // BlockItem.model already gives an explicit item renderer priority over
+        // its block/default-state fallback. Preserve that priority for
+        // builtin-entity and mod-provided item renderers; retain the registry
+        // lookup only for legacy generic items that are not BlockItem-backed.
+        model?.let { return it }
         val block = session.registries.block[identifier]
-        return block?.model ?: block?.states?.default?.model ?: model
+        return block?.model ?: block?.states?.default?.model
     }
 }

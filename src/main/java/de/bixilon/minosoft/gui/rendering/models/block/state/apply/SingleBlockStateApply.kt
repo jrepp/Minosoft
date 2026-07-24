@@ -185,7 +185,18 @@ data class SingleBlockStateApply(
 
 
             val faceProperties = if (rotation == null && this@SingleBlockStateApply.rotation == null) positions.properties(rotatedXY, texture) else null
-            val bakedFace = BakedFace(positions, UnpackedUVArray(uv), this.shade, face.tintIndex, texture, rotatedXY, faceProperties)
+            val cullFace = face.cullFace?.rotateX(x)?.rotateY(y)
+            val bakedFace = BakedFace(
+                positions,
+                UnpackedUVArray(uv),
+                this.shade,
+                face.tintIndex,
+                texture,
+                rotatedXY,
+                faceProperties,
+                cullFace,
+                model.ambientOcclusion,
+            )
 
             faces[rotatedXY.ordinal] += bakedFace
             properties[rotatedXY.ordinal] += faceProperties ?: continue
