@@ -30,6 +30,9 @@ import de.bixilon.minosoft.gui.rendering.gui.gui.GUIBuilder
 import de.bixilon.minosoft.gui.rendering.gui.gui.LayoutedGUIElement
 import de.bixilon.minosoft.gui.rendering.gui.gui.screen.menu.Menu
 import de.bixilon.minosoft.gui.rendering.gui.gui.screen.menu.debug.DebugMenu
+import de.bixilon.minosoft.gui.rendering.gui.gui.screen.menu.options.audio.AudioMenu
+import de.bixilon.minosoft.gui.rendering.gui.gui.screen.menu.options.lighting.LightingMenu
+import de.bixilon.minosoft.gui.rendering.gui.gui.screen.menu.options.mods.FabricModSettingsMenu
 import de.bixilon.minosoft.terminal.RunConfiguration
 
 class PauseMenu(guiRenderer: GUIRenderer) : Menu(guiRenderer) {
@@ -39,6 +42,9 @@ class PauseMenu(guiRenderer: GUIRenderer) : Menu(guiRenderer) {
         this += SpacerElement(guiRenderer, Vec2f(0, 20))
 
         this += ButtonElement(guiRenderer, "menu.pause.back_to_game".i18n()) { guiRenderer.gui.popOrPause() }
+        this += ButtonElement(guiRenderer, "menu.pause.options.lighting".i18n()) { guiRenderer.gui.push(LightingMenu) }
+        this += ButtonElement(guiRenderer, "menu.pause.options.audio".i18n()) { guiRenderer.gui.push(AudioMenu) }
+        this += ButtonElement(guiRenderer, "menu.pause.options.mods".i18n()) { guiRenderer.gui.push(FabricModSettingsMenu(guiRenderer)) }
         this += ButtonElement(guiRenderer, "menu.pause.options.debug".i18n()) { guiRenderer.gui.push(DebugMenu) }
         this += NeutralizedButtonElement(guiRenderer, "menu.pause.disconnect".i18n(), "menu.pause.disconnect.confirm".i18n()) { guiRenderer.session.terminate() }
         if (ErosProfileManager.selected.general.hideErosOnceConnected) {

@@ -190,15 +190,89 @@ minosoft:profiles.profile.list.button.create=Create profile
 
 # In-game
 
+### Launcher title
+
+minosoft:main.title.splash=Built block by block!
+minosoft:main.title.multiplayer=Multiplayer
+minosoft:main.title.profiles=Profiles & Options
+minosoft:main.title.mods=Mods
+minosoft:main.title.quit=Quit Game
+
 ### Pause
 
 minosoft:menu.pause.back_to_game=Back to game
+minosoft:menu.pause.options.lighting=Lighting
+minosoft:menu.pause.options.audio=Audio
+minosoft:menu.pause.options.mods=Mod settings
 minosoft:menu.pause.options.debug=Debug options
 minosoft:menu.pause.disconnect=Disconnect
 minosoft:menu.pause.disconnect.confirm=§cClick again to disconnect
 minosoft:menu.pause.show_eros=Show eros again
 minosoft:menu.pause.exit=Exit
 minosoft:menu.pause.exit.confirm=§cClick again to exit
+
+### Debug rendering
+
+minosoft:menu.debug.rendering.title=Debug Rendering
+minosoft:menu.debug.rendering.wireframe=World wireframe: %1$s
+minosoft:menu.debug.rendering.hud=Debug HUD: %1$s
+minosoft:menu.debug.rendering.on=On
+minosoft:menu.debug.rendering.off=Off
+minosoft:menu.debug.rendering.reset=Reset debug rendering
+minosoft:menu.debug.rendering.back=Back
+
+### Lighting
+
+minosoft:menu.lighting.title=Lighting
+minosoft:menu.lighting.brightness=Brightness: %1$s
+minosoft:menu.lighting.player_light=Player light: %1$s
+minosoft:menu.lighting.fullbright=Fullbright: %1$s
+minosoft:menu.lighting.ambient_occlusion=Ambient occlusion: %1$s
+minosoft:menu.lighting.on=On
+minosoft:menu.lighting.off=Off
+minosoft:menu.lighting.reset=Reset lighting
+minosoft:menu.lighting.back=Back
+
+### Audio
+
+minosoft:menu.audio.title=Audio
+minosoft:menu.audio.engine_status=Engine: %1$s
+minosoft:menu.audio.engine.ready=Ready
+minosoft:menu.audio.engine.starting=Starting
+minosoft:menu.audio.engine.restart_required=Not loaded
+minosoft:menu.audio.enabled=Master audio: %1$s
+minosoft:menu.audio.master_volume=Master volume: %1$s
+minosoft:menu.audio.advanced=Advanced audio
+minosoft:menu.audio.advanced_title=Advanced Audio
+minosoft:menu.audio.packet_sounds=Server sounds: %1$s
+minosoft:menu.audio.gui_sounds=GUI sounds: %1$s
+minosoft:menu.audio.button_sounds=Button sounds: %1$s
+minosoft:menu.audio.engine_startup=Engine startup: %1$s
+minosoft:menu.audio.restart_value=%1$s (restart)
+minosoft:menu.audio.test=Test output
+minosoft:menu.audio.stop_all=Stop all sounds
+minosoft:menu.audio.reset=Reset audio
+minosoft:menu.audio.back=Back
+minosoft:menu.audio.on=On
+minosoft:menu.audio.off=Off
+
+### Mod settings
+
+minosoft:menu.mods.title=Mod settings
+minosoft:menu.mods.none=No Fabric modpack is active
+minosoft:menu.mods.summary=%1$s · M %2$s / P %3$s / U %4$s
+minosoft:menu.mods.counts=%1$s mapped · %2$s partial · %3$s unmapped
+minosoft:menu.mods.open_lighting=Open mapped lighting controls
+minosoft:menu.mods.next=Next page (%1$s/%2$s)
+minosoft:menu.mods.back=Back
+minosoft:menu.mods.diagnostics.open=Runtime diagnostics
+minosoft:menu.mods.diagnostics.title=Mod diagnostics
+minosoft:menu.mods.diagnostics.none=No Fabric diagnostics are available
+minosoft:menu.mods.diagnostics.run=Trajectory %1$s · generation %2$s · preflight %3$s ms
+minosoft:menu.mods.diagnostics.performance=FPS %1$s · pack uptime %2$s s
+minosoft:menu.mods.diagnostics.mod=%1$s · %2$s · %3$s calls
+minosoft:menu.mods.diagnostics.no_hooks=No host hooks registered
+minosoft:menu.mods.diagnostics.refresh=Refresh diagnostics
 
 
 minosoft:main.about.text=Glad that you test my software :)\nThis project is in a really early stage, don't use it on online servers!\nI am looking for contributors :) Please help me and make this usable
