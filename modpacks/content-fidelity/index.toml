@@ -1,0 +1,31 @@
+# Copyright (C) 2026 Jacob Repp
+
+hash-format = "sha256"
+
+[[files]]
+file = "fabric.mod.json"
+hash = "18e916cb03d0001071e6181336fb5acf1a781b6e165cccd95ed3d68ff4ecad5b"
+
+[[files]]
+file = "ladder.tsv"
+hash = "1fa38b70a2cbaabb1d338a231a5a7da2ee5af7672abcf0c8a426a9a2e225247f"
+
+[[files]]
+file = "mods/fabric-api.pw.toml"
+hash = "9d99d1fcad45387093968a5657aff7db7985135317434a1b00b4edbae3a7bafc"
+metafile = true
+
+[[files]]
+file = "mods/entity-texture-features.pw.toml"
+hash = "a1a750249be2726a503d690d924e3e61445a5d80189bccf7338d79f877a4980a"
+metafile = true
+
+[[files]]
+file = "mods/entity-model-features.pw.toml"
+hash = "2d1afcf3a0a60179d4938dff94694b1a414a7ecd1edb0bfb7d0344d08c3abfad"
+metafile = true
+
+[[files]]
+file = "mods/geckolib.pw.toml"
+hash = "2623873c803f97ea665646dd0c65fd2e693051d996c999b71721d1e2ef57c499"
+metafile = true

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "minosoft_sodium_ladder",
+  "version": "0.1.0",
+  "name": "Minosoft Sodium Compatibility Ladder",
+  "description": "A source-controlled compatibility ladder for adapting Sodium to Minosoft.",
+  "environment": "client",
+  "license": "GPL-3.0-only",
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "minecraft": "1.20.4",
+    "sodium": "0.5.8+mc1.20.4"
+  },
+  "custom": {
+    "minosoft:modpack": {
+      "packwiz": "pack.toml",
+      "ladder": "ladder.tsv",
+      "entry": "sodium",
+      "activation": "adapted",
+      "adapter": "minosoft:sodium-0.5.8-mc1.20.4"
+    }
+  }
+}

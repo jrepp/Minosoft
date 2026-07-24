@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "minosoft_fabric_stack",
+  "version": "0.6.0",
+  "name": "Minosoft Fabric Compatibility Stack",
+  "description": "A source-controlled compatibility ladder spanning independent Minosoft host hooks plus server-owned Terratonic world generation.",
+  "environment": "client",
+  "license": "GPL-3.0-only",
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "minecraft": "1.20.4",
+    "fabric-api": "=0.97.3+1.20.4",
+    "sodium": "=0.5.8+mc1.20.4",
+    "entityculling": "=1.10.5",
+    "immediatelyfast": "=1.5.5+1.20.4",
+    "inventorymanagement": "=1.5.0",
+    "iris": "=1.7.2+mc1.20.4",
+    "jei": "=17.3.1.5"
+  },
+  "custom": {
+    "minosoft:modpack": {
+      "packwiz": "pack.toml",
+      "ladder": "ladder.tsv",
+      "entry": "fabric-stack",
+      "activation": "adapted",
+      "adapters": [
+        "minosoft:fabric-api-0.97.3-mc1.20.4",
+        "minosoft:sodium-0.5.8-mc1.20.4",
+        "minosoft:entityculling-1.10.5-mc1.20.4",
+        "minosoft:immediatelyfast-1.5.5-mc1.20.4",
+        "minosoft:inventorymanagement-1.5.0-mc1.20.4",
+        "minosoft:iris-1.7.2-mc1.20.4",
+        "minosoft:jei-17.3.1.5-mc1.20.4"
+      ]
+    }
+  }
+}

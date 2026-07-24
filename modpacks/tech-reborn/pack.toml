@@ -1,0 +1,14 @@
+# Copyright (C) 2026 Jacob Repp
+
+name = "Minosoft Tech Reborn Compatibility Ladder"
+pack-format = "packwiz:1.1.0"
+version = "0.2.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = "382801eeb38b3578ecb3ff3d9db82a7058e60ffdbb198a5b3420880c1950ff43"
+
+[versions]
+fabric = "0.15.11"
+minecraft = "1.20.4"

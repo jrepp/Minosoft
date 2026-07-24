@@ -1,0 +1,14 @@
+# Copyright (C) 2026 Jacob Repp
+
+name = "Tech Reborn"
+filename = "TechReborn-5.10.4.jar"
+side = "both"
+
+[download]
+hash-format = "sha512"
+hash = "f82a1f02f20114466fb0f2ee2320e34165bc4092d47d57cf17cc9f5e74156af119d41eeac4276523533dcbf7688d16753101c71da58b0c83efe15f8079365fe0"
+url = "https://cdn.modrinth.com/data/3eMENr4V/versions/Ig90NK0o/TechReborn-5.10.4.jar"
+
+[update.modrinth]
+mod-id = "3eMENr4V"
+version = "Ig90NK0o"

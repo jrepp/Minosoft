@@ -1,0 +1,14 @@
+# Copyright (C) 2026 Jacob Repp
+
+name = "Enhanced Audio"
+filename = "Enhanced Audio r7.zip"
+side = "client"
+
+[download]
+hash-format = "sha512"
+hash = "7db245933253d731c8df3060d85629ce984c98568f02e022d79466882c97485b6237d4b5df5f1075c0f61dfd7dd3344a5ba7a3e6a4e2a64372c14ada211451fe"
+url = "https://cdn.modrinth.com/data/UinPYBF7/versions/6qVu8iKs/Enhanced%20Audio%20r7.zip"
+
+[update.modrinth]
+mod-id = "UinPYBF7"
+version = "6qVu8iKs"

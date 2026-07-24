@@ -1,0 +1,11 @@
+# Copyright (C) 2026 Jacob Repp
+
+# rung	area	claim	current_gate	evidence
+00	pack	Resolve a pinned Fabric/Packwiz pack into the immutable store	ready	SHA-512 verified Sodium artifact
+10	metadata	Discover aggregate and nested fabric.mod.json metadata	ready	Fabric version and predicate parsing
+20	resolution	Resolve depends, breaks, provides, environment, and nested JAR declarations	ready	Pinned Sodium compatibility surface is validated before adapter selection
+30	linkage	Map Fabric client and preLaunch entrypoints onto a Minosoft-native adapter	adapted	Sodium 0.5.8+mc1.20.4 resolves to minosoft:sodium-0.5.8-mc1.20.4
+40	transformation	Replace Sodium mixins and access widener with source-native hooks	adapted	Pinned adapter bypasses Mojang transformations and registers an explicit host hook
+50	graphics	Map Sodium renderer concepts onto Minosoft graphics contracts	partial	Chunk scheduling hook installs and executes in RendererManager; broader behavior parity remains
+60	reload	Reload Sodium as an owned mod generation at render/simulation safe points	partial	RegistrationScope owns hook cleanup; current supervisor still swaps the client process generation
+70	integration	Run repeatable visual/performance/compatibility scenarios	partial	Live activation and hook execution pass; visual and performance parity suites remain

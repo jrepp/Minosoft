@@ -1,0 +1,14 @@
+# Copyright (C) 2026 Jacob Repp
+
+name = "Reborn Core"
+filename = "RebornCore-5.10.4.jar"
+side = "both"
+
+[download]
+hash-format = "sha512"
+hash = "04578f19c2da5db649f2984f6a8d3026bdb83e2d6f15c3c00215a6b70b8651ef88116ce914f475b6d45b119022a4673cf8dea643bd17ce78b816e2249600fd51"
+url = "https://cdn.modrinth.com/data/3NCrJdj3/versions/g00DcPYw/RebornCore-5.10.4.jar"
+
+[update.modrinth]
+mod-id = "3NCrJdj3"
+version = "g00DcPYw"

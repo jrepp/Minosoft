@@ -1,0 +1,14 @@
+# Copyright (C) 2026 Jacob Repp
+
+name = "Minosoft Sodium Compatibility Ladder"
+pack-format = "packwiz:1.1.0"
+version = "0.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = "f38eb53ce8bfb0c0c13d37dc2b4e58715642a5afb88d07afc557c1a98ce98185"
+
+[versions]
+fabric = "0.15.11"
+minecraft = "1.20.4"

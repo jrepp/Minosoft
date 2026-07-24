@@ -1,0 +1,15 @@
+# Copyright (C) 2026 Jacob Repp
+
+# candidate	kind	minecraft	loader	version	disposition	reason	upstream
+realisticcraft	modpack	1.21.11	fabric	1.2.0-alpha2	deferred	No Minecraft 1.20.4 release; requires a cross-version nested-pack trajectory	https://modrinth.com/modpack/realisticcraft
+mekanism	mod	1.20.4	neoforge	10.5.20.41	deferred	No official Fabric artifact; requires a NeoForge bridge or a source-native feature port	https://github.com/mekanism/Mekanism
+techreborn	mod	1.20.4	fabric	5.10.4	staged	Fabric-native industrial replacement; dependency closure is tracked under modpacks/tech-reborn	https://github.com/TechReborn/TechReborn
+jei	mod	1.20.4	fabric	17.3.1.5	adapted	Pinned into modpacks/fabric-stack; exact source-native adapter owns a container recipe viewer over synchronized host recipes while overlay, transfer, search, bookmarks, and plugin APIs remain parity work	https://modrinth.com/mod/jei
+iris	mod	1.20.4	fabric	1.7.2+mc1.20.4	adapted	Pinned into modpacks/fabric-stack; exact source-native adapter owns the host world-render and shader-reload boundaries while OptiFine shader-pack execution remains parity work	https://modrinth.com/mod/iris
+terralith	mod	1.20.4	fabric	2.4.11a	staged	Pinned as a server-only artifact in modpacks/fabric-stack; requires a fresh server world and runtime proof from Fabric Loader plus generated Terralith biome data	https://modrinth.com/datapack/terralith
+tectonic	mod	1.20.4	fabric	2.3.5b	staged	Pinned server-side beside the Terralith mod; Tectonic automatically loads its built-in Terratonic compatibility pack and requires fresh-world terrain-shaping proof	https://modrinth.com/mod/tectonic
+optifine	mod	1.20.4	optifine	I7	deferred	Format reference only: standalone/Forge-targeted transformation is incompatible with the Fabric trajectory and its artifact is not redistributed by the Packwiz store	https://optifine.net/downloads
+entity-texture-features	mod	1.20.4	fabric	7.0.13	staged	Pinned under modpacks/content-fidelity as EMF's required dependency; random/emissive entity texture behavior remains blocked on a source-native adapter	https://modrinth.com/mod/entitytexturefeatures
+entity-model-features	mod	1.20.4	fabric	3.0.17	staged	Pinned under modpacks/content-fidelity; CEM parsing, expression evaluation, entity-part binding, and renderer integration remain blocked	https://modrinth.com/mod/entity-model-features
+geckolib	mod	1.20.4	fabric	4.4.4	staged	Pinned under modpacks/content-fidelity; geo/animation data and dependent-mod controller semantics remain blocked on an explicit adapter	https://modrinth.com/mod/geckolib
+animated-java	authoring-tool	1.20.4	blockbench	workflow	deferred	Not a runtime mod: exported resource/data packs require item predicates, display-entity rendering, and datapack execution before acceptance	https://animated-java.dev/docs

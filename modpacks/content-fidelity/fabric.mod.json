@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "minosoft_content_fidelity_ladder",
+  "version": "0.1.0",
+  "name": "Minosoft Content Fidelity Compatibility Ladder",
+  "description": "A source-controlled metadata and artifact baseline for OptiFine-format entity content, GeckoLib models, and Animated Java exports.",
+  "environment": "client",
+  "license": "GPL-3.0-only",
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "minecraft": "1.20.4",
+    "fabric-api": "=0.97.3+1.20.4",
+    "entity_texture_features": "=7.0.13",
+    "entity_model_features": "=3.0.17",
+    "geckolib": "=4.4.4"
+  },
+  "custom": {
+    "minosoft:modpack": {
+      "packwiz": "pack.toml",
+      "ladder": "ladder.tsv",
+      "entry": "content-fidelity",
+      "activation": "partial",
+      "scope": "exact artifact adaptation, native CEM/ETF/Gecko ingestion, transactional CPU generations, initial retained rendering, and Animated Java item/display foundations",
+      "formatReferences": [
+        "optifine-cem",
+        "entity-texture-features",
+        "geckolib-geo-animation",
+        "animated-java-resource-and-data-pack"
+      ],
+      "blockedBy": [
+        "fabric-entrypoint-linkage",
+        "mixins-and-access-wideners",
+        "complete-cem-runtime-bindings-and-visual-parity",
+        "entity-texture-render-context-and-emissive-pass",
+        "geckolib-binary-api-events-and-render-layers",
+        "complete-display-entity-rendering",
+        "datapack-execution",
+        "render-thread-transactional-model-reload"
+      ]
+    }
+  }
+}

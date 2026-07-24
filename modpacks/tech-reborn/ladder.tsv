@@ -1,0 +1,18 @@
+# Copyright (C) 2026 Jacob Repp
+
+# rung	area	claim	current_gate	evidence
+00	pack	Resolve Tech Reborn and its declared Fabric dependency closure into one immutable view	ready	SHA-512 pinned Tech Reborn 5.10.4, Reborn Core 5.10.4, and Fabric API 0.97.3+1.20.4
+10	metadata	Inspect all top-level fabric.mod.json surfaces before activation	ready	Tech Reborn, Reborn Core, and Fabric API metadata parse through Fabric public version predicates
+20	nested-jars	Resolve embedded energy, Reborn Core, and 50 Fabric API module candidates with dependency predicates and deterministic order	ready	Recursive nested metadata providers satisfy the pinned top-level dependency graph with no issues
+30	content-catalog	Expose Tech Reborn namespaced blockstate, model, recipe, loot, and world-generation resources transactionally	adapted	The exact Tech Reborn adapter owns a source-native catalog and removes it on pack deactivation
+32	registry	Register source-native Tech Reborn blocks and items with a fingerprinted deterministic registry snapshot	adapted	Live local session installs 310 blocks and 629 items across 667 registry entries
+34	block-states	Decode variant and multipart properties into a stable chunk-palette block-state surface	adapted	Focused round-trip tests pass and the exact artifact installs 3814 state palette entries without missing-property diagnostics
+36	worldgen	Decode configured/placed ore features and generate new Tech Reborn blocks deterministically	adapted	15 ore features decode; repeated seed 6072333650475958863 launches place 590 ores in first logged chunk -10,-10
+40	energy-api	Expose bounded Team Reborn Energy storage insertion, extraction, and simulation semantics transactionally	adapted	The exact Reborn Core adapter owns the energy capability; behavioral and cleanup fixtures pass
+45	activation	Activate the exact Fabric API, Reborn Core, and Tech Reborn artifact surfaces as one transaction	adapted	All three exact adapters resolve in dependency order and emit FABRIC_PACK_ACTIVE
+50	networking	Bridge Tech Reborn custom payloads and synchronized machine/container state	blocked	Fabric networking and Minecraft binary packet types are not implemented
+55	local-authority	Use one validated registry fingerprint for local authority, generated chunks, client model, and renderer lookup	adapted	LocalConnection validates the session snapshot before generation and play.sh launches it with --local-world
+60	server	Run matching gameplay logic on an authoritative modded server	blocked	The local test server is vanilla and Minosoft does not host Fabric server entrypoints
+70	graphics	Render machines, cables, GUIs, atlases, and dynamic state	partial	JAR assets and property states reach native model loading; Fabric custom/builtin models, one machine texture, and the macOS OpenGL error loop remain
+80	reload	Reload content and code generations without stale registry, world, network, or GPU references	blocked	Requires transactional registry epochs and explicit persistent-state migration
+90	integration	Exercise ore generation, energy networks, machines, recipes, containers, and reconnect/reload	partial	Ore decode, registration, deterministic local generation, and clean process shutdown pass; gameplay systems remain blocked

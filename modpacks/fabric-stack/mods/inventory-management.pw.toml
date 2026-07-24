@@ -1,0 +1,14 @@
+# Copyright (C) 2026 Jacob Repp
+
+name = "Inventory Management"
+filename = "inventorymanagement-1.5.0+1.20.3.jar"
+side = "both"
+
+[download]
+hash-format = "sha512"
+hash = "992c0a7d04467d986f7e4137a1c29670e770ea0dbc43abe40b271aa074d5f5ff787b5baf1b07250aca3b63aacf07bb330aeaf3e2e7b1253a9472898a5aefaa24"
+url = "https://cdn.modrinth.com/data/F7wXag4i/versions/rgYqJTY6/inventorymanagement-1.5.0%2B1.20.3.jar"
+
+[update.modrinth]
+mod-id = "F7wXag4i"
+version = "rgYqJTY6"

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "minosoft_tech_reborn_ladder",
+  "version": "0.2.0",
+  "name": "Minosoft Tech Reborn Compatibility Ladder",
+  "description": "A source-controlled gameplay compatibility ladder for Tech Reborn and its Fabric dependencies.",
+  "environment": "*",
+  "license": "GPL-3.0-only",
+  "depends": {
+    "fabricloader": ">=0.15.7",
+    "minecraft": "1.20.4",
+    "fabric-api": "=0.97.3+1.20.4",
+    "reborncore": "=5.10.4",
+    "techreborn": "=5.10.4"
+  },
+  "custom": {
+    "minosoft:modpack": {
+      "packwiz": "pack.toml",
+      "ladder": "ladder.tsv",
+      "entry": "tech-reborn",
+      "activation": "adapted",
+      "adapters": [
+        "minosoft:fabric-api-0.97.3-mc1.20.4",
+        "minosoft:reborncore-5.10.4-mc1.20.4",
+        "minosoft:techreborn-5.10.4-mc1.20.4"
+      ],
+      "scope": "source-native module inventory, energy storage, content registry, assets, block-state palette, and authoritative local ore generation",
+      "blockedBy": [
+        "custom-networking",
+        "external-server-mod-host",
+        "machine-and-recipe-semantics",
+        "persistent-registry-migration",
+        "fabric-custom-model-loaders"
+      ]
+    }
+  }
+}

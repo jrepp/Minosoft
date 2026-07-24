@@ -1,0 +1,16 @@
+# Copyright (C) 2026 Jacob Repp
+
+hash-format = "sha256"
+
+[[files]]
+file = "fabric.mod.json"
+hash = "a8fb4aa9d5ce48916e7c1949ccb240877a3b1dfde9cc040fe06b3dc883ca79da"
+
+[[files]]
+file = "ladder.tsv"
+hash = "3b910bdaf22853c3e5e8e11fb6ba29423caa24f1814e3c69559f08e7faf6f823"
+
+[[files]]
+file = "mods/sodium.pw.toml"
+hash = "6467ebbf4d8074a048ae283ed8cce24d1b86f4d23363a574195260109a2ec89a"
+metafile = true

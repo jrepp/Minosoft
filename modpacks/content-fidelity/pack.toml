@@ -1,0 +1,14 @@
+# Copyright (C) 2026 Jacob Repp
+
+name = "Minosoft Content Fidelity Compatibility Ladder"
+pack-format = "packwiz:1.1.0"
+version = "0.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = "9a83cc03cab2e1956531657d55a9b18589f36df699a4883387997386eacf6b14"
+
+[versions]
+fabric = "0.15.11"
+minecraft = "1.20.4"

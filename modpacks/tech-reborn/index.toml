@@ -1,0 +1,26 @@
+# Copyright (C) 2026 Jacob Repp
+
+hash-format = "sha256"
+
+[[files]]
+file = "fabric.mod.json"
+hash = "e9e9c1329f7c68d88aec2360fd6dda0914c2c69b5d81f9d1dff183011b742e1d"
+
+[[files]]
+file = "ladder.tsv"
+hash = "71b5753b43db9ceda0b94c1795fd7f50de908611b888809b4c9a15cdcafdd5d7"
+
+[[files]]
+file = "mods/fabric-api.pw.toml"
+hash = "9d99d1fcad45387093968a5657aff7db7985135317434a1b00b4edbae3a7bafc"
+metafile = true
+
+[[files]]
+file = "mods/reborncore.pw.toml"
+hash = "6fc8797c08d3c12b69f490638584f50e67feb669d274f70c56acef78d339b8e9"
+metafile = true
+
+[[files]]
+file = "mods/techreborn.pw.toml"
+hash = "b8b1739ceae7bccfd7257f3a2a2be94dc25a209e0ffeca87e81d054d08594559"
+metafile = true
