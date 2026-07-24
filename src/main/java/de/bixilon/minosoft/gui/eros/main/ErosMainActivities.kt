@@ -21,11 +21,13 @@ import de.bixilon.minosoft.gui.eros.main.account.AccountController
 import de.bixilon.minosoft.gui.eros.main.mods.ModsController
 import de.bixilon.minosoft.gui.eros.main.play.PlayController
 import de.bixilon.minosoft.gui.eros.main.profiles.ProfilesController
+import de.bixilon.minosoft.gui.eros.main.title.TitleController
 import de.bixilon.minosoft.util.KUtil.toResourceLocation
 
 enum class ErosMainActivities(
     val layout: ResourceLocation,
 ) {
+    TITLE(TitleController.LAYOUT),
     PLAY(PlayController.LAYOUT),
     PROFILES(ProfilesController.LAYOUT),
     HELP("".toResourceLocation()),

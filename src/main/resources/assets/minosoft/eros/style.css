@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2024 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -185,6 +186,67 @@
 .root {
     -fx-background-color: -secondary-color;
     -fx-text-fill: -secondary-text-color;
+}
+
+/* Minecraft-inspired launcher title screen */
+
+.minecraft-title-screen {
+    -fx-background-color:
+        linear-gradient(to bottom, rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.55)),
+        linear-gradient(to bottom,
+            #76a9d4 0%,
+            #9bc2df 42%,
+            #587d3d 43%,
+            #3f612f 53%,
+            #6b4b2a 54%,
+            #342317 100%);
+}
+
+.minecraft-title {
+    -fx-font-family: "Monospaced";
+    -fx-font-size: 72px;
+    -fx-font-weight: 900;
+    -fx-text-fill: #f4f4f4;
+    -fx-effect: dropshadow(one-pass-box, #202020, 0, 1.0, 5, 6);
+}
+
+.minecraft-splash {
+    -fx-font-family: "Monospaced";
+    -fx-font-size: 17px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #ffff55;
+    -fx-effect: dropshadow(one-pass-box, #3f3f00, 0, 1.0, 2, 2);
+}
+
+.minecraft-menu-button {
+    -fx-min-height: 42px;
+    -fx-pref-height: 42px;
+    -fx-font-family: "Monospaced";
+    -fx-font-size: 16px;
+    -fx-text-fill: white;
+    -fx-background-color: linear-gradient(to bottom, #777777, #555555);
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-border-color: #202020 #f0f0f0 #f0f0f0 #202020;
+    -fx-border-width: 2px;
+    -fx-effect: dropshadow(one-pass-box, rgba(0, 0, 0, 0.75), 0, 1.0, 2, 3);
+}
+
+.minecraft-menu-button:hover,
+.minecraft-menu-button:focused {
+    -fx-background-color: linear-gradient(to bottom, #6d70c5, #4c4f9e);
+    -fx-border-color: white;
+}
+
+.minecraft-menu-button:armed {
+    -fx-background-color: #3d3f79;
+}
+
+.minecraft-footer {
+    -fx-font-family: "Monospaced";
+    -fx-font-size: 11px;
+    -fx-text-fill: white;
+    -fx-effect: dropshadow(one-pass-box, black, 0, 1.0, 1, 1);
 }
 
 

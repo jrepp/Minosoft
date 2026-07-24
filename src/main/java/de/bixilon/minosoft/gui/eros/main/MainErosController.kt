@@ -88,6 +88,8 @@ class MainErosController : JavaFXWindowController() {
 
     override fun init() {
         logoFX.image = JavaFXUtil.MINOSOFT_LOGO
+        logoFX.setOnMouseClicked { showActivity(ErosMainActivities.TITLE) }
+        logoFX.clickable()
         versionTextFX.text = RunConfiguration.APPLICATION_NAME
         iconMap = mapOf(
             ErosMainActivities.PLAY to playIconFX,
@@ -145,7 +147,7 @@ class MainErosController : JavaFXWindowController() {
         }
         accountFX.clickable()
 
-        activity = ErosMainActivities.PLAY
+        activity = ErosMainActivities.TITLE
     }
 
     override fun postInit() {
@@ -170,6 +172,10 @@ class MainErosController : JavaFXWindowController() {
     @FXML
     fun openAccountActivity() {
         activity = ErosMainActivities.ACCOUNT
+    }
+
+    fun showActivity(activity: ErosMainActivities) {
+        this.activity = activity
     }
 
     companion object {
