@@ -1,6 +1,6 @@
 /*
  * Minosoft
- * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -11,37 +11,30 @@
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
 
-package de.bixilon.minosoft.gui.rendering.entities.renderer.living.animal
+package de.bixilon.minosoft.gui.rendering.entities.renderer.living.monster
 
-import de.bixilon.minosoft.data.entities.entities.animal.Pig
+import de.bixilon.minosoft.data.entities.entities.monster.Zombie
 import de.bixilon.minosoft.data.registries.identified.Identified
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.gui.rendering.entities.factory.RegisteredEntityModelFactory
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.HumanoidMobRenderer
 import de.bixilon.minosoft.gui.rendering.models.loader.ModelLoader
 import de.bixilon.minosoft.gui.rendering.models.loader.SkeletalLoader.Companion.sModel
 
-class PigRenderer(renderer: EntitiesRenderer, entity: Pig) : AnimalRenderer<Pig>(renderer, entity) {
-    init {
-        entity.data.observe<Boolean>(Pig.SADDLED) { unloadModel = true }
-    }
+class ZombieRenderer(
+    renderer: EntitiesRenderer,
+    entity: Zombie,
+) : HumanoidMobRenderer<Zombie>(renderer, entity, MODEL) {
 
-    override fun getModel() = when {
-        entity.isSaddled -> SADDLED
-        else -> PIG
-    }
+    companion object : RegisteredEntityModelFactory<Zombie>, Identified {
+        override val identifier get() = Zombie.identifier
+        val MODEL = minecraft("entities/zombie/zombie").sModel()
 
-
-    companion object : RegisteredEntityModelFactory<Pig>, Identified {
-        override val identifier get() = Pig.identifier
-        private val PIG = minecraft("entities/pig/pig").sModel()
-        private val SADDLED = minecraft("entities/pig/saddled").sModel()
-
-        override fun create(renderer: EntitiesRenderer, entity: Pig) = PigRenderer(renderer, entity)
+        override fun create(renderer: EntitiesRenderer, entity: Zombie) = ZombieRenderer(renderer, entity)
 
         override fun register(loader: ModelLoader) {
-            loader.skeletal.register(PIG)
-            loader.skeletal.register(SADDLED)
+            loader.skeletal.register(MODEL)
         }
     }
 }

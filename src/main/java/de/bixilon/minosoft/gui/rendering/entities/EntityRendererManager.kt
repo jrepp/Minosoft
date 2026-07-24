@@ -23,10 +23,14 @@ import de.bixilon.kutil.concurrent.pool.ThreadPool
 import de.bixilon.kutil.exception.ExceptionUtil.ignoreAll
 import de.bixilon.kutil.observer.set.SetObserver.Companion.observeSet
 import de.bixilon.minosoft.data.entities.entities.Entity
+import de.bixilon.minosoft.data.entities.entities.LivingEntity
+import de.bixilon.minosoft.data.entities.entities.monster.Zombie
 import de.bixilon.minosoft.gui.rendering.entities.factory.EntityModelFactory
 import de.bixilon.minosoft.gui.rendering.entities.factory.RegisteredEntityModelFactory
 import de.bixilon.minosoft.gui.rendering.entities.renderer.DummyEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.FallbackLivingEntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.monster.ZombieRenderer
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
@@ -57,6 +61,8 @@ class EntityRendererManager(val renderer: EntitiesRenderer) : Iterable<EntityRen
     private fun Entity.createRenderer() = when {
         this is EntityModelFactory<*> -> create(this@EntityRendererManager.renderer)
         type.modelFactory != null -> type.modelFactory?.nullCast<RegisteredEntityModelFactory<Entity>>()?.create(this@EntityRendererManager.renderer, this)
+        this is Zombie -> ZombieRenderer(this@EntityRendererManager.renderer, this)
+        this is LivingEntity -> FallbackLivingEntityRenderer(this@EntityRendererManager.renderer, this)
         else -> DummyEntityRenderer(this@EntityRendererManager.renderer, this)
     }
 

@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -23,10 +24,11 @@ abstract class MeshedFeature<M : Mesh>(
     renderer: EntityRenderer<*>,
 ) : DrawableEntityRenderFeature(renderer) {
     protected var unload = false
+    private var suppressMeshUnload = false
     protected open var mesh: M? = null
         set(value) {
             val old = field
-            if (old != null) {
+            if (old != null && !suppressMeshUnload) {
                 enqueueUnload(old)
             }
             field = value
@@ -42,10 +44,23 @@ abstract class MeshedFeature<M : Mesh>(
     }
 
     private fun enqueueUnload(mesh: M) {
-        if (mesh.state == MeshStates.PREPARING) {
-            mesh.drop()
-        } else {
-            renderer.renderer.queue += { mesh.unload() }
+        when (mesh.state) {
+            MeshStates.PREPARING -> mesh.drop()
+            MeshStates.LOADED -> renderer.renderer.queue += {
+                if (mesh.state == MeshStates.LOADED) {
+                    mesh.unload()
+                }
+            }
+            MeshStates.UNLOADED -> Unit
+        }
+    }
+
+    private fun clearMeshWithoutEnqueue() {
+        suppressMeshUnload = true
+        try {
+            this.mesh = null
+        } finally {
+            suppressMeshUnload = false
         }
     }
 
@@ -82,11 +97,11 @@ abstract class MeshedFeature<M : Mesh>(
         super.unload()
 
         val mesh = this.mesh ?: return
-        if (mesh.state == MeshStates.PREPARING) {
-            mesh.drop()
-        } else {
-            mesh.unload()
+        when (mesh.state) {
+            MeshStates.PREPARING -> mesh.drop()
+            MeshStates.LOADED -> mesh.unload()
+            MeshStates.UNLOADED -> Unit
         }
-        this.mesh = null
+        clearMeshWithoutEnqueue()
     }
 }

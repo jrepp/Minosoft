@@ -1,6 +1,6 @@
 /*
  * Minosoft
- * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -13,7 +13,7 @@
 
 package de.bixilon.minosoft.gui.rendering.entities.renderer.living.animal
 
-import de.bixilon.minosoft.data.entities.entities.animal.Pig
+import de.bixilon.minosoft.data.entities.entities.animal.Sheep
 import de.bixilon.minosoft.data.registries.identified.Identified
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
@@ -21,27 +21,17 @@ import de.bixilon.minosoft.gui.rendering.entities.factory.RegisteredEntityModelF
 import de.bixilon.minosoft.gui.rendering.models.loader.ModelLoader
 import de.bixilon.minosoft.gui.rendering.models.loader.SkeletalLoader.Companion.sModel
 
-class PigRenderer(renderer: EntitiesRenderer, entity: Pig) : AnimalRenderer<Pig>(renderer, entity) {
-    init {
-        entity.data.observe<Boolean>(Pig.SADDLED) { unloadModel = true }
-    }
+class SheepRenderer(renderer: EntitiesRenderer, entity: Sheep) : AnimalRenderer<Sheep>(renderer, entity) {
+    override fun getModel() = SHEEP
 
-    override fun getModel() = when {
-        entity.isSaddled -> SADDLED
-        else -> PIG
-    }
+    companion object : RegisteredEntityModelFactory<Sheep>, Identified {
+        override val identifier get() = Sheep.identifier
+        private val SHEEP = minecraft("entities/sheep/sheep").sModel()
 
-
-    companion object : RegisteredEntityModelFactory<Pig>, Identified {
-        override val identifier get() = Pig.identifier
-        private val PIG = minecraft("entities/pig/pig").sModel()
-        private val SADDLED = minecraft("entities/pig/saddled").sModel()
-
-        override fun create(renderer: EntitiesRenderer, entity: Pig) = PigRenderer(renderer, entity)
+        override fun create(renderer: EntitiesRenderer, entity: Sheep) = SheepRenderer(renderer, entity)
 
         override fun register(loader: ModelLoader) {
-            loader.skeletal.register(PIG)
-            loader.skeletal.register(SADDLED)
+            loader.skeletal.register(SHEEP)
         }
     }
 }

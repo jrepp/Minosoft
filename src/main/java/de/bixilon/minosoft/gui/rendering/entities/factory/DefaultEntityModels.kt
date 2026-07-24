@@ -18,8 +18,14 @@ import de.bixilon.minosoft.data.registries.factory.DefaultFactory
 import de.bixilon.minosoft.gui.rendering.entities.renderer.item.FallingBlockEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.item.ItemEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.item.PrimedTNTEntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.display.BlockDisplayEntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.display.ItemDisplayEntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.display.TextDisplayEntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.FallbackLivingEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.animal.CowRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.animal.PigRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.animal.SheepRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.monster.ZombieRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerRenderer
 import de.bixilon.minosoft.gui.rendering.models.loader.ModelLoader
 import de.bixilon.minosoft.util.logging.Log
@@ -28,13 +34,15 @@ import de.bixilon.minosoft.util.logging.LogMessageType
 
 object DefaultEntityModels : DefaultFactory<RegisteredEntityModelFactory<*>>(
     PlayerRenderer,
-    PigRenderer, CowRenderer,
+    PigRenderer, CowRenderer, SheepRenderer, ZombieRenderer,
     PrimedTNTEntityRenderer, FallingBlockEntityRenderer, ItemEntityRenderer,
+    BlockDisplayEntityRenderer, ItemDisplayEntityRenderer, TextDisplayEntityRenderer,
 ) {
 
     fun load(loader: ModelLoader, latch: AbstractLatch?) {
         Log.log(LogMessageType.LOADING, LogLevels.VERBOSE) { "Loading entity models..." }
 
+        FallbackLivingEntityRenderer.register(loader)
         for (type in loader.context.session.registries.entityType) {
             val factory = this[type.identifier] ?: continue
             factory.register(loader)

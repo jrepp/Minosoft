@@ -1,0 +1,81 @@
+{
+  "elements": {
+    "body": {
+      "from": [-4, 0, 6],
+      "to": [4, 16, 12],
+      "texture": "minecraft:entity/sheep/sheep",
+      "uv": [28, 8],
+      "rotation": {
+        "value": [-90, 0, 0],
+        "origin": [0, 17, 9]
+      },
+      "faces": "all"
+    },
+    "head": {
+      "from": [-3, 12, 7],
+      "to": [3, 18, 15],
+      "uv": [0, 0],
+      "texture": "minecraft:entity/sheep/sheep",
+      "faces": "all",
+      "transform": "head"
+    },
+    "front_right": {
+      "offset": [-3, 0, 5],
+      "from": [-2, 0, -2],
+      "to": [2, 6, 2],
+      "uv": [0, 16],
+      "texture": "minecraft:entity/sheep/sheep",
+      "faces": "-up",
+      "transform": "front_right"
+    },
+    "front_left": {
+      "offset": [3, 0, 5],
+      "from": [-2, 0, -2],
+      "to": [2, 6, 2],
+      "uv": [0, 16],
+      "texture": "minecraft:entity/sheep/sheep",
+      "faces": "-up",
+      "transform": "front_left"
+    },
+    "hind_left": {
+      "offset": [3, 0, -6],
+      "from": [-2, 0, -2],
+      "to": [2, 6, 2],
+      "uv": [0, 16],
+      "texture": "minecraft:entity/sheep/sheep",
+      "faces": "all",
+      "transform": "hind_left"
+    },
+    "hind_right": {
+      "offset": [-3, 0, -6],
+      "from": [-2, 0, -2],
+      "to": [2, 6, 2],
+      "uv": [0, 16],
+      "texture": "minecraft:entity/sheep/sheep",
+      "faces": "all",
+      "transform": "hind_right"
+    }
+  },
+  "transforms": {
+    "head": {
+      "pivot": [0, 14, 7]
+    },
+    "hind_left": {
+      "pivot": [3, 0, -6]
+    },
+    "hind_right": {
+      "pivot": [-3, 0, -6]
+    },
+    "front_left": {
+      "pivot": [3, 0, 5]
+    },
+    "front_right": {
+      "pivot": [-3, 0, 5]
+    }
+  },
+  "textures": {
+    "minecraft:entity/sheep/sheep": {
+      "resolution": [64, 32]
+    }
+  }
+}

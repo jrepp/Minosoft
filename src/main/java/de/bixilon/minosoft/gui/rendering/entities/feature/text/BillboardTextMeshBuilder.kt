@@ -25,7 +25,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTextur
 import de.bixilon.minosoft.gui.rendering.util.mesh.builder.quad.QuadMeshBuilder
 import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
 
-class BillboardTextMeshBuilder(context: RenderContext) : QuadMeshBuilder(context, BillboardTextMeshStruct), CharVertexConsumer {
+open class BillboardTextMeshBuilder(context: RenderContext) : QuadMeshBuilder(context, BillboardTextMeshStruct), CharVertexConsumer {
 
     inline fun addVertex(x: Float, y: Float, u: Float, v: Float, texture: ShaderTexture, tint: RGBAColor) = data.add(
         x * SCALE, y * SCALE,

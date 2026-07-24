@@ -25,21 +25,18 @@ import de.bixilon.minosoft.gui.rendering.models.loader.SkeletalLoader.Companion.
 open class CowRenderer(renderer: EntitiesRenderer, entity: Cow) : AnimalRenderer<Cow>(renderer, entity) {
     override var model: AnimalModelFeature<*>? = null
 
-    override fun getModel() = when {
-        entity.isBaby -> CALF
-        else -> COW
-    }
+    // A dedicated calf asset does not exist yet; adult geometry is a visible,
+    // deterministic fallback instead of silently omitting the model.
+    override fun getModel() = COW
 
     companion object : RegisteredEntityModelFactory<Cow>, Identified {
         override val identifier get() = Cow.identifier
         private val COW = minecraft("entities/cow/cow").sModel()
-        private val CALF = minecraft("entities/cow/calf").sModel()
 
         override fun create(renderer: EntitiesRenderer, entity: Cow) = CowRenderer(renderer, entity)
 
         override fun register(loader: ModelLoader) {
             loader.skeletal.register(COW)
-            loader.skeletal.register(CALF)
         }
     }
 }

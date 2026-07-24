@@ -27,6 +27,7 @@ import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
+import de.bixilon.minosoft.modding.loader.fabric.FabricEntityVisibilityHooks
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
 class EntitiesRenderer(
@@ -62,7 +63,8 @@ class EntitiesRenderer(
                     it.invalidate()
                 }
 
-                it.updateVisibility(visibility.getVisibilityLevel(it)) // TODO: only calculate if position, world or frustum changed (but still set it)
+                val nativeVisibility = visibility.getVisibilityLevel(it)
+                it.updateVisibility(FabricEntityVisibilityHooks.refine(it, nativeVisibility)) // TODO: only calculate if position, world or frustum changed (but still set it)
                 it.enqueueUnload()
 
                 if (!it.isVisible()) return@iterate

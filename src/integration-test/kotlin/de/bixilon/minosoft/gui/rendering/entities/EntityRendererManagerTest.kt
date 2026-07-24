@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2024 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -14,8 +15,15 @@
 package de.bixilon.minosoft.gui.rendering.entities
 
 import de.bixilon.minosoft.data.entities.entities.animal.Pig
+import de.bixilon.minosoft.data.entities.entities.monster.Spider
+import de.bixilon.minosoft.data.entities.entities.monster.Husk
+import de.bixilon.minosoft.data.entities.entities.monster.Zombie
 import de.bixilon.minosoft.gui.rendering.entities.EntityRendererTestUtil.createEntity
+import de.bixilon.minosoft.gui.rendering.entities.EntityRendererTestUtil.create
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.FallbackLivingEntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.monster.ZombieRenderer
 import org.testng.Assert.assertEquals
+import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
 
 @Test(groups = ["entity_renderer", "rendering"])
@@ -66,5 +74,20 @@ class EntityRendererManagerTest {
         renderer.renderer.session.world.entities.remove(3)
         renderer.renderer.queue.work()
         assertEquals(renderer.size, 0)
+    }
+
+    fun `zombie uses textured renderer`() {
+        val renderer = EntityRendererTestUtil.create().create(Zombie)
+        assertTrue(renderer is ZombieRenderer)
+    }
+
+    fun `zombie variants remain visible`() {
+        val renderer = EntityRendererTestUtil.create().create(Husk)
+        assertTrue(renderer is ZombieRenderer)
+    }
+
+    fun `unmapped living mob uses visible fallback`() {
+        val renderer = EntityRendererTestUtil.create().create(Spider)
+        assertTrue(renderer is FallbackLivingEntityRenderer)
     }
 }

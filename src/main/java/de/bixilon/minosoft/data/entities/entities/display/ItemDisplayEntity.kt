@@ -25,7 +25,7 @@ import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 class ItemDisplayEntity(session: PlaySession, entityType: EntityType, data: EntityData, position: Vec3d, rotation: EntityRotation) : DisplayEntity(session, entityType, data, position, rotation) {
     val stack: ItemStack? by data(ITEM, null)
     val displayContext: ItemDisplayContext by data(ITEM_DISPLAY, ItemDisplayContext.NONE) {
-        ItemDisplayContext.of((it as Number).toInt())
+        if (it is ItemDisplayContext) it else ItemDisplayContext.of((it as Number).toInt())
     }
 
     companion object : EntityFactory<ItemDisplayEntity> {

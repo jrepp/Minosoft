@@ -80,6 +80,8 @@ abstract class Entity(
     override val attachment = EntityAttachment(this)
     /** Server-command tags used by local datapack authority and selectors. */
     val commandTags: MutableSet<String> = Collections.synchronizedSet(linkedSetOf())
+    /** Mutable command-side NBT retained for local datapack entity operations. */
+    val commandNbt: MutableMap<String, Any> = Collections.synchronizedMap(linkedMapOf())
     open val primaryPassenger: Entity? = null
     open val clientControlled: Boolean get() = primaryPassenger is LocalPlayerEntity
 

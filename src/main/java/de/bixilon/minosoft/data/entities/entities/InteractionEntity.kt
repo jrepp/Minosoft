@@ -51,9 +51,9 @@ class InteractionEntity(session: PlaySession, entityType: EntityType, data: Enti
 
     companion object : EntityFactory<InteractionEntity> {
         override val identifier = minecraft("interaction")
-        private val WIDTH = EntityDataField("WIDTH")
-        private val HEIGHT = EntityDataField("HEIGHT")
-        private val RESPONSE = EntityDataField("RESPONSE")
+        val WIDTH = EntityDataField("WIDTH")
+        val HEIGHT = EntityDataField("HEIGHT")
+        val RESPONSE = EntityDataField("RESPONSE")
 
         override fun build(session: PlaySession, entityType: EntityType, data: EntityData, position: Vec3d, rotation: EntityRotation): InteractionEntity {
             return InteractionEntity(session, entityType, data, position, rotation)

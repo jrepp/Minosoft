@@ -56,7 +56,7 @@ abstract class AnimalRenderer<E : AgeableMob>(renderer: EntitiesRenderer, entity
     protected abstract fun getModel(): ResourceLocation?
 
     protected open fun createModel(): AnimalModelFeature<AnimalRenderer<E>>? {
-        val type = getModel() ?: return null
+        val type = renderer.context.models.skeletal.contentModel(entity.type.identifier) ?: getModel() ?: return null
         val skeletal = renderer.context.models.skeletal[type] ?: return null
         return AnimalModelFeature(this, skeletal)
     }

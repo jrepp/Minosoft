@@ -1,0 +1,75 @@
+{
+  "elements": {
+    "body": {
+      "offset": [0, 12, 0],
+      "from": [-4, 0, -2],
+      "to": [4, 12, 2],
+      "texture": "minecraft:entity/zombie/zombie",
+      "uv": [16, 16],
+      "faces": "all"
+    },
+    "head": {
+      "offset": [0, 24, 0],
+      "from": [-4, 0, -4],
+      "to": [4, 8, 4],
+      "uv": [0, 0],
+      "texture": "minecraft:entity/zombie/zombie",
+      "transform": "head",
+      "faces": "all"
+    },
+    "right_leg": {
+      "from": [-4, 0, -2],
+      "to": [0, 12, 2],
+      "uv": [0, 16],
+      "texture": "minecraft:entity/zombie/zombie",
+      "transform": "right_leg",
+      "faces": "all"
+    },
+    "left_leg": {
+      "from": [0, 0, -2],
+      "to": [4, 12, 2],
+      "uv": [0, 16],
+      "texture": "minecraft:entity/zombie/zombie",
+      "transform": "left_leg",
+      "faces": "all"
+    },
+    "right_arm": {
+      "from": [-8, 12, -2],
+      "to": [-4, 24, 2],
+      "uv": [40, 16],
+      "texture": "minecraft:entity/zombie/zombie",
+      "transform": "right_arm",
+      "faces": "all"
+    },
+    "left_arm": {
+      "from": [4, 12, -2],
+      "to": [8, 24, 2],
+      "uv": [40, 16],
+      "texture": "minecraft:entity/zombie/zombie",
+      "transform": "left_arm",
+      "faces": "all"
+    }
+  },
+  "transforms": {
+    "head": {
+      "pivot": [0, 24, 0]
+    },
+    "left_leg": {
+      "pivot": [3, 12, 0]
+    },
+    "right_leg": {
+      "pivot": [-3, 12, 0]
+    },
+    "left_arm": {
+      "pivot": [4, 24, 0]
+    },
+    "right_arm": {
+      "pivot": [-4, 24, 0]
+    }
+  },
+  "textures": {
+    "minecraft:entity/zombie/zombie": {
+      "resolution": [64, 64]
+    }
+  }
+}
