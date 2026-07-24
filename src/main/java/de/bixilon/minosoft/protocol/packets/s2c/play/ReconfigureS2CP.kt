@@ -22,11 +22,14 @@ import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayInByteBuffer
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
+import de.bixilon.minosoft.modding.loader.fabric.FabricWorldChangeCause
+import de.bixilon.minosoft.modding.loader.fabric.FabricWorldEvents
 
 
 class ReconfigureS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
 
     override fun handle(session: PlaySession) {
+        FabricWorldEvents.leave(session, FabricWorldChangeCause.RECONFIGURE)
         session.util.resetWorld()
         session.connection.send(ReconfigureC2SP())
         session.connection.unsafeCast<NetworkConnection>().state = ProtocolStates.CONFIGURATION

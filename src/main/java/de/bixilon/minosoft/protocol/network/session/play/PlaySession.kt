@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -26,7 +27,12 @@ import de.bixilon.kutil.observer.DataObserver.Companion.observe
 import de.bixilon.kutil.observer.DataObserver.Companion.observed
 import de.bixilon.kutil.reflection.ReflectionUtil.forceSet
 import de.bixilon.minosoft.assets.AssetsLoader
+import de.bixilon.minosoft.assets.model.generation.ContentFidelityLoader
+import de.bixilon.minosoft.assets.model.generation.ContentFidelitySnapshot
+import de.bixilon.minosoft.assets.model.generation.ContentGenerationStore
+import de.bixilon.minosoft.assets.model.generation.PreparedContent
 import de.bixilon.minosoft.assets.session.SessionAssetsManager
+import de.bixilon.minosoft.assets.session.SessionDataPackManager
 import de.bixilon.minosoft.camera.SessionCamera
 import de.bixilon.minosoft.commands.nodes.SessionNode
 import de.bixilon.minosoft.config.profile.SelectedProfiles
@@ -52,10 +58,18 @@ import de.bixilon.minosoft.modding.event.events.loading.RegistriesLoadEvent
 import de.bixilon.minosoft.modding.event.events.session.play.PlaySessionCreateEvent
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
 import de.bixilon.minosoft.modding.event.master.GlobalEventMaster
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientConnectionContext
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientConnectionEvents
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientConnectionPhase
+import de.bixilon.minosoft.modding.loader.fabric.FabricResourceReloadEvents
+import de.bixilon.minosoft.modding.loader.fabric.FabricResourceReloadType
+import de.bixilon.minosoft.modding.loader.fabric.FabricWorldChangeCause
+import de.bixilon.minosoft.modding.loader.fabric.FabricWorldEvents
 import de.bixilon.minosoft.modding.loader.phase.DefaultModPhases
 import de.bixilon.minosoft.protocol.ServerConnection
 import de.bixilon.minosoft.protocol.network.NetworkConnection
 import de.bixilon.minosoft.protocol.network.session.Session
+import de.bixilon.minosoft.protocol.network.session.play.PlaySessionStates.Companion.disconnected
 import de.bixilon.minosoft.protocol.network.session.play.channel.DefaultChannelHandlers
 import de.bixilon.minosoft.protocol.network.session.play.channel.SessionChannelHandler
 import de.bixilon.minosoft.protocol.network.session.play.settings.ClientSettingsManager
@@ -72,6 +86,7 @@ import de.bixilon.minosoft.util.KUtil.startInit
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 
@@ -97,6 +112,9 @@ class PlaySession(
 
     lateinit var assets: SessionAssetsManager
         private set
+    lateinit var dataPacks: SessionDataPackManager
+        private set
+    val contentFidelity = ContentGenerationStore<ContentFidelitySnapshot>()
     lateinit var language: Translator
 
 
@@ -116,6 +134,25 @@ class PlaySession(
 
 
     init {
+        var previousFabricState: PlaySessionStates? = state
+        FabricClientConnectionEvents.dispatch(
+            FabricClientConnectionPhase.CREATED,
+            FabricClientConnectionContext(this, null, state),
+        )
+        this::state.observe(this) { next ->
+            val previous = previousFabricState
+            if (previous == next) return@observe
+            previousFabricState = next
+            val context = FabricClientConnectionContext(this, previous, next)
+            FabricClientConnectionEvents.dispatch(FabricClientConnectionPhase.STATE_CHANGED, context)
+            if (next == PlaySessionStates.PLAYING) {
+                FabricClientConnectionEvents.dispatch(FabricClientConnectionPhase.JOINED, context)
+                FabricWorldEvents.joined(this)
+            } else if (next.disconnected) {
+                FabricWorldEvents.leave(this, FabricWorldChangeCause.DISCONNECT)
+                FabricClientConnectionEvents.dispatch(FabricClientConnectionPhase.DISCONNECTED, context)
+            }
+        }
         var errored = false
         this::error.observe(this) {
             if (it == null) return@observe
@@ -144,11 +181,14 @@ class PlaySession(
                 }
             } else {
                 established = true
-                assets.unload()
-                state = PlaySessionStates.DISCONNECTED
-                ACTIVE_CONNECTIONS -= this
-                if (CLI.session === this) {
-                    CLI.session = null
+                try {
+                    contentFidelity.close()
+                } finally {
+                    state = PlaySessionStates.DISCONNECTED
+                    ACTIVE_CONNECTIONS -= this
+                    if (CLI.session === this) {
+                        CLI.session = null
+                    }
                 }
             }
         }
@@ -204,8 +244,46 @@ class PlaySession(
 
             worker += {
                 Log.log(LogMessageType.ASSETS, LogLevels.INFO) { "Downloading and verifying assets. This might take a while..." }
-                assets = AssetsLoader.create(profiles.resources, version)
-                assets.load(latch)
+                FabricResourceReloadEvents.run(
+                    session = this,
+                    type = FabricResourceReloadType.SESSION_ASSETS,
+                    prepare = {
+                        val candidate = AssetsLoader.create(profiles.resources, version)
+                        val dataPacks = AssetsLoader.createDataPacks(profiles.resources)
+                        try {
+                            candidate.load(latch)
+                            dataPacks.load(latch)
+                            val content = ContentFidelityLoader(candidate, dataPacks).prepare()
+                            SessionAssetsCandidate(candidate, dataPacks, content)
+                        } catch (error: Throwable) {
+                            try {
+                                candidate.unload()
+                            } catch (cleanup: Throwable) {
+                                error.addSuppressed(cleanup)
+                            }
+                            try {
+                                dataPacks.unload()
+                            } catch (cleanup: Throwable) {
+                                error.addSuppressed(cleanup)
+                            }
+                            throw error
+                        }
+                    },
+                    apply = { candidate ->
+                        try {
+                            contentFidelity.reload(
+                                prepare = { PreparedContent(candidate.content.value, candidate) },
+                                commit = {
+                                    assets = candidate.assets
+                                    dataPacks = candidate.dataPacks
+                                },
+                            )
+                        } catch (error: Throwable) {
+                            candidate.close()
+                            throw error
+                        }
+                    },
+                )
                 Log.log(LogMessageType.ASSETS, LogLevels.INFO) { "Assets verified!" }
             }
 
@@ -237,7 +315,11 @@ class PlaySession(
         } catch (exception: Throwable) {
             Log.log(LogMessageType.LOADING, level = LogLevels.FATAL) { exception }
             if (this::assets.isInitialized) {
-                assets.unload()
+                try {
+                    contentFidelity.close()
+                } catch (cleanup: Throwable) {
+                    exception.addSuppressed(cleanup)
+                }
             }
             error = exception
             retry = false
@@ -284,6 +366,35 @@ class PlaySession(
                 // we just keep 5 connections here, they are for crash reports
                 ERRORED_CONNECTIONS.iterator().remove()
             }
+        }
+    }
+
+    private class SessionAssetsCandidate(
+        val assets: SessionAssetsManager,
+        val dataPacks: SessionDataPackManager,
+        val content: PreparedContent<ContentFidelitySnapshot>,
+    ) : AutoCloseable {
+        private val closed = AtomicBoolean()
+
+        override fun close() {
+            if (!closed.compareAndSet(false, true)) return
+            var failure: Throwable? = null
+            try {
+                content.cleanup.close()
+            } catch (error: Throwable) {
+                failure = error
+            }
+            try {
+                assets.unload()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+            try {
+                dataPacks.unload()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+            failure?.let { throw it }
         }
     }
 }

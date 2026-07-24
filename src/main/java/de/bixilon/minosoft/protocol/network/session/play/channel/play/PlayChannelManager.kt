@@ -23,6 +23,7 @@ import de.bixilon.minosoft.protocol.packets.c2s.common.ChannelC2SP
 import de.bixilon.minosoft.protocol.protocol.ProtocolStates
 import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayInByteBuffer
 import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayOutByteBuffer
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientPayloadChannels
 
 class PlayChannelManager(
     private val session: PlaySession,
@@ -30,6 +31,7 @@ class PlayChannelManager(
 
 
     fun handle(channel: ResourceLocation, data: ByteArray) {
+        FabricClientPayloadChannels.dispatch(session, channel, data)
         val handlers = handlers[channel] ?: return
 
         for (handler in handlers.toSynchronizedList()) { // ToDo: properly lock

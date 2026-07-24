@@ -34,6 +34,8 @@ import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayInByteBuffer
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
+import de.bixilon.minosoft.modding.loader.fabric.FabricWorldChangeCause
+import de.bixilon.minosoft.modding.loader.fabric.FabricWorldEvents
 
 class InitializeS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
     val entityId: Int
@@ -159,7 +161,6 @@ class InitializeS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
     }
 
     override fun handle(session: PlaySession) {
-        session.util.resetWorld()
         session.util.prepareSpawn()
         val playerEntity = session.player
         val previousGamemode = playerEntity.additional.gamemode
@@ -172,8 +173,12 @@ class InitializeS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
         session.world.hardcore = isHardcore
 
         registries?.let { session.registries.updateNbt(session.version, it) }
-        session.world.dimension = dimension ?: session.registries.dimension[dimensionName]?.properties ?: throw NullPointerException("Can not find dimension: $dimensionName")
-        session.world.name = world
+        val nextDimension = dimension ?: session.registries.dimension[dimensionName]?.properties ?: throw NullPointerException("Can not find dimension: $dimensionName")
+        FabricWorldEvents.change(session, FabricWorldChangeCause.INITIALIZE, nextDimension, world) {
+            session.util.resetWorld()
+            session.world.dimension = nextDimension
+            session.world.name = world
+        }
 
 
         session.world.entities.clear(session, local = true)

@@ -30,6 +30,8 @@ import de.bixilon.minosoft.gui.rendering.events.CameraPositionChangeEvent
 import de.bixilon.minosoft.gui.rendering.sound.sounds.Sound
 import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3dUtil
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
+import de.bixilon.minosoft.modding.loader.fabric.FabricSoundEventContext
+import de.bixilon.minosoft.modding.loader.fabric.FabricSoundEvents
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
@@ -194,6 +196,7 @@ class AudioPlayer(
         }
         requestedSoundCounter.incrementAndGet()
         lastRequestedSound = sound
+        FabricSoundEvents.dispatch(FabricSoundEventContext(session, sound, position, volume, pitch))
         queue += add@{
             val resolved = soundManager[sound]
             if (resolved == null) {

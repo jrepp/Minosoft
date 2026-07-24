@@ -28,6 +28,8 @@ import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayInByteBuffer
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
+import de.bixilon.minosoft.modding.loader.fabric.FabricWorldChangeCause
+import de.bixilon.minosoft.modding.loader.fabric.FabricWorldEvents
 
 class RespawnS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
     var dimension: DimensionProperties
@@ -104,12 +106,14 @@ class RespawnS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
         session.player.additional.gamemode = gamemode
         session.player.abilities = gamemode.abilities
 
-        if (this.dimension != session.world.dimension || this.world != session.world.name) {
-            session.util.resetWorld()
-        }
+        FabricWorldEvents.change(session, FabricWorldChangeCause.RESPAWN, dimension, world) {
+            if (this.dimension != session.world.dimension || this.world != session.world.name) {
+                session.util.resetWorld()
+            }
 
-        session.world.dimension = dimension
-        session.world.name = world
+            session.world.dimension = dimension
+            session.world.name = world
+        }
         session.world.biomes.updateNoise(hashedSeed)
 
         session.state = PlaySessionStates.SPAWNING
