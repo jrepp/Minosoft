@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -21,6 +22,7 @@ import de.bixilon.kutil.exception.Broken
 import de.bixilon.kutil.latch.AbstractLatch
 import de.bixilon.kutil.observer.DataObserver.Companion.observe
 import de.bixilon.kutil.primitive.FloatUtil.rad
+import de.bixilon.minosoft.data.container.equipment.EquipmentSlots
 import de.bixilon.minosoft.data.entities.entities.player.Arms
 import de.bixilon.minosoft.data.entities.entities.player.PlayerEntity
 import de.bixilon.minosoft.data.entities.entities.player.properties.textures.metadata.SkinModel
@@ -46,6 +48,8 @@ class ArmRenderer(override val context: RenderContext) : Renderer, Drawable {
     private var perspective = Mat4f()
     override val framebuffer get() = context.framebuffer.gui
     val shader = context.system.shader.create(minosoft("entities/player/arm")) { ArmShader(it) }
+    private val mainHandItem = HeldItemRenderer(context)
+    private val offHandItem = HeldItemRenderer(context)
 
     override fun init(latch: AbstractLatch) {
         registerModels()
@@ -53,6 +57,8 @@ class ArmRenderer(override val context: RenderContext) : Renderer, Drawable {
 
     override fun postInit(latch: AbstractLatch) {
         shader.load()
+        mainHandItem.postInit()
+        offHandItem.postInit()
         context.window::size.observe(this, true) {
             perspective = CameraUtil.perspective(60.0f.rad, it.x.toFloat() / it.y, NEAR_PLANE, FALLBACK_FAR_PLANE)
         }
@@ -85,36 +91,52 @@ class ArmRenderer(override val context: RenderContext) : Renderer, Drawable {
     override fun draw() {
         if (!context.camera.view.view.renderArm) return
         val entity = context.session.camera.entity.nullCast<PlayerEntity>() ?: return
-        val renderer = entity.renderer?.nullCast<PlayerRenderer<*>>() ?: return
+        val renderer = entity.renderer?.nullCast<PlayerRenderer<*>>()
         val arm = entity.mainArm
-        val skin = renderer.model?.type ?: return
-        val model = getModel(arm, skin) ?: return
 
         context.system.clear(IntegratedBufferTypes.DEPTH_BUFFER)
 
         context.system.reset(faceCulling = true, depthTest = true, blending = true, depthMask = true)
 
-        shader.use()
-        shader.skinParts = renderer.model?.skinParts ?: 0xFF
-        shader.texture = renderer.skin?.shaderId ?: context.textures.debugTexture.shaderId
-        shader.tint = ChatColors.WHITE.rgb()
+        val mainHand = entity.equipment[EquipmentSlots.MAIN_HAND]
+        val skin = renderer?.model?.type
+        val model = skin?.let { getModel(arm, it) }
+        if (mainHand == null && renderer != null && model != null) {
 
-        val pivot = Vec3f((if (arm == Arms.RIGHT) 6f else -6f) / 16f, 24 / 16f, 0f)
+            shader.use()
+            shader.skinParts = renderer.model?.skinParts ?: 0xFF
+            shader.texture = renderer.skin?.shaderId ?: context.textures.debugTexture.shaderId
+            shader.tint = ChatColors.WHITE.rgb()
 
-        // TODO: arm animation
-        val matrix = MMat4f().apply {
-            translateAssign(Vec3f((if (arm == Arms.RIGHT) 23f / 16f else -23f / 16f), -17 / 16f, -0.7f))
-            rotateXAssign(120.0f.rad)
-            rotateYAssign((if (arm == Arms.RIGHT) -20.0f else 20.0f).rad)
+            val pivot = Vec3f((if (arm == Arms.RIGHT) 6f else -6f) / 16f, 24 / 16f, 0f)
 
-            translateAssign(-pivot)
+            val matrix = MMat4f().apply {
+                translateAssign(Vec3f((if (arm == Arms.RIGHT) 23f / 16f else -23f / 16f), -17 / 16f, -0.7f))
+                rotateXAssign(120.0f.rad)
+                rotateYAssign((if (arm == Arms.RIGHT) -20.0f else 20.0f).rad)
+
+                entity.armSwing.progress(arm)?.let { progress ->
+                    translateAssign(FirstPersonItemTransform.swingOffset(arm, progress))
+                    val rotation = FirstPersonItemTransform.swingRotation(arm, progress)
+                    rotateYAssign(rotation.y.rad)
+                    rotateZAssign(rotation.z.rad)
+                    rotateXAssign(rotation.x.rad)
+                }
+
+                translateAssign(-pivot)
+            }
+
+            shader.transform = perspective * matrix
+
+            model.mesh.draw()
         }
+        mainHandItem.draw(entity, EquipmentSlots.MAIN_HAND, arm, perspective)
+        offHandItem.draw(entity, EquipmentSlots.OFF_HAND, FirstPersonItemTransform.opposite(arm), perspective)
+    }
 
-
-        shader.transform = perspective * matrix
-
-
-        model.mesh.draw()
+    override fun unload() {
+        mainHandItem.unload()
+        offHandItem.unload()
     }
 
 

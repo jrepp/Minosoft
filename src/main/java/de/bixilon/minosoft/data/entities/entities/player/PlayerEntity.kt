@@ -53,6 +53,7 @@ abstract class PlayerEntity(
     rotation: EntityRotation = EntityRotation.EMPTY,
     val additional: PlayerAdditional,
 ) : LivingEntity(session, entityType, data, position, rotation) {
+    val armSwing = ArmSwingState()
 
     override val dimensions: Vec2f
         get() = pose?.let { getDimensions(it) } ?: Vec2f(type.width, type.height)
@@ -144,6 +145,7 @@ abstract class PlayerEntity(
 
     fun swingHand(hand: Hands) {
         val arm = hand.getArm(mainArm)
+        armSwing.swing(arm)
         renderer?.nullCast<PlayerRenderer<*>>()?.model?.arm?.swing(arm)
     }
 
