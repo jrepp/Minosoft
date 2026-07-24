@@ -10,7 +10,9 @@ code.
    earliest affected layer when a boundary is unclear.
 2. Inspect the referenced source and tests. Grounding documents are maps, not a
    substitute for current code.
-3. Keep the change scoped and preserve unrelated work already in the tree.
+3. For Java or Kotlin changes, follow the
+   [JVM implementation guidance](doc/agents/guides/java-kotlin.md).
+4. Keep the change scoped and preserve unrelated work already in the tree.
 
 ## Working contract
 
