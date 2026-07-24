@@ -13,14 +13,12 @@
 
 package de.bixilon.minosoft.gui.rendering.sound
 
-import de.bixilon.kutil.json.JsonUtil.asJsonObject
 import de.bixilon.minosoft.assets.util.InputStreamUtil.readJsonObject
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.sound.sounds.Sound
 import de.bixilon.minosoft.gui.rendering.sound.sounds.SoundType
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
-import de.bixilon.minosoft.util.KUtil.toResourceLocation
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
@@ -34,16 +32,17 @@ class SoundManager(
 
 
     fun load() {
-        val soundsIndex = session.assets.getOrNull(SOUNDS_INDEX_FILE)?.readJsonObject()
-        if (soundsIndex == null) {
+        val soundIndices = session.assets.getAllOrNull(SOUNDS_INDEX_FILE)
+        if (soundIndices == null) {
             Log.log(LogMessageType.AUDIO, LogLevels.WARN) { "Can not find $SOUNDS_INDEX_FILE. Can not load audio files!" }
             return
         }
 
-        for ((name, data) in soundsIndex) {
-            val identifier = name.toResourceLocation()
-            sounds[identifier] = SoundType(identifier, data.asJsonObject())
-        }
+        // Asset managers are ordered from highest to lowest priority. Sound
+        // events merge in the opposite direction so resource-pack additions
+        // augment vanilla definitions unless they explicitly request replace.
+        val indices = soundIndices.asReversed().map { it.readJsonObject() }
+        sounds += SoundIndexMerger.mergeLowToHigh(indices)
     }
 
     @Synchronized

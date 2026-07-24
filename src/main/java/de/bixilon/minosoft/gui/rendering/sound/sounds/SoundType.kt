@@ -17,31 +17,33 @@ import de.bixilon.kutil.json.JsonUtil.asJsonList
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.util.KUtil.toResourceLocation
 import java.util.*
-import kotlin.math.abs
 
 data class SoundType(
     val soundEvent: ResourceLocation,
     val sounds: Set<Sound>,
     val subtitle: ResourceLocation?,
 ) {
-    val totalWeight: Int
+    val totalWeight: Long
 
     init {
-        var totalWeight = 0
+        var totalWeight = 0L
         for (sound in sounds) {
-            totalWeight += sound.weight
+            if (sound.weight > 0) {
+                totalWeight += sound.weight.toLong()
+            }
         }
 
         this.totalWeight = totalWeight
     }
 
     fun getSound(random: Random): Sound? {
-        if (sounds.isEmpty()) {
+        if (sounds.isEmpty() || totalWeight <= 0L) {
             return null
         }
-        var weightLeft = abs(random.nextLong() % totalWeight)
+        var weightLeft = Math.floorMod(random.nextLong(), totalWeight)
 
         for (sound in sounds) {
+            if (sound.weight <= 0) continue
             weightLeft -= sound.weight
             if (weightLeft < 0) {
                 return sound

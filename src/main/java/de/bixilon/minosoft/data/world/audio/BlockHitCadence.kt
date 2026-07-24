@@ -1,6 +1,6 @@
 /*
  * Minosoft
- * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -11,22 +11,21 @@
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
 
-package de.bixilon.minosoft.input.interaction.breaking.survival
+package de.bixilon.minosoft.data.world.audio
 
-import de.bixilon.kutil.observer.DataObserver.Companion.observed
-import de.bixilon.minosoft.data.direction.Directions
-import de.bixilon.minosoft.data.registries.blocks.state.BlockState
-import de.bixilon.minosoft.data.world.positions.BlockPosition
-import de.bixilon.minosoft.data.world.audio.BlockHitCadence
-
-class BlockDigStatus(
-    val position: BlockPosition,
-    val state: BlockState,
-    val slot: Int,
-    val productivity: BlockBreakProductivity,
-    var direction: Directions,
+class BlockHitCadence(
+    private val nowNanos: () -> Long = System::nanoTime,
 ) {
-    var progress: Float by observed(0.0f)
-    var aborted = false
-    val hitSoundCadence = BlockHitCadence()
+    private var lastAt: Long? = null
+
+    fun take(): Boolean {
+        val now = nowNanos()
+        if (lastAt?.let { now - it < INTERVAL_NANOS } == true) return false
+        lastAt = now
+        return true
+    }
+
+    companion object {
+        const val INTERVAL_NANOS = 200_000_000L
+    }
 }

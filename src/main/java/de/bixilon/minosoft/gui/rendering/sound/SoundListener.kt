@@ -30,8 +30,8 @@ class SoundListener(position: Vec3f = Vec3f.EMPTY) {
         }
 
     var masterVolume: Float
-        get() = alGetListenerf(AL_MAX_GAIN)
-        set(value) = alListenerf(AL_MAX_GAIN, value)
+        get() = alGetListenerf(AL_GAIN)
+        set(value) = alListenerf(AL_GAIN, value)
 
     fun setOrientation(look: Vec3f, up: Vec3f) {
         alListenerfv(AL_ORIENTATION, floatArrayOf(look.x, look.y, look.z, up.x, up.y, up.z))

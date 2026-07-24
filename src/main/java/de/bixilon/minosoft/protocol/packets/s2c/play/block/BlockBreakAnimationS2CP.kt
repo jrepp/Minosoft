@@ -12,6 +12,7 @@
  */
 package de.bixilon.minosoft.protocol.packets.s2c.play.block
 
+import de.bixilon.minosoft.data.world.audio.BlockHitAudio
 import de.bixilon.minosoft.modding.event.events.BlockBreakAnimationEvent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.packets.s2c.PlayS2CPacket
@@ -29,8 +30,8 @@ class BlockBreakAnimationS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
     override fun handle(session: PlaySession) {
         val progress = if (stage < 0 || stage > 8) null else stage / 9.0f
 
-
-        session.events.fire(BlockBreakAnimationEvent(session, id, position, progress))
+        if (session.events.fire(BlockBreakAnimationEvent(session, id, position, progress))) return
+        BlockHitAudio.playRemote(session, id, position, progress)
     }
 
     override fun log(reducedLog: Boolean) {

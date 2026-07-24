@@ -25,6 +25,7 @@ import de.bixilon.minosoft.data.registries.fluid.fluids.WaterFluid
 import de.bixilon.minosoft.data.registries.item.items.tool.MiningTool
 import de.bixilon.minosoft.data.registries.item.items.tool.properties.requirement.HandBreakable
 import de.bixilon.minosoft.data.registries.item.items.tool.properties.requirement.ToolRequirement
+import de.bixilon.minosoft.data.world.audio.BlockHitAudio
 import de.bixilon.minosoft.input.interaction.breaking.BreakHandler
 import de.bixilon.minosoft.protocol.packets.c2s.play.entity.player.PlayerActionC2SP
 
@@ -124,6 +125,9 @@ class SurvivalDigger(
 
         if (instant || nextStatus.progress >= 1.0f) {
             return finish(nextStatus, instant)
+        }
+        if (nextStatus.hitSoundCadence.take()) {
+            BlockHitAudio.play(session, nextStatus.position, nextStatus.state)
         }
         breaking.interactions.swingHand(Hands.MAIN)
         this.status = nextStatus

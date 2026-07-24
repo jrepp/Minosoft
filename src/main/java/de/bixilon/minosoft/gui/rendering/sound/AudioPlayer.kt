@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -40,6 +41,7 @@ import org.lwjgl.openal.EXTThreadLocalContext.alcSetThreadContext
 import org.lwjgl.system.MemoryUtil
 import java.nio.ByteBuffer
 import java.nio.IntBuffer
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.milliseconds
 
 
@@ -49,6 +51,7 @@ class AudioPlayer(
 ) : AbstractAudioPlayer {
     private val profile = session.profiles.audio
     private val soundManager = SoundManager(session)
+    @Volatile
     var initialized = false
         private set
 
@@ -65,6 +68,55 @@ class AudioPlayer(
     val sourcesCount: Int
         get() = sources.size
 
+    @Volatile
+    var appliedMasterVolume: Float = profile.volume.master
+        private set
+
+    private val requestedSoundCounter = AtomicLong()
+    private val resolvedSoundCounter = AtomicLong()
+    private val unresolvedSoundCounter = AtomicLong()
+    private val startedSoundCounter = AtomicLong()
+    private val distanceRejectedSoundCounter = AtomicLong()
+    private val missingBufferSoundCounter = AtomicLong()
+
+    val requestedSounds: Long
+        get() = requestedSoundCounter.get()
+    val resolvedSounds: Long
+        get() = resolvedSoundCounter.get()
+    val unresolvedSounds: Long
+        get() = unresolvedSoundCounter.get()
+    val startedSounds: Long
+        get() = startedSoundCounter.get()
+    val distanceRejectedSounds: Long
+        get() = distanceRejectedSoundCounter.get()
+    val missingBufferSounds: Long
+        get() = missingBufferSoundCounter.get()
+
+    @Volatile
+    var lastRequestedSound: ResourceLocation? = null
+        private set
+
+    @Volatile
+    var lastResolvedSound: ResourceLocation? = null
+        private set
+
+    @Volatile
+    var lastUnresolvedSound: ResourceLocation? = null
+        private set
+
+    @Volatile
+    var lastStartedSound: ResourceLocation? = null
+        private set
+
+    @Volatile
+    var lastStartedPosition: Vec3d? = null
+        private set
+
+    @Volatile
+    var listenerWorldPosition: Vec3f = Vec3f.EMPTY
+        private set
+
+    @Volatile
     private var enabled = profile.enabled
 
 
@@ -81,24 +133,30 @@ class AudioPlayer(
         device = alcOpenDevice(null as ByteBuffer?)
         check(device != MemoryUtil.NULL) { "Failed to open the default device." }
 
-        context = alcCreateContext(device, null as IntBuffer?)
-        check(context != MemoryUtil.NULL) { "Failed to create an OpenAL context." }
+        try {
+            context = alcCreateContext(device, null as IntBuffer?)
+            check(context != MemoryUtil.NULL) { "Failed to create an OpenAL context." }
+            check(alcSetThreadContext(context)) { "Failed to bind the OpenAL context." }
 
-        alcSetThreadContext(context)
-
-        val deviceCaps = ALC.createCapabilities(device)
-        AL.createCapabilities(deviceCaps)
+            val deviceCaps = ALC.createCapabilities(device)
+            AL.createCapabilities(deviceCaps)
+        } catch (error: Throwable) {
+            releaseOpenAl()
+            throw error
+        }
 
         listener = SoundListener()
+        syncListenerToCamera()
 
         val volumeConfig = session.profiles.audio.volume
 
-        listener.masterVolume = volumeConfig.master
-        volumeConfig::master.observe(this) { queue += { listener.masterVolume = it } }
+        applyMasterVolume(volumeConfig.master)
+        volumeConfig::master.observe(this) { volume -> queue += { applyMasterVolume(volume) } }
 
         session.events.listen<CameraPositionChangeEvent> {
             queue += {
                 listener.position = Vec3f(it.position)
+                listenerWorldPosition = listener.position
                 listener.setOrientation(it.context.camera.view.view.front, CAMERA_UP_VEC3)
             }
         }
@@ -128,7 +186,30 @@ class AudioPlayer(
         if (!initialized) {
             return
         }
-        queue += add@{ playSound(soundManager[sound] ?: return@add, position, volume, pitch) }
+        if (!volume.isFinite() || volume < 0.0f || !pitch.isFinite() || pitch <= 0.0f) {
+            return
+        }
+        if (position != null && (!position.x.isFinite() || !position.y.isFinite() || !position.z.isFinite())) {
+            return
+        }
+        requestedSoundCounter.incrementAndGet()
+        lastRequestedSound = sound
+        queue += add@{
+            val resolved = soundManager[sound]
+            if (resolved == null) {
+                unresolvedSoundCounter.incrementAndGet()
+                lastUnresolvedSound = sound
+                return@add
+            }
+            resolvedSoundCounter.incrementAndGet()
+            lastResolvedSound = sound
+            playSound(resolved, position, volume, pitch)
+        }
+    }
+
+    private fun applyMasterVolume(volume: Float) {
+        listener.masterVolume = if (volume.isFinite()) volume.coerceIn(0.0f, 1.0f) else 0.0f
+        appliedMasterVolume = listener.masterVolume
     }
 
     override fun play2D(sound: ResourceLocation, volume: Float, pitch: Float) {
@@ -186,21 +267,47 @@ class AudioPlayer(
     private fun shouldPlay(sound: Sound, position: Vec3d?): Boolean {
         if (position == null) return true
         val distance = Vec3dUtil.distance2(position, this.listener.position)
-        if (distance >= sound.attenuationDistance * sound.attenuationDistance) {
+        val attenuation = sound.attenuationDistance.coerceAtLeast(0).toDouble()
+        if (distance >= attenuation * attenuation) {
             return false
         }
 
         return true
     }
 
+    private fun syncListenerToCamera() {
+        val view = rendering.context.camera.view.view
+        val position = Vec3f(view.eyePosition)
+        listener.position = position
+        listenerWorldPosition = position
+        listener.setOrientation(view.front, CAMERA_UP_VEC3)
+    }
+
     private fun playSound(sound: Sound, position: Vec3d? = null, volume: Float = 1.0f, pitch: Float = 1.0f) {
         if (!profile.enabled || profile.volume.master <= 0.0f) {
             return
         }
-        position?.let { if (!shouldPlay(sound, position)) return }
         queue += add@{
+            // Rendering and audio initialize concurrently, so the first camera
+            // event can precede listener registration. Refresh from the current
+            // camera before evaluating any positional sound.
+            syncListenerToCamera()
+            position?.let {
+                if (!shouldPlay(sound, position)) {
+                    distanceRejectedSoundCounter.incrementAndGet()
+                    return@add
+                }
+            }
             sound.load(session.assets)
-            position?.let { if (!shouldPlay(sound, position)) return@add }
+            if (sound.buffer == null) {
+                missingBufferSoundCounter.incrementAndGet()
+                return@add
+            }
+            val effectivePitch = pitch * sound.pitch
+            val effectiveGain = volume * sound.volume
+            if (!effectivePitch.isFinite() || effectivePitch <= 0.0f || !effectiveGain.isFinite() || effectiveGain < 0.0f) {
+                return@add
+            }
             val source = getAvailableSource()
             if (source == null) {
                 Log.log(LogMessageType.AUDIO, LogLevels.WARN) { "No source available: $sound" }
@@ -214,9 +321,12 @@ class AudioPlayer(
                 source.relative = true
             }
             source.sound = sound
-            source.pitch = pitch * sound.pitch
-            source.gain = volume * sound.volume
+            source.pitch = effectivePitch
+            source.gain = effectiveGain
             source.play()
+            startedSoundCounter.incrementAndGet()
+            lastStartedSound = sound.soundEvent
+            lastStartedPosition = position
         }
     }
 
@@ -247,6 +357,9 @@ class AudioPlayer(
     }
 
     fun exit() {
+        if (!initialized && (device == MemoryUtil.NULL || device == -1L)) return
+        initialized = false
+        if (session.world.audio === this) session.world.audio = null
         Log.log(LogMessageType.AUDIO, LogLevels.INFO) { "Unloading OpenAL..." }
 
         Log.log(LogMessageType.AUDIO, LogLevels.VERBOSE) { "Unloading sounds..." }
@@ -259,10 +372,20 @@ class AudioPlayer(
 
         Log.log(LogMessageType.AUDIO, LogLevels.VERBOSE) { "Destroying OpenAL context..." }
 
-        alcDestroyContext(context)
-        alcCloseDevice(device)
-        alcSetThreadContext(MemoryUtil.NULL)
+        releaseOpenAl()
 
         Log.log(LogMessageType.AUDIO, LogLevels.INFO) { "Unloaded OpenAL!" }
+    }
+
+    private fun releaseOpenAl() {
+        alcSetThreadContext(MemoryUtil.NULL)
+        if (context != MemoryUtil.NULL && context != -1L) {
+            alcDestroyContext(context)
+            context = MemoryUtil.NULL
+        }
+        if (device != MemoryUtil.NULL && device != -1L) {
+            alcCloseDevice(device)
+            device = MemoryUtil.NULL
+        }
     }
 }

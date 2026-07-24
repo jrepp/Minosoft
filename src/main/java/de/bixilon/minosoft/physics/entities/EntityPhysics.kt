@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -31,6 +32,8 @@ import de.bixilon.minosoft.data.registries.blocks.types.pixlyzer.PixLyzerBlock
 import de.bixilon.minosoft.data.registries.blocks.types.properties.physics.VelocityBlock
 import de.bixilon.minosoft.data.registries.fluid.fluids.WaterFluid
 import de.bixilon.minosoft.data.registries.shapes.aabb.AABBIterator
+import de.bixilon.minosoft.data.world.audio.BlockFallAudio
+import de.bixilon.minosoft.data.world.audio.BlockStepAudio
 import de.bixilon.minosoft.data.world.iterator.WorldIterator
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.physics.EntityPositionInfo
@@ -39,6 +42,7 @@ import de.bixilon.minosoft.physics.handlers.movement.SneakAdjuster
 import de.bixilon.minosoft.physics.handlers.movement.StepAdjuster
 import de.bixilon.minosoft.physics.parts.CollisionMovementPhysics.collide
 import de.bixilon.minosoft.physics.submersion.SubmersionState
+import kotlin.math.sqrt
 
 open class EntityPhysics<E : Entity>(val entity: E) : BasicPhysicsEntity(), AbstractEntityPhysics, StepAdjuster {
     override val _entity: Entity get() = entity
@@ -71,6 +75,9 @@ open class EntityPhysics<E : Entity>(val entity: E) : BasicPhysicsEntity(), Abst
     var horizontalCollision: Boolean = false
     var movementMultiplier: Vec3d = Vec3d.EMPTY
         private set
+
+    private var distanceWalked = 0.0f
+    private var nextStepDistance = 0.0f
 
 
     open fun forceSetRotation(rotation: EntityRotation) {
@@ -178,6 +185,7 @@ open class EntityPhysics<E : Entity>(val entity: E) : BasicPhysicsEntity(), Abst
         val vertical = updateCollision(adjusted.unsafe, collisionMovement.unsafe)
 
         handleFalling(collisionMovement.y, vertical)
+        checkStepSound(collisionMovement.unsafe)
 
 
         checkBlockCollisions()
@@ -237,8 +245,28 @@ open class EntityPhysics<E : Entity>(val entity: E) : BasicPhysicsEntity(), Abst
         vehicle.physics.updatePassengerPosition(this)
     }
 
+    private fun checkStepSound(movement: Vec3d) {
+        if (!onGround) {
+            distanceWalked = 0.0f
+            nextStepDistance = 0.0f
+            return
+        }
+        val horizontal = sqrt(movement.x * movement.x + movement.z * movement.z).toFloat() * STEP_DISTANCE_WEIGHT
+        if (horizontal <= 0.0f) return
+        distanceWalked += horizontal
+        if (distanceWalked <= nextStepDistance) return
+
+        nextStepDistance = distanceWalked + STEP_LENGTH
+        val position = getLandingPosition()
+        val state = positionInfo.chunk?.get(position.inChunkPosition)
+        BlockStepAudio.play(entity.session, position, state)
+    }
+
     open fun fall(movement: Double, onGround: Boolean, state: BlockState?, landingPosition: BlockPosition) {
         if (onGround) {
+            if (fallDistance > 0.0f) {
+                BlockFallAudio.play(entity.session, landingPosition, state)
+            }
             this.fallDistance = 0.0f
         } else {
             this.fallDistance -= movement.toFloat()
@@ -249,5 +277,10 @@ open class EntityPhysics<E : Entity>(val entity: E) : BasicPhysicsEntity(), Abst
         val position = this.position
         val y = position.y + entity.mountHeightOffset + passenger.entity.heightOffset
         passenger.forceTeleport(Vec3d(position.x, y, position.z))
+    }
+
+    private companion object {
+        const val STEP_DISTANCE_WEIGHT = 0.6f
+        const val STEP_LENGTH = 1.0f
     }
 }
