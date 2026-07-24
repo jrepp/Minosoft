@@ -1,0 +1,36 @@
+[
+  {
+    "section": "Minosoft",
+    "titles": [
+      {
+        "title": "Original project",
+        "names": [
+          "Moritz Zwerger"
+        ]
+      },
+      {
+        "title": "Open source development",
+        "names": [
+          "Minosoft contributors"
+        ]
+      },
+      {
+        "title": "License",
+        "names": [
+          "GNU General Public License v3 or later"
+        ]
+      }
+    ]
+  },
+  {
+    "section": "Extensions",
+    "titles": [
+      {
+        "title": "Additional credits",
+        "names": [
+          "See the Mods menu for locally installed extensions"
+        ]
+      }
+    ]
+  }
+]
