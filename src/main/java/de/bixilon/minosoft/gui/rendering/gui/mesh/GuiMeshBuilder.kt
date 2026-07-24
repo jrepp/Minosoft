@@ -44,28 +44,38 @@ class GuiMeshBuilder(
 
     fun fixIndex() {
         val vertices = data.size / struct.floats
+        val quads = quadCount(vertices)
 
         val multiplier = (if (remap) (2 * PrimitiveTypes.TRIANGLE.vertices) else PrimitiveTypes.QUAD.vertices)
-        this.index.ensureSize(vertices * multiplier)
+        this.index.ensureSize(quads * multiplier)
 
         var start = index.size / multiplier
         val native = index.toUnsafeNativeBuffer()
         if (native == null) {
-            if (start > vertices) {
+            if (start > quads) {
                 index.clear() // TODO: Optimize (just fake size down)
                 start = 0
             }
         } else {
-            native.limit(vertices * multiplier)
+            native.limit(quads * multiplier)
         }
 
-        for (offset in start until vertices) {
+        for (offset in start until quads) {
             if (remap) {
                 IndexUtil.addTriangleQuad(index, offset * PrimitiveTypes.QUAD.vertices, true, false)
             } else {
                 // That could be left out (=> no index buffer)
                 IndexUtil.addNativeQuad(index, offset * PrimitiveTypes.QUAD.vertices, true, false)
             }
+        }
+    }
+
+    internal companion object {
+        fun quadCount(vertices: Int): Int {
+            require(vertices >= 0 && vertices % PrimitiveTypes.QUAD.vertices == 0) {
+                "GUI vertex count must contain complete quads: $vertices"
+            }
+            return vertices / PrimitiveTypes.QUAD.vertices
         }
     }
 
