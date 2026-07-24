@@ -22,7 +22,6 @@ import de.bixilon.minosoft.gui.rendering.gui.elements.Element
 import de.bixilon.minosoft.gui.rendering.gui.elements.primitive.AtlasImageElement
 import de.bixilon.minosoft.gui.rendering.gui.mesh.GUIVertexOptions
 import de.bixilon.minosoft.gui.rendering.gui.mesh.consumer.GuiVertexConsumer
-import de.bixilon.minosoft.gui.rendering.util.vec.vec2.Vec2Util.isSmaller
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 
@@ -44,12 +43,9 @@ abstract class BackgroundedContainerScreen<C : Container>(
 
     override fun getAt(position: Vec2f): Pair<Element, Vec2f>? {
         val centerOffset = (size - containerBackground.size) / 2
-        if (position isSmaller centerOffset) {
-            return null
-        }
         val start = position - centerOffset
 
-        return getContainerAt(start) ?: super.getAt(position - centerOffset)
+        return getContainerAt(start) ?: super.getAt(start)
     }
 
     protected open fun getContainerAt(position: Vec2f): Pair<Element, Vec2f>? = null
