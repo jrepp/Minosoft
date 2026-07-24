@@ -1,6 +1,6 @@
 /*
  * Minosoft
- * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -13,17 +13,29 @@
 
 package de.bixilon.minosoft.util.crash.section
 
-import de.bixilon.minosoft.config.profile.ProfileOptions
-import de.bixilon.minosoft.terminal.RunConfiguration
-import de.bixilon.minosoft.terminal.arguments.CommandLineArguments
-import java.lang.management.ManagementFactory
+object EnvironmentSanitizer {
+    const val REDACTED = "<redacted>"
 
-class RuntimeSection : CrashSection(
-    "Runtime details", arrayOf(
-        "Start arguments" to CommandLineArguments.raw,
-        "JVM flags" to ManagementFactory.getRuntimeMXBean().inputArguments,
-        "Environment" to EnvironmentSanitizer.sanitize(System.getenv()),
-        "Home path" to RunConfiguration.home,
-        "Profiles path" to ProfileOptions.path,
+    private val sensitiveNames = listOf(
+        "TOKEN",
+        "SECRET",
+        "PASSWORD",
+        "PASSWD",
+        "PRIVATE_KEY",
+        "API_KEY",
+        "ACCESS_KEY",
+        "CREDENTIAL",
+        "AUTHORIZATION",
     )
-)
+
+    fun sanitize(environment: Map<String, String>): Map<String, String> {
+        return environment.mapValues { (name, value) ->
+            if (isSensitive(name)) REDACTED else value
+        }
+    }
+
+    private fun isSensitive(name: String): Boolean {
+        val normalized = name.uppercase()
+        return sensitiveNames.any(normalized::contains)
+    }
+}
