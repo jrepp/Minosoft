@@ -51,6 +51,11 @@ class ChunkBuilder(
         blocks[InSectionPosition(x, y.inSectionHeight, z).index] = state
     }
 
+    operator fun get(x: Int, y: Int, z: Int): BlockState? {
+        val sectionIndex = y.sectionHeight - minSection
+        if (sectionIndex !in blocks.indices) return null
+        return blocks[sectionIndex]?.get(InSectionPosition(x, y.inSectionHeight, z).index)
+    }
 
     fun toData() = ChunkData(blocks, biomeSource = biomes)
 }

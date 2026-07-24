@@ -13,7 +13,10 @@
 
 package de.bixilon.minosoft.local.generator
 
+import de.bixilon.minosoft.data.registries.dimension.DimensionProperties
+
 interface ChunkGenerator {
+    val dimension: DimensionProperties? get() = null
 
     fun generate(builder: ChunkBuilder)
 }
