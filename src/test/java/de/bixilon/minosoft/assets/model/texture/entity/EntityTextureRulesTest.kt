@@ -14,6 +14,7 @@
 package de.bixilon.minosoft.assets.model.texture.entity
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -39,5 +40,31 @@ class EntityTextureRulesTest {
         )
 
         assertFalse(EntityTextureConditions.matches(condition, context))
+    }
+
+    @Test
+    fun `bounded NBT flattening exposes nested string numeric boolean and list paths`() {
+        val strings = linkedMapOf<String, MutableList<String>>()
+        val numbers = linkedMapOf<String, Double>()
+        val booleans = linkedMapOf<String, Boolean>()
+        EntityTextureContextFactory.flattenNbt(
+            "nbt",
+            mapOf(
+                "CustomName" to "Alex",
+                "Health" to 12.5f,
+                "Silent" to true,
+                "HandItems" to listOf(mapOf("id" to "minecraft:stick")),
+            ),
+            strings,
+            numbers,
+            booleans,
+        )
+        val context = EntityTextureContext(1, strings, numbers, booleans)
+
+        assertTrue(EntityTextureConditions.matches(EntityTextureCondition("nbt.CustomName", "ipattern:*alex*"), context))
+        assertTrue(EntityTextureConditions.matches(EntityTextureCondition("nbt.Health", "10-15"), context))
+        assertTrue(EntityTextureConditions.matches(EntityTextureCondition("nbt.Silent", "true"), context))
+        assertTrue(EntityTextureConditions.matches(EntityTextureCondition("nbt.HandItems.0.id", "minecraft:stick"), context))
+        assertEquals(12.5, context.number("nbt.Health"))
     }
 }
