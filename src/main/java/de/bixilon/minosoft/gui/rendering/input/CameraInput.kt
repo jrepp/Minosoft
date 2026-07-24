@@ -35,7 +35,8 @@ class CameraInput(
     private val session = context.session
     private val controlsProfile = session.profiles.controls
 
-    private var changeFly = false
+    private val changeFlyTrigger = KeyBindingChangeTrigger()
+    private val doubleTapSprintTrigger = KeyBindingChangeTrigger()
 
     private fun registerKeyBindings() {
         context.input.bindings.registerCheck(
@@ -44,6 +45,9 @@ class CameraInput(
             ),
             MOVE_FORWARDS_KEYBINDING to KeyBinding(
                 KeyActions.CHANGE to setOf(KeyCodes.KEY_W),
+            ),
+            MOVE_DOUBLE_TAP_SPRINT_KEYBINDING to KeyBinding(
+                KeyActions.DOUBLE_PRESS to setOf(KeyCodes.KEY_W),
             ),
             MOVE_BACKWARDS_KEYBINDING to KeyBinding(
                 KeyActions.CHANGE to setOf(KeyCodes.KEY_S),
@@ -99,13 +103,14 @@ class CameraInput(
             flyUp = FLY_UP_KEYBINDING in context.input.bindings,
         )
 
-        val changeFly = CHANGE_FLY_KEYBINDING in context.input.bindings
         val startElytraFly = START_ELYTRA_FLY_KEYBINDING in context.input.bindings
         val inputActions = MovementInputActions(
-            toggleFly = changeFly != this.changeFly,
+            toggleFly = changeFlyTrigger.changed(CHANGE_FLY_KEYBINDING in context.input.bindings),
             startElytraFly = startElytraFly,
+            startSprint = doubleTapSprintTrigger.changed(
+                MOVE_DOUBLE_TAP_SPRINT_KEYBINDING in context.input.bindings,
+            ),
         )
-        this.changeFly = changeFly
 
         context.camera.view.view.onInput(input, inputActions, delta)
     }
@@ -129,6 +134,7 @@ class CameraInput(
 
     private companion object {
         private val MOVE_SPRINT_KEYBINDING = minosoft("move_sprint")
+        private val MOVE_DOUBLE_TAP_SPRINT_KEYBINDING = minosoft("move_double_tap_sprint")
         private val MOVE_FORWARDS_KEYBINDING = minosoft("move_forward")
         private val MOVE_BACKWARDS_KEYBINDING = minosoft("move_backwards")
         private val MOVE_LEFT_KEYBINDING = minosoft("move_left")

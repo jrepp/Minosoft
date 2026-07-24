@@ -135,7 +135,7 @@ class LocalPlayerPhysics(entity: LocalPlayerEntity) : PlayerPhysics<LocalPlayerE
 
         if (entity.isSprinting) return true
 
-        if (!entity.input.sprint) return false
+        if (!entity.input.sprint && !entity.inputActions.startSprint) return false
         if (entity.using != null) return false
         if (entity.isSleeping) return false
         if (inWater && !this.inWater) return false
@@ -147,6 +147,9 @@ class LocalPlayerPhysics(entity: LocalPlayerEntity) : PlayerPhysics<LocalPlayerE
 
     private fun updateSprinting() {
         entity.isSprinting = shouldSprint()
+        if (entity.inputActions.startSprint) {
+            entity.inputActions = entity.inputActions.copy(startSprint = false)
+        }
     }
 
     private fun updateFlying() {

@@ -26,6 +26,7 @@ import de.bixilon.minosoft.data.registries.blocks.types.fluid.LavaFluidBlock
 import de.bixilon.minosoft.data.world.WorldTestUtil.fill
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.input.camera.PlayerMovementInput
+import de.bixilon.minosoft.input.camera.MovementInputActions
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil.createSession
 import de.bixilon.minosoft.test.IT
 import org.testng.Assert.assertFalse
@@ -80,6 +81,20 @@ class SprintIT {
         player.assertPosition(17.0, 9.0, 8.694907422181794)
         player.assertVelocity(0.0, -0.0784000015258789, 0.13469353477365476)
         assertTrue(player.isSprinting)
+    }
+
+    fun sprintRequestOnlyNeedsOneTickWhileForwardRemainsHeld() {
+        val player = createPlayer(createSession(3))
+        player.forceTeleport(Vec3d(17.0, 9.0, 8.0))
+        player.session.world[BlockPosition(17, 8, 8)] = IT.BLOCK_1
+        player.input = PlayerMovementInput(forward = true)
+        player.inputActions = MovementInputActions(startSprint = true)
+        player.runTicks(1)
+        assertFalse(player.inputActions.startSprint)
+        player.runTicks(4)
+
+        assertTrue(player.isSprinting)
+        player.assertPosition(17.0, 9.0, 8.694907422181794)
     }
 
     fun hungerSprinting() {

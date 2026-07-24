@@ -43,6 +43,7 @@ interface PersonView : CameraView {
             player.inputActions = MovementInputActions(
                 toggleFly = inputActions.toggleFly || actions.toggleFly,
                 startElytraFly = inputActions.startElytraFly || actions.startElytraFly,
+                startSprint = inputActions.startSprint || actions.startSprint,
             )
         }
     }

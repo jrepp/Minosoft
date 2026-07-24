@@ -1,6 +1,6 @@
 /*
  * Minosoft
- * Copyright (C) 2020-2023 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -11,10 +11,29 @@
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
 
-package de.bixilon.minosoft.input.camera
+package de.bixilon.minosoft.gui.rendering.input
 
-data class MovementInputActions(
-    val toggleFly: Boolean = false,
-    val startElytraFly: Boolean = false,
-    val startSprint: Boolean = false,
-)
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+
+class KeyBindingChangeTriggerTest {
+
+    @Test
+    fun unchangedStateDoesNotTrigger() {
+        val trigger = KeyBindingChangeTrigger()
+
+        assertFalse(trigger.changed(false))
+        assertFalse(trigger.changed(false))
+    }
+
+    @Test
+    fun eachToggleTriggersExactlyOnce() {
+        val trigger = KeyBindingChangeTrigger()
+
+        assertTrue(trigger.changed(true))
+        assertFalse(trigger.changed(true))
+        assertTrue(trigger.changed(false))
+        assertFalse(trigger.changed(false))
+    }
+}
