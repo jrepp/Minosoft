@@ -14,8 +14,10 @@
 package de.bixilon.minosoft.data.entities.entities.player.properties.textures
 
 import de.bixilon.kutil.url.URLUtil.toURL
+import de.bixilon.minosoft.assets.source.LocalAssetUnavailableException
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.util.UUID
 import kotlin.test.assertEquals
 
 
@@ -37,5 +39,13 @@ class PlayerTextureTest {
     fun invalidHash() {
         val texture = PlayerTexture("https://textures.minecraft.net/texture/r4639b3bb2b47f0e567e7a1ca094d38dfa57ce80d79b8cf507479d619ae67b7".toURL())
         assertThrows<IllegalArgumentException> { texture.getHash() }
+    }
+
+    @Test
+    fun missingTextureDoesNotUseNetworkFallback() {
+        val absentHash = UUID.randomUUID().toString().replace("-", "").repeat(2)
+        val texture = PlayerTexture("https://textures.minecraft.net/texture/$absentHash".toURL())
+
+        assertThrows<LocalAssetUnavailableException> { texture.read() }
     }
 }

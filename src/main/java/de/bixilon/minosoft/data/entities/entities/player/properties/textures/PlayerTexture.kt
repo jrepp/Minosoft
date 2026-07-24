@@ -17,12 +17,10 @@ import com.fasterxml.jackson.annotation.JsonIgnore
 import de.bixilon.kutil.hex.HexUtil.isHexString
 import de.bixilon.kutil.string.StringUtil.fill
 import de.bixilon.kutil.url.URLUtil.checkWeb
+import de.bixilon.minosoft.assets.source.LocalAssetSource
 import de.bixilon.minosoft.assets.util.FileAssetsTypes
 import de.bixilon.minosoft.assets.util.FileAssetsUtil
 import de.bixilon.minosoft.assets.util.HashTypes
-import de.bixilon.minosoft.util.logging.Log
-import de.bixilon.minosoft.util.logging.LogLevels
-import de.bixilon.minosoft.util.logging.LogMessageType
 import java.net.URL
 
 open class PlayerTexture(
@@ -57,22 +55,12 @@ open class PlayerTexture(
     fun read(): ByteArray {
         this.data?.let { return it }
         val hash = getHash()
-
-        FileAssetsUtil.readOrNull(hash, FileAssetsTypes.SKINS)?.let {
-            this.data = it
-            return it
-        }
-
-        val input = url.openStream()
-        if (input.available() > MAX_TEXTURE_SIZE) {
-            throw IllegalStateException("Texture is too big: ${input.available()}!")
-        }
-        val asset = FileAssetsUtil.read(input, type = FileAssetsTypes.SKINS, hash = HashTypes.SHA256)
-        Log.log(LogMessageType.ASSETS, LogLevels.VERBOSE) { "Downloaded player texture ($url)" }
-        return asset.data
-    }
-
-    companion object {
-        private const val MAX_TEXTURE_SIZE = 64 * 64 * 4 + 100 // width * height * rgba + some padding. Note: normal textures are compressed, so they are roughly 2kb in size
+        val local = LocalAssetSource.require(
+            kind = "player texture",
+            hash = hash,
+            value = FileAssetsUtil.readOrNull(hash, FileAssetsTypes.SKINS),
+        )
+        this.data = local
+        return local
     }
 }

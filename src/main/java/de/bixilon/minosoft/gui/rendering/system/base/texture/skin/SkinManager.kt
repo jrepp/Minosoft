@@ -25,6 +25,8 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.RGBA8Buffer
 import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.TextureBuffer
 import de.bixilon.minosoft.gui.rendering.system.base.texture.skin.vanilla.DefaultSkinProvider
+import de.bixilon.minosoft.gui.rendering.system.base.texture.skin.vanilla.DefaultSkins
+import de.bixilon.minosoft.data.entities.entities.player.properties.textures.metadata.SkinModel
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.isBlack
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.readTexture
 import java.io.ByteArrayInputStream
@@ -38,7 +40,11 @@ class SkinManager(private val textures: TextureManager) {
     fun initialize(account: Account, assets: AssetsManager) {
         default = DefaultSkinProvider(this.textures.dynamic, assets)
         default.initialize()
-        skin = getSkin(account.uuid, account.properties, fetch = true, async = false)
+        skin = if (System.getenv("MINOSOFT_PLAYER_SKIN").equals("steve", ignoreCase = true)) {
+            default[DefaultSkins.STEVE, SkinModel.WIDE]
+        } else {
+            getSkin(account.uuid, account.properties, fetch = true, async = false)
+        }
     }
 
     private fun getAccountProperties(uuid: UUID): PlayerProperties? {
