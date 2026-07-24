@@ -13,10 +13,12 @@
 
 package de.bixilon.minosoft.commands.nodes
 
+import de.bixilon.minosoft.commands.CommandAliases
 import de.bixilon.minosoft.commands.nodes.SessionNode.Companion.COMMAND_PREFIX
 import de.bixilon.minosoft.commands.stack.CommandStack
 import de.bixilon.minosoft.commands.suggestion.Suggestion
 import de.bixilon.minosoft.commands.util.CommandReader
+import de.bixilon.minosoft.modding.loader.fabric.FabricClientCommands
 import de.bixilon.minosoft.terminal.cli.CLI
 import de.bixilon.minosoft.terminal.cli.CLI.CLI_PREFIX
 
@@ -28,7 +30,18 @@ class ChatNode(
 
 
     override fun execute(reader: CommandReader, stack: CommandStack) {
+        val original = reader.peekRemaining()
+        val expanded = original?.let(CommandAliases::expand)
+        if (expanded != null && expanded != original) {
+            return execute(CommandReader(expanded), stack)
+        }
+
         reader.skipWhitespaces()
+        val pending = reader.peekRemaining()
+        if (pending?.firstOrNull() == COMMAND_PREFIX && FabricClientCommands.execute(stack.session, pending.drop(1))) {
+            reader.pointer = reader.length
+            return
+        }
         val node = reader.readNode(stack)
         if (node == null) {
             stack.session.util.sendChatMessage(reader.readRest() ?: return) // send normal chat message

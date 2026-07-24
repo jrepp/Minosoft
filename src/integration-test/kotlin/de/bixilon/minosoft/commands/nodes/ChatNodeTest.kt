@@ -37,7 +37,13 @@ import java.security.SecureRandom
 class ChatNodeTest {
     private var cmd = 0
     private var cmi = 0
-    private val root = SessionNode().apply { addChild(LiteralNode("cmd", executor = { cmd++ })) }
+    private val root = SessionNode().apply {
+        addChild(LiteralNode("cmd", executor = { cmd++ }))
+        addChild(LiteralNode("gamemode").apply {
+            addChild(LiteralNode("creative", executor = {}))
+            addChild(LiteralNode("survival", executor = {}))
+        })
+    }
 
     init {
         CLI.commands.addChild(LiteralNode("cmi", executor = { cmi++ }))
@@ -84,6 +90,18 @@ class ChatNodeTest {
         assertTrue(cmd == previous + 1)
         val packet: ChatMessageC2SP = stack.session.assertPacket(ChatMessageC2SP::class.java) // old version
         assertEquals(packet.message, "/cmd")
+    }
+
+    fun `creative gamemode shorthand sending`() {
+        val stack = create(true).execute("/gamemode c")
+        val packet: ChatMessageC2SP = stack.session.assertPacket(ChatMessageC2SP::class.java)
+        assertEquals(packet.message, "/gamemode creative")
+    }
+
+    fun `survival gamemode shorthand sending`() {
+        val stack = create(true).execute("/gamemode s")
+        val packet: ChatMessageC2SP = stack.session.assertPacket(ChatMessageC2SP::class.java)
+        assertEquals(packet.message, "/gamemode survival")
     }
 
     fun `internal execution`() {
