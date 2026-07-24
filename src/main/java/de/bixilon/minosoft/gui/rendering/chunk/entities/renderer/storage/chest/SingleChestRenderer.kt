@@ -24,6 +24,7 @@ import de.bixilon.minosoft.gui.rendering.chunk.entities.EntityRendererRegister
 import de.bixilon.minosoft.gui.rendering.models.loader.ModelLoader
 import de.bixilon.minosoft.gui.rendering.models.loader.SkeletalLoader.Companion.sModel
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
+import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
 
 class SingleChestRenderer(
@@ -39,10 +40,15 @@ class SingleChestRenderer(
         val MODEL_5 = minecraft("block/entities/chest/single_5").sModel()
         private val named = minecraft("chest")
 
-        fun register(loader: ModelLoader, name: ResourceLocation, texture: ResourceLocation) {
+        fun register(loader: ModelLoader, name: ResourceLocation, texture: ResourceLocation): Texture {
             val texture = loader.context.textures.static.create(texture)
             val model = if (loader.packFormat < 5) MODEL else MODEL_5
             loader.skeletal.register(name, model, mapOf(named to texture))
+            return texture
+        }
+
+        private fun registerItem(loader: ModelLoader, item: ResourceLocation, texture: Texture) {
+            loader.context.session.registries.item[item]?.model = ChestItemRender(texture)
         }
     }
 
@@ -52,7 +58,8 @@ class SingleChestRenderer(
         val TEXTURE_CHRISTMAS = minecraft("entity/chest/christmas").texture()
 
         override fun register(loader: ModelLoader) {
-            register(loader, NAME, if (DateUtil.christmas) TEXTURE_CHRISTMAS else TEXTURE)
+            val texture = register(loader, NAME, if (DateUtil.christmas) TEXTURE_CHRISTMAS else TEXTURE)
+            registerItem(loader, minecraft("chest"), texture)
         }
     }
 
@@ -61,7 +68,8 @@ class SingleChestRenderer(
         val TEXTURE = minecraft("entity/chest/trapped").texture()
 
         override fun register(loader: ModelLoader) {
-            register(loader, NAME, TEXTURE)
+            val texture = register(loader, NAME, TEXTURE)
+            registerItem(loader, minecraft("trapped_chest"), texture)
         }
     }
 
@@ -70,7 +78,8 @@ class SingleChestRenderer(
         val TEXTURE = minecraft("entity/chest/ender").texture()
 
         override fun register(loader: ModelLoader) {
-            register(loader, NAME, TEXTURE)
+            val texture = register(loader, NAME, TEXTURE)
+            registerItem(loader, minecraft("ender_chest"), texture)
         }
     }
 }

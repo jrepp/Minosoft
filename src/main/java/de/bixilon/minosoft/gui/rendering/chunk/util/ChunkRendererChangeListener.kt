@@ -17,6 +17,7 @@ import de.bixilon.kutil.exception.Broken
 import de.bixilon.kutil.observer.DataObserver.Companion.observe
 import de.bixilon.minosoft.data.direction.Directions
 import de.bixilon.minosoft.data.registries.blocks.state.BlockState
+import de.bixilon.minosoft.data.registries.blocks.state.BlockStateFlags
 import de.bixilon.minosoft.data.registries.blocks.types.fluid.FluidBlock
 import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.data.world.chunk.update.AbstractWorldUpdate
@@ -39,7 +40,16 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 
 object ChunkRendererChangeListener {
 
-    private fun canIgnore(state: BlockState?, previous: BlockState?): Boolean {
+    fun canIgnore(state: BlockState?, previous: BlockState?): Boolean {
+        val hasEntity = state?.let { BlockStateFlags.ENTITY in it.flags } == true
+        val previouslyHadEntity = previous?.let { BlockStateFlags.ENTITY in it.flags } == true
+        if (hasEntity || previouslyHadEntity) {
+            // Entity-backed blocks can have no baked block model at all. Their
+            // renderer is part of the section mesh, so placement, removal, and
+            // block-state changes must still rebuild that mesh.
+            return state == previous
+        }
+
         val model = state?.block?.model ?: state?.model
         if (state != null && state.block is FluidBlock) {
             return state.block.fluid.getHeight(state) == state.block.fluid.getHeight(previous)

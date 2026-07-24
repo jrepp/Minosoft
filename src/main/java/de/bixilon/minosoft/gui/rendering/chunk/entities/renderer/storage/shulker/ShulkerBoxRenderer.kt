@@ -30,6 +30,7 @@ import de.bixilon.minosoft.gui.rendering.chunk.entities.renderer.storage.Storage
 import de.bixilon.minosoft.gui.rendering.models.loader.ModelLoader
 import de.bixilon.minosoft.gui.rendering.models.loader.SkeletalLoader.Companion.sModel
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
+import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
 import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3fUtil.rad
 
@@ -77,12 +78,14 @@ class ShulkerBoxRenderer(
 
         override fun register(loader: ModelLoader) {
             if (loader.packFormat > FLATTENING) {
-                load(NAME, texture, loader) // was purple color instead
+                val texture = load(NAME, texture, loader) // was purple color instead
+                registerItem(loader, minecraft("shulker_box"), texture)
             }
 
             for (color in DyeColors) {
                 val texture = color.texture(loader.packFormat)
-                load(NAME_COLOR[color.ordinal], texture, loader)
+                val resolved = load(NAME_COLOR[color.ordinal], texture, loader)
+                registerItem(loader, minecraft("${color.name(loader.packFormat)}_shulker_box"), resolved)
             }
         }
 
@@ -90,9 +93,14 @@ class ShulkerBoxRenderer(
             return minecraft("entity/shulker/shulker_${name(packFormat)}").texture()
         }
 
-        private fun load(name: ResourceLocation, texture: ResourceLocation, loader: ModelLoader) {
+        private fun load(name: ResourceLocation, texture: ResourceLocation, loader: ModelLoader): Texture {
             val texture = loader.context.textures.static.create(texture)
             loader.skeletal.register(name, TEMPLATE, override = mapOf(this.named to texture))
+            return texture
+        }
+
+        private fun registerItem(loader: ModelLoader, item: ResourceLocation, texture: Texture) {
+            loader.context.session.registries.item[item]?.model = ShulkerBoxItemRender(texture)
         }
     }
 }
