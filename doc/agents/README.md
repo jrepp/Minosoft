@@ -127,8 +127,8 @@ instructions that differ from the root contract.
   GeckoLib, and Animated Java.
 - [Content-fidelity native adapter evidence](evidence/2026-07-24-content-fidelity-native-adapters.md)
   records exact ETF/EMF/GeckoLib activation, headless ingestion, the neutral
-  renderer bridge, transactional generation leases, focused tests, and the
-  remaining runtime/visual gates.
+  renderer bridge, transactional generation leases, existing-texture live
+  retained-model swaps, focused tests, and the remaining runtime/visual gates.
 - [Player-light evidence](evidence/2026-07-23-player-light.md) records the
   player-centered six-block falloff, profile/menu controls, per-fragment
   rendering correction, focused tests, and generation-19 live acceptance.

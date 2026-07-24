@@ -57,11 +57,15 @@ CPU parse/decode -> model bake / texture preparation -> render-thread upload
 resource locations, parses registered higher-fidelity formats headlessly, and
 then publishes the asset manager and immutable content snapshot together.
 Preparation or commit failure closes the candidate and preserves the previous
-content generation. Readers lease a generation; replaced assets and future GPU
-objects are disposed only after its final reader exits. Fabric-shaped resource
-reload events expose prepare, apply, complete, and failed phases. Manual shader
-and texture reload already cross the render queue, but a live resource-pack
-re-bake and renderer-generation swap is still incomplete.
+content generation. Readers lease a generation; replaced assets and GPU models
+are disposed only after their final reader exits. Fabric-shaped resource reload
+events expose prepare, apply, complete, and failed phases. `/reload content`
+now reparses CEM, ETF, and Gecko content, bakes and uploads a candidate on the
+render thread, then atomically swaps skeletal model/entity lookups and flags
+live entity renderers to recreate their instances. It currently reuses the
+uploaded static texture array, so a candidate that introduces a new texture key
+is rejected without advancing the generation. General resource-pack texture
+array replacement and atomic shader reload remain incomplete.
 
 ## Asset priority
 
@@ -237,9 +241,11 @@ geometry, transforms, and expression targets. A per-instance, reflection-free
 runtime applies ordered CEM transform/visibility expressions with persistent
 `var.*`/`varb.*` state and an initial entity/render variable set. This is still
 partial EMF. Native entity parts survive targeted CEM replacement and
-`attach:true` roots use isolated child transforms, but the complete alias and
-variable catalogs, exact absolute part-property/complex attachment semantics,
-live model replacement, and visual reference fixtures remain gates.
+`attach:true` roots use isolated child transforms. Live content reload replaces
+the retained model and rejects new instances of the old model while allowing
+already-retained instances to finish. The complete alias and variable catalogs,
+exact absolute part-property/complex attachment semantics, texture-array
+replacement, and visual reference fixtures remain gates.
 
 ## Higher-fidelity compatibility trajectory
 
@@ -248,9 +254,9 @@ for Blockbench-related content:
 
 | Component | Role | License/distribution | Prepared state | Missing behavior |
 | --- | --- | --- | --- | --- |
-| Entity Model Features (EMF) | Fabric replacement for OptiFine CEM geometry and expressions | LGPL-3.0 | Exact 3.0.17 adapter activates; JEM/JPM, live version/entity aliases, bounded per-instance expressions, targeted native-part replacement, isolated attach roots, discovery, and initial skeletal binding are source-native. | Complete part/variable catalogs, exact part-property and complex attachment semantics, live renderer replacement, fallback/visual fixtures, and configuration. |
-| Entity Texture Features (ETF) | OptiFine-style random, emissive, and variant entity textures | LGPL-3.0 | Exact 7.0.13 adapter activates; property parsing, deterministic variants, expanded entity/environment plus bounded nested-NBT context, finite material discovery, generation-owned caching, and retained skeletal base/emissive passes with state restoration exist. | Complete ETF predicate parity, player/feature textures, configuration, live reload, and visuals. |
-| GeckoLib | Runtime library for mod-authored geo models and keyframe animations | MIT | Exact 4.4.4 adapter activates; geo and animation JSON parse into the neutral model, matching clips attach to geometry, and a source-native API supplies predicate controllers, concurrent replace/add layers, transitions, and generation-owned animatable caches. | Complete easing, events, automatic routing, binary API compatibility, object/block/item/armor coverage, and dependent-mod validation. |
+| Entity Model Features (EMF) | Fabric replacement for OptiFine CEM geometry and expressions | LGPL-3.0 | Exact 3.0.17 adapter activates; JEM/JPM, live version/entity aliases, bounded per-instance expressions, targeted native-part replacement, isolated attach roots, discovery, skeletal binding, and existing-texture transactional model reload are source-native. | Complete part/variable catalogs, exact part-property and complex attachment semantics, texture-array replacement, fallback/visual fixtures, and configuration. |
+| Entity Texture Features (ETF) | OptiFine-style random, emissive, and variant entity textures | LGPL-3.0 | Exact 7.0.13 adapter activates; property parsing, deterministic variants, expanded entity/environment plus bounded nested-NBT context, finite material discovery, generation-owned caching, retained skeletal base/emissive passes, and existing-texture transactional catalog/material reload exist. | Complete ETF predicate parity, player/feature textures, configuration, texture-array replacement, and visuals. |
+| GeckoLib | Runtime library for mod-authored geo models and keyframe animations | MIT | Exact 4.4.4 adapter activates; geo and animation JSON parse into the neutral model, matching clips attach to geometry, source-native predicate/layer controllers and owned caches exist, and retained geometry/clip candidates swap transactionally. | Complete easing, events, automatic/controller routing and migration, binary API compatibility, object/block/item/armor coverage, dependent-mod validation, and texture-array reload. |
 | OptiFine | Original CEM and extended resource-pack implementation | Official-site distribution; no Packwiz redistribution | Catalogued as a format reference only. | Its runtime transforms Mojang/Forge classes that Minosoft does not expose, so the JAR cannot be activated as an ordinary mod. Selected OptiFine content formats require Minosoft-native parsers and render bindings, surfaced through exact EMF/ETF compatibility adapters. |
 | Animated Java | Blockbench authoring/export workflow producing resource-pack and data-pack content | Authoring tool; no runtime artifact staged | Resource and data namespaces mount separately into one session content generation. Local sessions run bounded functions, tags, macros, schedules, scoreboards/storage, selectors, an exporter-oriented `execute` subset including feet/eyes anchors and coordinate/entity facing, and display/entity mutation commands. Session-owned display/interaction/passenger trees support load→summon→tick→remove in a reduced fixture pinned to Animated Java 1.10.2. Failed candidate load tags atomically restore command and entity state. This remains an import workflow, not a runtime JAR. | Complete target/attacker relationships and data-manager/UUID utilities, wire interaction callbacks, accept an unmodified raw exporter fixture, and prove remote-server, visual, and repeated GPU-reload behavior. |
 
@@ -296,12 +302,14 @@ binding:
 7. **Dispose** callbacks, caches, meshes, textures, and GPU buffers before the
    generation classloader is released.
 
-Retained skeletal models implement the first GPU-lifetime half of this
-contract: retirement prevents new instances, active instances keep the old
-mesh alive, and the final release unloads uploaded buffers or drops an
+Retained skeletal models and `/reload content` implement the first transactional
+GPU generation: retirement prevents new instances, active instances keep the
+old mesh alive, candidates are uploaded before publication, lookup maps swap as
+one commit, and the final old-instance release unloads buffers or drops an
 unuploaded candidate. Content models retain their exact ETF catalog/cache lease
-through the same boundary. Atomic live candidate bake/swap and repeated
-real-OpenGL accounting remain required.
+through the same boundary. The transaction deliberately rejects new texture
+keys because the static texture array is not yet generational. Texture-array
+replacement and repeated real-OpenGL accounting remain required.
 
 An adapter must declare:
 
@@ -337,7 +345,7 @@ A format moves from staged to adapted only after all applicable gates pass:
 | Animation | Loop/hold/once, interpolation/easing, concurrent channels, variables, and time advancement have deterministic tests. |
 | Materials | Base, emissive, random/variant, translucent, and high-resolution textures bind to explicit render passes. |
 | Runtime | Entity/display lookup, world lifecycle, off-screen culling, and headless operation are defined. |
-| Reload | Candidate failure preserves the old model; successful apply frees all old registrations and GPU resources. |
+| Reload | Candidate failure preserves the old model; successful apply swaps model, routing, material/cache, and texture generations together; retained readers delay disposal; repeated reload returns real GPU/resource counts to baseline. |
 | Visual | A pinned resource pack or mod fixture is captured from several views and animation timestamps, not one screenshot. |
 
 ## Source map

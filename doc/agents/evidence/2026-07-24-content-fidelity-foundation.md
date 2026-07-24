@@ -77,9 +77,9 @@ No live visual or reload acceptance is claimed for this CPU-side slice.
 | Surface | Current state | Gates before a full claim |
 | --- | --- | --- |
 | OptiFine runtime | Out of scope | Do not stage or claim the upstream client. Name and test each native format family separately. |
-| EMF / CEM | Partial | Neutral IR, JEM/JPM, version/entity aliases applied during binding, bounded per-instance expressions, targeted native-part replacement, isolated attach roots, discovery, and initial animal/humanoid skeletal binding exist. Complete alias/variable catalogs, exact part-property and complex attachment semantics, live replacement, fallback, and visual fixtures remain. |
-| ETF | Partial | Property parsing, deterministic weighted variants, expanded entity/environment plus bounded nested-NBT context, discovered variant/emissive/blink materials, a generation-owned cache, and skeletal-entity base/emissive passes with state restoration exist. Complete predicate parity, player and feature-layer textures, live reload, and visuals remain. |
-| GeckoLib data | Partial | Geo/animation parsing, hierarchy, cubes, pivots, transforms, box/per-face UV, loop/channel metadata, discovery, CPU geometry binding, deterministic interpolation/easing, and source-native predicate/layer controllers plus animatable caches exist. Render layers, events, automatic routing, and complete easing remain. |
+| EMF / CEM | Partial | Neutral IR, JEM/JPM, version/entity aliases applied during binding, bounded per-instance expressions, targeted native-part replacement, isolated attach roots, discovery, animal/humanoid skeletal binding, and existing-texture transactional model reload exist. Complete alias/variable catalogs, exact part-property and complex attachment semantics, texture-array replacement, fallback, and visual fixtures remain. |
+| ETF | Partial | Property parsing, deterministic weighted variants, expanded entity/environment plus bounded nested-NBT context, discovered variant/emissive/blink materials, a generation-owned cache, skeletal-entity base/emissive passes with state restoration, and existing-texture transactional catalog/material reload exist. Complete predicate parity, player and feature-layer textures, texture-array replacement, and visuals remain. |
+| GeckoLib data | Partial | Geo/animation parsing, hierarchy, cubes, pivots, transforms, box/per-face UV, loop/channel metadata, discovery, CPU geometry binding, deterministic interpolation/easing, source-native predicate/layer controllers plus animatable caches, and retained-model transactional reload exist. Render layers, events, automatic/controller routing and migration, complete easing, and texture-array reload remain. |
 | GeckoLib dependent mods | Partial | A source-native controller/cache facade now covers predicates, transitions, concurrent replace/add layers, and lifecycle ownership. It needs dependent-mod validation and render/events integration; classes compiled against GeckoLib and Mojang binary types still do not link, so exact native adapters or a separate binary bridge are required. |
 | Animated Java | Partial | Resource/data packs mount into a shared session content generation; a generation-leased local runtime covers bounded functions/tags/macros/scheduling, scoreboards/storage/SNBT, selectors, an exporter-oriented execute subset, display/interaction summon, entity mutation/lifecycle, transactional failed-load rollback, and a reduced fixture pinned to exporter 1.10.2. Complete execute/data-manager semantics, interaction callbacks, an unmodified exporter fixture, and server/client plus repeated GPU-reload acceptance remain. |
 
@@ -108,9 +108,9 @@ GPU reload requirements.
 6. Complete the remaining Animated Java execute/data-manager/UUID and
    interaction-callback surface, then accept an unmodified pinned exporter
    fixture. The reduced 1.10.2 lifecycle fixture is only an intermediate gate.
-7. Extend the implemented CPU/content and failed-load transaction boundaries
-   through render-thread bake/apply and prove repeated GPU cleanup before
-   claiming runtime-complete support.
+7. Extend the implemented render-thread model transaction through generational
+   static textures and controller migration, then prove repeated real-GPU
+   cleanup before claiming runtime-complete support.
 
 Implementation progress and the revised continuation order are recorded in
 [native adapter evidence](2026-07-24-content-fidelity-native-adapters.md).

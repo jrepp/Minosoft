@@ -65,13 +65,20 @@ unmapped.
   native parts, replaces only ordinary CEM targets, and gives `attach:true`
   roots private child transforms so their geometry/expressions do not move the
   native target.
-- Baked skeletal models now have an explicit retirement boundary. Retirement
+- Baked skeletal models have an explicit retirement boundary. Retirement
   rejects new instances but keeps uploaded meshes alive for existing retained
   instances; the last instance release unloads GPU buffers, while an unuploaded
   retired generation drops its CPU buffers. Each content model also holds its
   exact content-generation lease, keeping ETF catalog/cache state alive until
-  that final release. This establishes safe old-model lifetime semantics but
-  does not yet perform the live candidate swap.
+  that final release.
+- `/reload content` runs the content-fidelity transaction on the render thread:
+  it reparses the current asset/data views, binds and CPU-bakes CEM/Gecko
+  geometry plus ETF material variants, uploads candidate meshes, attaches
+  candidate-generation leases during commit, atomically replaces skeletal
+  model/entity lookup maps, and flags live animal/humanoid renderers to rebuild
+  their model instances. Missing/new static texture keys reject the candidate
+  before publication; the previous generation and its active instances remain
+  usable.
 - Item model overrides implement last-match `custom_model_data`, `damage`, and
   `damaged` predicates. Element-backed override models retain and bake their
   cuboid geometry instead of falling back to a flat sprite. Display entities
@@ -124,11 +131,16 @@ Java 17 focused runs passed for:
 - ETF rules, variants, custom predicates, cache closure, and material frames;
 - resource discovery and malformed all-or-nothing candidate behavior;
 - generation preparation/commit failure, reader retirement, and cleanup;
+- candidate leases acquired during atomic commit and deferred cleanup after a
+  failed commit;
 - neutral-to-renderer hierarchy, transform, texture, and UV binding;
 - native-part preservation, targeted CEM replacement, and isolated attachment
   composition;
 - loaded and pre-upload skeletal retirement with final-instance GPU unload/CPU
   drop and per-model content/cache lease accounting;
+- dummy-GPU live content reload with a successful uploaded model swap, retained
+  old-instance lifetime, entity routing update, and missing-texture rejection
+  that preserves the active generation;
 - Gecko clip attachment, runtime interpolation, expressions, loop modes, and
   controller transitions;
 - item predicate selection and display transform interpolation;
@@ -168,10 +180,10 @@ No live visual or repeated GPU-reload acceptance is claimed by this evidence.
 1. Complete the EMF entity/version part-alias catalog, variable catalog, exact
    absolute part-property behavior, complex attachment parity, renderer feature layers,
    fallback diagnostics, and reference captures.
-2. Complete ETF predicate parity, feature/player textures,
-   configuration, live reload, and visual reference captures. The retained
-   skeletal-entity base/emissive path is implemented but is not the whole ETF
-   surface.
+2. Complete ETF predicate parity, feature/player textures, configuration,
+   texture-array generation replacement, and visual reference captures. The
+   retained skeletal-entity base/emissive and existing-texture reload paths are
+   implemented but are not the whole ETF surface.
 3. Complete Gecko easing, events, render layers, automatic model/controller
    routing, and validate the source-native controller/cache facade with
    dependent mods. Binary GeckoLib/Mojang compatibility remains a separate
@@ -181,8 +193,7 @@ No live visual or repeated GPU-reload acceptance is claimed by this evidence.
    Replace or supplement the reduced
    pinned fixture with unmodified exporter output and prove remote-server
    behavior.
-5. Extend the implemented content-generation, failed-load command/entity
-   transactions, and retained-model retirement through render-thread candidate
-   bake/apply, then add repeated real-GL unload accounting, broader
-   multi-version fixtures, and live visual captures
-   before any “fully supported” claim.
+5. Extend the implemented render-thread model candidate transaction through a
+   generational static texture array and controller-state migration, then add
+   repeated real-GL unload accounting, broader multi-version fixtures, and live
+   visual captures before any “fully supported” claim.
