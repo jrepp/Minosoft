@@ -1,0 +1,20 @@
+{
+  "textureSize": [64, 64],
+  "models": [
+    {
+      "id": "custom_arm",
+      "part": "leftArm",
+      "boxes": [
+        {
+          "coordinates": [-2, 0, -2, 4, 12, 4],
+          "textureOffset": [40, 16]
+        }
+      ],
+      "animations": [
+        {
+          "this.rx": "sin(age * 0.1)"
+        }
+      ]
+    }
+  ]
+}

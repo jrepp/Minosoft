@@ -20,6 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 data class SkeletalTransform(
     val pivot: Vec3f,
+    val rotation: Vec3f = Vec3f.EMPTY,
+    val scale: Vec3f = Vec3f(1.0f),
     val children: Map<String, SkeletalTransform> = emptyMap(),
 ) {
 
@@ -34,6 +36,6 @@ data class SkeletalTransform(
             transforms[name] = transform.bake(id)
         }
 
-        return BakedSkeletalTransform(usedId, pivot, transforms)
+        return BakedSkeletalTransform(usedId, pivot, transforms, rotation, scale)
     }
 }

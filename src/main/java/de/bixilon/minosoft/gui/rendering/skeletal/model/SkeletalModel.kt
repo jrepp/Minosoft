@@ -25,6 +25,8 @@ import de.bixilon.minosoft.gui.rendering.skeletal.model.animations.SkeletalAnima
 import de.bixilon.minosoft.gui.rendering.skeletal.model.elements.SkeletalElement
 import de.bixilon.minosoft.gui.rendering.skeletal.model.textures.*
 import de.bixilon.minosoft.gui.rendering.skeletal.model.transforms.SkeletalTransform
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationClip
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalExpressionBinding
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -33,6 +35,9 @@ data class SkeletalModel(
     val textures: Map<ResourceLocation, SkeletalTexture>,
     val animations: Map<String, SkeletalAnimation> = emptyMap(),
     val transforms: Map<String, SkeletalTransform> = emptyMap(),
+    val neutralAnimations: Map<String, SkeletalAnimationClip> = emptyMap(),
+    val expressions: List<SkeletalExpressionBinding> = emptyList(),
+    val expressionAliases: Map<String, String> = emptyMap(),
 ) {
     @JsonIgnore
     val loadedTextures: MutableSkeletalInstanceTextureMap = mutableMapOf()
@@ -41,7 +46,7 @@ data class SkeletalModel(
         for ((name, properties) in this.textures) {
             if (name in skip) continue
 
-            val file = name.texture()
+            val file = properties.source ?: name.texture()
             if (file in skip) continue
 
             val texture = context.textures.static.create(file)
@@ -90,6 +95,14 @@ data class SkeletalModel(
         val (transform, count) = buildTransforms()
         buildElements(mesh, textures, transform)
 
-        return BakedSkeletalModel(mesh.bake(), transform, count, animations)
+        return BakedSkeletalModel(
+            mesh.bake(),
+            transform,
+            count,
+            animations,
+            neutralAnimations,
+            expressions = expressions,
+            expressionAliases = expressionAliases,
+        )
     }
 }

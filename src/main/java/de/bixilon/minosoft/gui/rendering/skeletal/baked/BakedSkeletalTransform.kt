@@ -20,6 +20,8 @@ data class BakedSkeletalTransform(
     val id: Int,
     val pivot: Vec3f,
     val children: Map<String, BakedSkeletalTransform>,
+    val rotation: Vec3f = Vec3f.EMPTY,
+    val scale: Vec3f = Vec3f(1.0f),
 ) {
 
     fun instance(): TransformInstance {
@@ -29,6 +31,6 @@ data class BakedSkeletalTransform(
             children[name] = child.instance()
         }
 
-        return TransformInstance(id, pivot, children)
+        return TransformInstance(id, pivot, children, rotation, scale)
     }
 }

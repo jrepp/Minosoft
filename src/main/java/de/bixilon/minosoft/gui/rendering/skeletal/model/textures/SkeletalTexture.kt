@@ -14,7 +14,9 @@
 package de.bixilon.minosoft.gui.rendering.skeletal.model.textures
 
 import de.bixilon.kmath.vec.vec2.i.Vec2i
+import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 
 data class SkeletalTexture(
     val resolution: Vec2i,
+    val source: ResourceLocation? = null,
 )

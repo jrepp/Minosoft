@@ -49,9 +49,11 @@ class ModelLoader(
     fun loadDynamic(latch: AbstractLatch) {
         val start = now()
 
+        skeletal.registerContentFidelity()
         DefaultBlockEntityModels.load(this, latch)
         DefaultEntityModels.load(this, latch)
         skeletal.load(latch)
+        item.auditMissingBlockItemModels()
 
         val time = now() - start
 

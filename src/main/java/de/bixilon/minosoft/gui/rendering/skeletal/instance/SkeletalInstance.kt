@@ -20,6 +20,7 @@ import de.bixilon.kmath.vec.vec3.f.MVec3f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.kutil.time.TimeUtil.now
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor
+import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.world.chunk.light.types.LightLevel
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.gui.rendering.RenderContext
@@ -32,11 +33,16 @@ class SkeletalInstance(
     val context: RenderContext,
     val model: BakedSkeletalModel,
     val transform: TransformInstance,
+    modelLease: AutoCloseable? = null,
 ) {
+    private var modelLease = modelLease
     val animation = AnimationManager(this)
+    val neutralAnimation = NeutralAnimationManager(this)
+    val cemExpression = CemExpressionManager(this)
     var matrix = MMat4f()
     var state = SkeletalModelStates.PREPARING
         private set
+    var material: ResourceLocation? = null
 
     fun load() {
         assert(state == SkeletalModelStates.PREPARING) { "Can not load: $state" }
@@ -46,11 +52,19 @@ class SkeletalInstance(
     fun unload() {
         assert(state == SkeletalModelStates.LOADED) { "Can not unload: $state" }
         state = SkeletalModelStates.UNLOADED
+        releaseModel()
     }
 
     fun drop() {
         assert(state == SkeletalModelStates.PREPARING) { "Can not drop: $state" }
         state = SkeletalModelStates.UNLOADED
+        releaseModel()
+    }
+
+    private fun releaseModel() {
+        val lease = modelLease ?: return
+        modelLease = null
+        lease.close()
     }
 
     fun draw(light: LightLevel) {
@@ -58,7 +72,7 @@ class SkeletalInstance(
         val shader = context.skeletal.lightmapShader
         shader.use()
         shader.light = light.raw.toInt()
-        draw(shader)
+        draw(shader, material)
     }
 
     fun draw(tint: RGBColor) {
@@ -66,15 +80,15 @@ class SkeletalInstance(
         val shader = context.skeletal.shader
         shader.use()
         shader.tint = tint
-        draw(shader)
+        draw(shader, material)
     }
 
-    fun draw(shader: Shader) {
+    fun draw(shader: Shader, material: ResourceLocation? = this.material) {
         assert(state == SkeletalModelStates.LOADED) { "Model not loaded: $state" }
         shader.use()
 
         context.skeletal.upload(this)
-        model.mesh.draw()
+        model.mesh(material).draw()
     }
 
     fun update(time: ValueTimeMark = now()) {

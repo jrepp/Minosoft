@@ -28,6 +28,7 @@ import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3fUtil.rotateAssign
 data class SkeletalFace(
     val uv: FaceUV? = null,
     val texture: ResourceLocation? = null,
+    val rotation: Int = 0,
 ) {
 
 
@@ -43,7 +44,7 @@ data class SkeletalFace(
         val uvData = FaceUV(
             texture.texture.transformUV(Vec2f(uv.start.x, uv.end.y) / texture.properties.resolution),
             texture.texture.transformUV(Vec2f(uv.end.x, uv.start.y) / texture.properties.resolution),
-        ).toArray(direction, 0)
+        ).toArray(direction, rotation)
 
 
         val normal = MVec3f(direction.vectorf)

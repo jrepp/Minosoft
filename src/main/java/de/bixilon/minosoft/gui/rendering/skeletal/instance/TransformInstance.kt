@@ -23,6 +23,8 @@ class TransformInstance(
     val id: Int,
     val pivot: Vec3f,
     val children: Map<String, TransformInstance>,
+    val baseRotation: Vec3f = Vec3f.EMPTY,
+    val baseScale: Vec3f = Vec3f(1.0f),
 ) {
     private val array = children.values.toTypedArray()
     val nPivot = -pivot
@@ -30,7 +32,13 @@ class TransformInstance(
 
 
     fun reset() {
-        this.matrix.clearAssign()
+        this.matrix.apply {
+            clearAssign()
+            translateAssign(nPivot)
+            rotateRadAssign(baseRotation)
+            scaleAssign(baseScale)
+            translateAssign(pivot)
+        }
 
         for (child in array) {
             child.reset()
