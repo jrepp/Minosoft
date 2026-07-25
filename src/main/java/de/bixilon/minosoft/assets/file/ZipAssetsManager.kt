@@ -28,16 +28,28 @@ import java.util.zip.ZipInputStream
  * Assets-manager that just reads a zip file and provides all files in it
  * Probably a resource pack
  */
-class ZipAssetsManager(
+open class ZipAssetsManager(
     private val inputStream: ZipInputStream,
     canUnload: Boolean = true,
     val prefix: String = AssetsManager.DEFAULT_ASSETS_PREFIX,
+    private val entryFilter: (String) -> Boolean = { true },
 ) : FileAssetsManager(canUnload) {
 
-    constructor(file: File, canUnload: Boolean = true, prefix: String = AssetsManager.DEFAULT_ASSETS_PREFIX) : this(ZipInputStream(FileInputStream(file)), canUnload, prefix)
-    constructor(path: String, canUnload: Boolean = true, prefix: String = AssetsManager.DEFAULT_ASSETS_PREFIX) : this(File(path), canUnload, prefix)
+    constructor(
+        file: File,
+        canUnload: Boolean = true,
+        prefix: String = AssetsManager.DEFAULT_ASSETS_PREFIX,
+        entryFilter: (String) -> Boolean = { true },
+    ) : this(ZipInputStream(FileInputStream(file)), canUnload, prefix, entryFilter)
 
-    override fun load(latch: AbstractLatch?) {
+    constructor(
+        path: String,
+        canUnload: Boolean = true,
+        prefix: String = AssetsManager.DEFAULT_ASSETS_PREFIX,
+        entryFilter: (String) -> Boolean = { true },
+    ) : this(File(path), canUnload, prefix, entryFilter)
+
+    open override fun load(latch: AbstractLatch?) {
         check(!loaded) { "Already loaded!" }
 
         while (true) {
@@ -45,6 +57,7 @@ class ZipAssetsManager(
             if (entry.isDirectory) {
                 continue
             }
+            if (!entryFilter(entry.name)) continue
             push(entry.name, inputStream)
         }
 

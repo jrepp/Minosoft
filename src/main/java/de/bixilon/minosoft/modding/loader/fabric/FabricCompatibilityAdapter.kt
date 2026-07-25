@@ -110,6 +110,7 @@ object FabricCompatibilityAdapters {
             EntityTextureFeaturesCompatibilityAdapter,
             EntityModelFeaturesCompatibilityAdapter,
             GeckoLibCompatibilityAdapter,
+            NaturalistCompatibilityAdapter,
         ),
     )
 

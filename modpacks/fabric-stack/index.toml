@@ -4,11 +4,11 @@ hash-format = "sha256"
 
 [[files]]
 file = "fabric.mod.json"
-hash = "42a0d49dd0a0e9a2dd147e461e5ff55c83dc6cbad691dc4ef9a2ec0034f5f704"
+hash = "15631beeba0f3fca4840fb613fe4ff95931d202a3beb9cd756a64fc57cf29f8d"
 
 [[files]]
 file = "ladder.tsv"
-hash = "e8d4380add952938239e207fd70d61d24dc66b8ddf662bb1243070718f360ea0"
+hash = "98d838dbe1d60805d5dedae0033f0b76813639c29b9b1761eb493af67c0681c2"
 
 [[files]]
 file = "resourcepacks/enhanced-audio.pw.toml"
@@ -31,6 +31,11 @@ hash = "76a0e56851284dae55ac00f4813b87edd1c379d85ad57bfd65060b3729b07c9a"
 metafile = true
 
 [[files]]
+file = "mods/geckolib.pw.toml"
+hash = "803faf7390fa69b6bf88fc0bf090e94fdd9585448e9fffd624c32d25f4bb076b"
+metafile = true
+
+[[files]]
 file = "mods/inventory-management.pw.toml"
 hash = "07566d239b2dfde1995171223767b76b6a6aedc9f7dcbb9f75fcacdd53696327"
 metafile = true
@@ -43,6 +48,11 @@ metafile = true
 [[files]]
 file = "mods/jei.pw.toml"
 hash = "b80a5cdac13e496b96cccc62c96514a2bb44bc776e84aa2f7bfebbc22ab434a1"
+metafile = true
+
+[[files]]
+file = "mods/naturalist.pw.toml"
+hash = "5504b9604774546f632d13d1980496cf8f2859a2d9d36ed6588b4a18c0d6c986"
 metafile = true
 
 [[files]]

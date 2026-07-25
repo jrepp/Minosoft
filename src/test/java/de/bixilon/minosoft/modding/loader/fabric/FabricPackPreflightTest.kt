@@ -13,6 +13,7 @@
 
 package de.bixilon.minosoft.modding.loader.fabric
 
+import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureRuntimeEnvironment
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.util.json.Jackson
 import java.io.ByteArrayInputStream
@@ -263,10 +264,12 @@ class FabricPackPreflightTest {
             FabricPackLoader.activate(root)
             assertEquals(report.pack.id, FabricPackLoader.current()?.report?.pack?.id)
             assertTrue(SodiumRendererHook in FabricRendererRegistry.snapshot())
+            assertTrue("sodium" in EntityTextureRuntimeEnvironment.loadedMods())
         } finally {
             FabricPackLoader.deactivate()
         }
         assertTrue(FabricRendererRegistry.snapshot().isEmpty())
+        assertTrue(EntityTextureRuntimeEnvironment.loadedMods().isEmpty())
     }
 
     @Test

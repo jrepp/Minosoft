@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "id": "minosoft_fabric_stack",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "name": "Minosoft Fabric Compatibility Stack",
-  "description": "A source-controlled compatibility ladder spanning independent Minosoft host hooks plus server-owned Terratonic world generation.",
+  "description": "A source-controlled compatibility ladder spanning independent Minosoft host hooks, Naturalist content adaptation, and server-owned Terratonic world generation.",
   "environment": "client",
   "license": "GPL-3.0-only",
   "depends": {
@@ -15,7 +15,9 @@
     "immediatelyfast": "=1.5.5+1.20.4",
     "inventorymanagement": "=1.5.0",
     "iris": "=1.7.2+mc1.20.4",
-    "jei": "=17.3.1.5"
+    "jei": "=17.3.1.5",
+    "geckolib": "=4.4.4",
+    "naturalist": "=5.0pre3"
   },
   "custom": {
     "minosoft:modpack": {
@@ -30,7 +32,9 @@
         "minosoft:immediatelyfast-1.5.5-mc1.20.4",
         "minosoft:inventorymanagement-1.5.0-mc1.20.4",
         "minosoft:iris-1.7.2-mc1.20.4",
-        "minosoft:jei-17.3.1.5-mc1.20.4"
+        "minosoft:jei-17.3.1.5-mc1.20.4",
+        "minosoft:geckolib-4.4.4-mc1.20.4",
+        "minosoft:naturalist-5.0pre3-fabric-mc1.20.1"
       ]
     }
   }

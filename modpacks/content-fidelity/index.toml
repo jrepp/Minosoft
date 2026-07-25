@@ -1,18 +1,16 @@
-# Copyright (C) 2026 Jacob Repp
-
 hash-format = "sha256"
 
 [[files]]
 file = "fabric.mod.json"
-hash = "12dd2b8427bb57d4a6f299aa7ca678c631af5d4020818b72e968fd1e470ef9fa"
+hash = "afe43916235bfd0a2dabb6dd4047b9441d3b5362bc86d5655c84d9d42bfa16fc"
 
 [[files]]
 file = "ladder.tsv"
-hash = "cba50b93f6e4c91a6ff8b04915c0f1230d001e02c0a7901aa3cfd97bad644b7b"
+hash = "d3826e78c66568a3e94a4fe645f4eab1f708d23793199deccd756bf4229d7b12"
 
 [[files]]
-file = "mods/fabric-api.pw.toml"
-hash = "9d99d1fcad45387093968a5657aff7db7985135317434a1b00b4edbae3a7bafc"
+file = "mods/entity-model-features.pw.toml"
+hash = "2d1afcf3a0a60179d4938dff94694b1a414a7ecd1edb0bfb7d0344d08c3abfad"
 metafile = true
 
 [[files]]
@@ -21,8 +19,8 @@ hash = "a1a750249be2726a503d690d924e3e61445a5d80189bccf7338d79f877a4980a"
 metafile = true
 
 [[files]]
-file = "mods/entity-model-features.pw.toml"
-hash = "2d1afcf3a0a60179d4938dff94694b1a414a7ecd1edb0bfb7d0344d08c3abfad"
+file = "mods/fabric-api.pw.toml"
+hash = "9d99d1fcad45387093968a5657aff7db7985135317434a1b00b4edbae3a7bafc"
 metafile = true
 
 [[files]]

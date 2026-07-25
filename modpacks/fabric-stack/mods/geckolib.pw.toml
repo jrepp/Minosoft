@@ -1,0 +1,14 @@
+# Copyright (C) 2026 Jacob Repp
+
+name = "GeckoLib"
+filename = "geckolib-fabric-1.20.4-4.4.4.jar"
+side = "client"
+
+[download]
+hash-format = "sha512"
+hash = "6b4a56e58019fd59e2b63cfd703525d837e21f82657a5c81e27f2900db5ef624f1938a33032ec4157e3e87083847f62c0f37e0dd21aec676953b577db0ac2568"
+url = "https://cdn.modrinth.com/data/8BmcQJ2H/versions/9xn1SoTo/geckolib-fabric-1.20.4-4.4.4.jar"
+
+[update.modrinth]
+mod-id = "8BmcQJ2H"
+version = "9xn1SoTo"

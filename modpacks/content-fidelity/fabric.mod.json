@@ -32,7 +32,7 @@
         "mixins-and-access-wideners",
         "complete-cem-runtime-bindings-and-visual-parity",
         "complete-etf-player-feature-and-predicate-parity",
-        "geckolib-binary-api-events-and-render-layers",
+        "geckolib-binary-api-render-layers-and-routing",
         "animated-java-interaction-and-raw-exporter-parity",
         "texture-array-generation-reload",
         "repeated-real-gl-and-visual-acceptance"

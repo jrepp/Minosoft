@@ -41,7 +41,9 @@ object EntityModelFeaturesCompatibilityAdapter : FabricCompatibilityAdapter {
     override fun activate(probe: FabricModProbe, scope: FabricRegistrationScope) {
         require(supports(probe.metadata)) { "Unsupported Entity Model Features artifact: ${probe.metadata.version}" }
         scope.own(SkeletalContentParsers.register(CEM_PARSER_REGISTRATION))
-        scope.own(SkeletalPartAliases.register(SkeletalPartAliasRegistry.HUMANOID))
+        SkeletalPartAliasRegistry.MINOSOFT_NATIVE.forEach {
+            scope.own(SkeletalPartAliases.register(it))
+        }
     }
 }
 

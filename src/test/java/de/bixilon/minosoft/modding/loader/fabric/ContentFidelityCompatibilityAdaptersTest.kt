@@ -48,7 +48,16 @@ class ContentFidelityCompatibilityAdaptersTest {
             GeckoLibCompatibilityAdapter.activate(FabricModProbe(gecko, emptySet(), GeckoLibCompatibilityAdapter), scope)
 
             assertEquals(setOf("minosoft:optifine-cem", "minosoft:geckolib-json"), SkeletalContentParsers.snapshot().map { it.id }.toSet())
-            assertEquals(listOf("minosoft:humanoid"), SkeletalPartAliases.snapshot().map { it.id })
+            assertEquals(
+                setOf(
+                    "minosoft:emf/player",
+                    "minosoft:emf/zombie",
+                    "minosoft:emf/cow",
+                    "minosoft:emf/pig",
+                    "minosoft:emf/sheep",
+                ),
+                SkeletalPartAliases.snapshot().map { it.id }.toSet(),
+            )
         } finally {
             scope.close()
         }
