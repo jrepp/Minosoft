@@ -18,7 +18,13 @@ import de.bixilon.minosoft.data.entities.entities.Entity
  */
 interface DataPackEntityAccess {
     fun select(selector: String, context: DataPackCommandContext): List<Entity>
+    fun related(entity: Entity, relation: DataPackEntityRelation): List<Entity> = emptyList()
     fun synchronize(entity: Entity)
     fun remove(entity: Entity)
     fun beginTransaction(): DataPackCommandTransaction
+}
+
+enum class DataPackEntityRelation {
+    TARGET,
+    ATTACKER,
 }

@@ -34,6 +34,35 @@ class InteractionEntity(session: PlaySession, entityType: EntityType, data: Enti
     @get:SynchronizedEntityData
     val height: Float by data(HEIGHT, 1.0f) // TODO: default
 
+    @get:SynchronizedEntityData
+    val response: Boolean by data(RESPONSE, false)
+
+    @Volatile
+    var lastInteraction: Entity? = null
+        private set
+
+    @Volatile
+    var lastAttacker: Entity? = null
+        private set
+
+    @Synchronized
+    fun recordInteraction(actor: Entity, attack: Boolean, timestamp: Long) {
+        require(timestamp >= 0L) { "Interaction timestamp must not be negative." }
+        val key = if (attack) "attack" else "interaction"
+        val record = linkedMapOf<String, Any>(
+            "player" to (actor.uuid?.toString() ?: actor.id?.toString().orEmpty()),
+            "timestamp" to timestamp,
+        )
+        synchronized(commandNbt) {
+            commandNbt[key] = record
+        }
+        if (attack) {
+            lastAttacker = actor
+        } else {
+            lastInteraction = actor
+        }
+    }
+
     private fun updateFlags(force: Boolean) {
         val dimensions = Vec2f(width, height)
         if (!force && this.dimensions == dimensions) return

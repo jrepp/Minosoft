@@ -173,7 +173,7 @@ class DataPackFunctionRuntimeTest {
         val result = DataPackFunctionRuntime(library, authority).execute("test:outer")
 
         assertEquals(7, result)
-        assertEquals(listOf("\"rig loaded\""), messages)
+        assertEquals(listOf("rig loaded"), messages)
     }
 
     @Test

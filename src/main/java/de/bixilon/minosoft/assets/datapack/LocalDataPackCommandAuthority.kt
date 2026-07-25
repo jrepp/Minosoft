@@ -115,8 +115,9 @@ class LocalDataPackCommandAuthority(
     override fun execute(command: String, context: DataPackCommandContext): Int {
         scoreboard(command, context)?.let { return it }
         entity(command, context)?.let { return it }
-        data(command)?.let { return it }
+        data(command, context)?.let { return it }
         summon(command, context)?.let { return it }
+        advancement(command, context)?.let { return it }
         if (command.startsWith("say ")) {
             message(command.removePrefix("say "))
             return 1
@@ -171,13 +172,30 @@ class LocalDataPackCommandAuthority(
                     index += 2
                 }
                 "on" -> {
-                    require(clauses.required(index + 1, command) == "passengers") {
-                        "Only execute on passengers is supported: $command"
-                    }
-                    contexts = expandContexts(contexts, command) { current ->
-                        current.executor?.attachment?.passengers?.map {
-                            current.copy(executor = it)
-                        } ?: emptyList()
+                    when (clauses.required(index + 1, command)) {
+                        "passengers" -> {
+                            contexts = expandContexts(contexts, command) { current ->
+                                current.executor?.attachment?.passengers?.map {
+                                    current.copy(executor = it)
+                                } ?: emptyList()
+                            }
+                        }
+                        "target", "attacker" -> {
+                            val access = entities ?: throw UnsupportedDataPackCommandException(command)
+                            val relation = if (clauses[index + 1] == "target") {
+                                DataPackEntityRelation.TARGET
+                            } else {
+                                DataPackEntityRelation.ATTACKER
+                            }
+                            contexts = expandContexts(contexts, command) { current ->
+                                current.executor?.let { executor ->
+                                    access.related(executor, relation).map {
+                                        current.copy(executor = it)
+                                    }
+                                } ?: emptyList()
+                            }
+                        }
+                        else -> throw UnsupportedDataPackCommandException(command)
                     }
                     index += 2
                 }
@@ -282,24 +300,46 @@ class LocalDataPackCommandAuthority(
                         "score" -> {
                             val holder = clauses.required(index + 2, command)
                             val objective = clauses.required(index + 3, command)
-                            require(clauses.required(index + 4, command) == "matches") {
-                                "Only execute score matches is supported: $command"
+                            val operation = clauses.required(index + 4, command)
+                            if (operation == "matches") {
+                                val range = scoreRange(clauses.required(index + 5, command))
+                                contexts = contexts.filter {
+                                    val value = objectives[objective]?.get(scoreHolder(holder, it))
+                                    ((value != null && value in range)) == positive
+                                }
+                                index += 6
+                            } else {
+                                val sourceHolder = clauses.required(index + 5, command)
+                                val sourceObjective = clauses.required(index + 6, command)
+                                contexts = contexts.filter {
+                                    val left = objectives[objective]?.get(scoreHolder(holder, it))
+                                    val right = objectives[sourceObjective]?.get(scoreHolder(sourceHolder, it))
+                                    ((left != null && right != null && compareScores(left, operation, right))) == positive
+                                }
+                                index += 7
                             }
-                            val range = scoreRange(clauses.required(index + 5, command))
-                            contexts = contexts.filter {
-                                val value = objectives[objective]?.get(scoreHolder(holder, it))
-                                ((value != null && value in range)) == positive
-                            }
-                            index += 6
                         }
                         "data" -> {
-                            require(clauses.required(index + 2, command) == "storage") {
-                                "Only execute data storage is supported: $command"
-                            }
-                            val id = ResourceLocation.of(clauses.required(index + 3, command))
-                            val predicate = clauses.required(index + 4, command)
-                            contexts = contexts.filter {
-                                storageMatches(id, predicate) == positive
+                            when (clauses.required(index + 2, command)) {
+                                "storage" -> {
+                                    val id = ResourceLocation.of(clauses.required(index + 3, command))
+                                    val predicate = clauses.required(index + 4, command)
+                                    contexts = contexts.filter {
+                                        storageMatches(id, predicate) == positive
+                                    }
+                                }
+                                "entity" -> {
+                                    val selector = clauses.required(index + 3, command)
+                                    val path = clauses.required(index + 4, command)
+                                    val access = entities ?: throw UnsupportedDataPackCommandException(command)
+                                    contexts = contexts.filter { current ->
+                                        val matched = access.select(selector, current).any {
+                                            NbtPath.get(entitySnapshot(it), path) != null
+                                        }
+                                        matched == positive
+                                    }
+                                }
+                                else -> throw UnsupportedDataPackCommandException(command)
                             }
                             index += 5
                         }
@@ -464,6 +504,15 @@ class LocalDataPackCommandAuthority(
         return (parts[0].toIntOrNull() ?: Int.MIN_VALUE)..(parts[1].toIntOrNull() ?: Int.MAX_VALUE)
     }
 
+    private fun compareScores(left: Int, operation: String, right: Int): Boolean = when (operation) {
+        "=" -> left == right
+        "<" -> left < right
+        "<=" -> left <= right
+        ">" -> left > right
+        ">=" -> left >= right
+        else -> throw IllegalArgumentException("Unsupported execute score comparison $operation")
+    }
+
     private fun tokenize(source: String): List<String> {
         val tokens = mutableListOf<String>()
         var start = -1
@@ -618,8 +667,30 @@ class LocalDataPackCommandAuthority(
         val root = this.storage[storage] ?: throw IllegalArgumentException("Unknown command storage $storage")
         val value = NbtPath.get(root, path)
             ?: throw IllegalArgumentException("Missing command storage path $storage $path")
-        require(value is Map<*, *>) { "Function macro source $storage $path must be a compound." }
-        return value.entries.associate { it.key.toString() to SnbtParser.stringify(requireNotNull(it.value)) }
+        return macroArguments(value, "$storage $path")
+    }
+
+    override fun arguments(
+        selector: String,
+        path: String,
+        context: DataPackCommandContext,
+    ): Map<String, String> {
+        val access = entities ?: throw IllegalArgumentException("Entity function macros require a local entity authority.")
+        val entity = access.select(selector, context).singleOrNull()
+            ?: throw IllegalArgumentException("Function macro entity selector $selector must resolve exactly one entity.")
+        val value = NbtPath.get(entitySnapshot(entity), path)
+            ?: throw IllegalArgumentException("Missing entity function macro path $selector $path")
+        return macroArguments(value, "$selector $path")
+    }
+
+    private fun macroArguments(value: Any, source: String): Map<String, String> {
+        require(value is Map<*, *>) { "Function macro source $source must be a compound." }
+        return value.entries.associate {
+            it.key.toString() to when (val argument = requireNotNull(it.value)) {
+                is String -> argument
+                else -> SnbtParser.stringify(argument)
+            }
+        }
     }
 
     private fun scoreboard(command: String, context: DataPackCommandContext): Int? {
@@ -697,8 +768,8 @@ class LocalDataPackCommandAuthority(
                     "+=" -> scores.putScore(holder, left + right)
                     "-=" -> scores.putScore(holder, left - right)
                     "*=" -> scores.putScore(holder, left * right)
-                    "/=" -> scores.putScore(holder, if (right == 0) 0 else left / right)
-                    "%=" -> scores.putScore(holder, if (right == 0) 0 else left % right)
+                    "/=" -> scores.putScore(holder, if (right == 0) 0 else Math.floorDiv(left, right))
+                    "%=" -> scores.putScore(holder, if (right == 0) 0 else Math.floorMod(left, right))
                     "<" -> scores.putScore(holder, minOf(left, right))
                     ">" -> scores.putScore(holder, maxOf(left, right))
                     "><" -> {
@@ -728,6 +799,13 @@ class LocalDataPackCommandAuthority(
 
     private fun entity(command: String, context: DataPackCommandContext): Int? {
         if (
+            command.startsWith("data ") &&
+            !command.startsWith("data merge entity ") &&
+            !command.startsWith("data remove entity ") &&
+            !command.startsWith("data get entity ") &&
+            !command.startsWith("data modify entity ")
+        ) return null
+        if (
             !command.startsWith("tag ") &&
             !command.startsWith("kill ") &&
             !command.startsWith("tp ") &&
@@ -736,9 +814,7 @@ class LocalDataPackCommandAuthority(
             !command.startsWith("ride ") &&
             !command.startsWith("data ")
         ) return null
-        val access = entities ?: return if (
-            command.startsWith("data ") && !command.contains(" entity ")
-        ) null else throw UnsupportedDataPackCommandException(command)
+        val access = entities ?: throw UnsupportedDataPackCommandException(command)
 
         TAG.matchEntire(command)?.let { match ->
             val selected = access.select(match.groupValues[1], context)
@@ -831,7 +907,7 @@ class LocalDataPackCommandAuthority(
             val operation = match.groupValues[3]
             val sourceType = match.groupValues[4]
             val source = match.groupValues[5]
-            val value = dataSource(sourceType, source, command)
+            val value = dataSource(sourceType, source, command, context)
             selected.forEach {
                 modifyEntity(it, path, operation, value, command)
                 access.synchronize(it)
@@ -878,7 +954,12 @@ class LocalDataPackCommandAuthority(
         }
     }
 
-    private fun dataSource(sourceType: String, source: String, command: String): Any {
+    private fun dataSource(
+        sourceType: String,
+        source: String,
+        command: String,
+        context: DataPackCommandContext,
+    ): Any {
         return when (sourceType) {
             "value" -> SnbtParser.parse(source)
             "from storage" -> {
@@ -889,6 +970,15 @@ class LocalDataPackCommandAuthority(
                 NbtPath.get(sourceRoot, source.substring(separator + 1))
                     ?: throw IllegalArgumentException("Missing source storage value in: $command")
             }
+            "from entity" -> {
+                val separator = source.indexOf(' ')
+                require(separator > 0) { "Missing source entity path in: $command" }
+                val access = entities ?: throw UnsupportedDataPackCommandException(command)
+                val entity = access.select(source.substring(0, separator), context).singleOrNull()
+                    ?: throw IllegalArgumentException("Source entity selector must resolve exactly one entity in: $command")
+                NbtPath.get(entitySnapshot(entity), source.substring(separator + 1))
+                    ?: throw IllegalArgumentException("Missing source entity value in: $command")
+            }
             else -> throw UnsupportedDataPackCommandException(command)
         }
     }
@@ -897,7 +987,14 @@ class LocalDataPackCommandAuthority(
         val snapshot = entity.commandNbt.deepCopyMap().mapValuesTo(linkedMapOf()) { it.value.deepMutable() }
         snapshot["Pos"] = mutableListOf(entity.physics.position.x, entity.physics.position.y, entity.physics.position.z)
         snapshot["Rotation"] = mutableListOf(entity.physics.rotation.yaw, entity.physics.rotation.pitch)
-        entity.uuid?.let { snapshot["UUID"] = it.toString() }
+        entity.uuid?.let {
+            snapshot["UUID"] = mutableListOf(
+                (it.mostSignificantBits shr 32).toInt(),
+                it.mostSignificantBits.toInt(),
+                (it.leastSignificantBits shr 32).toInt(),
+                it.leastSignificantBits.toInt(),
+            )
+        }
         snapshot["Tags"] = entity.commandTags.toMutableList()
         return snapshot
     }
@@ -926,7 +1023,7 @@ class LocalDataPackCommandAuthority(
         return result
     }
 
-    private fun data(command: String): Int? {
+    private fun data(command: String, context: DataPackCommandContext): Int? {
         if (!command.startsWith("data ")) return null
         DATA_REMOVE.matchEntire(command)?.let { match ->
             val root = storage[ResourceLocation.of(match.groupValues[1])] ?: return 0
@@ -956,7 +1053,7 @@ class LocalDataPackCommandAuthority(
             val operation = match.groupValues[3]
             val sourceType = match.groupValues[4]
             val source = match.groupValues[5]
-            val value = dataSource(sourceType, source, command)
+            val value = dataSource(sourceType, source, command, context)
             val root = storageRoot(id)
             when (operation) {
                 "set" -> NbtPath.set(root, path, value.deepMutable())
@@ -980,6 +1077,20 @@ class LocalDataPackCommandAuthority(
             return 1
         }
         throw UnsupportedDataPackCommandException(command)
+    }
+
+    /**
+     * Local interaction packets are already the authoritative trigger edge, so
+     * advancement reward consumption has no additional state to mutate here.
+     * Recognizing the exact revoke form lets unmodified Animated Java handlers
+     * keep their normal command ordering.
+     */
+    private fun advancement(command: String, context: DataPackCommandContext): Int? {
+        if (!command.startsWith("advancement ")) return null
+        val match = ADVANCEMENT_REVOKE.matchEntire(command)
+            ?: throw UnsupportedDataPackCommandException(command)
+        val access = entities ?: throw UnsupportedDataPackCommandException(command)
+        return access.select(match.groupValues[1], context).size
     }
 
     private fun merge(target: MutableMap<String, Any>, source: Map<String, Any>) {
@@ -1135,7 +1246,7 @@ class LocalDataPackCommandAuthority(
         val DATA_REMOVE = Regex("""data remove storage\s+(\S+)\s+(.+)""")
         val DATA_GET = Regex("""data get storage\s+(\S+)\s+(\S+)(?:\s+([-+]?\d+(?:\.\d+)?))?""")
         val DATA_MERGE = Regex("""data merge storage\s+(\S+)\s+(\{.*})""")
-        val DATA_MODIFY = Regex("""data modify storage\s+(\S+)\s+(\S+)\s+(set|merge|append)\s+(value|from storage)\s+(.+)""")
+        val DATA_MODIFY = Regex("""data modify storage\s+(\S+)\s+(\S+)\s+(set|merge|append)\s+(value|from storage|from entity)\s+(.+)""")
         val SUMMON = Regex("""summon\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(\{.*}))?""")
         val TAG = Regex("""tag\s+(\S+)\s+(add|remove)\s+(\S+)""")
         val KILL = Regex("""kill\s+(\S+)""")
@@ -1146,6 +1257,7 @@ class LocalDataPackCommandAuthority(
         val DATA_ENTITY_REMOVE = Regex("""data remove entity\s+(\S+)\s+(\S+)""")
         const val MAX_EXECUTE_CONTEXTS = 65_536
         val DATA_ENTITY_GET = Regex("""data get entity\s+(\S+)\s+(\S+)(?:\s+([-+]?\d+(?:\.\d+)?))?""")
-        val DATA_ENTITY_MODIFY = Regex("""data modify entity\s+(\S+)\s+(\S+)\s+(set|merge|append)\s+(value|from storage)\s+(.+)""")
+        val DATA_ENTITY_MODIFY = Regex("""data modify entity\s+(\S+)\s+(\S+)\s+(set|merge|append)\s+(value|from storage|from entity)\s+(.+)""")
+        val ADVANCEMENT_REVOKE = Regex("""advancement\s+revoke\s+(\S+)\s+only\s+(\S+)""")
     }
 }

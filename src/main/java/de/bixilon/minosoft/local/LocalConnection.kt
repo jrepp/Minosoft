@@ -22,6 +22,7 @@ import de.bixilon.minosoft.data.abilities.Gamemodes
 import de.bixilon.minosoft.data.chat.message.SimpleChatMessage
 import de.bixilon.minosoft.data.chat.type.DefaultMessageTypes
 import de.bixilon.minosoft.data.entities.entities.player.additional.AdditionalDataUpdate
+import de.bixilon.minosoft.data.entities.entities.InteractionEntity
 import de.bixilon.minosoft.data.entities.entities.player.local.Abilities
 import de.bixilon.minosoft.data.registries.dimension.DimensionProperties
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
@@ -44,6 +45,9 @@ import de.bixilon.minosoft.protocol.network.session.play.PlaySessionStates
 import de.bixilon.minosoft.protocol.packets.c2s.C2SPacket
 import de.bixilon.minosoft.protocol.packets.c2s.play.entity.move.PositionC2SP
 import de.bixilon.minosoft.protocol.packets.c2s.play.entity.move.PositionRotationC2SP
+import de.bixilon.minosoft.protocol.packets.c2s.play.entity.interact.EntityAttackC2SP
+import de.bixilon.minosoft.protocol.packets.c2s.play.entity.interact.EntityEmptyInteractC2SP
+import de.bixilon.minosoft.protocol.packets.c2s.play.entity.interact.EntityInteractPositionC2SP
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
@@ -58,6 +62,7 @@ class LocalConnection(
     private lateinit var session: PlaySession
     private var dataPackRuntime: SessionDataPackRuntime? = null
     private var dataPackTickTask: Runnable? = null
+    private var displayFactory: LocalDisplayEntityFactory? = null
     lateinit var chunks: LocalChunkManager
 
     fun sendMessage(message: Any, type: ResourceLocation = DefaultMessageTypes.CHAT) {
@@ -108,6 +113,7 @@ class LocalConnection(
         session.player.physics.forceTeleport(Vec3d(0.5, 20.0, 0.5)) // TODO: teleport on ground (after world is loaded)
 
         val displayFactory = LocalDisplayEntityFactory(session)
+        this.displayFactory = displayFactory
         val dataPackEntities = LocalDataPackEntityAccess(session, displayFactory) { session.player.physics.position }
         val commandAuthority = LocalDataPackCommandAuthority(
             message = { sendMessage(it) },
@@ -137,6 +143,7 @@ class LocalConnection(
     override fun disconnect() {
         dataPackTickTask?.let { session.ticker -= it }
         dataPackTickTask = null
+        displayFactory = null
         val dataPackRuntime = dataPackRuntime
         this.dataPackRuntime = null
         try {
@@ -156,6 +163,29 @@ class LocalConnection(
         when (packet) {
             is PositionRotationC2SP -> chunks.update()
             is PositionC2SP -> chunks.update()
+            is EntityAttackC2SP -> recordInteraction(packet.entityId, attack = true)
+            is EntityEmptyInteractC2SP -> recordInteraction(packet.entityId, attack = false)
+            is EntityInteractPositionC2SP -> recordInteraction(packet.entityId, attack = false)
+        }
+    }
+
+    private fun recordInteraction(entityId: Int, attack: Boolean) {
+        val entity = session.world.entities[entityId] as? InteractionEntity ?: return
+        if (displayFactory?.owns(entity) != true) return
+        val runtime = dataPackRuntime
+        val handler = if (attack) {
+            "animated_java:global/interactions/attack/on"
+        } else {
+            "animated_java:global/interactions/interaction/on"
+        }
+        try {
+            if (runtime == null) {
+                entity.recordInteraction(session.player, attack, 0L)
+            } else {
+                runtime.executeInteraction(handler, entity, session.player, attack)
+            }
+        } catch (error: Throwable) {
+            Log.log(LogMessageType.LOADING, LogLevels.WARN, error)
         }
     }
 }

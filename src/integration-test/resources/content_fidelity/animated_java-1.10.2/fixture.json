@@ -3,5 +3,10 @@
   "version": "1.10.2",
   "source_commit": "a5fc548d2a53cc0887fa070db33ccfcef1cd3541",
   "minecraft": "1.20.4",
-  "purpose": "Reduced exporter-shaped lifecycle fixture retaining current summon, selector, execute, scoreboard, display passenger, item custom-model-data, tick, and removal command forms."
+  "purpose": "Reduced exporter-shaped lifecycle fixture retaining current summon, selector, execute, scoreboard, display passenger, item custom-model-data, tick, and removal command forms.",
+  "audited_templates": {
+    "src/systems/datapackCompiler/1.20.4/global.mcb": "74fed176785c4f725d3a32be252d6380d4797205008a3b3ceff38ea307f2ef50",
+    "src/systems/datapackCompiler/1.20.4/global.mcbt": "0d184452489de7132dcf8df9a5cf1cb60183a14f191e08f780567d72d45f9cff",
+    "src/systems/datapackCompiler/1.20.4/main.mcb": "4167fc5328e1536a3dc6cea6cba922a31192ce2b524c246bb751e42541729ea6"
+  }
 }

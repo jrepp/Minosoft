@@ -42,6 +42,14 @@ interface DataPackTransactionalSink {
 
 interface DataPackMacroSource {
     fun arguments(storage: ResourceLocation, path: String): Map<String, String>
+
+    fun arguments(
+        selector: String,
+        path: String,
+        context: DataPackCommandContext,
+    ): Map<String, String> {
+        throw UnsupportedOperationException("Entity-backed function macros are not supported.")
+    }
 }
 
 interface DataPackExecuteEnvironment {
@@ -86,21 +94,47 @@ class DataPackFunctionRuntime(
             throw IllegalStateException("Data-pack tick counter overflowed.")
         }
         val budget = Budget(limits.maxCommands)
-        execute("#minecraft:tick", emptyMap(), budget)
+        execute("#minecraft:tick", emptyMap(), budget, null)
         while (scheduled.peek()?.tick?.let { it <= tick } == true) {
             val entry = scheduled.remove()
-            execute(entry.function, entry.arguments, budget)
+            execute(entry.function, entry.arguments, budget, null)
         }
     }
 
     fun execute(reference: String, arguments: Map<String, String> = emptyMap()): Int {
-        return execute(reference, arguments, Budget(limits.maxCommands))
+        return execute(reference, arguments, Budget(limits.maxCommands), null)
     }
 
-    private fun execute(reference: String, arguments: Map<String, String>, budget: Budget): Int {
+    /**
+     * Executes a top-level function with an entity command source. Vanilla uses
+     * this context for advancement rewards; Animated Java's interaction
+     * callbacks depend on the same executor and position propagation.
+     */
+    fun executeAs(
+        reference: String,
+        executor: Entity,
+        arguments: Map<String, String> = emptyMap(),
+    ): Int {
+        val context = DataPackCommandContext(
+            function = ResourceLocation.of("minosoft:execute_as"),
+            depth = 0,
+            tick = tick,
+            executor = executor,
+            position = executor.physics.position,
+            rotation = executor.physics.rotation,
+        )
+        return execute(reference, arguments, Budget(limits.maxCommands), context)
+    }
+
+    private fun execute(
+        reference: String,
+        arguments: Map<String, String>,
+        budget: Budget,
+        inheritedContext: DataPackCommandContext?,
+    ): Int {
         var result = 0
         for (function in library.resolve(reference)) {
-            result = execute(function, arguments, 0, budget, null)
+            result = execute(function, arguments, 0, budget, inheritedContext)
         }
         return result
     }
@@ -140,6 +174,18 @@ class DataPackFunctionRuntime(
                     withStorage.groupValues[3],
                 )
                 result = executeReference(withStorage.groupValues[1], nestedArguments, depth, budget, function.id, context)
+                continue
+            }
+            val withEntity = FUNCTION_WITH_ENTITY.matchEntire(command)
+            if (withEntity != null) {
+                val macroSource = sink as? DataPackMacroSource
+                    ?: throw IllegalArgumentException("${function.id} requires entity macro arguments.")
+                val nestedArguments = macroSource.arguments(
+                    withEntity.groupValues[2],
+                    withEntity.groupValues[3],
+                    context,
+                )
+                result = executeReference(withEntity.groupValues[1], nestedArguments, depth, budget, function.id, context)
                 continue
             }
             val nested = FUNCTION.matchEntire(command)
@@ -201,6 +247,18 @@ class DataPackFunctionRuntime(
             return executeReference(
                 it.groupValues[1],
                 macroSource.arguments(ResourceLocation.of(it.groupValues[2]), it.groupValues[3]),
+                depth,
+                budget,
+                owner.id,
+                context,
+            )
+        }
+        FUNCTION_WITH_ENTITY.matchEntire(command)?.let {
+            val macroSource = sink as? DataPackMacroSource
+                ?: throw IllegalArgumentException("${owner.id} requires entity macro arguments.")
+            return executeReference(
+                it.groupValues[1],
+                macroSource.arguments(it.groupValues[2], it.groupValues[3], context),
                 depth,
                 budget,
                 owner.id,
@@ -356,6 +414,7 @@ class DataPackFunctionRuntime(
     private companion object {
         val FUNCTION = Regex("""function\s+([#a-z0-9_.-]+:[a-z0-9_./-]+)(?:\s+(\{.*\}))?""")
         val FUNCTION_WITH_STORAGE = Regex("""function\s+([#a-z0-9_.-]+:[a-z0-9_./-]+)\s+with\s+storage\s+([a-z0-9_.-]+:[a-z0-9_./-]+)\s+(\S+)""")
+        val FUNCTION_WITH_ENTITY = Regex("""function\s+([#a-z0-9_.-]+:[a-z0-9_./-]+)\s+with\s+entity\s+(\S+)\s+(\S+)""")
         val SCHEDULE = Regex("""schedule\s+function\s+([#a-z0-9_.-]+:[a-z0-9_./-]+)\s+(\d+[tsd]?)(?:\s+(append|replace))?""")
         val RETURN_VALUE = Regex("""return\s+(-?\d+)""")
         val RETURN_RUN = Regex("""return\s+run\s+(.+)""")

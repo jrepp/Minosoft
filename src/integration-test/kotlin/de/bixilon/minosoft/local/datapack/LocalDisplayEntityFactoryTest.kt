@@ -132,6 +132,17 @@ class LocalDisplayEntityFactoryTest {
             ).single() as InteractionEntity
             assertEquals(interaction.width, 2.0f)
             assertEquals(interaction.height, 3.0f)
+            assertTrue(interaction.response)
+            interaction.recordInteraction(session.player, attack = false, timestamp = 5L)
+            interaction.recordInteraction(session.player, attack = true, timestamp = 6L)
+            assertEquals(
+                5L,
+                (interaction.commandNbt["interaction"] as Map<*, *>)["timestamp"],
+            )
+            assertEquals(
+                6L,
+                (interaction.commandNbt["attack"] as Map<*, *>)["timestamp"],
+            )
             var anchored: DataPackCommandContext? = null
             authority.execute(
                 "execute anchored eyes positioned ^ ^ ^1 run say anchored",
@@ -161,6 +172,8 @@ class LocalDisplayEntityFactoryTest {
                             listOf(
                                 "execute as @e[type=item_display,tag=demo.root] at @s run tag @s add demo.executed",
                                 "execute as @e[type=item_display,tag=demo.root] on passengers if entity @s[tag=demo.node] run data merge entity @s {interpolation_duration:9}",
+                                "execute as @e[type=interaction,tag=demo.hitbox] on target run tag @s add demo.interacted",
+                                "execute as @e[type=interaction,tag=demo.hitbox] on attacker run tag @s add demo.attacked",
                                 "execute store result score #count demo.frame if entity @e[type=marker,tag=demo.locator]",
                                 """execute rotated 90 0 positioned 4 5 6 run summon minecraft:marker ^ ^ ^1 {Tags:["demo.rotated"]}""",
                             ),
@@ -171,6 +184,8 @@ class LocalDisplayEntityFactoryTest {
                 authority,
             ).execute("demo:tick")
             assertTrue("demo.executed" in root.commandTags)
+            assertTrue("demo.interacted" in session.player.commandTags)
+            assertTrue("demo.attacked" in session.player.commandTags)
             assertEquals((node as TextDisplayEntity).interpolationDurationTicks, 9)
             assertEquals(authority.score("#count", "demo.frame"), 2)
             val rotated = entities.select("@e[tag=demo.rotated]", base).single().physics.position
@@ -186,6 +201,154 @@ class LocalDisplayEntityFactoryTest {
             assertSame(node.attachment.vehicle, root)
             assertEquals(authority.execute("kill @e[tag=demo.hitbox]", base), 1)
             assertTrue(entities.select("@e[tag=demo.hitbox]", base).isEmpty())
+        } finally {
+            RenderingOptions.disabled = previous
+        }
+    }
+
+    @Test
+    fun `runs upstream shaped interaction callback through entity macro data`() {
+        val previous = RenderingOptions.disabled
+        RenderingOptions.disabled = true
+        try {
+            IT.VERSION
+            val session = createSession(version = "1.20.4")
+            val origin = session.player.physics.position
+            val factory = LocalDisplayEntityFactory(session)
+            val entities = LocalDataPackEntityAccess(session, factory) { origin }
+            val authority = LocalDataPackCommandAuthority(
+                origin = { origin },
+                spawn = { type, data, position -> factory.summon(type, data, position) },
+                entities = entities,
+            )
+            val base = DataPackCommandContext(ResourceLocation.of("demo:interaction"), 0, 0)
+            authority.execute(
+                """
+                summon minecraft:interaction ~ ~ ~ {
+                    UUID:[I;-1985229329,-19088744,-19088744,-1985229329],
+                    Tags:["aj.global.interaction"],
+                    width:2f,
+                    height:3f,
+                    data:{animated_java:{on_interact_function:"function demo:clicked"}}
+                }
+                """.trimIndent().replace("\n", ""),
+                base,
+            )
+            val interaction = entities.select("@e[type=interaction,tag=aj.global.interaction]", base)
+                .single() as InteractionEntity
+            interaction.recordInteraction(session.player, attack = false, timestamp = 0L)
+
+            val on = ResourceLocation.of("animated_java:global/interactions/interaction/on")
+            val check = ResourceLocation.of("animated_java:global/interactions/interaction/check")
+            val dispatch = ResourceLocation.of("animated_java:global/interactions/interaction/do")
+            val dynamic = ResourceLocation.of("animated_java:global/interactions/interaction/dynamic")
+            val clicked = ResourceLocation.of("demo:clicked")
+            val runtime = DataPackFunctionRuntime(
+                DataPackFunctionLibrary(
+                    functions = mapOf(
+                        on to DataPackFunction(
+                            on,
+                            listOf(
+                                "advancement revoke @s only animated_java:global/interactions/interaction/trigger",
+                                "tag @s add aj.interacting_player",
+                                "execute as @e[type=interaction,tag=aj.global.interaction,distance=..8] if data entity @s interaction run function animated_java:global/interactions/interaction/check",
+                                "tag @s remove aj.interacting_player",
+                            ),
+                        ),
+                        check to DataPackFunction(
+                            check,
+                            listOf(
+                                "execute store result score #gametime aj.i run time query gametime",
+                                "execute store result score #timestamp aj.i run data get entity @s interaction.timestamp",
+                                "scoreboard players set #check aj.i 0",
+                                "execute if score #timestamp aj.i = #gametime aj.i if data entity @s data.animated_java.on_interact_function store success score #check aj.i on target if entity @s[tag=aj.interacting_player]",
+                                "execute if score #check aj.i matches 1 run function animated_java:global/interactions/interaction/do",
+                            ),
+                        ),
+                        dispatch to DataPackFunction(
+                            dispatch,
+                            listOf("function animated_java:global/interactions/interaction/dynamic with entity @s data.animated_java"),
+                        ),
+                        dynamic to DataPackFunction(dynamic, listOf("\$$(on_interact_function)")),
+                        clicked to DataPackFunction(clicked, listOf("tag @s add demo.clicked")),
+                    ),
+                    tags = emptyMap(),
+                ),
+                authority,
+            )
+            authority.execute("scoreboard objectives add aj.i dummy", base)
+
+            assertEquals(1, runtime.executeAs(on.toString(), session.player))
+            assertEquals(1, authority.score("#check", "aj.i"))
+            assertTrue("demo.clicked" in interaction.commandTags)
+            assertTrue("aj.interacting_player" !in session.player.commandTags)
+
+            val interactionContext = base.copy(
+                executor = interaction,
+                position = interaction.physics.position,
+            )
+            authority.execute(
+                "data modify storage animated_java:gu in set from entity @s UUID",
+                interactionContext,
+            )
+            assertEquals(
+                listOf(-1985229329, -19088744, -19088744, -1985229329),
+                authority.storage(ResourceLocation.of("animated_java:gu"))!!["in"],
+            )
+
+            authority.execute(
+                "data modify storage animated_java:gu hex_chars set value ${
+                    (0..255).joinToString(prefix = "[", postfix = "]") {
+                        "\"${it.toString(16).padStart(2, '0')}\""
+                    }
+                }",
+                base,
+            )
+            authority.execute("scoreboard players set 256 aj.i 256", base)
+            val uuidRead = ResourceLocation.of("animated_java:global/gu/get_entity_uuid_string")
+            val uuidReplace = ResourceLocation.of("animated_java:global/gu/replace_uuid_bytes")
+            val uuidFormat = ResourceLocation.of("animated_java:global/gu/format_uuid")
+            val uuidCommands = mutableListOf(
+                "data modify storage animated_java:gu temp set value {0:0,1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0,9:0,a:0,b:0,c:0,d:0,e:0,f:0}",
+                "data modify storage animated_java:gu in set from entity @s UUID",
+            )
+            for (word in 0..3) {
+                val offset = word * 4
+                uuidCommands += "execute store result score 0= aj.i store result score 1= aj.i run data get storage animated_java:gu in[$word]"
+                uuidCommands += "execute store result storage animated_java:gu temp.${offset.toString(16)} int 1 run scoreboard players operation 0= aj.i %= 256 aj.i"
+                uuidCommands += "execute store result score 2= aj.i run scoreboard players operation 1= aj.i /= 256 aj.i"
+                uuidCommands += "execute store result storage animated_java:gu temp.${(offset + 1).toString(16)} int 1 run scoreboard players operation 1= aj.i %= 256 aj.i"
+                uuidCommands += "execute store result score 3= aj.i run scoreboard players operation 2= aj.i /= 256 aj.i"
+                uuidCommands += "execute store result storage animated_java:gu temp.${(offset + 2).toString(16)} int 1 run scoreboard players operation 2= aj.i %= 256 aj.i"
+                uuidCommands += "execute store result storage animated_java:gu temp.${(offset + 3).toString(16)} int 1 run scoreboard players operation 3= aj.i /= 256 aj.i"
+            }
+            uuidCommands += "function $uuidReplace with storage animated_java:gu temp"
+            uuidCommands += "function $uuidFormat with storage animated_java:gu temp"
+            val replaceCommands = (0..15).map {
+                val key = it.toString(16)
+                "\$data modify storage animated_java:gu temp.$key set from storage animated_java:gu hex_chars[\$($key)]"
+            }
+            val uuidRuntime = DataPackFunctionRuntime(
+                DataPackFunctionLibrary(
+                    functions = mapOf(
+                        uuidRead to DataPackFunction(uuidRead, uuidCommands),
+                        uuidReplace to DataPackFunction(uuidReplace, replaceCommands),
+                        uuidFormat to DataPackFunction(
+                            uuidFormat,
+                            listOf(
+                                "\$data modify storage animated_java:gu out set value \"\$(3)\$(2)\$(1)\$(0)-\$(7)\$(6)-\$(5)\$(4)-\$(b)\$(a)-\$(9)\$(8)\$(f)\$(e)\$(d)\$(c)\"",
+                            ),
+                        ),
+                    ),
+                    tags = emptyMap(),
+                ),
+                authority,
+            )
+            uuidRuntime.executeAs(uuidRead.toString(), interaction)
+            assertEquals(
+                "89abcdef-fedc-ba98-fedc-ba9889abcdef",
+                authority.storage(ResourceLocation.of("animated_java:gu"))!!["out"],
+            )
         } finally {
             RenderingOptions.disabled = previous
         }

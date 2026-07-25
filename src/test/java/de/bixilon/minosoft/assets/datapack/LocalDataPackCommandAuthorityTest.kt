@@ -34,6 +34,39 @@ class LocalDataPackCommandAuthorityTest {
     }
 
     @Test
+    fun `scoreboard division and remainder match signed command semantics`() {
+        val authority = LocalDataPackCommandAuthority()
+        authority.execute("scoreboard objectives add aj.i dummy", context)
+        authority.execute("scoreboard players set value aj.i -1", context)
+        authority.execute("scoreboard players set divisor aj.i 256", context)
+        authority.execute("scoreboard players operation quotient aj.i = value aj.i", context)
+        authority.execute("scoreboard players operation remainder aj.i = value aj.i", context)
+        authority.execute("scoreboard players operation quotient aj.i /= divisor aj.i", context)
+        authority.execute("scoreboard players operation remainder aj.i %= divisor aj.i", context)
+
+        assertEquals(-1, authority.score("quotient", "aj.i"))
+        assertEquals(255, authority.score("remainder", "aj.i"))
+    }
+
+    @Test
+    fun `execute compares two scores with vanilla operators`() {
+        val messages = mutableListOf<String>()
+        val authority = LocalDataPackCommandAuthority(messages::add)
+        authority.execute("scoreboard objectives add aj.i dummy", context)
+        authority.execute("scoreboard players set left aj.i 4", context)
+        authority.execute("scoreboard players set right aj.i 4", context)
+
+        authority.execute("execute if score left aj.i = right aj.i run say equal", context) { nested, current ->
+            authority.execute(nested, current)
+        }
+        authority.execute("execute unless score left aj.i > right aj.i run say not-greater", context) { nested, current ->
+            authority.execute(nested, current)
+        }
+
+        assertEquals(listOf("equal", "not-greater"), messages)
+    }
+
+    @Test
     fun `executes nested storage set merge append copy and remove`() {
         val authority = LocalDataPackCommandAuthority()
         authority.execute("""data modify storage demo:runtime rigs."1" set value {uuid:"one",frames:[{x:1}]}""", context)

@@ -14,6 +14,8 @@ package de.bixilon.minosoft.assets.datapack
 import de.bixilon.minosoft.assets.model.generation.ContentFidelitySnapshot
 import de.bixilon.minosoft.assets.model.generation.ContentGenerationLease
 import de.bixilon.minosoft.assets.model.generation.ContentGenerationStore
+import de.bixilon.minosoft.data.entities.entities.Entity
+import de.bixilon.minosoft.data.entities.entities.InteractionEntity
 
 /**
  * Owns the function-runtime view of a session content generation.
@@ -95,6 +97,35 @@ class SessionDataPackRuntime(
         check(!closed) { "Session data-pack runtime is closed." }
         refresh()
         return runtime?.execute(reference, arguments) ?: 0
+    }
+
+    @Synchronized
+    fun executeAs(
+        reference: String,
+        executor: Entity,
+        arguments: Map<String, String> = emptyMap(),
+    ): Int {
+        check(!closed) { "Session data-pack runtime is closed." }
+        refresh()
+        return runtime?.executeAs(reference, executor, arguments) ?: 0
+    }
+
+    /**
+     * Publishes the interaction record and executes its callback under the same
+     * runtime lock used by ticks and generation refresh.
+     */
+    @Synchronized
+    fun executeInteraction(
+        reference: String,
+        interaction: InteractionEntity,
+        executor: Entity,
+        attack: Boolean,
+    ): Int {
+        check(!closed) { "Session data-pack runtime is closed." }
+        refresh()
+        val runtime = runtime
+        interaction.recordInteraction(executor, attack, runtime?.tick ?: 0L)
+        return runtime?.executeAs(reference, executor) ?: 0
     }
 
     @Synchronized

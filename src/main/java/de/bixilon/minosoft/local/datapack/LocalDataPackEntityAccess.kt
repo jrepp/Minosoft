@@ -14,8 +14,10 @@ import de.bixilon.kutil.concurrent.lock.LockUtil.acquired
 import de.bixilon.minosoft.assets.datapack.DataPackCommandContext
 import de.bixilon.minosoft.assets.datapack.DataPackCommandTransaction
 import de.bixilon.minosoft.assets.datapack.DataPackEntityAccess
+import de.bixilon.minosoft.assets.datapack.DataPackEntityRelation
 import de.bixilon.minosoft.data.entities.EntityRotation
 import de.bixilon.minosoft.data.entities.entities.Entity
+import de.bixilon.minosoft.data.entities.entities.InteractionEntity
 import de.bixilon.minosoft.data.entities.entities.player.PlayerEntity
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
@@ -66,6 +68,14 @@ class LocalDataPackEntityAccess(
     }
 
     override fun synchronize(entity: Entity) = factory.synchronize(entity)
+
+    override fun related(entity: Entity, relation: DataPackEntityRelation): List<Entity> {
+        val interaction = entity as? InteractionEntity ?: return emptyList()
+        return when (relation) {
+            DataPackEntityRelation.TARGET -> interaction.lastInteraction
+            DataPackEntityRelation.ATTACKER -> interaction.lastAttacker
+        }?.let(::listOf) ?: emptyList()
+    }
 
     override fun remove(entity: Entity) = factory.remove(entity)
 
