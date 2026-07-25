@@ -81,8 +81,10 @@ owning the pinned Sodium algorithms. The Iris provider executes a bounded
 project reference pack through terrain/shadow/composite programs, but has not
 accepted an independent pinned real-world Iris/OptiFine pack or its broader
 uniform, sampler, program-family, and target contract. Full GPU-object
-accounting, complete base-scene visual coverage, and the recorded performance
-thresholds also remain open. See the dated checkpoint for exact evidence.
+steady-state baselines, complete base-scene visual coverage, and the recorded
+performance thresholds also remain open. Typed per-context OpenGL accounting
+now supplies the required counts but has not yet accepted the reload/unload
+baseline protocol. See the dated checkpoint for exact evidence.
 
 ## Canonical target shape
 

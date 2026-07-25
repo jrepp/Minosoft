@@ -177,8 +177,12 @@ unexpected=0
 Afterward the graph was generation 36 and shader generation 21. Shader and
 terrain stores both reported zero active leases and zero retired generations
 awaiting leases. This verifies last-known-good program/target publication and
-bounded registry retirement. It does not count every driver-side buffer,
-texture, program, and target, so `LIFECYCLE_CLEAN` remains partial.
+bounded registry retirement. Typed per-context OpenGL accounting landed after
+this loop and now exposes buffers, vertex arrays, textures, renderbuffers,
+framebuffers, shaders, programs, and queries through `render.substrate`; the
+twenty-cycle run has not yet been repeated against stable before/after GPU
+baselines, so `LIFECYCLE_CLEAN` remains partial. See
+[OpenGL resource-accounting evidence](2026-07-24-opengl-resource-accounting.md).
 
 ## Performance checkpoint
 
@@ -205,7 +209,7 @@ sample exceeded both built-in samples.
 | `IRIS_OWNS_SHADER_PIPELINE` | **Not accepted** | The executable reference pack owns terrain/shadow/composite resources, but it is project-owned and Minosoft-shaped rather than an independent pinned real-world pack. |
 | `IRIS_SODIUM_COMPOSE` | Partial | Reference-path composition and no-duplicate submission are verified; the two full upstream contracts are not. |
 | `TRANSACTIONAL_RESOURCES` | Partial | Graph/program/target publication is last-known-good; texture and physical vertex-layout generation coverage is incomplete. |
-| `LIFECYCLE_CLEAN` | Partial | Twenty invalid/valid cycles and store counts pass; complete GPU object accounting is absent. |
+| `LIFECYCLE_CLEAN` | Partial | Twenty invalid/valid cycles and store counts pass, and typed GPU accounting now exists; the loop has not returned every resource type to an accepted steady-state baseline. |
 | `HEADLESS_SAFE` | **Accepted** | Graph, resource, planner, negotiation, timing, and provider tests pass without OpenGL. |
 | `MULTI_VERSION_SAFE` | **Accepted** | The boundary is version-normalized and the broad multi-version registry/integration suite passes. |
 | `PERFORMANCE_ACCEPTED` | **Not accepted** | R0 percentiles are missing and Sodium-labelled p95 submission was slower. |
