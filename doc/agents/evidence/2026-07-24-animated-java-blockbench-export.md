@@ -76,6 +76,10 @@ from that manifest.
 
 ## Minosoft acceptance boundary
 
+The reusable producer-versus-consumer classification and recapture rules are
+specified in the
+[Blockbench producer-integration protocol](../acceptance/blockbench.md).
+
 `AnimatedJavaExportFixtureTest.runs unmodified 1_10_2 Blockbench export`
 protects the next boundary. It:
 

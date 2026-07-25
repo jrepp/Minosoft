@@ -57,6 +57,9 @@ instructions that differ from the root contract.
 
 - [Hot-reload acceptance protocol](acceptance/hot-reload.md) defines the
   repeatable process-generation gates and failure-preservation check.
+- [Blockbench producer-integration protocol](acceptance/blockbench.md) defines
+  the isolated desktop export boundary, captured-output contract, automated
+  Minosoft fixture gate, and the separate real-render and remote-server gates.
 - [Canary/base reload evidence](evidence/2026-07-21-canary-reload.md) compares
   the separate mod and host compilation lanes.
 - [Sodium activation evidence](evidence/2026-07-21-sodium-activation.md) proves
