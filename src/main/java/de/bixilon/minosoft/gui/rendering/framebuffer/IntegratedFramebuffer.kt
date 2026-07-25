@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -20,7 +21,9 @@ import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.IntegratedBufferTypes
 import de.bixilon.minosoft.gui.rendering.system.base.PolygonModes
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.Framebuffer
+import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.FramebufferState
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
+import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
 
 interface IntegratedFramebuffer : Drawable {
     val context: RenderContext
@@ -56,6 +59,32 @@ interface IntegratedFramebuffer : Drawable {
         framebuffer.delete()
         framebuffer = create()
         framebuffer.init()
+    }
+
+    fun unload() {
+        var failure: Throwable? = null
+        if (mesh.state == MeshStates.LOADED) {
+            try {
+                mesh.unload()
+            } catch (error: Throwable) {
+                failure = error
+            }
+        }
+        if (shader.native.loaded) {
+            try {
+                shader.unload()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        if (framebuffer.state == FramebufferState.COMPLETE) {
+            try {
+                framebuffer.delete()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        failure?.let { throw it }
     }
 
     fun bind() {

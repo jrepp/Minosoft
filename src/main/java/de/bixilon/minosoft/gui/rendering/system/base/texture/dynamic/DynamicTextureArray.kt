@@ -172,7 +172,7 @@ abstract class DynamicTextureArray(
 
     protected abstract fun upload(index: Int, texture: DynamicTexture)
     protected abstract fun upload()
-    protected abstract fun unload()
+    abstract override fun unload()
     protected abstract fun unsafeUse(shader: TextureShader, name: String = ShaderUniforms.TEXTURES)
     protected abstract fun createTexture(identifier: Any, index: Int): DynamicTexture
 }

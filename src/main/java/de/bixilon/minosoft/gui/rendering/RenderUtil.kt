@@ -61,6 +61,9 @@ object RenderUtil {
             skeletal::unload,
             light::unload,
             { queue.work() },
+            framebuffer::unload,
+            shaders::unload,
+            textures::unload,
         )
         for (action in cleanup) {
             try {

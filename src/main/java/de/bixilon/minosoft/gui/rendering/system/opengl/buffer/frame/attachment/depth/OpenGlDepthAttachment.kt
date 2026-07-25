@@ -29,6 +29,7 @@ class OpenGlDepthAttachment(
 ) : OpenGlBufferAttachment(system, size), DepthAttachment {
 
     override val glMode get() = mode.gl
+    override val glAttachment get() = GL_DEPTH_ATTACHMENT
 
     companion object {
         val DepthModes.gl: Int

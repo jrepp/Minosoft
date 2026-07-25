@@ -22,6 +22,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicText
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
 import de.bixilon.minosoft.gui.rendering.system.opengl.error.MemoryLeakException
+import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceType
 import de.bixilon.minosoft.gui.rendering.system.opengl.shader.OpenGlNativeShader
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureUtil
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureSizing
@@ -104,22 +105,42 @@ class OpenGlDynamicTextureArray(
     override fun upload() {
         if (handle >= 0) throw MemoryLeakException("Texture was not unloaded!")
         system.log { "Uploading dynamic textures" }
-        val handle = OpenGlTextureUtil.createTextureArray(index, mipmaps)
+        val handle = OpenGlTextureUtil.createTextureArray(system, index, mipmaps)
 
-        for (level in 0..mipmaps) {
-            gl { glTexImage3D(GL_TEXTURE_2D_ARRAY, level, GL_RGBA, resolution shr level, resolution shr level, textures.size, 0, GL_RGBA, GL_UNSIGNED_BYTE, null as ByteBuffer?) }
-        }
+        try {
+            for (level in 0..mipmaps) {
+                gl { glTexImage3D(GL_TEXTURE_2D_ARRAY, level, GL_RGBA, resolution shr level, resolution shr level, textures.size, 0, GL_RGBA, GL_UNSIGNED_BYTE, null as ByteBuffer?) }
+            }
 
-        for ((index, textureReference) in textures.withIndex()) {
-            val texture = textureReference?.get() ?: continue
-            if (texture.data == null) continue
-            unsafeUpload(index, texture)
-            texture.state = DynamicTextureState.LOADED
+            for ((index, textureReference) in textures.withIndex()) {
+                val texture = textureReference?.get() ?: continue
+                if (texture.data == null) continue
+                unsafeUpload(index, texture)
+                texture.state = DynamicTextureState.LOADED
+            }
+        } catch (error: Throwable) {
+            try {
+                gl { glDeleteTextures(handle) }
+                system.resources.deleted(OpenGlResourceType.TEXTURE, handle)
+                if (system.boundTexture == handle) system.boundTexture = -1
+            } catch (cleanup: Throwable) {
+                error.addSuppressed(cleanup)
+            }
+            throw error
         }
         this.handle = handle
 
-        for (shader in shaders) {
-            unsafeUse(shader)
+        try {
+            for (shader in shaders) {
+                unsafeUse(shader)
+            }
+        } catch (error: Throwable) {
+            try {
+                unload()
+            } catch (cleanup: Throwable) {
+                error.addSuppressed(cleanup)
+            }
+            throw error
         }
     }
 
@@ -133,9 +154,11 @@ class OpenGlDynamicTextureArray(
     }
 
     override fun unload() {
-        if (handle < 0) throw IllegalStateException("Not loaded!")
+        if (handle < 0) return
         gl { glActiveTexture(GL_TEXTURE0 + index) }
         gl { glDeleteTextures(handle) }
+        system.resources.deleted(OpenGlResourceType.TEXTURE, handle)
+        if (system.boundTexture == handle) system.boundTexture = -1
         this.handle = -1
     }
 

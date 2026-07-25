@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -16,6 +17,7 @@ package de.bixilon.minosoft.gui.rendering.system.opengl.buffer.frame
 import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.Framebuffer
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.FramebufferState
+import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.AttachmentStates
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.depth.DepthModes
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.stencil.StencilModes
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.texture.TextureModes
@@ -26,6 +28,7 @@ import de.bixilon.minosoft.gui.rendering.system.opengl.buffer.frame.attachment.d
 import de.bixilon.minosoft.gui.rendering.system.opengl.buffer.frame.attachment.stencil.OpenGlStencilAttachment
 import de.bixilon.minosoft.gui.rendering.system.opengl.buffer.frame.attachment.texture.OpenGlTextureAttachment
 import de.bixilon.minosoft.gui.rendering.system.opengl.error.MemoryLeakException
+import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceType
 import org.lwjgl.opengl.GL30.*
 
 class OpenGlFramebuffer(
@@ -57,28 +60,34 @@ class OpenGlFramebuffer(
         check(state == FramebufferState.PREPARING) { "Framebuffer was already initialized!" }
         system.log { "Init framebuffer $this" }
         id = gl { glGenFramebuffers() }
-        unsafeBind()
+        system.resources.created(OpenGlResourceType.FRAMEBUFFER, id)
+        try {
+            unsafeBind()
 
-        this.scaled = if (scale == 1.0f) size else Vec2i((size.x * scale).toInt(), (size.y * scale).toInt())
+            this.scaled = if (scale == 1.0f) size else Vec2i((size.x * scale).toInt(), (size.y * scale).toInt())
 
-        if (texture != null) {
-            texture.init()
-            attach(texture)
+            if (texture != null) {
+                texture.init()
+                attach(texture)
+            }
+
+            if (depth != null) {
+                depth.init()
+                attach(depth)
+            }
+
+            if (stencil != null) {
+                stencil.init()
+                attach(stencil)
+            }
+
+            val state = gl { glCheckFramebufferStatus(GL_FRAMEBUFFER) }
+            check(state == GL_FRAMEBUFFER_COMPLETE) { "Framebuffer is incomplete: $state" }
+            this.state = FramebufferState.COMPLETE
+        } catch (error: Throwable) {
+            cleanupFailedInit(error)
+            throw error
         }
-
-        if (depth != null) {
-            depth.init()
-            attach(depth)
-        }
-
-        if (stencil != null) {
-            stencil.init()
-            attach(stencil)
-        }
-
-        val state = gl { glCheckFramebufferStatus(GL_FRAMEBUFFER) }
-        check(state == GL_FRAMEBUFFER_COMPLETE) { "Framebuffer is incomplete: $state" }
-        this.state = FramebufferState.COMPLETE
     }
 
     fun bind() {
@@ -93,7 +102,7 @@ class OpenGlFramebuffer(
     }
 
     private fun attach(renderbuffer: OpenGlBufferAttachment) {
-        gl { glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, renderbuffer.id) }
+        gl { glFramebufferRenderbuffer(GL_FRAMEBUFFER, renderbuffer.glAttachment, GL_RENDERBUFFER, renderbuffer.id) }
     }
 
     private fun attach(texture: OpenGlTextureAttachment) {
@@ -102,14 +111,45 @@ class OpenGlFramebuffer(
 
     override fun delete() {
         check(state == FramebufferState.COMPLETE) { "Framebuffer is incomplete: $state" }
-
-        texture?.unload()
-        depth?.unload()
-        stencil?.unload()
-
-        gl { glDeleteFramebuffers(id) }
-        id = -1
+        var failure: Throwable? = null
+        for (attachment in listOfNotNull(texture, depth, stencil)) {
+            try {
+                attachment.unload()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        try {
+            deleteFramebuffer()
+        } catch (error: Throwable) {
+            failure?.addSuppressed(error) ?: run { failure = error }
+        }
         state = FramebufferState.DELETED
+        failure?.let { throw it }
+    }
+
+    private fun cleanupFailedInit(original: Throwable) {
+        for (attachment in listOfNotNull(texture, depth, stencil)) {
+            if (attachment.state != AttachmentStates.GENERATED) continue
+            try {
+                attachment.unload()
+            } catch (cleanup: Throwable) {
+                original.addSuppressed(cleanup)
+            }
+        }
+        try {
+            deleteFramebuffer()
+        } catch (cleanup: Throwable) {
+            original.addSuppressed(cleanup)
+        }
+        state = FramebufferState.DELETED
+    }
+
+    private fun deleteFramebuffer() {
+        if (id < 0) return
+        gl { glDeleteFramebuffers(id) }
+        system.resources.deleted(OpenGlResourceType.FRAMEBUFFER, id)
+        id = -1
     }
 
     override fun bindTexture() {

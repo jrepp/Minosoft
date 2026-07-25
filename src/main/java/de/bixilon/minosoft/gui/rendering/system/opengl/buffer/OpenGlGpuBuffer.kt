@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -20,6 +21,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.buffer.GpuBufferStates
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
 import de.bixilon.minosoft.gui.rendering.system.opengl.error.MemoryLeakException
+import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceType
 import org.lwjgl.opengl.GL15.*
 
 abstract class OpenGlGpuBuffer(
@@ -38,12 +40,21 @@ abstract class OpenGlGpuBuffer(
         if (this.state != GpuBufferStates.PREPARING) throw IllegalStateException("Already initialized (buffer=$this, state=$state)")
         system.log { "Init gpu buffer $this" }
         id = gl { glGenBuffers() }
-
-        unsafeBind()
-        initialUpload()
-        unsafeUnbind()
-
-        state = GpuBufferStates.INITIALIZED
+        system.resources.created(OpenGlResourceType.BUFFER, id)
+        try {
+            unsafeBind()
+            initialUpload()
+            unsafeUnbind()
+            state = GpuBufferStates.INITIALIZED
+        } catch (error: Throwable) {
+            try {
+                deleteBuffer()
+            } catch (cleanup: Throwable) {
+                error.addSuppressed(cleanup)
+            }
+            state = GpuBufferStates.UNLOADED
+            throw error
+        }
     }
 
     protected abstract fun initialUpload()
@@ -79,12 +90,16 @@ abstract class OpenGlGpuBuffer(
 
     override fun unload() {
         if (this.state != GpuBufferStates.INITIALIZED) throw IllegalStateException("Not uploaded (buffer=$this, state=$state)")
-        gl { glDeleteBuffers(id) }
-        if (system.boundBuffer[glType] == id) {
-            system.boundBuffer -= glType
-        }
-        id = -1
+        deleteBuffer()
         state = GpuBufferStates.UNLOADED
+    }
+
+    private fun deleteBuffer() {
+        if (id < 0) return
+        gl { glDeleteBuffers(id) }
+        system.resources.deleted(OpenGlResourceType.BUFFER, id)
+        if (system.boundBuffer[glType] == id) system.boundBuffer -= glType
+        id = -1
     }
 
     fun drop() {

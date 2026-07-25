@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -25,10 +26,14 @@ class FramebufferManager(
 ) : Drawable {
     val main = MainWorldTarget(context)
     val gui = GUIFramebuffer(context)
+    private var mainInitialized = false
+    private var guiInitialized = false
 
 
     fun init() {
+        mainInitialized = true
         main.init()
+        guiInitialized = true
         gui.init()
 
         context.window::size.observe(this, true) {
@@ -51,6 +56,27 @@ class FramebufferManager(
     fun update() {
         main.update()
         gui.update()
+    }
+
+    fun unload() {
+        var failure: Throwable? = null
+        if (guiInitialized) {
+            try {
+                gui.unload()
+            } catch (error: Throwable) {
+                failure = error
+            }
+            guiInitialized = false
+        }
+        if (mainInitialized) {
+            try {
+                main.unload()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+            mainInitialized = false
+        }
+        failure?.let { throw it }
     }
 
 

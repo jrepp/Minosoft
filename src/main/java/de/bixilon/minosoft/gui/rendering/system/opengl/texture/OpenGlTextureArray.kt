@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -29,6 +30,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.loader.TextureLoade
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
+import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceType
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureUtil.glFormat
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureUtil.glType
 import de.bixilon.minosoft.util.logging.Log
@@ -101,7 +103,7 @@ class OpenGlTextureArray(
         data: (Texture) -> TextureData = Texture::data,
     ): Int {
         system.log { "Uploading ${resolution}x${resolution} static textures" }
-        val handle = OpenGlTextureUtil.createTextureArray(active, mipmaps)
+        val handle = OpenGlTextureUtil.createTextureArray(system, active, mipmaps)
         handlesCreated++
         try {
             for (level in 0..mipmaps) {
@@ -231,6 +233,24 @@ class OpenGlTextureArray(
         live = handlesCreated - handlesDeleted,
         active = handles.count { it >= 0 },
     )
+
+    override fun unload() {
+        var failure: Throwable? = null
+        for (index in handles.indices) {
+            val handle = handles[index]
+            if (handle < 0) continue
+            try {
+                deleteHandle(handle)
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            } finally {
+                handles[index] = -1
+                indices[index] = -1
+            }
+        }
+        state = TextureArrayStates.UNLOADED
+        failure?.let { throw it }
+    }
 
     private fun slot(texture: Texture): Slot {
         val data = texture.renderData as? OpenGlTextureData
@@ -494,6 +514,8 @@ class OpenGlTextureArray(
 
     private fun deleteHandle(handle: Int) {
         gl { glDeleteTextures(handle) }
+        system.resources.deleted(OpenGlResourceType.TEXTURE, handle)
+        if (system.boundTexture == handle) system.boundTexture = -1
         handlesDeleted++
     }
 

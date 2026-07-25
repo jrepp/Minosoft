@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -24,6 +25,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.loader.file.PNGText
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
+import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceType
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureUtil.glFormat
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureUtil.glType
 import de.bixilon.minosoft.util.logging.Log
@@ -49,35 +51,41 @@ class OpenGlFontTextureArray(
         require(width <= maximumSize && height <= maximumSize) {
             "Font texture array ${width}x$height exceeds the OpenGL maximum texture size $maximumSize"
         }
-        this.handle = OpenGlTextureUtil.createTextureArray(index, 0)
-
-        // Texture alpha format is also available in OpenGL compatibility profile and WebGL but was removed in OpenGL core profile. An alternative is to rely on texture red format and texture swizzle as shown with the following code samples. (see https://www.g-truc.net/post-0734.html)
-        val format = when (compression) {
-            FontCompressions.NONE -> GL_RGBA8
-            FontCompressions.ALPHA -> GL_R8
-            FontCompressions.COMPRESSED_ALPHA -> GL_COMPRESSED_RED
-        }
-        if (compression != FontCompressions.NONE) {
-            gl { glTexParameteriv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_SWIZZLE_RGBA, intArrayOf(GL_ONE, GL_ONE, GL_ONE, GL_RED)) }
-        }
-
-        gl { glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, width, height, textures.size, 0, GL_RGBA, GL_UNSIGNED_BYTE, null as ByteBuffer?) }
-
-        var index = 0
-        for (texture in textures) {
-            val size = texture.size
-
-            val uvEnd = if (size.x == width && size.y == height) null else Vec2f(size.x.toFloat() / width, size.y.toFloat() / height)
-
-            texture.renderData = OpenGlTextureData(this.index, index++, uvEnd)
-
-            val buffer = texture.data.buffer
-            buffer.data.position(0)
-            buffer.data.limit(buffer.data.capacity())
-            if (compression != FontCompressions.NONE && texture.loader is PNGTextureLoader) {
-                buffer.data.copyAlphaToRGB()
+        this.handle = OpenGlTextureUtil.createTextureArray(system, index, 0)
+        try {
+            // Texture alpha format is also available in OpenGL compatibility profile and WebGL but was removed in OpenGL core profile. An alternative is to rely on texture red format and texture swizzle as shown with the following code samples. (see https://www.g-truc.net/post-0734.html)
+            val format = when (compression) {
+                FontCompressions.NONE -> GL_RGBA8
+                FontCompressions.ALPHA -> GL_R8
+                FontCompressions.COMPRESSED_ALPHA -> GL_COMPRESSED_RED
             }
-            gl { glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, index - 1, buffer.size.x, buffer.size.y, 1, buffer.glFormat, buffer.glType, buffer.data) }
+            if (compression != FontCompressions.NONE) {
+                gl { glTexParameteriv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_SWIZZLE_RGBA, intArrayOf(GL_ONE, GL_ONE, GL_ONE, GL_RED)) }
+            }
+
+            gl { glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, width, height, textures.size, 0, GL_RGBA, GL_UNSIGNED_BYTE, null as ByteBuffer?) }
+
+            var index = 0
+            for (texture in textures) {
+                val size = texture.size
+                val uvEnd = if (size.x == width && size.y == height) null else Vec2f(size.x.toFloat() / width, size.y.toFloat() / height)
+                texture.renderData = OpenGlTextureData(this.index, index++, uvEnd)
+
+                val buffer = texture.data.buffer
+                buffer.data.position(0)
+                buffer.data.limit(buffer.data.capacity())
+                if (compression != FontCompressions.NONE && texture.loader is PNGTextureLoader) {
+                    buffer.data.copyAlphaToRGB()
+                }
+                gl { glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, index - 1, buffer.size.x, buffer.size.y, 1, buffer.glFormat, buffer.glType, buffer.data) }
+            }
+        } catch (error: Throwable) {
+            try {
+                unload()
+            } catch (cleanup: Throwable) {
+                error.addSuppressed(cleanup)
+            }
+            throw error
         }
 
         Log.log(LogMessageType.RENDERING, LogLevels.VERBOSE) { "Loaded ${textures.size} font textures into a ${width}x$height array" }
@@ -103,6 +111,15 @@ class OpenGlFontTextureArray(
             load(texture)
         }
         state = TextureArrayStates.LOADED
+    }
+
+    override fun unload() {
+        if (handle < 0) return
+        gl { glDeleteTextures(handle) }
+        system.resources.deleted(OpenGlResourceType.TEXTURE, handle)
+        if (system.boundTexture == handle) system.boundTexture = -1
+        handle = -1
+        state = TextureArrayStates.UNLOADED
     }
 
     private companion object {

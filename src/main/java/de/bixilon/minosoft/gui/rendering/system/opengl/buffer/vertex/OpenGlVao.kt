@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -17,6 +18,7 @@ import de.bixilon.minosoft.gui.rendering.RenderConstants
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.GpuBufferStates
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
+import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceType
 import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
 import org.lwjgl.opengl.GL20.glEnableVertexAttribArray
 import org.lwjgl.opengl.GL20.glVertexAttribPointer
@@ -33,14 +35,25 @@ class OpenGlVao(
     fun init() {
         assert(state == GpuBufferStates.PREPARING)
         handle = gl { glGenVertexArrays() }
-        unsafeBind()
+        system.resources.created(OpenGlResourceType.VERTEX_ARRAY, handle)
+        try {
+            unsafeBind()
 
-        for (attribute in struct.attributes) {
-            gl { glVertexAttribPointer(attribute.index, attribute.size, GL_FLOAT, false, struct.bytes, attribute.stride.toLong()) }
-            gl { glEnableVertexAttribArray(attribute.index) }
+            for (attribute in struct.attributes) {
+                gl { glVertexAttribPointer(attribute.index, attribute.size, GL_FLOAT, false, struct.bytes, attribute.stride.toLong()) }
+                gl { glEnableVertexAttribArray(attribute.index) }
+            }
+            unsafeUnbind()
+            state = GpuBufferStates.INITIALIZED
+        } catch (error: Throwable) {
+            try {
+                deleteVao()
+            } catch (cleanup: Throwable) {
+                error.addSuppressed(cleanup)
+            }
+            state = GpuBufferStates.UNLOADED
+            throw error
         }
-        unsafeUnbind()
-        state = GpuBufferStates.INITIALIZED
     }
 
     private fun unsafeBind() {
@@ -71,11 +84,15 @@ class OpenGlVao(
 
     fun unload() {
         assert(state == GpuBufferStates.INITIALIZED)
-        gl { glDeleteVertexArrays(handle) }
-        if (system.boundVao == handle) {
-            system.boundVao = -1
-        }
-        handle = -1
+        deleteVao()
         this.state = GpuBufferStates.UNLOADED
+    }
+
+    private fun deleteVao() {
+        if (handle < 0) return
+        gl { glDeleteVertexArrays(handle) }
+        system.resources.deleted(OpenGlResourceType.VERTEX_ARRAY, handle)
+        if (system.boundVao == handle) system.boundVao = -1
+        handle = -1
     }
 }

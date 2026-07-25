@@ -18,6 +18,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.ste
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.stencil.StencilModes
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.buffer.frame.attachment.OpenGlBufferAttachment
+import org.lwjgl.opengl.GL30.GL_STENCIL_ATTACHMENT
 import org.lwjgl.opengl.GL30.GL_STENCIL_INDEX8
 
 class OpenGlStencilAttachment(
@@ -27,6 +28,7 @@ class OpenGlStencilAttachment(
 ) : OpenGlBufferAttachment(system, size), StencilAttachment {
 
     override val glMode get() = mode.gl
+    override val glAttachment get() = GL_STENCIL_ATTACHMENT
 
     companion object {
         val StencilModes.gl: Int

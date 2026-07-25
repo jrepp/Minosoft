@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -20,6 +21,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.tex
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
 import de.bixilon.minosoft.gui.rendering.system.opengl.buffer.frame.attachment.OpenGlFramebufferAttachment
+import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceType
 import org.lwjgl.opengl.GL30.*
 import java.nio.ByteBuffer
 
@@ -34,14 +36,24 @@ class OpenGlTextureAttachment(
         if (state != AttachmentStates.PREPARING) throw IllegalStateException("Already initialized (state=$state)")
 
         id = gl { glGenTextures() }
-        gl { glActiveTexture(GL_TEXTURE0 + system.framebufferTextureIndex) }
-        gl { glBindTexture(GL_TEXTURE_2D, id) }
-        system.boundTexture = id
-        gl { glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, null as ByteBuffer?) }
-        gl { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST) }
-        gl { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST) }
-
-        state = AttachmentStates.GENERATED
+        system.resources.created(OpenGlResourceType.TEXTURE, id)
+        try {
+            gl { glActiveTexture(GL_TEXTURE0 + system.framebufferTextureIndex) }
+            gl { glBindTexture(GL_TEXTURE_2D, id) }
+            system.boundTexture = id
+            gl { glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, null as ByteBuffer?) }
+            gl { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST) }
+            gl { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST) }
+            state = AttachmentStates.GENERATED
+        } catch (error: Throwable) {
+            try {
+                deleteTexture()
+            } catch (cleanup: Throwable) {
+                error.addSuppressed(cleanup)
+            }
+            state = AttachmentStates.UNLOADED
+            throw error
+        }
     }
 
 
@@ -58,8 +70,15 @@ class OpenGlTextureAttachment(
 
     override fun unload() {
         if (state != AttachmentStates.GENERATED) throw IllegalStateException("Not loaded (state=$state)")
-        gl { glDeleteTextures(id) }
-        id = -1
+        deleteTexture()
         state = AttachmentStates.UNLOADED
+    }
+
+    private fun deleteTexture() {
+        if (id < 0) return
+        gl { glDeleteTextures(id) }
+        system.resources.deleted(OpenGlResourceType.TEXTURE, id)
+        if (system.boundTexture == id) system.boundTexture = -1
+        id = -1
     }
 }

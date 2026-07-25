@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -40,5 +41,18 @@ class ShaderManager(
         genericTextureShader.load()
         entityShadowTextureShader.load()
         genericTexture2dShader.load()
+    }
+
+    fun unload() {
+        var failure: Throwable? = null
+        for (shader in context.system.shader.toList().asReversed()) {
+            if (!shader.native.loaded) continue
+            try {
+                shader.unload()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        failure?.let { throw it }
     }
 }

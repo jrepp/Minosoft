@@ -40,6 +40,7 @@ import de.bixilon.minosoft.gui.rendering.system.opengl.buffer.vertex.OpenGlVerte
 import de.bixilon.minosoft.gui.rendering.system.opengl.error.OpenGlError
 import de.bixilon.minosoft.gui.rendering.system.opengl.error.OpenGlException
 import de.bixilon.minosoft.gui.rendering.system.opengl.query.OpenGlQuery
+import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceTracker
 import de.bixilon.minosoft.gui.rendering.system.opengl.shader.OpenGlShaderManagement
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureManager
 import de.bixilon.minosoft.gui.rendering.system.opengl.vendor.OpenGlVendor
@@ -61,6 +62,7 @@ class OpenGlRenderSystem(
     val log: Boolean = LogOptions.verbose,
 ) : RenderSystem {
     override val shader = OpenGlShaderManagement(this)
+    val resources = OpenGlResourceTracker()
     private var thread: Thread? = null
     private val capabilities: MutableSet<RenderingCapabilities> = RenderingCapabilities.set()
     override lateinit var vendor: OpenGlVendor
@@ -130,6 +132,15 @@ class OpenGlRenderSystem(
     }
 
     override fun destroy() {
+        val snapshot = resources.snapshot()
+        if (snapshot.live > 0) {
+            val live = snapshot.types
+                .filter { it.live > 0 }
+                .joinToString { "${it.type.name.lowercase()}=${it.live}" }
+            Log.log(LogMessageType.RENDERING, LogLevels.WARN) {
+                "Destroying OpenGL context with ${snapshot.live} live tracked resources ($live)."
+            }
+        }
         active = false
     }
 
@@ -241,7 +252,7 @@ class OpenGlRenderSystem(
         return OpenGlFramebuffer(this, size, scale, texture, depth, stencil)
     }
 
-    override fun createQuery(type: QueryTypes) = OpenGlQuery(type)
+    override fun createQuery(type: QueryTypes) = OpenGlQuery(this, type)
 
     override fun createTextureManager() = OpenGlTextureManager(this)
 

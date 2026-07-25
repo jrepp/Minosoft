@@ -31,6 +31,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.shader.code.glsl.GLSLShader
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
 import de.bixilon.minosoft.gui.rendering.system.opengl.buffer.uniform.OpenGlUniformBuffer
+import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceType
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
@@ -85,6 +86,7 @@ class OpenGlNativeShader(
         if (shader.toLong() == MemoryUtil.NULL) {
             throw ShaderLoadingException()
         }
+        system.resources.created(OpenGlResourceType.SHADER, shader)
 
         try {
             val glsl = code.code
@@ -98,7 +100,7 @@ class OpenGlNativeShader(
 
             return shader
         } catch (error: Throwable) {
-            cleanup(error) { gl { glDeleteShader(shader) } }
+            cleanup(error) { deleteShader(shader) }
             throw error
         }
     }
@@ -114,6 +116,7 @@ class OpenGlNativeShader(
         if (candidate.toLong() == MemoryUtil.NULL) {
             throw ShaderLoadingException()
         }
+        system.resources.created(OpenGlResourceType.PROGRAM, candidate)
 
         val programs = IntArrayList(3)
         var failure: Throwable? = null
@@ -140,12 +143,12 @@ class OpenGlNativeShader(
             return candidate
         } catch (error: Throwable) {
             failure = error
-            cleanup(error) { gl { glDeleteProgram(candidate) } }
+            cleanup(error) { deleteProgram(candidate) }
             throw error
         } finally {
             for (index in 0 until programs.size) {
                 val program = programs.getInt(index)
-                cleanup(failure) { gl { glDeleteShader(program) } }
+                cleanup(failure) { deleteShader(program) }
             }
         }
     }
@@ -159,7 +162,7 @@ class OpenGlNativeShader(
 
     override fun unload() {
         check(loaded) { "Not loaded!" }
-        gl { glDeleteProgram(this.handler) }
+        deleteProgram(this.handler)
         loaded = false
         this.handler = -1
         uniformLocations.clear()
@@ -173,7 +176,17 @@ class OpenGlNativeShader(
         handler = candidate
         uniformLocations.clear()
         if (selected) unsafeUse()
-        gl { glDeleteProgram(previous) }
+        deleteProgram(previous)
+    }
+
+    private fun deleteShader(shader: Int) {
+        gl { glDeleteShader(shader) }
+        system.resources.deleted(OpenGlResourceType.SHADER, shader)
+    }
+
+    private fun deleteProgram(program: Int) {
+        gl { glDeleteProgram(program) }
+        system.resources.deleted(OpenGlResourceType.PROGRAM, program)
     }
 
 

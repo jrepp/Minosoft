@@ -17,12 +17,15 @@ import de.bixilon.kutil.primitive.BooleanUtil.toBoolean
 import de.bixilon.minosoft.gui.rendering.system.base.query.QueryStates
 import de.bixilon.minosoft.gui.rendering.system.base.query.QueryTypes
 import de.bixilon.minosoft.gui.rendering.system.base.query.RenderQuery
+import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
+import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceType
 import org.lwjgl.opengl.GL15.glDeleteQueries
 import org.lwjgl.opengl.GL30.*
 import org.lwjgl.opengl.GL33.GL_TIME_ELAPSED
 
 class OpenGlQuery(
+    private val system: OpenGlRenderSystem,
     override val type: QueryTypes,
 ) : RenderQuery {
     override var recordings = 0
@@ -52,12 +55,15 @@ class OpenGlQuery(
         assert(state == QueryStates.WAITING)
         assert(query < 0)
         query = gl { glGenQueries() }
+        system.resources.created(OpenGlResourceType.QUERY, query)
         state = QueryStates.INITIALIZED
     }
 
     override fun destroy() {
         assert(state == QueryStates.INITIALIZED)
         gl { glDeleteQueries(query) }
+        system.resources.deleted(OpenGlResourceType.QUERY, query)
+        query = -1
         state = QueryStates.DESTROYED
     }
 
