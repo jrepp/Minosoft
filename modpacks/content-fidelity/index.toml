@@ -6,7 +6,7 @@ hash = "afe43916235bfd0a2dabb6dd4047b9441d3b5362bc86d5655c84d9d42bfa16fc"
 
 [[files]]
 file = "ladder.tsv"
-hash = "a8c6fce81e5c71066c470d74bff7d30b3b7c170e1d29d898751680db99282d2a"
+hash = "37f67d71a7ba3d8a3e3d473ba52e81eff0689931a3915136f4d776a10ee95afa"
 
 [[files]]
 file = "mods/entity-model-features.pw.toml"

@@ -515,11 +515,15 @@ No live visual or repeated GPU-reload acceptance is claimed by this evidence.
    reference captures. Binary GeckoLib/Mojang
    compatibility remains a separate explicit project or requires exact native
    adapters per dependent mod.
-4. Add glowing/team outlines, rendered-reference comparison, and real-OpenGL
-   reload accounting for the passing unmodified Animated Java 1.10.2 export,
-   then prove remote-server behavior.
+4. Build glowing/team outlines on the now-transactional framebuffer/stencil
+   substrate, add rendered-reference comparison, and assert the new typed
+   OpenGL counters return to a fixed baseline for the passing unmodified
+   Animated Java 1.10.2 export, then prove remote-server behavior.
    Headless transactional reload/rollback and CPU generation cleanup now pass.
    Add another upstream blueprint only to expand the command or asset surface.
 5. Exercise the generation-leased stable-slot compactor with repeated real-GL
-   unload accounting, broader multi-version fixtures, and live visual captures
+   baseline assertions, broader multi-version fixtures, and live visual captures
    before any “fully supported” claim.
+
+The accounting boundary and remaining live acceptance protocol are documented
+in [OpenGL resource-accounting evidence](2026-07-24-opengl-resource-accounting.md).

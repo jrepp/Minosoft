@@ -96,8 +96,9 @@ The next Animated Java display gates are:
 1. render the exact pinned export through real OpenGL and compare a fixed
    default pose and settled walk frame with checked-in references;
 2. require all seven custom-model-data display nodes to contribute pixels;
-3. count created, deleted, and live buffers/textures across repeated content
-   reload and entity removal;
+3. use the new typed `render.substrate.gpuResources` counters to prove buffers,
+   textures, programs, framebuffers, and attachments return to a fixed baseline
+   across repeated content reload and entity removal;
 4. implement and separately validate glowing/team outlines before claiming
    `glow_color_override`;
 5. run the same exported resource/data packs through a remote 1.20.4 server;
@@ -107,3 +108,6 @@ The next Animated Java display gates are:
 Passing the current tests moves display metadata and interpolation from
 unimplemented to headless-verified. Animated Java remains partial until the
 real-render, GPU-lifecycle, and remote-server gates pass.
+
+The accounting substrate and transactional framebuffer/stencil allocation are
+documented in [OpenGL resource-accounting evidence](2026-07-24-opengl-resource-accounting.md).

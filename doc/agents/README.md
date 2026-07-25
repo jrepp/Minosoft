@@ -145,6 +145,10 @@ instructions that differ from the root contract.
   records the mapped 1.20.4 display reference, shared visibility bounds/range,
   transform/shadow/text/teleport interpolation, exact-export regression gate,
   and the remaining outline, real-render, GPU, and remote-server boundary.
+- [OpenGL resource-accounting evidence](evidence/2026-07-24-opengl-resource-accounting.md)
+  records typed context-owned GPU name accounting, allocation rollback,
+  teardown ownership, render diagnostics, and the remaining repeated-live
+  baseline gate.
 - [Minecraft 1.20.4 item-model predicate evidence](evidence/2026-07-24-item-model-predicates.md)
   audits the vanilla provider catalog, records complete audited-1.20.4 stack
   and live-context support plus dynamic world/display-item mesh replacement,

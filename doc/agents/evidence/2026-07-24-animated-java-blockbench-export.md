@@ -116,8 +116,8 @@ those swaps:
   lease moves, while the active generation remains owned until store shutdown.
 
 This is headless transactional-runtime and CPU-generation cleanup evidence. It
-does not provide a rendered reference, remote-server proof, or real-OpenGL
-resource accounting.
+does not provide a rendered reference, remote-server proof, or repeated
+real-OpenGL baseline acceptance.
 
 The fixture's `custom_model_data` path now runs on the separately audited
 Minecraft 1.20.4 legacy item-predicate selector. That selector also has
@@ -135,7 +135,7 @@ text background/opacity interpolation, negative interpolation-start deltas,
 and capped teleport pose interpolation have focused tests. The registry-backed
 display fixture and this exact export remain green together. Glow metadata is
 retained but entity outlines, rendered-reference comparison, and real-GPU
-accounting remain gates. See the
+baseline acceptance remain gates. See the
 [display-entity semantics evidence](2026-07-24-animated-java-display-semantics.md).
 
 Run the focused gate with Java 17:
@@ -148,6 +148,48 @@ Run the focused gate with Java 17:
 Do not weaken or rewrite the generated fixture if this test regresses. A
 failure identifies a real importer/runtime gap: implement the bounded command,
 entity, item-model, or render behavior, then rerun the same fixture.
+
+## Real-OpenGL automation capability
+
+The client debug channel now provides the two render-queue operations needed
+by a real-GPU Blockbench loop:
+
+- `render.reload-content` runs the same
+  `FabricResourceReloadEvents.CONTENT_FIDELITY` transaction and
+  `SkeletalLoader.reloadContentFidelity` apply path as the production
+  `reload content` command, then returns the published generation;
+- `render.substrate` reports typed created/deleted/live OpenGL names for
+  buffers, vertex arrays, textures, renderbuffers, framebuffers, shader
+  objects, programs, and queries.
+
+On 2026-07-24 an isolated Java 17 local-world launch of the `content-fidelity`
+pack exposed both operations in `core.capabilities`. A direct reload published
+content generation 2, and a supervised source change activated client
+generation 2 with exactly one new endpoint. The operation remained callable
+after replacement, and stopping the supervisor removed the endpoint.
+
+This proves the control and measurement seam, not the complete rendered gate.
+The current live pack does not mount the exact exported resource/data roots,
+and active flat-world chunk work changes buffer, vertex-array, and query
+populations. The final test must mount the pinned export and establish a
+quiescent pre-fixture baseline before comparing post-cleanup counts.
+
+The reusable live commands are:
+
+```sh
+./play.sh dev client --local-world \
+  --modpack content-fidelity \
+  --trajectory animated-java-real-gl
+
+./play.sh debug request render.reload-content \
+  --role client --trajectory animated-java-real-gl --json
+
+./play.sh debug request render.substrate \
+  --role client --trajectory animated-java-real-gl --json
+```
+
+See [OpenGL resource-accounting evidence](2026-07-24-opengl-resource-accounting.md)
+for lifecycle ownership and the remaining baseline protocol.
 
 ## Rendered-reference acceptance
 
@@ -170,8 +212,8 @@ and the exact pinned resource/data roots:
 4. require all seven custom-model-data nodes to contribute visible pixels and
    compare the captures with checked-in references using an explicit
    pixel/perceptual tolerance;
-5. repeat content reload and entity removal while recording created, deleted,
-   and live texture/buffer counts;
+5. repeat content reload and entity removal through `render.reload-content`
+   while recording every typed count from `render.substrate.gpuResources`;
 6. require the final live count to return to the pre-fixture baseline and save
    the failing frame plus resource counters on mismatch.
 

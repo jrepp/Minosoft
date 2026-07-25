@@ -341,7 +341,10 @@ either axis disables frustum-box rejection while retaining range rejection.
 `glow_color_override` is parsed and retained, but Minosoft has no entity
 team/glowing outline pass yet. Headless registry and exact
 Animated-Java-export integration tests cover the implemented state; real
-OpenGL rendered-reference and resource-accounting checks remain required. See
+OpenGL rendered-reference and repeated-baseline accounting checks remain
+required. Typed per-context GPU counters are now available through
+`render.substrate.gpuResources`; they cover buffers, vertex arrays, textures,
+renderbuffers, framebuffers, shaders, programs, and queries. See
 the [display semantics evidence](agents/evidence/2026-07-24-animated-java-display-semantics.md).
 
 ## Higher-fidelity compatibility trajectory
@@ -374,6 +377,8 @@ cleanup pass against the unmodified output. Rendered references, remote-server
 behavior, glowing outlines, and repeated real-GPU accounting remain separate
 gates. The display-state boundary is recorded in the
 [display semantics evidence](agents/evidence/2026-07-24-animated-java-display-semantics.md).
+The accounting and teardown substrate is recorded in
+[OpenGL resource-accounting evidence](agents/evidence/2026-07-24-opengl-resource-accounting.md).
 
 A durable headless fixture loads one CEM/ETF/Gecko content set against both
 Minecraft 1.19.4 and 1.20.4 protocol identities. It verifies version-specific

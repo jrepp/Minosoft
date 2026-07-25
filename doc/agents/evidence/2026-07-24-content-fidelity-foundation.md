@@ -106,6 +106,13 @@ Every adapter must also satisfy artifact identity, generation ownership,
 headless behavior, failure isolation, last-known-good reload, GPU disposal, and
 multi-version fixture gates from the graphics and mod-workflow maps.
 
+Typed per-context OpenGL accounting now covers buffers, vertex arrays,
+textures, renderbuffers, framebuffers, shader objects, programs, and queries.
+It is exposed through `render.substrate`, and partial allocation paths plus
+render shutdown have explicit cleanup. This supplies the measurement mechanism;
+the repeated live fixture/reload baseline gate still remains. See
+[OpenGL resource-accounting evidence](2026-07-24-opengl-resource-accounting.md).
+
 One headless CEM/ETF/Gecko fixture now passes for both 1.19.4 and 1.20.4,
 including version-specific aliases. It establishes the first multi-version
 data/runtime gate; it does not discharge live rendering, visual comparison, or
@@ -128,7 +135,7 @@ GPU reload requirements.
    compatibility as a separate, explicit rung.
 4. Audit and split the pre-1.19.4 compatibility predicate catalog and implement
    later component-based item-model dispatch. Then add
-   rendered-reference and real-OpenGL reload accounting for the passing
+   rendered-reference and repeated real-OpenGL baseline assertions for the passing
    unmodified Animated Java 1.10.2 export and validate the same packs through a
    remote server. Headless repeated reload/rollback and CPU cleanup now pass.
    Add another upstream blueprint only when it expands the command or asset
