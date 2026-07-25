@@ -20,13 +20,31 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicText
 import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicTextureState
 
 class DummyDynamicTextureArray(context: RenderContext) : DynamicTextureArray(context, 1, 0) {
-    override fun createTexture(identifier: Any, index: Int) = DummyDynamicTexture
+    var reloads = 0
+        private set
+    var generation = 0
+        private set
+    var failNextReload = false
+    var failNextUpload = false
+
+    override fun createTexture(identifier: Any, index: Int) = DummyDynamicTexture(identifier)
 
     override fun unload() = Unit
     override fun unsafeUse(shader: TextureShader, name: String) = Unit
     override fun upload() = Unit
+    override fun reload() {
+        reloads++
+        if (failNextReload) {
+            failNextReload = false
+            throw IllegalStateException("Candidate reload failed")
+        }
+        generation++
+    }
     override fun upload(index: Int, texture: DynamicTexture) {
-
+        if (failNextUpload) {
+            failNextUpload = false
+            throw IllegalStateException("Texture upload failed")
+        }
         texture.state = DynamicTextureState.LOADED
     }
 }

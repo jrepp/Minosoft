@@ -14,8 +14,7 @@
 package de.bixilon.minosoft.gui.rendering.system.dummy.texture
 
 import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicTexture
-import java.util.*
 
-object DummyDynamicTexture : DynamicTexture(UUID(0L, 0L)) {
+class DummyDynamicTexture(identifier: Any) : DynamicTexture(identifier) {
     override val shaderId: Int = 0
 }

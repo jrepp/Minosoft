@@ -39,7 +39,6 @@ abstract class DynamicTextureArray(
     protected var textures: Array<WeakReference<DynamicTexture>?> = arrayOfNulls(initialSize)
     protected val shaders: MutableSet<TextureShader> = mutableSetOf()
     private val lock = ReentrantRWLock()
-    private var reload = false
 
     val capacity get() = textures.size
 
@@ -73,6 +72,15 @@ abstract class DynamicTextureArray(
         return null
     }
 
+    protected fun textureSnapshot(): Array<WeakReference<DynamicTexture>?> {
+        lock.acquire()
+        return try {
+            textures.copyOf()
+        } finally {
+            lock.release()
+        }
+    }
+
     private fun DynamicTexture.load(index: Int, creator: () -> TextureBuffer) {
         val buffer = try {
             creator.invoke()
@@ -95,23 +103,24 @@ abstract class DynamicTextureArray(
 
     fun push(identifier: Any, async: Boolean = true, creator: () -> TextureBuffer): DynamicTexture {
         lock.lock()
-        cleanup()
-        unsafeGet(identifier)?.let { lock.unlock(); return it }
+        return try {
+            cleanup()
+            unsafeGet(identifier)?.let { return it }
 
-        val index = getNextIndex()
+            val index = getNextIndex()
+            val texture = createTexture(identifier, index)
+            textures[index] = WeakReference(texture)
+            texture.state = DynamicTextureState.LOADING
 
-        val texture = createTexture(identifier, index)
-        textures[index] = WeakReference(texture)
-        texture.state = DynamicTextureState.LOADING
-
-        if (async) {
-            DefaultIOPool += ThreadPoolRunnable(forcePool = true) { texture.load(index, creator) }
-        } else {
-            texture.load(index, creator)
+            if (async) {
+                DefaultIOPool += ThreadPoolRunnable(forcePool = true) { texture.load(index, creator) }
+            } else {
+                texture.load(index, creator)
+            }
+            texture
+        } finally {
+            lock.unlock()
         }
-
-        lock.unlock()
-        return texture
     }
 
 
@@ -123,16 +132,16 @@ abstract class DynamicTextureArray(
 
     private fun getNextIndex(): Int {
         lock.lock()
-        for ((index, texture) in textures.withIndex()) {
-            if (texture?.get() == null) {
-                lock.unlock()
-                return index
+        return try {
+            for ((index, texture) in textures.withIndex()) {
+                if (texture?.get() == null) return index
             }
+            val nextIndex = textures.size
+            grow()
+            nextIndex
+        } finally {
+            lock.unlock()
         }
-        val nextIndex = textures.size
-        grow()
-        lock.unlock()
-        return nextIndex
     }
 
     override fun load(latch: AbstractLatch?) = Unit
@@ -140,38 +149,43 @@ abstract class DynamicTextureArray(
 
     private fun grow() {
         lock.lock()
-        val textures: Array<WeakReference<DynamicTexture>?> = arrayOfNulls(textures.size + initialSize)
-        for ((index, texture) in this.textures.withIndex()) {
-            if (texture == null) continue
-            textures[index] = texture
-        }
-        this.textures = textures
+        try {
+            val textures: Array<WeakReference<DynamicTexture>?> =
+                arrayOfNulls(Math.addExact(textures.size, initialSize))
+            for ((index, texture) in this.textures.withIndex()) {
+                if (texture == null) continue
+                textures[index] = texture
+            }
+            this.textures = textures
 
-        this.reload = true
-        context.queue += { context.profiler("dynamic textures") { reload() } }
-        lock.unlock()
+            context.queue += { context.profiler("dynamic textures") { reload() } }
+        } finally {
+            lock.unlock()
+        }
     }
 
     private fun cleanup() {
         lock.lock()
-        for ((index, reference) in textures.withIndex()) {
-            if (reference == null) continue
-            val texture = reference.get()
-            if (texture != null && texture.state != DynamicTextureState.ERROR) continue // not gced yet, keep it for now
-            textures[index] = null
+        try {
+            for ((index, reference) in textures.withIndex()) {
+                if (reference == null) continue
+                val texture = reference.get()
+                if (texture != null && texture.state != DynamicTextureState.ERROR) continue // not gced yet, keep it for now
+                textures[index] = null
+            }
+        } finally {
+            lock.unlock()
         }
-        lock.unlock()
     }
-
-    fun reload() {
-        unload()
-        upload()
-        this.reload = false
-    }
-
 
     protected abstract fun upload(index: Int, texture: DynamicTexture)
     protected abstract fun upload()
+
+    /**
+     * Replaces backing storage without unloading the active generation before
+     * its candidate has been prepared successfully.
+     */
+    abstract fun reload()
     abstract override fun unload()
     protected abstract fun unsafeUse(shader: TextureShader, name: String = ShaderUniforms.TEXTURES)
     protected abstract fun createTexture(identifier: Any, index: Int): DynamicTexture

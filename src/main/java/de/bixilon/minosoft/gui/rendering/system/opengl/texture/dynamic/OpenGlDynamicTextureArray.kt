@@ -16,6 +16,7 @@ package de.bixilon.minosoft.gui.rendering.system.opengl.texture.dynamic
 
 import de.bixilon.kutil.cast.CastUtil.unsafeCast
 import de.bixilon.minosoft.gui.rendering.shader.types.TextureShader
+import de.bixilon.minosoft.gui.rendering.system.base.shader.ShaderUniforms
 import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicTexture
 import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicTextureArray
 import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicTextureState
@@ -54,6 +55,7 @@ class OpenGlDynamicTextureArray(
         private set
     private var empty = IntArray(Math.multiplyExact(resolution, resolution))
     private var handle = -1
+    private var publishedCapacity = 0
 
     override fun upload(index: Int, texture: DynamicTexture) {
         if (Thread.currentThread() != context.thread) {
@@ -74,22 +76,20 @@ class OpenGlDynamicTextureArray(
                 return
             }
             Log.log(LogMessageType.LOADING) { "Growing dynamic texture array from ${resolution}x$resolution to ${newResolution}x$newResolution for $texture" }
-            resolution = newResolution
-            empty = IntArray(resolution * resolution)
-            reload()
+            reload(newResolution)
             return
         }
+        if (index >= publishedCapacity) reload()
 
         if (system.boundTexture != handle) {
-            gl { glBindTexture(GL_TEXTURE_2D_ARRAY, handle) }
-            system.boundTexture = handle
+            bind(handle)
         }
 
-        unsafeUpload(index, texture)
+        unsafeUpload(index, texture, resolution, empty)
         texture.state = DynamicTextureState.LOADED
     }
 
-    private fun unsafeUpload(index: Int, texture: DynamicTexture) {
+    private fun unsafeUpload(index: Int, texture: DynamicTexture, resolution: Int, empty: IntArray) {
         val data = texture.data ?: throw IllegalArgumentException("No texture data?")
         for ((level, buffer) in data.collect().withIndex()) {
             if (data.size.x != resolution || data.size.y != resolution) {
@@ -104,47 +104,105 @@ class OpenGlDynamicTextureArray(
 
     override fun upload() {
         if (handle >= 0) throw MemoryLeakException("Texture was not unloaded!")
-        system.log { "Uploading dynamic textures" }
-        val handle = OpenGlTextureUtil.createTextureArray(system, index, mipmaps)
+        publish(prepare(resolution))
+    }
 
+    override fun reload() {
+        check(handle >= 0) { "Dynamic texture array is not uploaded." }
+        publish(prepare(resolution))
+    }
+
+    private fun reload(candidateResolution: Int) {
+        check(handle >= 0) { "Dynamic texture array is not uploaded." }
+        publish(prepare(candidateResolution))
+    }
+
+    private fun prepare(candidateResolution: Int): Prepared {
+        check(Thread.currentThread() === context.thread) {
+            "Dynamic texture generations must be prepared on the render thread."
+        }
+        system.log { "Preparing ${candidateResolution}x$candidateResolution dynamic textures" }
+        val snapshot = textureSnapshot()
+        val candidateEmpty = if (candidateResolution == resolution) {
+            empty
+        } else {
+            IntArray(Math.multiplyExact(candidateResolution, candidateResolution))
+        }
+        val candidate = OpenGlTextureUtil.createTextureArray(system, index, mipmaps)
         try {
             for (level in 0..mipmaps) {
-                gl { glTexImage3D(GL_TEXTURE_2D_ARRAY, level, GL_RGBA, resolution shr level, resolution shr level, textures.size, 0, GL_RGBA, GL_UNSIGNED_BYTE, null as ByteBuffer?) }
+                gl {
+                    glTexImage3D(
+                        GL_TEXTURE_2D_ARRAY,
+                        level,
+                        GL_RGBA,
+                        candidateResolution shr level,
+                        candidateResolution shr level,
+                        snapshot.size,
+                        0,
+                        GL_RGBA,
+                        GL_UNSIGNED_BYTE,
+                        null as ByteBuffer?,
+                    )
+                }
             }
 
-            for ((index, textureReference) in textures.withIndex()) {
+            val loaded = mutableListOf<DynamicTexture>()
+            for ((layer, textureReference) in snapshot.withIndex()) {
                 val texture = textureReference?.get() ?: continue
                 if (texture.data == null) continue
-                unsafeUpload(index, texture)
-                texture.state = DynamicTextureState.LOADED
+                unsafeUpload(layer, texture, candidateResolution, candidateEmpty)
+                loaded += texture
             }
+            return Prepared(candidate, candidateResolution, candidateEmpty, snapshot.size, loaded)
         } catch (error: Throwable) {
             try {
-                gl { glDeleteTextures(handle) }
-                system.resources.deleted(OpenGlResourceType.TEXTURE, handle)
-                if (system.boundTexture == handle) system.boundTexture = -1
+                delete(candidate)
             } catch (cleanup: Throwable) {
                 error.addSuppressed(cleanup)
             }
-            throw error
-        }
-        this.handle = handle
-
-        try {
-            for (shader in shaders) {
-                unsafeUse(shader)
-            }
-        } catch (error: Throwable) {
-            try {
-                unload()
-            } catch (cleanup: Throwable) {
-                error.addSuppressed(cleanup)
-            }
+            restoreActiveHandle(error)
             throw error
         }
     }
 
+    private fun publish(candidate: Prepared) {
+        val previous = handle
+        try {
+            for (shader in shaders) {
+                use(shader, candidate.handle)
+            }
+        } catch (error: Throwable) {
+            try {
+                delete(candidate.handle)
+            } catch (cleanup: Throwable) {
+                error.addSuppressed(cleanup)
+            }
+            restoreActiveHandle(error)
+            throw error
+        }
+        handle = candidate.handle
+        resolution = candidate.resolution
+        empty = candidate.empty
+        publishedCapacity = candidate.capacity
+        for (texture in candidate.loaded) {
+            texture.state = DynamicTextureState.LOADED
+        }
+        if (previous < 0) return
+        try {
+            delete(previous)
+        } catch (error: Throwable) {
+            Log.log(LogMessageType.RENDERING, LogLevels.WARN) {
+                "Could not retire replaced dynamic texture handle $previous: $error"
+            }
+        }
+    }
+
     override fun unsafeUse(shader: TextureShader, name: String) {
+        use(shader, handle, name)
+    }
+
+    private fun use(shader: TextureShader, handle: Int, name: String = ShaderUniforms.TEXTURES) {
         if (handle <= 0) throw IllegalStateException("Texture array is not uploaded yet! Are you trying to load a shader in the init phase?")
         system.log { "Binding dynamic textures to $shader" }
         val native = shader.native.unsafeCast<OpenGlNativeShader>()
@@ -155,11 +213,34 @@ class OpenGlDynamicTextureArray(
 
     override fun unload() {
         if (handle < 0) return
+        val previous = handle
+        try {
+            delete(previous)
+        } finally {
+            if (handle == previous) handle = -1
+            publishedCapacity = 0
+        }
+    }
+
+    private fun restoreActiveHandle(error: Throwable) {
+        if (handle < 0) return
+        try {
+            bind(handle)
+        } catch (cleanup: Throwable) {
+            error.addSuppressed(cleanup)
+        }
+    }
+
+    private fun bind(handle: Int) {
         gl { glActiveTexture(GL_TEXTURE0 + index) }
+        gl { glBindTexture(GL_TEXTURE_2D_ARRAY, handle) }
+        system.boundTexture = handle
+    }
+
+    private fun delete(handle: Int) {
         gl { glDeleteTextures(handle) }
         system.resources.deleted(OpenGlResourceType.TEXTURE, handle)
         if (system.boundTexture == handle) system.boundTexture = -1
-        this.handle = -1
     }
 
     private fun createShaderIdentifier(array: Int = this.index, index: Int): Int {
@@ -170,6 +251,14 @@ class OpenGlDynamicTextureArray(
     override fun createTexture(identifier: Any, index: Int): DynamicTexture {
         return OpenGlDynamicTexture(identifier, createShaderIdentifier(index = index))
     }
+
+    private data class Prepared(
+        val handle: Int,
+        val resolution: Int,
+        val empty: IntArray,
+        val capacity: Int,
+        val loaded: List<DynamicTexture>,
+    )
 
     private companion object {
         const val MAX_DYNAMIC_TEXTURE_RESOLUTION = 4_096
