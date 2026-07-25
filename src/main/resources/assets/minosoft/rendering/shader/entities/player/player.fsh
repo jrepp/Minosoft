@@ -26,18 +26,41 @@ out lowp vec4 foutColor;
 
 flat in uint finAllowTransparency;
 
+uniform bool uGlint;
+uniform bool uAllowBaseTransparency;
+uniform uint uGlintTexture;
+uniform float uGlintTime;
+
+vec4 sampleGlint(vec2 uv) {
+    uint textureArray = uGlintTexture >> 28u;
+    float textureLayer = float((uGlintTexture >> 12u) & 0xFFFFu);
+    return getTexture(textureArray, vec3(uv, textureLayer));
+}
+
 void main() {
     if (finTintColor.a == 0.0f) discard;
     applyDefaults();
     applyTint();
     vec4 texel = getTexture(finTextureArray, vec3(finTextureUV, finTextureLayer));
-    if (finAllowTransparency != 0u) {
+    if (finAllowTransparency != 0u || uGlint) {
         if (texel.a < 0.5f) discard;
+    } else if (uAllowBaseTransparency) {
+        if (texel.a <= 0.0f) discard;
     } else {
         texel.a = 1.0f;
     }
 
-    foutColor *= texel;
+    if (uGlint) {
+        if (texel.a < 0.5f) discard;
+        vec2 positionUV = vec2(finFragmentPosition.x - finFragmentPosition.z, finFragmentPosition.y) * 0.16f;
+        float first = sampleGlint(positionUV + vec2(uGlintTime * 0.010f, 0.0f)).r;
+        mat2 rotate = mat2(0.7071068f, -0.7071068f, 0.7071068f, 0.7071068f);
+        float second = sampleGlint((rotate * positionUV) - vec2(uGlintTime * 0.008f, 0.0f)).r;
+        float intensity = clamp((first + second) * 0.65f, 0.0f, 1.0f);
+        foutColor *= vec4(vec3(0.38f, 0.19f, 0.608f) * intensity, texel.a);
+    } else {
+        foutColor *= texel;
+    }
 
     #ifdef FOG
     fog_set();

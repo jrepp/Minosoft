@@ -41,6 +41,8 @@ import de.bixilon.minosoft.gui.rendering.renderer.drawable.Drawable
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.Renderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
+import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
+import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.IntegratedBufferTypes
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
@@ -102,10 +104,11 @@ class ArmRenderer(override val context: RenderContext) : Renderer, Drawable {
         val skin = renderer?.model?.type
         val model = skin?.let { getModel(arm, it) }
         if (mainHand == null && renderer != null && model != null) {
+            val frame = renderer.skinFrame()
 
             shader.use()
             shader.skinParts = renderer.model?.skinParts ?: 0xFF
-            shader.texture = renderer.skin?.shaderId ?: context.textures.debugTexture.shaderId
+            shader.texture = frame?.base?.shaderId ?: context.textures.debugTexture.shaderId
             shader.tint = ChatColors.WHITE.rgb()
 
             val pivot = Vec3f((if (arm == Arms.RIGHT) 6f else -6f) / 16f, 24 / 16f, 0f)
@@ -129,6 +132,26 @@ class ArmRenderer(override val context: RenderContext) : Renderer, Drawable {
             shader.transform = perspective * matrix
 
             model.mesh.draw()
+            frame?.emissive?.let { emissive ->
+                try {
+                    context.system.reset(
+                        blending = true,
+                        faceCulling = false,
+                        depthMask = false,
+                        sourceRGB = BlendingFunctions.SOURCE_ALPHA,
+                        destinationRGB = BlendingFunctions.ONE,
+                        sourceAlpha = BlendingFunctions.ONE,
+                        destinationAlpha = BlendingFunctions.ONE,
+                        depth = DepthFunctions.EQUAL,
+                    )
+                    shader.use()
+                    shader.texture = emissive.shaderId
+                    shader.tint = ChatColors.WHITE.rgb()
+                    model.mesh.draw()
+                } finally {
+                    context.system.reset()
+                }
+            }
         }
         mainHandItem.draw(entity, EquipmentSlots.MAIN_HAND, arm, perspective)
         offHandItem.draw(entity, EquipmentSlots.OFF_HAND, FirstPersonItemTransform.opposite(arm), perspective)

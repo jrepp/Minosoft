@@ -23,4 +23,11 @@ class PlayerShader(native: NativeShader, buffer: FloatUniformBuffer) : BaseSkele
     var texture by uniform("uIndexLayer", 0x00, NativeShader::setUInt)
     override var tint by uniform("uTintColor", ChatColors.WHITE.rgb())
     var skinParts by uniform("uSkinParts", 0xFF, NativeShader::setUInt)
+    var inflate by uniform("uInflate", 0.0f)
+    var hideBase by uniform("uHideBase", false)
+    var featurePart by uniform("uFeaturePart", 0x00, NativeShader::setUInt)
+    var allowBaseTransparency by uniform("uAllowBaseTransparency", false)
+    var glint by uniform("uGlint", false)
+    var glintTexture by uniform("uGlintTexture", 0x00, NativeShader::setUInt)
+    var glintTime by uniform("uGlintTime", 0.0f)
 }

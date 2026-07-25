@@ -70,6 +70,25 @@ class EntityTexturePropertiesParserTest {
     }
 
     @Test
+    fun `NBT predicates support existence ranges wildcard paths and inversion`() {
+        val context = EntityTextureContext(
+            seed = 0,
+            strings = mapOf(
+                "nbt.Items.0.id" to listOf("minecraft:diamond"),
+                "nbt.Items.1.id" to listOf("minecraft:stick"),
+            ),
+            numbers = mapOf("nbt.Health" to 18.0),
+        )
+
+        assertTrue(EntityTextureConditions.matchesNbt("Items.*.id", "ipattern:minecraft:d*", context))
+        assertTrue(EntityTextureConditions.matchesNbt("Health", "range:10-20", context))
+        assertTrue(EntityTextureConditions.matchesNbt("Health", "exists:true", context))
+        assertTrue(EntityTextureConditions.matchesNbt("Missing", "exists:false", context))
+        assertTrue(EntityTextureConditions.matchesNbt("Missing", "!exists:true", context))
+        assertFalse(EntityTextureConditions.matchesNbt("Items.*.id", "raw:minecraft:apple", context))
+    }
+
+    @Test
     fun `custom predicates have removable ownership`() {
         val rules = parse("skins.1=2\nteam.1=blue")
         val context = EntityTextureContext(0)
@@ -105,14 +124,79 @@ class EntityTexturePropertiesParserTest {
         val emissive = ResourceLocation.of("test:base_e")
         val blink = ResourceLocation.of("test:base_blink")
         val blinkEmissive = ResourceLocation.of("test:base_blink_e")
-        val material = EntityTextureMaterial(base, emissive, blink, blinkEmissive, blinkIntervalTicks = 4, blinkLengthTicks = 1)
+        val blink2 = ResourceLocation.of("test:base_blink2")
+        val blink2Emissive = ResourceLocation.of("test:base_blink2_e")
+        val material = EntityTextureMaterial(
+            base,
+            emissive,
+            blink,
+            blinkEmissive,
+            blink2,
+            blink2Emissive,
+            blinkFrequencyTicks = 1,
+            blinkLengthTicks = 1,
+        )
 
         val frames = (0L until 4L).map { material.at(it, 7) }
-        assertEquals(1, frames.count(EntityTextureMaterialFrame::blinking))
-        assertEquals(blink, frames.single(EntityTextureMaterialFrame::blinking).base)
-        assertEquals(blinkEmissive, frames.single(EntityTextureMaterialFrame::blinking).emissive)
-        assertTrue(frames.filterNot(EntityTextureMaterialFrame::blinking).all { it.base == base && it.emissive == emissive })
+        assertEquals(EntityTextureBlinkState.HALF, frames[0].blinkState)
+        assertEquals(blink2, frames[0].base)
+        assertEquals(blink2Emissive, frames[0].emissive)
+        assertEquals(EntityTextureBlinkState.CLOSED, frames[1].blinkState)
+        assertEquals(blink, frames[1].base)
+        assertEquals(blinkEmissive, frames[1].emissive)
+        assertEquals(EntityTextureBlinkState.OPEN, frames[3].blinkState)
+        assertEquals(base, frames[3].base)
+        assertEquals(emissive, frames[3].emissive)
         assertFalse(EntityTextureMaterial(base).at(0, 0).blinking)
+    }
+
+    @Test
+    fun `material properties parse bounded timing and configured emissive suffixes`() {
+        val source = ResourceLocation.of("test:textures/entity/cow/cow_blink.properties")
+        val timing = EntityTextureMaterialPropertiesParser.parseBlink(
+            source,
+            ByteArrayInputStream("blinkFrequency=37\nblinkLength=4".toByteArray()),
+        )
+        assertEquals(EntityTextureBlinkSettings(37, 4), timing)
+        assertEquals(
+            setOf("_glow"),
+            EntityTextureMaterialPropertiesParser.parseEmissiveSuffixes(
+                ResourceLocation.of("test:optifine/emissive.properties"),
+                ByteArrayInputStream("suffix.emissive=_glow".toByteArray()),
+            ),
+        )
+        assertFailsWith<IllegalArgumentException> {
+            EntityTextureMaterialPropertiesParser.parseBlink(
+                source,
+                ByteArrayInputStream("blinkLength=999".toByteArray()),
+            )
+        }
+    }
+
+    @Test
+    fun `catalog discovers standalone feature material with custom emissive and half blink frames`() {
+        val base = ResourceLocation.of("test:textures/models/armor/coat.png")
+        val emissive = ResourceLocation.of("test:textures/models/armor/coat_glow.png")
+        val blink = ResourceLocation.of("test:textures/models/armor/coat_blink.png")
+        val blink2 = ResourceLocation.of("test:textures/models/armor/coat_blink2.png")
+        val blinkEmissive = ResourceLocation.of("test:textures/models/armor/coat_blink_glow.png")
+        val blink2Emissive = ResourceLocation.of("test:textures/models/armor/coat_blink2_glow.png")
+        val settingsLocation = EntityTextureCatalog.blinkPropertiesLocation(base)
+        val catalog = EntityTextureCatalog.build(
+            emptyMap(),
+            setOf(base, emissive, blink, blink2, blinkEmissive, blink2Emissive),
+            emissiveSuffixes = setOf("_glow"),
+            blinkSettings = mapOf(settingsLocation to EntityTextureBlinkSettings(20, 3)),
+        )
+
+        val material = catalog[base]!!.materials.getValue(1)
+        assertEquals(emissive, material.emissive)
+        assertEquals(blink, material.blink)
+        assertEquals(blink2, material.blink2)
+        assertEquals(blinkEmissive, material.blinkEmissive)
+        assertEquals(blink2Emissive, material.blink2Emissive)
+        assertEquals(20, material.blinkFrequencyTicks)
+        assertEquals(3, material.blinkLengthTicks)
     }
 
     @Test
@@ -143,6 +227,46 @@ class EntityTexturePropertiesParserTest {
         } finally {
             cache.close()
         }
+    }
+
+    @Test
+    fun `catalog requests only predicates used by the selected base textures`() {
+        val cowSource = ResourceLocation.of("test:optifine/random/entity/cow/cow.properties")
+        val pigSource = ResourceLocation.of("test:optifine/random/entity/pig/pig.properties")
+        val cowBase = ResourceLocation.of("test:textures/entity/cow/cow.png")
+        val pigBase = ResourceLocation.of("test:textures/entity/pig/pig.png")
+        val catalog = EntityTextureCatalog.build(
+            mapOf(
+                cowSource to EntityTextureRuleSet(
+                    cowSource,
+                    listOf(
+                        EntityTextureRule(
+                            1,
+                            listOf(1),
+                            conditions = listOf(
+                                EntityTextureCondition("blockAbove", "minecraft:stone"),
+                                EntityTextureCondition("biomeTag", "minecraft:is_forest"),
+                            ),
+                        ),
+                    ),
+                ),
+                pigSource to EntityTextureRuleSet(
+                    pigSource,
+                    listOf(
+                        EntityTextureRule(
+                            1,
+                            listOf(1),
+                            conditions = listOf(EntityTextureCondition("blockBelowSolid", "minecraft:dirt")),
+                        ),
+                    ),
+                ),
+            ),
+            setOf(cowBase, pigBase),
+        )
+
+        assertEquals(setOf("blockAbove", "biomeTag"), catalog.contextKeys(setOf(cowBase)))
+        assertEquals(setOf("blockBelowSolid"), catalog.contextKeys(setOf(pigBase)))
+        assertTrue(catalog.contextKeys(setOf(ResourceLocation.of("test:textures/entity/sheep/sheep.png"))).isEmpty())
     }
 
     private fun parse(content: String): EntityTextureRuleSet {

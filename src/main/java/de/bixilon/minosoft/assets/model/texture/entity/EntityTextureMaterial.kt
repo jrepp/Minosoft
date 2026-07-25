@@ -14,28 +14,92 @@
 package de.bixilon.minosoft.assets.model.texture.entity
 
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
+import java.io.InputStream
+import java.util.Properties
 
 data class EntityTextureMaterial(
     val base: ResourceLocation,
     val emissive: ResourceLocation? = null,
     val blink: ResourceLocation? = null,
     val blinkEmissive: ResourceLocation? = null,
-    val blinkIntervalTicks: Int = 100,
-    val blinkLengthTicks: Int = 2,
+    val blink2: ResourceLocation? = null,
+    val blink2Emissive: ResourceLocation? = null,
+    val blinkFrequencyTicks: Int = DEFAULT_BLINK_FREQUENCY,
+    val blinkLengthTicks: Int = DEFAULT_BLINK_LENGTH,
 ) {
     init {
-        require(blinkIntervalTicks > 0) { "Blink interval must be positive." }
-        require(blinkLengthTicks >= 0 && blinkLengthTicks <= blinkIntervalTicks) { "Blink length must be within the interval." }
+        require(blinkFrequencyTicks > 0) { "Blink frequency must be positive." }
+        require(blinkLengthTicks >= 0 && blinkLengthTicks <= MAX_BLINK_LENGTH) {
+            "Blink length must be between 0 and $MAX_BLINK_LENGTH ticks."
+        }
+        require(blink2 == null || blink != null) { "A second blink frame requires the closed-eye blink frame." }
+        require(blink2Emissive == null || blink2 != null) { "A second blink emissive requires the second blink frame." }
     }
 
     fun at(tick: Long, seed: Long): EntityTextureMaterialFrame {
-        val offset = floorMod(mix(seed), blinkIntervalTicks.toLong())
-        val blinking = blink != null && floorMod(tick + offset, blinkIntervalTicks.toLong()) < blinkLengthTicks
-        return if (blinking) {
-            EntityTextureMaterialFrame(blink, blinkEmissive ?: emissive, true)
-        } else {
-            EntityTextureMaterialFrame(base, emissive, false)
+        if (blink == null || blinkLengthTicks == 0) {
+            return EntityTextureMaterialFrame(base, emissive, EntityTextureBlinkState.OPEN)
         }
+        return when (EntityTextureBlinkTimeline.stateAt(
+            tick,
+            seed,
+            blinkFrequencyTicks,
+            blinkLengthTicks,
+            hasHalfFrame = blink2 != null,
+        )) {
+            EntityTextureBlinkState.OPEN -> EntityTextureMaterialFrame(base, emissive, EntityTextureBlinkState.OPEN)
+            EntityTextureBlinkState.HALF -> EntityTextureMaterialFrame(
+                blink2 ?: blink,
+                blink2Emissive ?: blinkEmissive ?: emissive,
+                EntityTextureBlinkState.HALF,
+            )
+            EntityTextureBlinkState.CLOSED ->
+                EntityTextureMaterialFrame(blink, blinkEmissive ?: emissive, EntityTextureBlinkState.CLOSED)
+        }
+    }
+
+    companion object {
+        const val DEFAULT_BLINK_FREQUENCY = 150
+        const val DEFAULT_BLINK_LENGTH = 1
+        const val MAX_BLINK_LENGTH = 20
+    }
+}
+
+data class EntityTextureMaterialFrame(
+    val base: ResourceLocation,
+    val emissive: ResourceLocation?,
+    val blinkState: EntityTextureBlinkState,
+) {
+    val blinking get() = blinkState != EntityTextureBlinkState.OPEN
+}
+
+enum class EntityTextureBlinkState {
+    OPEN,
+    HALF,
+    CLOSED,
+}
+
+object EntityTextureBlinkTimeline {
+    fun stateAt(
+        tick: Long,
+        seed: Long,
+        frequencyTicks: Int = EntityTextureMaterial.DEFAULT_BLINK_FREQUENCY,
+        lengthTicks: Int = EntityTextureMaterial.DEFAULT_BLINK_LENGTH,
+        hasHalfFrame: Boolean,
+    ): EntityTextureBlinkState {
+        if (lengthTicks <= 0) return EntityTextureBlinkState.OPEN
+        val spread = frequencyTicks.toLong() * 2L
+        val interval = frequencyTicks + 20L + floorMod(mix(seed), spread)
+        val phase = floorMod(tick, interval)
+        if (phase > lengthTicks.toLong() * 2L) return EntityTextureBlinkState.OPEN
+        if (hasHalfFrame) {
+            val closedStart = lengthTicks / 1.5
+            val closedEnd = lengthTicks + 1.0 + lengthTicks / 3.0
+            if (phase.toDouble() < closedStart || phase.toDouble() > closedEnd) {
+                return EntityTextureBlinkState.HALF
+            }
+        }
+        return EntityTextureBlinkState.CLOSED
     }
 
     private fun mix(input: Long): Long {
@@ -51,8 +115,61 @@ data class EntityTextureMaterial(
     }
 }
 
-data class EntityTextureMaterialFrame(
-    val base: ResourceLocation,
-    val emissive: ResourceLocation?,
-    val blinking: Boolean,
-)
+data class EntityTextureBlinkSettings(
+    val frequencyTicks: Int = EntityTextureMaterial.DEFAULT_BLINK_FREQUENCY,
+    val lengthTicks: Int = EntityTextureMaterial.DEFAULT_BLINK_LENGTH,
+) {
+    init {
+        require(frequencyTicks > 0) { "Blink frequency must be positive." }
+        require(lengthTicks in 0..EntityTextureMaterial.MAX_BLINK_LENGTH) {
+            "Blink length must be between 0 and ${EntityTextureMaterial.MAX_BLINK_LENGTH} ticks."
+        }
+    }
+}
+
+object EntityTextureMaterialPropertiesParser {
+    fun parseBlink(source: ResourceLocation, input: InputStream): EntityTextureBlinkSettings {
+        val properties = read(source, input)
+        fun positive(key: String, fallback: Int): Int {
+            val raw = properties.getProperty(key) ?: return fallback
+            return raw.filter(Char::isDigit).toIntOrNull()
+                ?: throw IllegalArgumentException("$source: $key must contain a positive integer.")
+        }
+        return EntityTextureBlinkSettings(
+            frequencyTicks = positive("blinkFrequency", EntityTextureMaterial.DEFAULT_BLINK_FREQUENCY),
+            lengthTicks = positive("blinkLength", EntityTextureMaterial.DEFAULT_BLINK_LENGTH),
+        )
+    }
+
+    fun parseEmissiveSuffixes(source: ResourceLocation, input: InputStream): Set<String> {
+        val properties = read(source, input)
+        return listOf("entities.suffix.emissive", "suffix.emissive")
+            .mapNotNull(properties::getProperty)
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .onEach {
+                require(it.length <= MAX_SUFFIX_LENGTH && it.matches(SUFFIX)) {
+                    "$source: invalid emissive suffix '$it'."
+                }
+            }
+            .toSet()
+    }
+
+    private fun read(source: ResourceLocation, input: InputStream): Properties {
+        val bytes = input.use { it.readNBytes(MAX_PROPERTIES_BYTES + 1) }
+        require(bytes.size <= MAX_PROPERTIES_BYTES) {
+            "$source exceeds the $MAX_PROPERTIES_BYTES byte material properties limit."
+        }
+        return Properties().also {
+            bytes.inputStream().use(it::load)
+            require(it.size <= MAX_PROPERTIES) {
+                "$source exceeds the $MAX_PROPERTIES material property limit."
+            }
+        }
+    }
+
+    private val SUFFIX = Regex("_[a-zA-Z0-9_.-]+")
+    private const val MAX_SUFFIX_LENGTH = 64
+    private const val MAX_PROPERTIES_BYTES = 64 * 1024
+    private const val MAX_PROPERTIES = 256
+}

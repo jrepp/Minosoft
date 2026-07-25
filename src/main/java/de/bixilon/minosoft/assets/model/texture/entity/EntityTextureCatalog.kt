@@ -24,6 +24,15 @@ data class EntityTextureCatalog(
 ) {
     operator fun get(base: ResourceLocation) = entries[base]
 
+    fun contextKeys(bases: Collection<ResourceLocation>): Set<String> {
+        return bases.asSequence()
+            .mapNotNull(entries::get)
+            .flatMap { it.rules.rules.asSequence() }
+            .flatMap { it.conditions.asSequence() }
+            .map(EntityTextureCondition::key)
+            .toCollection(linkedSetOf())
+    }
+
     fun select(
         base: ResourceLocation,
         entityKey: String,
@@ -43,6 +52,8 @@ data class EntityTextureCatalog(
         fun build(
             rules: Map<ResourceLocation, EntityTextureRuleSet>,
             available: Set<ResourceLocation>,
+            emissiveSuffixes: Set<String> = DEFAULT_EMISSIVE_SUFFIXES,
+            blinkSettings: Map<ResourceLocation, EntityTextureBlinkSettings> = emptyMap(),
         ): EntityTextureCatalog {
             val entries = linkedMapOf<ResourceLocation, EntityTextureCatalogEntry>()
             for ((source, ruleSet) in rules) {
@@ -52,10 +63,20 @@ data class EntityTextureCatalog(
                     ruleSet.rules.forEach { addAll(it.suffixes) }
                 }
                 val materials = suffixes.sorted().associateWith { suffix ->
-                    material(source, base, suffix, available)
+                    material(source, base, suffix, available, emissiveSuffixes, blinkSettings)
                 }.filterValues { it != null }.mapValues { it.value!! }
                 if (materials.isEmpty()) continue
                 entries[base] = EntityTextureCatalogEntry(base, ruleSet, materials)
+            }
+            discoverStandaloneMaterials(available, emissiveSuffixes, blinkSettings).forEach { (base, material) ->
+                entries.putIfAbsent(
+                    base,
+                    EntityTextureCatalogEntry(
+                        base,
+                        EntityTextureRuleSet(propertiesLocation(base), emptyList()),
+                        mapOf(1 to material),
+                    ),
+                )
             }
             return EntityTextureCatalog(entries)
         }
@@ -75,18 +96,44 @@ data class EntityTextureCatalog(
             base: ResourceLocation,
             suffix: Int,
             available: Set<ResourceLocation>,
+            emissiveSuffixes: Set<String>,
+            blinkSettings: Map<ResourceLocation, EntityTextureBlinkSettings>,
         ): EntityTextureMaterial? {
             val selected = if (suffix == 1) {
                 base.takeIf { it in available } ?: variantTexture(source, suffix).takeIf { it in available }
             } else {
                 variantTexture(source, suffix).takeIf { it in available }
             } ?: return null
-            val emissive = decorated(selected, "_e").takeIf { it in available }
-                ?: decorated(selected, "_emissive").takeIf { it in available }
+            return material(selected, available, emissiveSuffixes, blinkSettings)
+        }
+
+        private fun material(
+            selected: ResourceLocation,
+            available: Set<ResourceLocation>,
+            emissiveSuffixes: Set<String>,
+            blinkSettings: Map<ResourceLocation, EntityTextureBlinkSettings>,
+        ): EntityTextureMaterial {
+            val emissiveSuffix = emissiveSuffixes.firstOrNull { decorated(selected, it) in available }
+            val emissive = emissiveSuffix?.let { decorated(selected, it) }
             val blink = decorated(selected, "_blink").takeIf { it in available }
-            val blinkEmissive = decorated(selected, "_blink_e").takeIf { it in available }
-                ?: decorated(selected, "_blink_emissive").takeIf { it in available }
-            return EntityTextureMaterial(selected, emissive, blink, blinkEmissive)
+            val blink2 = decorated(selected, "_blink2").takeIf { it in available && blink != null }
+            val blinkEmissive = emissiveSuffix
+                ?.let { decorated(selected, "_blink$it") }
+                ?.takeIf { it in available && blink != null }
+            val blink2Emissive = emissiveSuffix
+                ?.let { decorated(selected, "_blink2$it") }
+                ?.takeIf { it in available && blink2 != null }
+            val settings = blinkSettings[blinkPropertiesLocation(selected)] ?: EntityTextureBlinkSettings()
+            return EntityTextureMaterial(
+                selected,
+                emissive,
+                blink,
+                blinkEmissive,
+                blink2,
+                blink2Emissive,
+                settings.frequencyTicks,
+                settings.lengthTicks,
+            )
         }
 
         private fun variantTexture(source: ResourceLocation, suffix: Int): ResourceLocation {
@@ -98,6 +145,40 @@ data class EntityTextureCatalog(
         private fun decorated(texture: ResourceLocation, suffix: String): ResourceLocation {
             return ResourceLocation(texture.namespace, texture.path.removeSuffix(".png") + suffix + ".png")
         }
+
+        private fun discoverStandaloneMaterials(
+            available: Set<ResourceLocation>,
+            emissiveSuffixes: Set<String>,
+            blinkSettings: Map<ResourceLocation, EntityTextureBlinkSettings>,
+        ): Map<ResourceLocation, EntityTextureMaterial> {
+            val decorations = buildSet {
+                add("_blink")
+                add("_blink2")
+                emissiveSuffixes.forEach {
+                    add(it)
+                    add("_blink$it")
+                    add("_blink2$it")
+                }
+            }.sortedByDescending(String::length)
+            val bases = linkedSetOf<ResourceLocation>()
+            for (resource in available) {
+                if (!resource.path.endsWith(".png", ignoreCase = true)) continue
+                if (!resource.path.startsWith("textures/")) continue
+                val stem = resource.path.removeSuffix(".png")
+                val decoration = decorations.firstOrNull(stem::endsWith) ?: continue
+                val base = ResourceLocation(resource.namespace, stem.removeSuffix(decoration) + ".png")
+                if (base in available) bases += base
+            }
+            return bases.associateWith { material(it, available, emissiveSuffixes, blinkSettings) }
+        }
+
+        private fun propertiesLocation(texture: ResourceLocation) =
+            ResourceLocation(texture.namespace, texture.path.removeSuffix(".png") + ".properties")
+
+        fun blinkPropertiesLocation(texture: ResourceLocation) =
+            ResourceLocation(texture.namespace, texture.path.removeSuffix(".png") + "_blink.properties")
+
+        val DEFAULT_EMISSIVE_SUFFIXES = linkedSetOf("_e", "_emissive")
     }
 }
 
@@ -112,6 +193,8 @@ data class EntityTextureCatalogEntry(
             material.emissive?.let(::add)
             material.blink?.let(::add)
             material.blinkEmissive?.let(::add)
+            material.blink2?.let(::add)
+            material.blink2Emissive?.let(::add)
         }
     }
 }

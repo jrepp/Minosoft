@@ -33,6 +33,7 @@ data class ContentFidelitySnapshot(
     val entityTextureMaterials: Map<ResourceLocation, EntityTextureMaterial> = emptyMap(),
     val entityTextureCatalog: EntityTextureCatalog = EntityTextureCatalog.EMPTY,
     val entityTextureCache: EntityTextureSelectionCache = EntityTextureSelectionCache(),
+    val entityTextureEmissiveSuffixes: Set<String> = EntityTextureCatalog.DEFAULT_EMISSIVE_SUFFIXES,
     val dataPackFunctions: DataPackFunctionLibrary = DataPackFunctionLibrary.EMPTY,
 ) {
     init {

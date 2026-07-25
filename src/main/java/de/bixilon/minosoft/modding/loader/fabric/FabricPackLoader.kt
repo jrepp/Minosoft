@@ -7,6 +7,7 @@
 
 package de.bixilon.minosoft.modding.loader.fabric
 
+import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureRuntimeEnvironment
 import de.bixilon.minosoft.debug.ClientDebugChannel
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
@@ -32,6 +33,12 @@ object FabricPackLoader {
 
         val scope = FabricRegistrationScope()
         try {
+            scope.own(
+                EntityTextureRuntimeEnvironment.installLoadedMods(
+                    report.activatableMods.flatMap { probe -> listOf(probe.metadata) + probe.nestedMods }
+                        .map(FabricMetadata::id),
+                ),
+            )
             for (probe in report.activatableMods) {
                 val adapter = requireNotNull(probe.adapter) { "No direct Fabric activation path exists for ${probe.metadata.id}." }
                 FabricModDiagnostics.activationStarted(probe)

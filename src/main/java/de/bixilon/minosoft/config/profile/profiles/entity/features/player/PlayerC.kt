@@ -21,4 +21,11 @@ class PlayerC(profile: EntityProfile) {
      * Automatically use slim skin when model is not wide
      */
     var detectSlim by BooleanDelegate(profile, true)
+
+    /**
+     * Preserve alpha on the base layer of ETF-signature player skins. This
+     * mirrors ETF 7.0.13's default ETF_SKINS_ONLY transparency policy without
+     * making ordinary vanilla skins translucent.
+     */
+    var etfSkinTransparency by BooleanDelegate(profile, true)
 }

@@ -13,6 +13,7 @@
 package de.bixilon.minosoft.protocol.packets.s2c.common
 
 import de.bixilon.kutil.cast.CastUtil.unsafeCast
+import de.bixilon.minosoft.data.registries.biomes.Biome
 import de.bixilon.minosoft.data.registries.blocks.types.Block
 import de.bixilon.minosoft.data.registries.entities.EntityType
 import de.bixilon.minosoft.data.registries.fluid.Fluid
@@ -25,6 +26,7 @@ import de.bixilon.minosoft.protocol.packets.s2c.PlayS2CPacket
 import de.bixilon.minosoft.protocol.protocol.ProtocolVersions
 import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayInByteBuffer
 import de.bixilon.minosoft.tags.MinecraftTagTypes.BLOCK
+import de.bixilon.minosoft.tags.MinecraftTagTypes.BIOME
 import de.bixilon.minosoft.tags.MinecraftTagTypes.ENTITY_TYPE
 import de.bixilon.minosoft.tags.MinecraftTagTypes.FLUID
 import de.bixilon.minosoft.tags.MinecraftTagTypes.GAME_EVENT
@@ -61,6 +63,7 @@ class TagsS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
                     FLUID -> buffer.readFluidTags()
                     ENTITY_TYPE -> buffer.readEntityTypeTags()
                     GAME_EVENT -> buffer.readGameEventTags()
+                    BIOME -> buffer.readBiomeTags()
                     else -> buffer.readTagList(Registry())
                 }
             }
@@ -82,6 +85,10 @@ class TagsS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
 
     private fun PlayInByteBuffer.readEntityTypeTags(): TagList<EntityType> {
         return readTagList(session.registries.entityType)
+    }
+
+    private fun PlayInByteBuffer.readBiomeTags(): TagList<Biome> {
+        return readTagList(session.registries.biome)
     }
 
     @Deprecated("TODO: Game events")

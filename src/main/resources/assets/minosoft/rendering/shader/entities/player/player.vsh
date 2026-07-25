@@ -23,6 +23,9 @@ out vec3 finFragmentPosition;
 uniform uint uIndexLayer;
 uniform vec4 uTintColor;
 uniform uint uSkinParts;
+uniform float uInflate;
+uniform bool uHideBase;
+uniform uint uFeaturePart;
 
 flat out uint finAllowTransparency;
 
@@ -36,13 +39,17 @@ flat out uint finAllowTransparency;
 void main() {
     uint partTransformNormal = floatBitsToUint(vinPartTransformNormal);
     uint skinPart = (partTransformNormal >> 19u & 0xFFu);
-    if (skinPart > 0u && ((1u << (skinPart - 1u)) & uSkinParts) == 0u) {
+    bool hiddenFeature = skinPart >= 0xF0u && skinPart != uFeaturePart;
+    bool hiddenBase = skinPart == 0u && uHideBase;
+    bool hiddenSkinPart = skinPart > 0u && skinPart < 0xF0u && ((1u << (skinPart - 1u)) & uSkinParts) == 0u;
+    if (hiddenFeature || hiddenBase || hiddenSkinPart) {
         gl_Position = vec4(POSITIVE_INFINITY);
         finTintColor.a = 0.0f;
         return;
     }
     finAllowTransparency = skinPart;
-    run_skeletal(partTransformNormal, vinPosition);
+    vec3 inflatedPosition = vinPosition + decodeNormal(partTransformNormal & 0xFFFu) * uInflate;
+    run_skeletal(partTransformNormal, inflatedPosition);
     finTintColor *= uTintColor;
 
     setTexture(vinUV, uIndexLayer);

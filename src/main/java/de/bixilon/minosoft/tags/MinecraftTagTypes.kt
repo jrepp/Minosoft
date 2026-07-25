@@ -22,4 +22,5 @@ object MinecraftTagTypes {
     val FLUID = minecraft("fluid")
     val ENTITY_TYPE = minecraft("entity_type")
     val GAME_EVENT = minecraft("game_event")
+    val BIOME = minecraft("worldgen/biome")
 }

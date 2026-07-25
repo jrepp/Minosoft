@@ -31,4 +31,12 @@ class TagList<T : RegistryItem>(
         val tag = this[name] ?: return false
         return value in tag
     }
+
+    fun matching(value: T?): Set<ResourceLocation> {
+        if (value == null) return emptySet()
+        return tags.asSequence()
+            .filter { value in it.value }
+            .map(Map.Entry<ResourceLocation, Tag<T>>::key)
+            .toCollection(linkedSetOf())
+    }
 }

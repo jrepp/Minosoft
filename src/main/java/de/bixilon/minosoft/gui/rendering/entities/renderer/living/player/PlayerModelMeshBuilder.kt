@@ -41,7 +41,7 @@ open class PlayerModelMeshBuilder(context: RenderContext) : AbstractSkeletalMesh
     )
 
     override fun addQuad(positions: FaceVertexData, uv: UnpackedUVArray, transform: Int, normal: Vec3f, texture: ShaderTexture, path: String) {
-        val part = path.getSkinPart()?.ordinal?.inc() ?: 0x00
+        val part = encodedPart(path)
         val partTransformNormal = ((part shl 19) or (transform shl 12) or SkeletalMeshUtil.encodeNormal(normal)).buffer()
 
         // TODO: verify render order
@@ -49,22 +49,28 @@ open class PlayerModelMeshBuilder(context: RenderContext) : AbstractSkeletalMesh
         addIndexQuad()
     }
 
-    private fun String.getSkinPart(): SkinParts? = when (this) {
-        "head.hat" -> SkinParts.HAT
-        "body.jacket" -> SkinParts.JACKET
-        "left_leg.pants" -> SkinParts.LEFT_PANTS
-        "right_leg.pants" -> SkinParts.RIGHT_PANTS
-        "left_arm.sleeve" -> SkinParts.LEFT_SLEEVE
-        "right_arm.sleeve" -> SkinParts.RIGHT_SLEEVE
-        else -> null
-    }
-
-
     data class PlayerMeshStruct(
         val position: Vec3f,
         val uv: Vec2f,
         val partTransformNormal: Int,
     ) {
         companion object : MeshStruct(PlayerMeshStruct::class)
+    }
+
+    companion object {
+        const val ETF_TEXTURED_NOSE_PART = 0xFD
+        const val ETF_VILLAGER_NOSE_PART = 0xFE
+
+        internal fun encodedPart(path: String): Int = when (path) {
+            "head.etf_textured_nose" -> ETF_TEXTURED_NOSE_PART
+            "head.etf_villager_nose" -> ETF_VILLAGER_NOSE_PART
+            "head.hat" -> SkinParts.HAT.ordinal + 1
+            "body.jacket" -> SkinParts.JACKET.ordinal + 1
+            "left_leg.pants" -> SkinParts.LEFT_PANTS.ordinal + 1
+            "right_leg.pants" -> SkinParts.RIGHT_PANTS.ordinal + 1
+            "left_arm.sleeve" -> SkinParts.LEFT_SLEEVE.ordinal + 1
+            "right_arm.sleeve" -> SkinParts.RIGHT_SLEEVE.ordinal + 1
+            else -> 0x00
+        }
     }
 }

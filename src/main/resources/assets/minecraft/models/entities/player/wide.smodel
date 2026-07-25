@@ -32,6 +32,19 @@
           "inflate": 0.5,
           "uv": [32, 0],
           "faces": "all"
+        },
+        "etf_villager_nose": {
+          "from": [-1, -1, -6],
+          "to": [1, 3, -4],
+          "uv": [24, 0],
+          "faces": "all"
+        },
+        "etf_textured_nose": {
+          "from": [0, 0, -8],
+          "to": [0, 8, -4],
+          "texture": "minecraft:etf_nose",
+          "uv": [0, 0],
+          "faces": "all"
         }
       }
     },
@@ -124,6 +137,9 @@
   "textures": {
     "minecraft:skin": {
       "resolution": [64, 64]
+    },
+    "minecraft:etf_nose": {
+      "resolution": [8, 8]
     }
   }
 }
