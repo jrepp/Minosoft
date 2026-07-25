@@ -61,6 +61,14 @@ instructions that differ from the root contract.
   the separate mod and host compilation lanes.
 - [Sodium activation evidence](evidence/2026-07-21-sodium-activation.md) proves
   adapted pack activation and graphics-hook execution.
+- [Render-substrate target architecture](backlog/render-substrate.md) defines
+  the single replacement pipeline, built-in/Sodium/Iris ownership contracts,
+  objective completion function, delivery rungs, and small-model support queue.
+  It is target guidance, not accepted runtime evidence.
+- [Render-substrate R0–R7 implementation checkpoint](evidence/2026-07-24-render-substrate-r0-r7.md)
+  records the canonical graph/provider cutover, headless and broad checks,
+  real-OpenGL matrix/reload/performance evidence, legacy removal, and the exact
+  predicates that remain unaccepted.
 - [Fabric stack evidence](evidence/2026-07-21-fabric-stack.md) records the
   historical three-artifact baseline, independent host-hook invocation, owned
   cleanup, and supervised reactivation.

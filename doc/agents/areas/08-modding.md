@@ -193,6 +193,34 @@ Initially unsupported/restart-required:
   local connection is not a Fabric dedicated server.
 - Native libraries, unmanaged threads, and unscoped global mutation.
 
+## Trajectory
+
+Rendering compatibility follows the
+[render-substrate target architecture](../backlog/render-substrate.md).
+`ADAPTED` continues to mean that an exact artifact reached an owned native
+boundary; it does not mean the mod owns the behavior expected by its render
+contract.
+
+Advance the render-mod ladder in this order:
+
+1. Keep the completed canonical graph, typed program/target generations, and
+   built-in providers green across base, headless, and multi-version profiles.
+2. Treat SM0–SM6 as reported support work absorbed into the production substrate
+   and dated checkpoint. Do not retain synthetic duplicate graph or matrix APIs.
+3. Move the exact pinned Sodium algorithms behind the exclusive terrain backend:
+   scheduling, meshing, upload, visibility/batching, and graph-view submission.
+4. Expand the Iris shader-pipeline provider against an independent pinned pack:
+   program selection, views, typed targets, uniforms/samplers, and composites.
+5. Complete texture/layout transactions and driver-side resource accounting,
+   then prove the producer-rich visual matrix, combined ownership, repeated
+   reload/unload, and percentile performance gates.
+
+Keep Mojang/Fabric type translation at exact compatibility modules. Do not grow
+a general Mojang renderer facade in the substrate, run the built-in and Sodium
+terrain paths concurrently, or generalize shader-pack support from the bounded
+project reference pack. The completion function in the target architecture is
+the gate for closing this trajectory.
+
 ## Compatibility ladder workspace
 
 `modpacks/<pack>/` is the tracked testing space. It contains Packwiz manifests,
@@ -217,10 +245,10 @@ managed asset priority; existing manual profile packs remain higher still.
 Use the ladder as evidence, not a wish list: advance a rung only when its stated
 acceptance evidence exists. The pinned Sodium version now activates in
 `ADAPTED` mode: its Mojang-targeted bytecode is deliberately not linked.
-`SodiumCompatibilityAdapter` validates the known metadata surface and installs a
-Minosoft-native chunk-scheduling renderer hook through an owned registration
-scope. This is source-API adaptation, not a claim of Fabric/Minecraft binary or
-full Sodium behavioral compatibility.
+`SodiumCompatibilityAdapter` validates the known metadata surface and installs
+an owned, graph-exclusive terrain provider. Its current implementation delegates
+the Minosoft terrain core, so this is source-API adaptation, not a claim of
+Fabric/Minecraft binary or full Sodium behavioral compatibility.
 
 The separate `fabric-stack` pack keeps that one-mod baseline intact and adds
 Fabric API plus seven different compatibility surfaces. Entity Culling maps to

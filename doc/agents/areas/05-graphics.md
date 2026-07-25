@@ -17,10 +17,11 @@ in-game GUI/HUD, and audio presentation.
 | Observed | Renderer and GPU resources expose explicit unload lifecycles. | Renderer, mesh, buffer, framebuffer, texture, light, and sound implementations. |
 | Observed | Shader objects already expose a reload operation. | `gui/rendering/shader/Shader.kt` and `system/opengl/shader/OpenGlNativeShader.kt`. |
 | Verified | Non-GPU logic can use dummy rendering-system implementations. | `src/integration-test/kotlin/de/bixilon/minosoft/gui/rendering/system/dummy/`. |
+| Verified | One production `RenderGraphGeneration` now orders sky, terrain material classes, entities, block entities, particles, overlays, HUD, and composite passes with stable IDs and explicit semantics. Base, Sodium, Iris-reference, and combined profiles change provider ownership without changing the frame architecture. | `RendererPipeline`, `RenderGraph`, `PipelineElement`, focused pipeline/graph tests, `render.substrate`, and [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
 | Observed | Model code still holds some renderer state. | `data/entities/entities/Entity.kt` and related entity/render coupling. |
-| Verified | The pinned Sodium compatibility adapter registers a Minosoft-native renderer hook, binds it to chunk scheduling, executes it in the frame preparation path, and unloads it with the renderer. | `SodiumRendererHook`, `RenderLoader.registerRenderer`, and [Sodium activation evidence](../evidence/2026-07-21-sodium-activation.md). |
+| Verified | The pinned Sodium compatibility adapter selects one exclusive terrain-provider generation, pins that generation through the complete frame, rejects duplicate view/material submissions, exposes bounded timing/resource telemetry, and restores the built-in provider on toggle/unload. The selected backend still delegates Minosoft's chunk core, so full Sodium behavioral ownership is not accepted. | `SodiumTerrainController`, `SodiumTerrainBackend`, `TerrainBackendRegistry`, focused tests, and [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
 | Verified | Fabric compatibility adapters can independently intercept the native entity-visibility decision and frame queue-flush boundary through owner-keyed hooks; registrations disappear when the pack scope closes. | `FabricEntityVisibilityHooks`, `FabricFrameHooks`, `EntitiesRenderer`, `RenderLoop`, focused tests, and [Fabric stack evidence](../evidence/2026-07-21-fabric-stack.md). |
-| Verified | The exact Iris adapter installs a visible owner-scoped shader at the world framebuffer presentation boundary. Live control disabled/restored the concrete program, host shader reload preserved it, and generation cleanup removes its selection without disturbing another owner. Shader-pack compilation, shadow passes, and upstream binary renderer integration remain explicitly unmapped. | `IrisCompatibilityAdapter`, `WorldFramebuffer.postProcessors`, `WorldPostProcessorsTest`, and [Iris/JEI behavioral acceptance](../evidence/2026-07-23-iris-jei-acceptance.md). |
+| Verified | The exact Iris adapter selects a transactional shader-pipeline generation. A bounded project reference pack plans and executes terrain, shadow-view/target, and final-composite programs; invalid reload preserves the active generation and live toggles restore the built-in provider. This is not yet acceptance of an independent pinned real-world shader pack or its full program/uniform/sampler contract. | `IrisCompatibilityAdapter`, `IrisShaderPackPlanner`, `IrisWorldShaderPipeline`, focused tests, and [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
 | Verified | GUI mesh indices are counted per complete four-vertex quad. A paged JEI recipe screen exposed and now guards the former vertex-count/index-count mismatch; 256 vertices produce 64 quads, and incomplete quads are rejected. | `GuiMeshBuilder.quadCount`, `GuiMeshBuilderTest`, and [Iris/JEI activation evidence](../evidence/2026-07-23-iris-jei-activation.md). |
 | Verified | Adapted mod JAR assets can be mounted into the normal per-session priority asset stack, and property-bearing Tech Reborn blockstates reach model loading. | `ExternalAssetProviders`, `AssetsLoader`, `FabricSessionContentBridge`, and [Tech Reborn world-generation evidence](../evidence/2026-07-21-tech-reborn-worldgen.md). |
 | Verified | Verified external resource-pack ZIPs participate in the same session priority stack; a live debug capture showed Faithful 64x replacements after a supervised client reload. | `resourcepacks/*.pw.toml`, `AssetsLoader`, and [resource-pack evidence](../evidence/2026-07-22-resource-pack-stack.md). |
@@ -29,7 +30,7 @@ in-game GUI/HUD, and audio presentation.
 | Verified | A presentation-only player light prevents fully black nearby surfaces without mutating world light: it peaks at a configurable 15% by default, falls quadratically to zero over six blocks, and is evaluated per fragment for terrain, breaking overlays, and lightmapped entities. The Lighting menu slider adjusts it from Off through 30% in five-percent steps. | `PlayerLightShader`, `PlayerLightFalloff`, `player_light.glsl`, focused tests, [player-light evidence](../evidence/2026-07-23-player-light.md), and [stepped-slider evidence](../evidence/2026-07-23-stepped-slider.md). |
 | Verified | Pause → Audio exposes the existing OpenAL engine through profile-backed live enable/volume controls, actual initialization status, normal-path test output, sound-family policies, stop-all, and a restart-qualified startup policy. Master volume uses the shared discrete slider and reaches listener `AL_GAIN`; layered sound indices preserve vanilla events while honoring pack append/replace semantics. Both final pages fit the live 1800×1000 viewport. | `AudioMenu`, `AudioAdvancedMenu`, `AudioControls`, `SoundIndexMerger`, focused tests, [audio-menu evidence](../evidence/2026-07-22-audio-menu.md), and [stepped-slider evidence](../evidence/2026-07-23-stepped-slider.md). |
 | Verified | Pause → Mod settings exposes the active pack's shared compatibility catalog and runtime diagnostics, including global FPS context and attributed invocation timing at owned graphics hooks. | `FabricModSettingsMenu`, `FabricModDiagnosticsMenu`, `FabricModDiagnostics`, and [2026-07-22 catalog/diagnostics evidence](../evidence/2026-07-22-fabric-catalog-diagnostics.md). |
-| Verified | Manual shader and texture reloads execute on the render queue and publish owned Fabric prepare/apply/complete/failed lifecycle events. This is an observable lifecycle boundary, not yet an atomic GPU-resource swap. | `ReloadCommand`, `FabricResourceReloadEvents`, focused transaction tests, and [resource-reload evidence](../evidence/2026-07-22-fabric-resource-reload-events.md). |
+| Verified | Manual shader and texture reloads execute on the render queue and publish owned Fabric prepare/apply/complete/failed lifecycle events. OpenGL shader reload now prepares and links before swapping; invalid Iris reference-pack reloads preserve the active program/target generation through twenty failure/recovery cycles. Texture-array replacement is still a separate generation/accounting gate. | `ReloadCommand`, `FabricResourceReloadEvents`, `OpenGlNativeShader`, `ShaderPipelineRegistry`, and [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
 | Verified | Entity-feature mesh disposal is state-aware and idempotent: immediate shutdown does not enqueue a duplicate GPU unload, and queued replacement cleanup rechecks mesh state on the render thread. | `MeshedFeature`, focused entity-rendering tests, live post-reload log sampling, and [entity mesh unload evidence](../evidence/2026-07-22-entity-mesh-unload.md). |
 | Verified | OpenGL texture shaders initialize every active sampler-array slot to a valid 2D-array unit; dynamic arrays grow for high-resolution pack skins, and font arrays allocate independent width/height maxima. Faithful 64x no longer produces Apple's unloadable-array warning or `GL_INVALID_VALUE`. | `OpenGlTextureManager`, `OpenGlDynamicTextureArray`, `OpenGlFontTextureArray`, `OpenGlTextureSizing`, focused tests, and [resource-pack OpenGL evidence](../evidence/2026-07-22-resource-pack-opengl-audio.md). |
 | Verified | Positional audio refreshes the listener from the current camera before attenuation and reports requested, resolved, rejected, buffer-ready, and source-start stages. A harvested stone started at its block-center world coordinate. | `AudioPlayer`, client debug state, and [positional-audio evidence](../evidence/2026-07-22-resource-pack-opengl-audio.md). |
@@ -74,36 +75,61 @@ in-game GUI/HUD, and audio presentation.
 
 ## Trajectory
 
-**Target:** complete assets and shaders as the first safe live-reload vertical
-slice. The lifecycle and render-thread apply boundary now exist. Next, watch
-changed resources, validate/compile a replacement off the active path, then
-swap/unload on the render thread. A failure must keep the last-known-good
-resource active and report the source path and compiler log. The current
-`OpenGlNativeShader.reload()` unloads before loading, so it does not yet satisfy
-that failure-preservation contract.
+**Target:** follow the
+[render-substrate target architecture](../backlog/render-substrate.md). The flat
+world pipeline and presentation-only Iris substitute have been removed. One
+immutable graph/resource substrate now serves unmodded, Sodium, Iris-reference,
+and combined profiles. Built-in providers keep unmodded Minosoft functional;
+selected mod providers replace ownership on the same graph.
+
+Program, shader-pipeline, render-target, and graph generations now use
+last-known-good publication and frame leases. Texture arrays and the complete
+physical-layout generation still need the same transaction boundary. The exact
+Sodium adapter is graph-exclusive but continues to call Minosoft's scheduling,
+meshing, upload, visibility, and batching core. The Iris adapter executes a
+bounded project reference pack, not an independent real-world pack. Those are
+the next architectural gates, followed by visual, percentile-performance, and
+driver-side object-accounting acceptance.
 
 Graphics extensions from mods must register through an owned scope so a mod
-generation can enqueue render-thread cleanup before its classloader is released.
-A hook's execution thread is the host call site's thread: the frame boundary is
-the render thread, while entity visibility may execute in asynchronous renderer
-preparation. Adapters must not assume those are the same thread.
+generation can build a candidate graph and enqueue render-thread cleanup before
+its classloader is released. A hook's execution thread is the host call site's
+thread: the frame boundary is the render thread, while entity visibility may
+execute in asynchronous renderer preparation. Adapters must not assume those
+are the same thread.
 A whole-client generation reload must either dispose and recreate the graphics
 context or keep a kernel-owned window/context shell behind a narrow stable API;
 choose only after measuring context recreation cost and native ownership.
 
+## Render-substrate checkpoint
+
+| Status | Claim | Evidence |
+| --- | --- | --- |
+| Reported | SM0–SM6 are reported complete. Their useful outputs have been absorbed into the canonical implementation and dated checkpoint; synthetic duplicate graph/harness class names are not repository APIs. | [Render-substrate target](../backlog/render-substrate.md) and [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
+| Verified | The production graph has stable IDs, explicit semantics/dependencies, deterministic validation, typed resource plans, transactional publication, and a CPU-testable execution surface. | `gui/rendering/graph/`, `RendererPipeline`, and focused graph/pipeline tests. |
+| Verified | Base, Sodium, Iris-reference, and combined live profiles use the same graph; twenty invalid/valid Iris reload cycles preserve the selected generation and return lease counts to zero. | `render.substrate`, framebuffer captures, and [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
+| Open | The adapter has not demonstrated upstream Sodium algorithm ownership, an independent pinned shader pack, a complete producer-rich canary scene, driver-side object baselines, or the required p95 performance improvement. | Predicate table in [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
+
 ## Next evidence
 
-1. Map rendering construction, context thread, render queue, and shutdown order.
-2. Map shader source resolution/includes and existing `reload()` call sites.
-3. Trace world light mutation to mesh/lightmap invalidation and GPU upload.
-4. Catalogue mod-safe renderer/HUD registration seams and cleanup requirements.
-5. Spike full context recreation versus a stable native shell; record which
-   OpenGL/GLFW objects may cross neither option's generation boundary.
-6. Classify Fabric custom/builtin model loaders and add an ore-only visual gate
-   before claiming the complete machine/cable render surface.
-7. Implement the `content-fidelity` ladder from format parser to neutral
-   skeletal model, renderer binding, material passes, and transactional reload;
-   do not skip directly from staged JARs to an adapted claim.
+1. Integrate or adapt the exact pinned Sodium algorithms behind
+   `TerrainBackend` so the selected provider owns scheduling, meshing, upload,
+   visibility/batching, and submission rather than delegating Minosoft's core.
+2. Pin an independent shader pack and map its actual program families, uniforms,
+   samplers, views, targets, and composite chain; reject unsupported semantics
+   before allocating a candidate generation.
+3. Expand the deterministic scene to visibly exercise every graph producer:
+   terrain material classes, entities, block entities, particles, weather,
+   overlays, hand, HUD, shadow view, and composite.
+4. Add driver-side program/texture/buffer/framebuffer accounting and make
+   texture arrays plus physical vertex layouts transactional.
+5. Recreate the R0 base percentile baseline and meet the target p95 frame,
+   preparation, and submission thresholds for Sodium and combined profiles.
+6. Rerun the four-profile visual matrix, invalid/valid reload loop, unload, and
+   multi-version/headless gates. Accept R0–R7 only when every completion
+   predicate is true.
+7. Continue content-fidelity material and renderer work through the canonical
+   graph rather than adding new direct shader/pass ownership seams.
 
 ## Validation
 

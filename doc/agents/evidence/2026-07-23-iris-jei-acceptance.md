@@ -2,6 +2,11 @@
 
 # Iris and JEI behavioral acceptance — 2026-07-23 HST
 
+> Historical checkpoint: the presentation-only Iris path described here has
+> since been removed. Current render-substrate status and remaining shader-pack
+> gates are recorded in the
+> [2026-07-24 R0–R7 checkpoint](2026-07-24-render-substrate-r0-r7.md).
+
 ## Scope
 
 This run extends exact adapted activation into repeatable behavioral evidence.

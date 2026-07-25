@@ -27,7 +27,7 @@ stages. The CLI now composes one-shot operations into checked scenario files.
 | Verified | The compiled Java play utility is the only CLI protocol consumer; `play.sh` is a thin Java 17 shim. | `util/play/Play.java`, `play.sh`, and `PlayUtilityTest`. |
 | Verified | The client publishes an opt-in endpoint and queues visual/input work onto the render path while state/block reads use explicit session/world seams. | `ClientDebugChannel`, live visual/input/AOI acceptance, and the dated evidence below. |
 | Verified | The pinned Fabric 1.20.4 server runs an owned bridge using the same library and exposes tick-thread state, blocks/AOI, and Fabric loader diagnostics. | `debug-server-fabric/`, `Play.prepareFabricServer`, and live server acceptance. |
-| Verified | Adapted Fabric mods add namespaced provider operations owned by the active pack generation. The Iris provider additionally exposes a bounded render-queue shader reload used to prove its completed-reload callback. | `FabricDiagnosticDebugProvider`, `IrisDebugProvider`, `FabricRegistrationScope`, generation 1→4 live capability checks, and [Iris/JEI behavioral acceptance](../evidence/2026-07-23-iris-jei-acceptance.md). |
+| Verified | Adapted Fabric mods add namespaced provider operations owned by the active pack generation. Iris exposes a bounded render-queue shader-pipeline reload, while the client exposes one bounded `render.substrate` snapshot for graph/provider/resource/timing acceptance. | `FabricDiagnosticDebugProvider`, `IrisDebugProvider`, `ClientDebugChannel`, `FabricRegistrationScope`, and [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
 | Verified | A bounded client/server block sample normalizes property ordering/case and compares through the CLI without loading chunks. | `Play.debugCompare`, both samplers, and live 125-cell equality. |
 | Verified | The immutable client player sample includes model-owned sprint state, allowing normal-path input acceptance to distinguish sprint activation from ordinary displacement. | `ClientDebugChannel`, `input.inject`, and [double-tap sprint evidence](../evidence/2026-07-23-double-tap-sprint.md). |
 | Verified | Both roles expose `metrics.snapshot` from shared core instrumentation: at most 256 named operation series, fixed latency buckets, outcome counters, total/max latency, and role-owned runtime gauges. | `DebugMetrics`, both status/metrics suppliers, core tests, live capabilities, and [automation evidence](../evidence/2026-07-23-automation-observability.md). |
@@ -131,6 +131,7 @@ Windows named pipes.
 | `state.sample` | both | client session or server tick snapshot | named client/server view |
 | `visual.capture` | client | render queue | final framebuffer PNG plus dimensions/frame/time |
 | `visual.sample` | client | render queue | ≤4096 points and ≤65536-pixel region hash/luminance |
+| `render.substrate` | client | render queue | selected graph, terrain/shader owners, bounded frame/terrain timings, generation/lease/resource counts |
 | `input.inject` | client | render/input path | ≤256 key, text, mouse-move, or scroll events |
 | `world.blocks.sample` | both | loaded world state | inclusive box, ≤32768 cells, palette/RLE |
 | `world.aoi` | both | loaded world state | version-one alias for bounded box sampling |
@@ -183,12 +184,15 @@ generation exits.
 
 The current provider surface is operation-only. First-party adapted Fabric mods
 register `summary`; Iris also registers `reload-shaders`, which selects exactly
-one active render session and executes the same
-`FabricResourceReloadEvents`/native shader reload transaction as the CLI command.
-`mods.debug` supplies baseline lifecycle and attributed hook counters/timing
-even if a mod has no provider. Core operation metrics now use fixed bounded
-series/buckets. Future mod-owned metrics and AOI layers should build on the same
-cleanup discipline rather than introducing a second registry.
+one active render session and transactionally replaces the planned
+shader-program/target generation through the same resource-reload lifecycle as
+the CLI command. Sodium's summary identifies its selected terrain adapter; the
+core `render.substrate` snapshot reports the graph and both selected providers
+without granting either mod an unowned diagnostic endpoint. `mods.debug`
+supplies baseline lifecycle and attributed hook counters/timing even if a mod
+has no provider. Core operation metrics use fixed bounded series/buckets. Future
+mod-owned metrics and AOI layers should build on the same cleanup discipline
+rather than introducing a second registry.
 
 ## Implemented CLI
 
@@ -209,6 +213,7 @@ Commands:
 ./play.sh debug capabilities --role server --trajectory NAME --json
 ./play.sh debug state client.player --role client --json
 ./play.sh debug mods --role client --json
+./play.sh debug request render.substrate '{}' --role client --json
 ./play.sh debug request mods.sodium.summary '{}' --role client --json
 ./play.sh debug request mods.iris.reload-shaders '{}' --role client --json
 
@@ -273,9 +278,10 @@ weaken loader/API ownership and compatibility evidence.
 | Fabric server headless endpoint startup and clean shutdown discovery removal | Verified live |
 | Loaded-only client/server bounded block equality | Verified live after canonicalization fix |
 | Generation-owned Sodium/stack provider replacement | Verified across generations 1→3 |
+| Canonical graph/provider/resource/timing snapshot | Verified live for base, Sodium, Iris-reference, and combined profiles |
 | Base and shared-debug source hot reload with stable parent/server | Verified live |
 | Scenario lifecycle/metrics JSON+JUnit, matrix, screenshot failure, and JFR disposition | Verified live |
-| Full repository unit and integration suites | Verified on Java 17: 1,497 unit tests and 2,031 integration tests, zero failures/errors |
+| Full repository unit and integration suites | Verified on Java 17: 1,787 main unit tests, 2,077 integration tests, and 9 `debug-core` tests, zero failures/errors |
 | Linux and Windows runtime transport/ACL behavior | Not run in this macOS pass; Windows compiles |
 | Streaming/backpressure and advanced AOI/provider layers | Deferred; not advertised in version one |
 
@@ -287,8 +293,9 @@ weaken loader/API ownership and compatibility evidence.
    Semantic sequence files and lifecycle/frame wait predicates now exist at the
    CLI scenario layer; continue with GUI-element predicates where state/frame
    evidence cannot express the target.
-3. Version state DTO schemas and add render identity plus richer tick/render
-   histograms beyond the current averages and operation histograms.
+3. Version state DTO schemas. Frame and terrain preparation/submission now expose
+   bounded median/p95 windows; add tick histograms and driver-side GPU object
+   counts without making the snapshot unbounded.
 4. Add partitioned AOI layers and content hashes, then subscriptions with bounded
    queue depth and explicit `resync_required` behavior.
 5. Extend `ModDebugRegistrar` with owned metrics and AOI-layer registrations and
