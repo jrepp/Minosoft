@@ -40,20 +40,37 @@ extension boundary.
 | `level` | Light-item `BlockStateTag.level`, with vanilla's missing-value fallback | Headless |
 | `lefthanded` | Live player main arm | First-person and GUI resolution |
 | `cooldown` | Local player's live cooldown interval | First-person and GUI resolution |
-| `pull`, `pulling` | Active stack identity and local use ticks; crossbow quick-charge enchantment and charged state | First-person local player; active state only for remote living entities |
-| `brushing` | Active stack and local use ticks | First-person local player |
+| `pull`, `pulling` | Active stack identity and elapsed use ticks; crossbow quick-charge enchantment and charged state | Local and remote living entities |
+| `brushing` | Active stack and elapsed use ticks | Local and remote living entities |
 | `cast` | Session fishing-bobber ownership | First-person and GUI resolution |
 | `blocking`, `throwing`, `tooting` | Active stack identity | First-person living-entity resolution |
+| `filled` | Bundle `Items`, registry-backed maximum stack sizes, nested-bundle cost, and occupied beehive/bee-nest saturation | Headless registry integration |
+| `time` | Natural-dimension sky angle or deterministic scatter with vanilla wrapped interpolation and damping | Headless world integration and live entity mesh replacement |
+| `angle` | Spawn, lodestone, or last-death target; dimension/distance checks, item seed scatter, and local-player wrapped interpolation | Headless world/entity integration |
+| `trim_type` | Trimmable armor gate and the fixed 1.20.4 quartz-through-amethyst material indices | Headless registry/tag integration |
 
 `ItemPredicateContext.values` can supply an exact namespaced value from a
 headless fixture, future world/registry implementation, or source-native
 compatibility adapter. Values must be finite.
 
-The unsupported 1.20.4 built-ins are `filled` (bundle occupancy), `time`
-(clock), `angle` (compass and recovery compass), and `trim_type` (dynamic trim
-registry material index). Remote living entities expose the active hand but
-Minosoft does not yet retain their item-use elapsed ticks, so remote
-`pull`/`brushing` animation progress is not claimed.
+`ItemPredicateRuntime` is owned by `RenderContext`, matching the retained
+provider state in the audited client instead of attaching smoothing state to an
+item stack or content generation. Initialize and respawn packets retain the
+local player's last-death position for recovery-compass resolution.
+First-person and GUI items resolve the current override on draw. `ItemFeature`
+does so on each update; when a live threshold crossing selects a different
+model, the normal entity render lifecycle retires the stale mesh and rebuilds
+from the new model.
+
+Every provider registered by the audited 1.20.4 catalog now has an
+implementation. `ItemPredicateCatalog` is selected from the entity's session:
+1.19.4 excludes the `brushing` and `trim_type` providers introduced in 1.20,
+while 1.20.4 admits the full audited set. Older releases use a deliberately
+named compatibility catalog until their provider boundaries are audited; this
+is not a universal-version claim. `LivingEntity` retains
+elapsed use ticks from synchronized hand flags and equipped-stack identity,
+resetting on stop, hand change, or replacement. The remote `pull` and
+`brushing` paths are covered for 1.19.4 and 1.20.4 respectively.
 
 ## Automated evidence
 
@@ -65,19 +82,42 @@ Java 17 focused unit coverage verifies:
 - crossbow charged/firework and charged-pulling behavior;
 - light level and elytra broken state;
 - active bow pull thresholds; and
-- composed blocking/left-handed predicates.
+- composed blocking/left-handed predicates;
+- bundle occupancy using a non-64 registry stack size;
+- fixed trim-material lookup;
+- deterministic clock and compass/recovery-compass inputs;
+- wrapped clock interpolation retained across ticks;
+- remote active-hand elapsed timing and reset behavior in 1.19.4 and 1.20.4;
+  and
+- remote bow threshold and brush-frame selection; and
+- session-selected 1.19.4/1.20.4 provider admission, including fail-closed
+  rejection of later providers.
 
 ```sh
 ./gradlew :test \
   --tests de.bixilon.minosoft.gui.rendering.models.item.ItemPredicateTest \
+  --tests de.bixilon.minosoft.gui.rendering.models.item.ItemPredicateRuntimeTest \
+  -x :debug-core:test
+
+./gradlew integrationTest \
+  --tests de.bixilon.minosoft.gui.rendering.models.item.ItemPredicateIntegrationTest \
+  --tests de.bixilon.minosoft.gui.rendering.entities.feature.item.ItemFeaturePredicateTest \
   -x :debug-core:test
 ```
 
-The unmodified Blockbench export gate also remains green:
+The renderer integration keeps one clock stack installed while world time
+crosses an override threshold. It proves the selected model identity changes,
+the stale model is not rebuilt, and the new model produces the replacement
+mesh. It uses the dummy render system, so it is CPU/GPU-lifecycle logic
+evidence, not a pixel reference.
+
+The unmodified Blockbench export and display regression gates also remain
+green:
 
 ```sh
 ./gradlew integrationTest \
   --tests de.bixilon.minosoft.local.datapack.AnimatedJavaExportFixtureTest \
+  --tests de.bixilon.minosoft.local.datapack.LocalDisplayEntityFactoryTest \
   -x :debug-core:test
 ```
 
@@ -88,11 +128,9 @@ claim.
 
 ## Continuation
 
-1. Add version-keyed predicate catalogs instead of treating the 1.20.4 catalog
-   as universal.
-2. Implement bundle occupancy and trim-material registry lookup.
-3. Add deterministic world/entity inputs for clock and compass properties.
-4. Retain remote item-use elapsed time and rebuild held-item meshes when a
-   threshold crossing changes the selected override.
-5. Carry the exact exported models through the real-OpenGL reference and
+1. Audit and split the pre-1.19.4 compatibility catalog at each provider
+   introduction boundary.
+2. Add modern component-based item-model dispatch with version-specific
+   fixtures.
+3. Carry the exact exported models through the real-OpenGL reference and
    repeated resource-accounting protocol in the Blockbench export evidence.

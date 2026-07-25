@@ -179,16 +179,28 @@ crossbow `charged`/`firework`, elytra `broken`, and light-block `level`.
 An explicit render context supplies `lefthanded`, `cooldown`, bow/crossbow
 `pull`/`pulling`, `brushing`, fishing-rod `cast`, shield `blocking`, trident
 `throwing`, and goat-horn `tooting`. First-person and GUI selection build this
-context from live player/session state; remote use progress remains incomplete.
+context from live player/session state. Living entities retain elapsed use
+ticks from the tracked active-hand flag and equipment identity, resetting on
+hand/stack replacement or stop; this also drives remote bow/crossbow/brush
+progress.
+Bundle `filled` uses registry-backed stack capacities and the vanilla nested
+bundle/beehive rules. Clock `time` and compass/recovery-compass `angle` consume
+live world, dimension, position, spawn/lodestone/death-target state through a
+render-context-owned smoothing runtime. `trim_type` uses the fixed 1.20.4 trim
+material indices. Initialize and respawn packets retain the local player's last
+death position for the recovery compass.
 Unknown or wrong-item predicates contribute negative infinity, matching
 vanilla rather than accidentally matching zero or negative thresholds.
-Selected element-backed models retain their cuboid geometry.
+Selected element-backed models retain their cuboid geometry. World and display
+item features reselect live providers each update and retire/rebuild their mesh
+when an override threshold changes; held and GUI items resolve on each draw.
 
-The remaining audited 1.20.4 providers are bundle `filled`, clock `time`,
-compass/recovery-compass `angle`, and registry-backed `trim_type`.
-Version-keyed catalogs, those four providers, remote item-use timing, and
-modern component-based item-model dispatch still need explicit compatibility
-fixtures. See the
+Every provider registered by the audited 1.20.4 catalog now has a native
+implementation. Session contexts select separate 1.19.4 and 1.20.4 catalogs,
+so 1.20's `brushing` and `trim_type` providers fail closed in 1.19.4. Earlier
+releases retain a named compatibility catalog pending per-release audits.
+Modern component-based item-model dispatch and rendered reference fixtures
+remain explicit compatibility gates. See the
 [item-model predicate evidence](agents/evidence/2026-07-24-item-model-predicates.md).
 
 ## Textures

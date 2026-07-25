@@ -280,14 +280,21 @@ unmapped.
   keys append without allocating new sampler units. Missing assets reject the
   candidate before publication; the previous generation and its active
   instances remain usable.
-- Item model overrides implement last-match selection for the audited 1.20.4
-  stack and render-context predicate subset. Unknown and wrong-item providers
-  fail as negative infinity; first-person and GUI paths supply live local
-  active-use, handedness, cooldown, and fishing state. Bundle occupancy,
-  clock/compass, trim-registry lookup, remote use progress, and later
-  component-based dispatch remain explicit gaps. Element-backed override models
-  retain and bake their cuboid geometry instead of falling back to a flat
-  sprite. Display entities
+- Item model overrides implement last-match selection for every provider in the
+  audited 1.20.4 catalog. Unknown and wrong-item providers fail as negative
+  infinity; first-person and GUI paths supply live local active-use,
+  handedness, cooldown, fishing, world, target, and recovery state. Bundle
+  occupancy uses registry stack capacities and nested-container rules;
+  `trim_type` uses the fixed 1.20.4 material indices; clock and compass
+  providers retain context-owned wrapped interpolation. World/display item
+  features reselect every update and retire/rebuild their mesh after a threshold
+  change. Living model state retains active-hand use time and resets it on
+  stop/hand/stack transitions, supplying remote progress in 1.19.4 and 1.20.4
+  fixtures. Session-selected 1.19.4/1.20.4 catalogs prevent brush/trim provider
+  leakage into the earlier release. Older catalog audits, later
+  component-based dispatch, and rendered references remain explicit gaps.
+  Element-backed override models retain and bake their cuboid geometry instead
+  of falling back to a flat sprite. Display entities
   retain protocol transformations and item/block/text metadata; native
   renderers cover transform interpolation, fixed/entity billboards, packed
   light overrides, wrapped/aligned text, opacity, background, shadow, and
@@ -431,7 +438,8 @@ Java 17 focused runs passed for:
 - generic object manager typed data, trigger forwarding, first-tick/update
   state, compatible snapshots, registration quiescence, shared instanced
   ownership, bounded singleton LRU eviction, and deterministic closure;
-- item predicate selection plus shared display range/AABB visibility,
+- complete audited-1.20.4 item predicate selection, live world/display-item
+  re-selection and mesh replacement, plus shared display range/AABB visibility,
   transform/shadow/text-style interpolation, negative start deltas, and capped
   teleport pose smoothing;
 - arbitrary cuboid item-model retention and integration-test compilation;

@@ -45,9 +45,15 @@ future adapters:
    `SpriteAnimator` copies each frame from its computed two-dimensional origin.
 5. The audited Minecraft 1.20.4 legacy item-predicate path preserves
    last-match selection, treats unavailable providers as negative infinity,
-   evaluates the stack-backed subset, and carries live local player/session
-   inputs through first-person and GUI selection. Bundle, clock/compass, trim,
-   and remote-use progress remain explicit gaps in the
+   implements every registered 1.20.4 provider, and carries live local
+   player/session/world inputs through first-person, GUI, world-item, and
+   display-item selection. Context-owned clock/compass state follows the
+   audited wrapped smoothing rules, and world/display item meshes rebuild when
+   a live threshold changes. Living model state also supplies elapsed remote
+   active-hand use ticks across 1.19.4 and 1.20.4 fixtures. Session-selected
+   catalogs reject the 1.20-only brush/trim providers in 1.19.4. Older-release
+   catalog audits, modern component dispatch, and rendered references remain
+   explicit gaps in the
    [item-predicate evidence](2026-07-24-item-model-predicates.md).
 
 The cull direction is intentionally not reused as the lighting direction.
@@ -120,12 +126,13 @@ GPU reload requirements.
    render-layer paths against dependent mods. Add GUI item views and exact
    armor fitting while keeping GeckoLib/Mojang binary
    compatibility as a separate, explicit rung.
-4. Complete bundle, clock/compass, trim-registry, remote-use, and version-keyed
-   item-predicate inputs. Then add rendered-reference and real-OpenGL reload
-   accounting for the passing unmodified Animated Java 1.10.2 export and
-   validate the same packs through a remote server. Headless repeated
-   reload/rollback and CPU cleanup now pass. Add another upstream blueprint
-   only when it expands the command or asset surface.
+4. Audit and split the pre-1.19.4 compatibility predicate catalog and implement
+   later component-based item-model dispatch. Then add
+   rendered-reference and real-OpenGL reload accounting for the passing
+   unmodified Animated Java 1.10.2 export and validate the same packs through a
+   remote server. Headless repeated reload/rollback and CPU cleanup now pass.
+   Add another upstream blueprint only when it expands the command or asset
+   surface.
 5. Prove the stable-slot compactor and handle replacement under repeated
    real-OpenGL reload/unload before claiming runtime-complete support.
 6. Expand the multi-version fixture matrix and add rendered reference captures,

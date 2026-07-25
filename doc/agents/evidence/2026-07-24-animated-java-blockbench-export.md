@@ -121,8 +121,11 @@ resource accounting.
 
 The fixture's `custom_model_data` path now runs on the separately audited
 Minecraft 1.20.4 legacy item-predicate selector. That selector also has
-stack/live-context coverage beyond this fixture, but the exported armor stand
-does not prove bundle, clock/compass, trim, or remote item-use predicates. See
+stack/live-world coverage for every registered 1.20.4 provider beyond this
+fixture, including live world/display-item model replacement. The exported
+armor stand itself proves only its custom-model-data branch; it does not prove
+later component dispatch or rendered parity. Remote active-hand timing is
+covered separately by 1.19.4 and 1.20.4 entity fixtures. See
 the [item-model predicate evidence](2026-07-24-item-model-predicates.md).
 
 The display renderer boundary is also separately audited against mapped

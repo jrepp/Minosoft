@@ -146,9 +146,11 @@ instructions that differ from the root contract.
   transform/shadow/text/teleport interpolation, exact-export regression gate,
   and the remaining outline, real-render, GPU, and remote-server boundary.
 - [Minecraft 1.20.4 item-model predicate evidence](evidence/2026-07-24-item-model-predicates.md)
-  audits the vanilla provider catalog, records stack and live-context support,
-  protects unknown-provider behavior, and names the remaining bundle,
-  clock/compass, trim-registry, and remote-use-progress gates.
+  audits the vanilla provider catalog, records complete audited-1.20.4 stack
+  and live-context support plus dynamic world/display-item mesh replacement,
+  protects unknown-provider behavior, records session-selected
+  1.19.4/1.20.4 catalogs, and names the remaining older-catalog,
+  component-dispatch, and rendered-reference gates.
 - [Player-light evidence](evidence/2026-07-23-player-light.md) records the
   player-centered six-block falloff, profile/menu controls, per-fragment
   rendering correction, focused tests, and generation-19 live acceptance.
