@@ -1,14 +1,10 @@
 # Copyright (C) 2026 Jacob Repp
 
 name = "Naturalist"
-filename = "naturalist-5.0pre3+fabric-1.20.1.jar"
-side = "client"
+filename = "naturalist-5.0.0-pre.4+fabric-1.20.4.jar"
+side = "both"
 
 [download]
 hash-format = "sha512"
-hash = "873845d3b5c85d9acb5750a46119cb92e18bc0101857ee081283f88fb1204eda418818b9a833a1e664cdbc61d770afa355bd1aa4ba3d4639d0913dcb3a5ed257"
-url = "https://cdn.modrinth.com/data/F8BQNPWX/versions/tx891fzz/naturalist-5.0pre3%2Bfabric-1.20.1.jar"
-
-[update.modrinth]
-mod-id = "F8BQNPWX"
-version = "tx891fzz"
+hash = "9fed808a6c7d550989ea1e6bad2ce27a8239893d3dba38f389881154307c418f1af90de11a7f7ad31e8ce7c962a74fe3f82c7f341290bf7df2eedd9ea001fd07"
+url = "minosoft-cache:naturalist-5.0.0-pre.4+fabric-1.20.4.jar"

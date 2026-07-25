@@ -4,11 +4,11 @@ hash-format = "sha256"
 
 [[files]]
 file = "fabric.mod.json"
-hash = "15631beeba0f3fca4840fb613fe4ff95931d202a3beb9cd756a64fc57cf29f8d"
+hash = "f11559c69fc255c03c34e61a7c766ce5bb0df632bc6945d96f0c1a86b2788c10"
 
 [[files]]
 file = "ladder.tsv"
-hash = "98d838dbe1d60805d5dedae0033f0b76813639c29b9b1761eb493af67c0681c2"
+hash = "6da3b737c721ee097831af96d485a1e11070db85187118bf7c8353ca3e1a7ce0"
 
 [[files]]
 file = "resourcepacks/enhanced-audio.pw.toml"
@@ -32,7 +32,7 @@ metafile = true
 
 [[files]]
 file = "mods/geckolib.pw.toml"
-hash = "803faf7390fa69b6bf88fc0bf090e94fdd9585448e9fffd624c32d25f4bb076b"
+hash = "2623873c803f97ea665646dd0c65fd2e693051d996c999b71721d1e2ef57c499"
 metafile = true
 
 [[files]]
@@ -52,7 +52,7 @@ metafile = true
 
 [[files]]
 file = "mods/naturalist.pw.toml"
-hash = "5504b9604774546f632d13d1980496cf8f2859a2d9d36ed6588b4a18c0d6c986"
+hash = "f83eea7061ebe2f1b75e1225835bb45594bb5f0b3c14cb9a1751031ed4bd4ae4"
 metafile = true
 
 [[files]]

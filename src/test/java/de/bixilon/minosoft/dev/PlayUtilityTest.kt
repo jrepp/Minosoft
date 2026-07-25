@@ -14,9 +14,15 @@
 package de.bixilon.minosoft.dev
 
 import de.bixilon.minosoft.util.json.Jackson
+import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import java.util.jar.JarEntry
 import java.util.jar.JarFile
+import java.util.jar.JarOutputStream
+import kotlin.io.path.createDirectories
+import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -25,7 +31,7 @@ class PlayUtilityTest {
     private val project = Path.of("").toAbsolutePath().normalize()
     private val java = Path.of(System.getProperty("java.home"), "bin", if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
 
-    private fun runPlay(vararg arguments: String): String {
+    private fun runPlay(vararg arguments: String, environment: Map<String, String> = emptyMap()): String {
         val command = mutableListOf(
             java.toString(),
             "-Dminosoft.project=$project",
@@ -34,7 +40,9 @@ class PlayUtilityTest {
             "Play",
         )
         command += arguments
-        val process = ProcessBuilder(command).redirectErrorStream(true).start()
+        val builder = ProcessBuilder(command).redirectErrorStream(true)
+        builder.environment().putAll(environment)
+        val process = builder.start()
 
         assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Play utility did not finish.")
         val output = process.inputStream.bufferedReader().readText()
@@ -86,13 +94,98 @@ class PlayUtilityTest {
         assertTrue(output.contains("--canary"), output)
         assertTrue(output.contains("MINOSOFT_CANARY=true"), output)
         assertTrue(output.contains("--local-world"), output)
+        assertTrue(output.contains("--world-generator"), output)
         assertTrue(output.contains("--world-seed"), output)
         assertTrue(output.contains("MINOSOFT_LOCAL_WORLD=true"), output)
+        assertTrue(output.contains("MINOSOFT_WORLD_GENERATOR"), output)
         assertTrue(output.contains("scenario run"), output)
         assertTrue(output.contains("worldgen inspect"), output)
         assertTrue(output.contains("client.render-ready"), output)
         assertTrue(output.contains("on-failure"), output)
+        assertTrue(output.contains("MINOSOFT_MODPACK_CACHE"), output)
     }
+
+    @Test
+    fun `portable cache supplies a cache-only pack artifact`() {
+        val root = createTempDirectory("minosoft-portable-cache-")
+        val packs = root.resolve("packs").createDirectories()
+        val pack = packs.resolve("fixture").createDirectories()
+        val mods = pack.resolve("mods").createDirectories()
+        val source = root.resolve("fixture-mod.jar")
+        JarOutputStream(Files.newOutputStream(source)).use { jar ->
+            jar.putNextEntry(JarEntry("fabric.mod.json"))
+            jar.write("""{"schemaVersion":1,"id":"fixture_mod","version":"1.0.0","environment":"client"}""".encodeToByteArray())
+            jar.closeEntry()
+        }
+        val artifactHash = hash("SHA-512", source)
+        Files.writeString(
+            mods.resolve("fixture.pw.toml"),
+            """
+                name = "Fixture"
+                filename = "fixture-mod.jar"
+                side = "client"
+
+                [download]
+                hash-format = "sha512"
+                hash = "$artifactHash"
+                url = "minosoft-cache:fixture-mod.jar"
+            """.trimIndent(),
+        )
+        Files.writeString(
+            pack.resolve("fabric.mod.json"),
+            """{"schemaVersion":1,"id":"fixture_pack","version":"1.0.0","depends":{"minecraft":"1.20.4","fixture_mod":"=1.0.0"}}""",
+        )
+        Files.writeString(pack.resolve("ladder.tsv"), "00\tfixture\tPortable cache fixture\tready\tHash-pinned local artifact\n")
+        val indexed = listOf("fabric.mod.json", "ladder.tsv", "mods/fixture.pw.toml")
+        val index = buildString {
+            appendLine("hash-format = \"sha256\"")
+            for (relative in indexed) {
+                appendLine()
+                appendLine("[[files]]")
+                appendLine("file = \"$relative\"")
+                appendLine("hash = \"${hash("SHA-256", pack.resolve(relative))}\"")
+                if (relative.endsWith(".pw.toml")) appendLine("metafile = true")
+            }
+        }
+        Files.writeString(pack.resolve("index.toml"), index)
+        Files.writeString(
+            pack.resolve("pack.toml"),
+            """
+                name = "Portable Cache Fixture"
+                pack-format = "packwiz:1.1.0"
+                version = "1.0.0"
+
+                [index]
+                file = "index.toml"
+                hash-format = "sha256"
+                hash = "${hash("SHA-256", pack.resolve("index.toml"))}"
+
+                [versions]
+                fabric = "0.15.11"
+                minecraft = "1.20.4"
+            """.trimIndent(),
+        )
+        val cache = root.resolve("cache")
+        val store = root.resolve("store")
+        val environment = mapOf(
+            "MINOSOFT_MODPACKS_DIR" to packs.toString(),
+            "MINOSOFT_MODPACK_STORE" to store.toString(),
+            "MINOSOFT_MODPACK_CACHE" to cache.toString(),
+        )
+
+        val cached = runPlay("modpack", "cache", "add", source.toString(), environment = environment)
+        assertTrue(cached.contains(artifactHash), cached)
+        val prepared = runPlay("modpack", "prepare", "fixture", environment = environment)
+
+        assertTrue(prepared.contains("Imported Fixture fixture-mod.jar from portable cache."), prepared)
+        assertEquals(
+            artifactHash,
+            hash("SHA-512", store.resolve("artifacts/sha512/$artifactHash/fixture-mod.jar")),
+        )
+    }
+
+    private fun hash(algorithm: String, path: Path): String =
+        MessageDigest.getInstance(algorithm).digest(Files.readAllBytes(path)).joinToString("") { "%02x".format(it) }
 
     @Test
     fun `screenshot regression accepts an identical png`() {

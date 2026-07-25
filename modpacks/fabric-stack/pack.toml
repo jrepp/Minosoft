@@ -2,12 +2,12 @@
 
 name = "Minosoft Fabric Compatibility Stack"
 pack-format = "packwiz:1.1.0"
-version = "0.7.0"
+version = "0.8.0"
 
 [index]
 file = "index.toml"
 hash-format = "sha256"
-hash = "cbf37aabe340e428f5e38b81d32d22935fb53b3cb14f8449c9ab048f469607b1"
+hash = "e42521ae207821f4a81ea799e1c271379e25c1126364e3d1ba832de00a572294"
 
 [versions]
 fabric = "0.15.11"

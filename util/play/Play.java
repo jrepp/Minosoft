@@ -92,6 +92,7 @@ public final class Play {
     private static final int MAX_SCENARIO_BYTES = 4 * 1024 * 1024;
     private static final long MAX_SCREENSHOT_PIXELS = 16_777_216L;
     private static final long MAX_SCREENSHOT_FILE_BYTES = 64L * 1024 * 1024;
+    private static final long MAX_MODPACK_ARTIFACT_BYTES = 1024L * 1024 * 1024;
 
     private final Map<String, String> environment = System.getenv();
     private final Path project;
@@ -117,6 +118,7 @@ public final class Play {
     private final Path eventLog;
     private final Path modpacksDirectory;
     private final Path modpackStore;
+    private final Path modpackCache;
     private final Path canarySourceDirectory;
     private final Path canaryBuildJar;
     private String modpackName;
@@ -125,6 +127,7 @@ public final class Play {
     private boolean localWorld;
     private boolean jsonOutput;
     private long worldSeed;
+    private String worldGenerator;
     private int clientGeneration = 1;
     private String sessionId;
     private volatile Process supervisedClient;
@@ -162,11 +165,16 @@ public final class Play {
         trajectory = environment.getOrDefault("MINOSOFT_TRAJECTORY", "default");
         modpacksDirectory = resolveProjectPath(env("MINOSOFT_MODPACKS_DIR", project.resolve("modpacks").toString()));
         modpackStore = resolveProjectPath(env("MINOSOFT_MODPACK_STORE", defaultModpackStore().toString()));
+        String configuredModpackCache = environment.get("MINOSOFT_MODPACK_CACHE");
+        modpackCache = configuredModpackCache == null || configuredModpackCache.isBlank()
+            ? null
+            : resolveProjectPath(configuredModpackCache);
         canarySourceDirectory = project.resolve("dev/canary-mod");
         canaryBuildJar = project.resolve("build/dev-mods/hot-reload-canary.jar");
         canaryEnabled = environment.getOrDefault("MINOSOFT_CANARY", "false").equalsIgnoreCase("true");
         localWorld = environment.getOrDefault("MINOSOFT_LOCAL_WORLD", "false").equalsIgnoreCase("true");
         worldSeed = parseLong(environment.getOrDefault("MINOSOFT_WORLD_SEED", "6072333650475958863"), "MINOSOFT_WORLD_SEED");
+        worldGenerator = normalizeWorldGenerator(environment.getOrDefault("MINOSOFT_WORLD_GENERATOR", ""));
     }
 
     public static void main(String[] args) {
@@ -1244,6 +1252,10 @@ public final class Play {
             listModpacks();
             return;
         }
+        if (action.equals("cache")) {
+            runModpackCache(arguments);
+            return;
+        }
         require(action.equals("prepare") || action.equals("inspect"), "Unknown modpack action: " + action);
         require(!arguments.isEmpty(), "Usage: ./play.sh modpack " + action + " NAME [--trajectory NAME]");
         modpackName = arguments.remove(0);
@@ -1253,6 +1265,38 @@ public final class Play {
             installDistribution();
             runInherited(List.of(javaBin.toString(), "-cp", project.resolve("build/install/minosoft/lib/*").toString(), FABRIC_PREFLIGHT, pack.view.toString()), project);
         }
+    }
+
+    private void runModpackCache(List<String> arguments) throws Exception {
+        require(!arguments.isEmpty() && arguments.remove(0).equals("add"),
+            "Usage: ./play.sh modpack cache add FILE [--hash-format sha256|sha512]");
+        require(!arguments.isEmpty(), "modpack cache add requires a local artifact path.");
+        Path source = resolveProjectPath(arguments.remove(0));
+        String hashFormat = "sha512";
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            if (option.equals("--hash-format")) {
+                require(!arguments.isEmpty(), "--hash-format requires sha256 or sha512.");
+                hashFormat = arguments.remove(0);
+            } else if (option.startsWith("--hash-format=")) {
+                hashFormat = option.substring("--hash-format=".length());
+            } else {
+                throw failure("Unknown modpack cache option: " + option);
+            }
+        }
+        require(Set.of("sha256", "sha512").contains(hashFormat), "--hash-format requires sha256 or sha512.");
+        require(modpackCache != null, "Set MINOSOFT_MODPACK_CACHE to the portable cache directory.");
+        require(Files.isRegularFile(source), "Portable cache source is not a regular file: " + source);
+        require(Files.size(source) <= MAX_MODPACK_ARTIFACT_BYTES,
+            "Portable cache source exceeds the 1 GiB artifact limit: " + source);
+        String filename = source.getFileName().toString();
+        require(SAFE_MANAGED_FILENAME.matcher(filename).matches(), "Unsafe portable cache filename: " + filename);
+        String fingerprint = hash(hashFormat, source);
+        Path artifact = portableCacheArtifact(hashFormat, fingerprint, filename);
+        publishPortableCacheArtifact(source, artifact, hashFormat, fingerprint);
+        System.out.printf("Cached %s in the portable modpack cache.%n", filename);
+        System.out.println("  " + hashFormat + ": " + fingerprint);
+        System.out.println("  path: " + artifact);
     }
 
     private void runWorldgen(List<String> rawArguments) throws Exception {
@@ -1636,10 +1680,27 @@ public final class Play {
                 worldSeed = parseLong(arguments.remove(0), "--world-seed");
             } else if (option.startsWith("--world-seed=")) {
                 worldSeed = parseLong(option.substring("--world-seed=".length()), "--world-seed");
+            } else if (option.equals("--world-generator")) {
+                require(!arguments.isEmpty(), "--world-generator requires flat, debug, void, or tech_reborn.");
+                worldGenerator = normalizeWorldGenerator(arguments.remove(0));
+            } else if (option.startsWith("--world-generator=")) {
+                worldGenerator = normalizeWorldGenerator(option.substring("--world-generator=".length()));
             } else {
                 throw failure("Unknown option: " + option);
             }
         }
+    }
+
+    private String normalizeWorldGenerator(String value) {
+        String normalized = value.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+        require(normalized.isEmpty() || Set.of("flat", "debug", "void", "tech_reborn").contains(normalized),
+            "World generator must be flat, debug, void, or tech_reborn.");
+        return normalized;
+    }
+
+    private String selectedWorldGenerator() {
+        if (!worldGenerator.isEmpty()) return worldGenerator;
+        return modpackName.equals("tech-reborn") ? "tech_reborn" : "flat";
     }
 
     private void parseTrajectoryOption(List<String> arguments) {
@@ -1834,7 +1895,7 @@ public final class Play {
         command.add("--no-eros");
         command.add(localWorld ? "--local" : "--connect");
         if (localWorld) {
-            command.add("--world-generator=tech_reborn");
+            command.add("--world-generator=" + selectedWorldGenerator());
             command.add("--world-seed=" + worldSeed);
         } else {
             command.add("--address=" + serverAddress);
@@ -1842,10 +1903,10 @@ public final class Play {
         command.add("--protocol-version=" + minecraftVersion);
         String account = environment.get("MINOSOFT_ACCOUNT");
         if (account != null && !account.isBlank()) command.add("--account=" + account);
+        command.add("--mod-trajectory=" + trajectory);
+        command.add("--hot-reload-generation=" + clientGeneration);
         if (pack != null) {
             command.add("--fabric-pack=" + pack.view);
-            command.add("--mod-trajectory=" + trajectory);
-            command.add("--hot-reload-generation=" + clientGeneration);
             command.add("--home=" + pack.instance.resolve("home"));
             command.add("--profiles=" + pack.instance.resolve("profiles"));
             command.add("--assets=" + pack.assets);
@@ -1857,7 +1918,7 @@ public final class Play {
     private Process launchSupervisedClient(PreparedPack pack, PreparedCanary canary) throws Exception {
         if (pack != null) materializeResourcePackProfile(pack);
         if (localWorld) {
-            System.out.printf("Starting Minosoft with regenerated local world seed %d (log: %s)...%n", worldSeed, clientLog);
+            System.out.printf("Starting Minosoft with regenerated %s local world seed %d (log: %s)...%n", selectedWorldGenerator(), worldSeed, clientLog);
         } else {
             System.out.printf("Starting Minosoft and connecting to %s (log: %s)...%n", serverAddress, clientLog);
         }
@@ -2506,13 +2567,59 @@ public final class Play {
             require(hash(hashFormat, artifact).equals(expectedHash), "Cached artifact failed verification: " + artifact);
         } else {
             Path partial = artifactDirectory.resolve("." + filename + ".part." + ProcessHandle.current().pid());
-            System.out.println("Downloading " + name + " " + filename + "...");
-            download(URI.create(url), partial);
-            require(hash(hashFormat, partial).equals(expectedHash), "Downloaded artifact hash mismatch for " + name + "; retained " + partial + " for inspection.");
-            makeReadOnly(partial);
-            publishArtifact(partial, artifact, expectedHash, hashFormat);
+            boolean imported = importPortableCacheArtifact(name, filename, hashFormat, expectedHash, partial, artifact);
+            if (!imported) {
+                URI uri = URI.create(url);
+                require(!"minosoft-cache".equalsIgnoreCase(uri.getScheme()),
+                    name + " is cache-only. Set MINOSOFT_MODPACK_CACHE and add " + filename + " with './play.sh modpack cache add FILE'.");
+                System.out.println("Downloading " + name + " " + filename + "...");
+                download(uri, partial);
+                require(hash(hashFormat, partial).equals(expectedHash), "Downloaded artifact hash mismatch for " + name + "; retained " + partial + " for inspection.");
+                makeReadOnly(partial);
+                publishArtifact(partial, artifact, expectedHash, hashFormat);
+            }
         }
         return new ResolvedArtifact(name, filename, hashFormat, expectedHash, artifact);
+    }
+
+    private boolean importPortableCacheArtifact(
+        String name,
+        String filename,
+        String hashFormat,
+        String expectedHash,
+        Path partial,
+        Path artifact
+    ) throws Exception {
+        if (modpackCache == null) return false;
+        Path cached = portableCacheArtifact(hashFormat, expectedHash, filename);
+        if (!Files.isRegularFile(cached)) return false;
+        require(Files.size(cached) <= MAX_MODPACK_ARTIFACT_BYTES,
+            "Portable cached artifact exceeds the 1 GiB limit: " + cached);
+        Files.copy(cached, partial, StandardCopyOption.REPLACE_EXISTING);
+        require(hash(hashFormat, partial).equals(expectedHash),
+            "Portable cached artifact hash mismatch for " + name + ": " + cached);
+        makeReadOnly(partial);
+        publishArtifact(partial, artifact, expectedHash, hashFormat);
+        System.out.println("Imported " + name + " " + filename + " from portable cache.");
+        return true;
+    }
+
+    private Path portableCacheArtifact(String hashFormat, String fingerprint, String filename) {
+        require(modpackCache != null, "Set MINOSOFT_MODPACK_CACHE to the portable cache directory.");
+        return modpackCache.resolve(hashFormat).resolve(fingerprint).resolve(filename);
+    }
+
+    private void publishPortableCacheArtifact(Path source, Path artifact, String hashFormat, String expectedHash) throws Exception {
+        Files.createDirectories(artifact.getParent());
+        if (Files.isRegularFile(artifact)) {
+            require(hash(hashFormat, artifact).equals(expectedHash), "Portable cached artifact failed verification: " + artifact);
+            return;
+        }
+        Path partial = artifact.getParent().resolve("." + artifact.getFileName() + ".part." + ProcessHandle.current().pid());
+        Files.copy(source, partial, StandardCopyOption.REPLACE_EXISTING);
+        require(hash(hashFormat, partial).equals(expectedHash), "Portable cache source changed while publishing: " + source);
+        makeReadOnly(partial);
+        publishArtifact(partial, artifact, expectedHash, hashFormat);
     }
 
     private Path stageArtifact(ResolvedArtifact resolved, Path destination) throws Exception {
@@ -2821,6 +2928,7 @@ public final class Play {
             Usage:
               ./play.sh ACTION [TARGET] [--modpack NAME] [--trajectory NAME]
               ./play.sh modpack list
+              ./play.sh modpack cache add FILE [--hash-format sha256|sha512]
               ./play.sh modpack prepare NAME [--trajectory NAME]
               ./play.sh modpack inspect NAME [--trajectory NAME]
               ./play.sh debug COMMAND [--role client|server] [--trajectory NAME] [--endpoint ID]
@@ -2845,6 +2953,7 @@ public final class Play {
               status          Show both process states
               status --json   Emit the PID/readiness contract as one JSON object
               modpack list    List source-controlled Fabric packs
+              modpack cache   Add a hash-addressed artifact to a portable cache
               modpack prepare Resolve and verify a pack without starting Minosoft
               modpack inspect Resolve a pack and run Minosoft's Fabric compatibility preflight
               debug endpoints List live, discoverable client/server debug endpoints
@@ -2874,6 +2983,7 @@ public final class Play {
               --trajectory NAME Isolate mutable state for a branch/experiment (default: default)
               --canary          Build, publish, load, and watch the native hot-reload canary mod
               --local-world     Use the source-native authoritative local world (client target only)
+              --world-generator Select flat, debug, void, or tech_reborn (default: flat; tech-reborn pack: tech_reborn)
               --world-seed N    Seed for deterministic local world regeneration
 
             Configuration:
@@ -2882,8 +2992,9 @@ public final class Play {
               MINECRAFT_EULA_ACCEPTED
               MINOSOFT_ACCOUNT, MINOSOFT_JAVA_HOME, MINOSOFT_MODPACK
               MINOSOFT_TRAJECTORY, MINOSOFT_MODPACKS_DIR, MINOSOFT_MODPACK_STORE
+              MINOSOFT_MODPACK_CACHE (optional portable, read-only download source)
               MINOSOFT_CANARY=true (equivalent to --canary)
-              MINOSOFT_LOCAL_WORLD=true, MINOSOFT_WORLD_SEED
+              MINOSOFT_LOCAL_WORLD=true, MINOSOFT_WORLD_GENERATOR, MINOSOFT_WORLD_SEED
               MINOSOFT_HOT_RELOAD_PATHS (platform-separated external source/staging roots)
 
             Logs:

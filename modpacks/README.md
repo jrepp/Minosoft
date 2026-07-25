@@ -27,6 +27,22 @@ MINOSOFT_MODPACKS_DIR=/absolute/manifest/path \
 ./play.sh --modpack sodium --trajectory experiment-a
 ```
 
+Locally built or not-yet-published artifacts can live in a portable,
+content-addressed download cache. The launcher verifies them before copying them
+into its platform-specific internal store:
+
+```sh
+export MINOSOFT_MODPACK_CACHE=/absolute/portable-cache
+./play.sh modpack cache add /absolute/path/to/artifact.jar
+./play.sh modpack prepare fabric-stack --trajectory experiment-a
+```
+
+The portable layout is `<cache>/<hash-format>/<hash>/<filename>`, so the cache
+can be copied between machines without changing checked-in manifests. A
+`minosoft-cache:` download URL deliberately has no network fallback; if its
+exact hash is absent, preparation explains how to seed the cache. Do not commit
+cached binaries to this repository.
+
 List, prepare, or inspect packs without starting the client:
 
 ```sh
