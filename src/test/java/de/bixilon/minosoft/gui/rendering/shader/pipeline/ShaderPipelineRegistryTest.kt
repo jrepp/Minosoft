@@ -49,7 +49,7 @@ class ShaderPipelineRegistryTest {
         val registration = registry.replace(terrain) { pipeline }
 
         assertEquals(pipeline.owner, registry.selection().owner)
-        assertEquals(pipeline.plan!!.fingerprint, registry.selection().fingerprint)
+        assertEquals(pipeline.plan.fingerprint, registry.selection().fingerprint)
         registration.close()
         registration.close()
         assertEquals(BuiltInWorldShaderPipeline.owner, registry.selection().owner)
