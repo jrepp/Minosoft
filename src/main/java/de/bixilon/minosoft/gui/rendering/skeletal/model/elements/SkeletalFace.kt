@@ -33,11 +33,13 @@ data class SkeletalFace(
 
 
     fun bake(context: SkeletalBakeContext, direction: Directions, element: SkeletalElement, transform: Int, path: String) {
+        val material = texture ?: context.texture ?: throw IllegalStateException("Element has no texture set!")
+        if (material in context.excludedMaterials || context.includedMaterials?.let { material !in it } == true) return
         val from = context.offset + (element.from - context.inflate) / BLOCK_SIZE
         val to = context.offset + (element.to + context.inflate) / BLOCK_SIZE
         val positions = CuboidUtil.positions(direction, from, to)
 
-        val texture = context.textures[texture ?: context.texture ?: throw IllegalStateException("Element has no texture set!")] ?: throw IllegalStateException("Texture not found!")
+        val texture = context.textures[material] ?: throw IllegalStateException("Texture not found!")
 
         val uv = this.uv ?: CuboidUtil.cubeUV(element.uv!!, element.from, element.to, direction)
 

@@ -79,6 +79,10 @@ class SkeletalModelBinderTest {
         assertEquals((PI / 2.0).toFloat(), binding.model.transforms.getValue("root").rotation.y, 0.0001f)
         assertEquals(binding.expressions, binding.model.expressions)
         assertEquals("query.turn", binding.model.expressions.single().expression)
+        assertEquals(
+            SkeletalContentIdentity(content.source, content.format, content.identifier),
+            binding.model.contentIdentity,
+        )
     }
 
     @Test

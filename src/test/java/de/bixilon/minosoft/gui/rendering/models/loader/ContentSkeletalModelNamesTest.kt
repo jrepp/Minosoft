@@ -36,8 +36,18 @@ class ContentSkeletalModelNamesTest {
 
         assertEquals(ResourceLocation.of("minecraft:cow"), ContentSkeletalModelNames.entity(content))
         assertEquals(
-            ResourceLocation.of("minosoft:content/minecraft/cow.smodel"),
+            ResourceLocation.of("minosoft:content/minecraft/optifine/cem/cow.jem/cow.smodel"),
             ContentSkeletalModelNames.model(source, content.identifier),
+        )
+        assertEquals(
+            ResourceLocation.of("minosoft:content/minecraft/geo/cow.geo.json/cow.smodel"),
+            ContentSkeletalModelNames.model(ResourceLocation.of("minecraft:geo/cow.geo.json"), content.identifier),
+        )
+        assertEquals(
+            ResourceLocation.of("minecraft:cow"),
+            ContentSkeletalModelNames.entity(
+                content.copy(source = ResourceLocation.of("minecraft:geo/cow.geo.json")),
+            ),
         )
     }
 }

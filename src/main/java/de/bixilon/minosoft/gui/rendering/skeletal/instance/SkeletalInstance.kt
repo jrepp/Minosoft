@@ -27,6 +27,7 @@ import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.SkeletalModelStates
+import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
 import kotlin.time.TimeSource.Monotonic.ValueTimeMark
 
 class SkeletalInstance(
@@ -38,6 +39,7 @@ class SkeletalInstance(
     private var modelLease = modelLease
     val animation = AnimationManager(this)
     val neutralAnimation = NeutralAnimationManager(this)
+    val geckoAnimation = GeckoLibAnimationManager(this)
     val cemExpression = CemExpressionManager(this)
     var matrix = MMat4f()
     var state = SkeletalModelStates.PREPARING
@@ -84,11 +86,15 @@ class SkeletalInstance(
     }
 
     fun draw(shader: Shader, material: ResourceLocation? = this.material) {
+        drawMesh(shader, model.mesh(material))
+    }
+
+    fun drawMesh(shader: Shader, mesh: Mesh) {
         assert(state == SkeletalModelStates.LOADED) { "Model not loaded: $state" }
         shader.use()
 
         context.skeletal.upload(this)
-        model.mesh(material).draw()
+        mesh.draw()
     }
 
     fun update(time: ValueTimeMark = now()) {

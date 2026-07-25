@@ -26,6 +26,7 @@ import de.bixilon.minosoft.gui.rendering.skeletal.model.elements.SkeletalElement
 import de.bixilon.minosoft.gui.rendering.skeletal.model.textures.*
 import de.bixilon.minosoft.gui.rendering.skeletal.model.transforms.SkeletalTransform
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationClip
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalExpressionBinding
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
 import java.util.concurrent.atomic.AtomicInteger
@@ -38,6 +39,7 @@ data class SkeletalModel(
     val neutralAnimations: Map<String, SkeletalAnimationClip> = emptyMap(),
     val expressions: List<SkeletalExpressionBinding> = emptyList(),
     val expressionAliases: Map<String, String> = emptyMap(),
+    val contentIdentity: SkeletalContentIdentity? = null,
 ) {
     @JsonIgnore
     val loadedTextures: MutableSkeletalInstanceTextureMap = mutableMapOf()
@@ -54,20 +56,16 @@ data class SkeletalModel(
         }
     }
 
-    /**
-     * Binds a reload candidate to textures already present in the uploaded
-     * static array. Live reload fails before GPU model publication when a pack
-     * introduces a texture that requires rebuilding the array.
-     */
-    fun bindLoadedTextures(context: RenderContext, skip: Set<ResourceLocation>) {
+    fun bindLoadedTextures(
+        skip: Set<ResourceLocation>,
+        resolve: (ResourceLocation) -> de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture,
+    ) {
         check(loadedTextures.isEmpty()) { "Skeletal textures are already bound." }
         for ((name, properties) in textures) {
             if (name in skip) continue
             val file = properties.source ?: name.texture()
             if (file in skip) continue
-            val texture = requireNotNull(context.textures.static[file]) {
-                "Live skeletal reload requires texture $file to exist in the uploaded static array."
-            }
+            val texture = resolve(file)
             loadedTextures[name] = SkeletalTextureInstance(properties, texture)
         }
     }
@@ -100,18 +98,38 @@ data class SkeletalModel(
         return Pair(baseTransform, transformId.get())
     }
 
-    private fun buildElements(consumer: AbstractSkeletalMeshBuilder, textures: SkeletalInstanceTextureMap, transform: BakedSkeletalTransform) {
-        val context = SkeletalBakeContext(transform = transform, textures = textures, consumer = consumer)
+    private fun buildElements(
+        consumer: AbstractSkeletalMeshBuilder,
+        textures: SkeletalInstanceTextureMap,
+        transform: BakedSkeletalTransform,
+        includedMaterials: Set<ResourceLocation>?,
+        excludedMaterials: Set<ResourceLocation>,
+    ) {
+        val context = SkeletalBakeContext(
+            transform = transform,
+            textures = textures,
+            consumer = consumer,
+            includedMaterials = includedMaterials,
+            excludedMaterials = excludedMaterials,
+        )
 
         for ((name, element) in elements) {
             element.bake(context, name)
         }
     }
 
-    fun bake(override: SkeletalTextureMap, mesh: AbstractSkeletalMeshBuilder): BakedSkeletalModel {
+    fun bake(
+        override: SkeletalTextureMap,
+        mesh: AbstractSkeletalMeshBuilder,
+        includedMaterials: Set<ResourceLocation>? = null,
+        excludedMaterials: Set<ResourceLocation> = emptySet(),
+    ): BakedSkeletalModel {
+        require(includedMaterials == null || includedMaterials.intersect(excludedMaterials).isEmpty()) {
+            "Included and excluded skeletal materials must not overlap."
+        }
         val textures = buildTextures(override)
         val (transform, count) = buildTransforms()
-        buildElements(mesh, textures, transform)
+        buildElements(mesh, textures, transform, includedMaterials, excludedMaterials)
 
         return BakedSkeletalModel(
             mesh.bake(),
@@ -121,6 +139,7 @@ data class SkeletalModel(
             neutralAnimations,
             expressions = expressions,
             expressionAliases = expressionAliases,
+            contentIdentity = contentIdentity,
         )
     }
 }

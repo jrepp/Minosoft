@@ -40,7 +40,7 @@ class BlockMesherCacheTest {
         context::queue.forceSet(Queue(1))
 
 
-        return ChunkMeshCache(context)
+        return ChunkMeshCache(context, contentModels = null)
     }
 
     fun `entities initially null`() {

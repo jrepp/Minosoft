@@ -13,6 +13,7 @@ import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.assets.model.skeletal.expression.SkeletalExpressionContext
 import de.bixilon.minosoft.assets.model.skeletal.runtime.CemExpressionEvaluator
 import de.bixilon.minosoft.assets.model.skeletal.runtime.CemExpressionFrame
+import de.bixilon.minosoft.assets.model.skeletal.runtime.CemRenderProperty
 import de.bixilon.minosoft.assets.model.skeletal.runtime.CemTransformProperty
 import de.bixilon.minosoft.gui.rendering.models.block.element.ModelElement.Companion.BLOCK_SIZE
 
@@ -22,12 +23,16 @@ class CemExpressionManager(instance: SkeletalInstance) {
         ?.let { CemExpressionEvaluator(it, instance.model.expressionAliases) }
     private val transforms = instance.transform.expressionIndex()
     var context = SkeletalExpressionContext()
+    var render: Map<CemRenderProperty, Float> = emptyMap()
+        private set
 
     val active get() = evaluator != null
 
     fun draw() {
         val evaluator = evaluator ?: return
-        evaluator.evaluate(context).apply(transforms)
+        val frame = evaluator.evaluate(context)
+        frame.apply(transforms)
+        render = frame.render
     }
 }
 

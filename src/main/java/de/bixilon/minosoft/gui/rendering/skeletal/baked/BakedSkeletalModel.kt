@@ -20,7 +20,9 @@ import de.bixilon.minosoft.gui.rendering.skeletal.model.animations.SkeletalAnima
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
 import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationClip
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalExpressionBinding
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLayerBlend
 import de.bixilon.minosoft.assets.model.generation.ContentFidelitySnapshot
 import de.bixilon.minosoft.assets.model.generation.ContentGenerationLease
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
@@ -33,8 +35,11 @@ data class BakedSkeletalModel(
     val neutralAnimations: Map<String, SkeletalAnimationClip> = emptyMap(),
     val materialMeshes: Map<ResourceLocation, Mesh> = emptyMap(),
     val entityTextureBase: ResourceLocation? = null,
+    val entityTextureLayers: Map<ResourceLocation, BakedEntityTextureLayer> = emptyMap(),
     val expressions: List<SkeletalExpressionBinding> = emptyList(),
     val expressionAliases: Map<String, String> = emptyMap(),
+    val contentIdentity: SkeletalContentIdentity? = null,
+    val geckoRenderLayers: Map<String, BakedGeckoLibRenderLayer> = emptyMap(),
     var contentLease: ContentGenerationLease<ContentFidelitySnapshot>? = null,
 ) {
     private var state = SkeletalModelStates.PREPARING
@@ -46,7 +51,7 @@ data class BakedSkeletalModel(
     fun load() {
         check(!retired) { "Can not upload a retired skeletal model." }
         if (state != SkeletalModelStates.PREPARING) throw IllegalStateException("Can not load model!")
-        val meshes = (listOf(mesh) + materialMeshes.values).distinct()
+        val meshes = meshes()
         try {
             meshes.forEach(Mesh::load)
             state = SkeletalModelStates.LOADED
@@ -73,7 +78,7 @@ data class BakedSkeletalModel(
     private fun unloadNow() {
         if (state != SkeletalModelStates.LOADED) throw IllegalStateException("Can not unload model!")
         var failure: Throwable? = null
-        val meshes = (materialMeshes.values + mesh).distinct()
+        val meshes = meshes()
         for (loaded in meshes) {
             if (loaded.state != MeshStates.LOADED) continue
             try {
@@ -112,6 +117,9 @@ data class BakedSkeletalModel(
 
     fun mesh(material: ResourceLocation?): Mesh = material?.let(materialMeshes::get) ?: mesh
 
+    fun entityTextureMesh(base: ResourceLocation, texture: ResourceLocation): Mesh? =
+        entityTextureLayers[base]?.meshes?.get(texture)
+
     @Synchronized
     private fun releaseInstance() {
         check(instances > 0) { "Skeletal model instance was released too many times." }
@@ -125,7 +133,7 @@ data class BakedSkeletalModel(
         try {
             when (state) {
                 SkeletalModelStates.PREPARING -> {
-                for (candidate in (materialMeshes.values + mesh).distinct()) {
+                for (candidate in meshes()) {
                     if (candidate.state != MeshStates.PREPARING) continue
                     try {
                         candidate.drop()
@@ -148,4 +156,23 @@ data class BakedSkeletalModel(
         }
         failure?.let { throw it }
     }
+
+    private fun meshes(): List<Mesh> = buildList {
+        add(mesh)
+        addAll(materialMeshes.values)
+        entityTextureLayers.values.forEach { addAll(it.meshes.values) }
+        geckoRenderLayers.values.forEach { add(it.mesh) }
+    }.distinct()
 }
+
+data class BakedEntityTextureLayer(
+    val materials: Set<ResourceLocation>,
+    val meshes: Map<ResourceLocation, Mesh>,
+)
+
+data class BakedGeckoLibRenderLayer(
+    val registrationId: Long,
+    val blend: GeckoLibRenderLayerBlend,
+    val fullBright: Boolean,
+    val mesh: Mesh,
+)

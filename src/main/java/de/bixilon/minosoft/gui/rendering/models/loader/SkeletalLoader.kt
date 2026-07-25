@@ -23,12 +23,22 @@ import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.assets.model.generation.ContentGenerationLease
 import de.bixilon.minosoft.assets.model.generation.ContentFidelitySnapshot
 import de.bixilon.minosoft.assets.model.generation.ContentFidelityLoader
+import de.bixilon.minosoft.assets.model.generation.PreparedContent
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibBlockEntityModelRegistry
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibEntityModelRegistry
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibModelRouteRegistry
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibModelTarget
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLayerDefinition
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLayerRegistry
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureContextFactory
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureMaterialFrame
 import de.bixilon.minosoft.data.entities.entities.Entity
 import de.bixilon.minosoft.data.registries.identified.ResourceLocationUtil.extend
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
+import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedEntityTextureLayer
+import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedGeckoLibRenderLayer
 import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
 import de.bixilon.minosoft.gui.rendering.skeletal.mesh.SkeletalMesh
 import de.bixilon.minosoft.gui.rendering.skeletal.mesh.SkeletalMeshBuilder
@@ -37,7 +47,9 @@ import de.bixilon.minosoft.gui.rendering.skeletal.binding.SkeletalModelComposer
 import de.bixilon.minosoft.gui.rendering.skeletal.model.SkeletalModel
 import de.bixilon.minosoft.gui.rendering.skeletal.model.textures.SkeletalTextureMap
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
+import de.bixilon.minosoft.gui.rendering.system.base.texture.array.StaticTextureArrayUpdate
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
+import de.bixilon.minosoft.gui.rendering.chunk.ChunkRenderer
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
@@ -47,7 +59,11 @@ class SkeletalLoader(private val loader: ModelLoader) {
     private val registered: SynchronizedMap<ResourceLocation, RegisteredModel> = synchronizedMapOf()
     private val baked: MutableMap<ResourceLocation, BakedSkeletalModel> = HashMap()
     private val contentByEntity: MutableMap<ResourceLocation, ResourceLocation> = linkedMapOf()
+    private val contentByIdentity: MutableMap<SkeletalContentIdentity, ResourceLocation> = linkedMapOf()
     private val contentNames: MutableSet<ResourceLocation> = linkedSetOf()
+    private val reloadableEntityModels: MutableMap<ResourceLocation, RegisteredModel> = linkedMapOf()
+    private val initialGenerationTextures: MutableSet<Texture> = linkedSetOf()
+    private val initialReclaimableTextures: MutableSet<Texture> = linkedSetOf()
     private var contentLease: ContentGenerationLease<ContentFidelitySnapshot>? = null
     private var loaded = false
 
@@ -67,7 +83,11 @@ class SkeletalLoader(private val loader: ModelLoader) {
             }
 
             val loadedTemplate = template ?: continue
-            loadedTemplate.load(loader.context, registered.override.keys)
+            if (registered.contentFidelity) {
+                loadedTemplate.bindLoadedTextures(registered.override.keys, ::initialContentTexture)
+            } else {
+                loadedTemplate.load(loader.context, registered.override.keys)
+            }
             registered.model = loadedTemplate
             discoverEntityTextureVariants(registered, loadedTemplate)
         }
@@ -77,11 +97,8 @@ class SkeletalLoader(private val loader: ModelLoader) {
     fun bake(latch: AbstractLatch?) {
         for ((name, registered) in this.registered) {
             val model = registered.model ?: continue
-            val baked = model.bake(registered.override, registered.mesh.buildMesh(loader.context))
-            val materialMeshes = registered.materialOverrides.mapValues { (_, override) ->
-                model.bake(registered.override + override, registered.mesh.buildMesh(loader.context)).mesh
-            }
-            val generationLease = if (registered.contentFidelity) {
+            val baked = bakeRegisteredModel(registered, model)
+            val generationLease = if (registered.contentFidelity || registered.entityTextureLayers.isNotEmpty()) {
                 loader.context.session.contentFidelity.lease()
                     ?: throw IllegalStateException("Content-fidelity generation disappeared while baking $name.")
             } else {
@@ -94,16 +111,28 @@ class SkeletalLoader(private val loader: ModelLoader) {
                     }
                 }
                 this.baked[name] = baked.copy(
-                    materialMeshes = materialMeshes,
-                    entityTextureBase = registered.entityTextureBase,
                     contentLease = generationLease,
                 )
                 if (registered.contentFidelity) contentNames += name
+                if (!registered.contentFidelity && name.path.startsWith("models/entities/")) {
+                    reloadableEntityModels[name] = registered
+                }
             } catch (throwable: Throwable) {
                 generationLease?.close()
                 throw throwable
             }
         }
+        contentLease?.let { lease ->
+            if (initialGenerationTextures.isNotEmpty()) {
+                val textureLease = loader.context.textures.static.retainGeneration(
+                    initialGenerationTextures,
+                    initialReclaimableTextures,
+                )
+                loader.context.session.contentFidelity.attachCleanup(lease.generationId, textureLease)
+            }
+        }
+        initialGenerationTextures.clear()
+        initialReclaimableTextures.clear()
         contentLease?.close()
         contentLease = null
     }
@@ -162,9 +191,17 @@ class SkeletalLoader(private val loader: ModelLoader) {
                     val override = model.textures[binding.defaultMaterial]
                         ?.takeIf { it.source == null }
                         ?.let { findEntityTexture(ContentSkeletalModelNames.entity(content)) }
-                        ?.let { mapOf(binding.defaultMaterial to loader.context.textures.static.create(it)) }
+                        ?.let { mapOf(binding.defaultMaterial to initialContentTexture(it)) }
                         ?: emptyMap()
                     register(name, model, override, contentFidelity = true)
+                    discoverGeckoRenderLayers(registered.getValue(name), model) {
+                        initialContentTexture(it)
+                    }
+                    model.contentIdentity?.let { identity ->
+                        require(contentByIdentity.putIfAbsent(identity, name) == null) {
+                            "Duplicate content-fidelity identity $identity."
+                        }
+                    }
                     if (content.format == SkeletalContentFormat.OPTIFINE_CEM) {
                         contentByEntity[entity] = name
                     }
@@ -181,13 +218,18 @@ class SkeletalLoader(private val loader: ModelLoader) {
         }
     }
 
-    fun contentModel(entity: ResourceLocation): ResourceLocation? = contentByEntity[entity]
+    fun contentModel(entity: ResourceLocation): ResourceLocation? {
+        val gecko = GeckoLibEntityModelRegistry.identity(entity)?.let(contentByIdentity::get)
+        return gecko ?: contentByEntity[entity]
+    }
+
+    fun contentModel(target: GeckoLibModelTarget, identifier: ResourceLocation): ResourceLocation? =
+        GeckoLibModelRouteRegistry.identity(target, identifier)?.let(contentByIdentity::get)
 
     /**
      * Re-parses, CPU-bakes, uploads, and atomically publishes content-fidelity
-     * skeletal models on the render thread. The existing uploaded texture array
-     * is reused; introducing a new texture rejects the candidate and preserves
-     * the active model generation.
+     * skeletal models and their static texture-array changes on the render
+     * thread.
      */
     fun reloadContentFidelity(): Long {
         check(loaded) { "Skeletal models are not loaded." }
@@ -196,16 +238,21 @@ class SkeletalLoader(private val loader: ModelLoader) {
         }
         val session = loader.context.session
         val prepared = ContentFidelityLoader(session.assets, session.dataPacks).prepare()
+        val textureGeneration = DeferredCloseable()
+        val textureUpdate = loader.context.textures.static.beginUpdate()
         val candidate = try {
-            prepareContentReload(prepared.value)
+            prepareContentReload(prepared.value, textureUpdate)
         } catch (error: Throwable) {
+            textureUpdate.closeSuppressing(error)
             prepared.cleanup.closeSuppressing(error)
             throw error
         }
         try {
+            textureUpdate.upload()
             candidate.upload()
         } catch (error: Throwable) {
             candidate.retireSuppressing(error)
+            textureUpdate.closeSuppressing(error)
             prepared.cleanup.closeSuppressing(error)
             throw error
         }
@@ -215,36 +262,88 @@ class SkeletalLoader(private val loader: ModelLoader) {
             session.contentFidelity.reloadLeased(
                 prepare = {
                     handedToStore = true
-                    prepared
+                    PreparedContent(
+                        prepared.value,
+                        AutoCloseable {
+                            var failure: Throwable? = null
+                            try {
+                                textureGeneration.close()
+                            } catch (error: Throwable) {
+                                failure = error
+                            }
+                            try {
+                                prepared.cleanup.close()
+                            } catch (error: Throwable) {
+                                failure?.addSuppressed(error) ?: run { failure = error }
+                            }
+                            failure?.let { throw it }
+                        },
+                    )
                 },
                 commit = { _, acquireLease ->
-                    applyContentReload(candidate, acquireLease)
+                    textureGeneration.set(applyContentReload(candidate, textureUpdate, acquireLease))
                 },
             )
         } catch (error: Throwable) {
             candidate.retireSuppressing(error)
+            textureUpdate.closeSuppressing(error)
             if (!handedToStore) prepared.cleanup.closeSuppressing(error)
             throw error
         }
     }
 
     fun entityTexture(entity: Entity, model: BakedSkeletalModel, tick: Long = entity.age.toLong()): EntityTextureMaterialFrame? {
-        val base = model.entityTextureBase ?: return null
-        val snapshot = model.contentLease?.value ?: return null
-        val context = EntityTextureContextFactory.create(entity)
-        return snapshot.entityTextureCatalog.select(
-            base = base,
-            entityKey = EntityTextureContextFactory.key(entity),
-            context = context,
-            tick = tick,
-            cache = snapshot.entityTextureCache,
+        return entityTextures(entity, model, tick).values.singleOrNull()
+    }
+
+    fun entityTextures(
+        entity: Entity,
+        model: BakedSkeletalModel,
+        tick: Long = entity.age.toLong(),
+    ): Map<ResourceLocation, EntityTextureMaterialFrame> {
+        val bases = if (model.entityTextureLayers.isNotEmpty()) {
+            model.entityTextureLayers.keys
+        } else {
+            setOfNotNull(model.entityTextureBase)
+        }
+        if (bases.isEmpty()) return emptyMap()
+        val snapshot = model.contentLease?.value ?: return emptyMap()
+        val context = EntityTextureContextFactory.create(
+            entity,
+            snapshot.entityTextureCatalog.contextKeys(bases),
         )
+        val entityKey = EntityTextureContextFactory.key(entity)
+        return bases.mapNotNull { base ->
+            snapshot.entityTextureCatalog.select(
+                base = base,
+                entityKey = entityKey,
+                context = context,
+                tick = tick,
+                cache = snapshot.entityTextureCache,
+            )?.let { base to it }
+        }.toMap()
     }
 
     private fun discoverEntityTextureVariants(registered: RegisteredModel, model: SkeletalModel) {
         val snapshot = contentLease?.value ?: return
         discoverEntityTextureVariants(registered, model, snapshot) {
-            loader.context.textures.static.create(it)
+            initialContentTexture(it)
+        }
+    }
+
+    private fun discoverGeckoRenderLayers(
+        registered: RegisteredModel,
+        model: SkeletalModel,
+        texture: (ResourceLocation) -> Texture,
+    ) {
+        val identity = model.contentIdentity ?: return
+        val snapshot = GeckoLibRenderLayerRegistry.snapshot(identity) ?: return
+        for (definition in snapshot.definitions) {
+            registered.geckoRenderLayers[definition.name] = RegisteredGeckoLibRenderLayer(
+                snapshot.registrationId,
+                definition,
+                texture(definition.texture),
+            )
         }
     }
 
@@ -257,24 +356,96 @@ class SkeletalLoader(private val loader: ModelLoader) {
         for ((material, properties) in model.textures) {
             val base = properties.source ?: material.texture()
             val entry = snapshot.entityTextureCatalog[base] ?: continue
-            if (registered.entityTextureBase != null && registered.entityTextureBase != base) {
-                Log.log(LogMessageType.LOADING, LogLevels.WARN) {
-                    "Skeletal model has multiple ETF base materials; only ${registered.entityTextureBase} is selectable per instance."
-                }
-                continue
-            }
-            registered.entityTextureBase = base
+            val layer = registered.entityTextureLayers.getOrPut(base) { RegisteredEntityTextureLayer() }
+            layer.materials += material
             for (variant in entry.textures) {
-                registered.materialOverrides[variant] = mapOf(material to texture(variant))
+                layer.textures.putIfAbsent(variant, texture(variant))
             }
         }
+        registered.entityTextureBase = registered.entityTextureLayers.keys.singleOrNull()
     }
 
-    private fun prepareContentReload(snapshot: ContentFidelitySnapshot): ContentReloadCandidate {
+    /**
+     * Keeps independently selectable ETF materials in separate meshes. This
+     * mirrors ETF's render-layer interception without requiring a global
+     * texture override for the complete entity model.
+     */
+    private fun bakeRegisteredModel(registered: RegisteredModel, model: SkeletalModel): BakedSkeletalModel {
+        val layerMaterials = registered.entityTextureLayers.values
+            .flatMapTo(linkedSetOf()) { it.materials }
+        val baked = model.bake(
+            registered.override,
+            registered.mesh.buildMesh(loader.context),
+            excludedMaterials = layerMaterials,
+        )
+        val layers = linkedMapOf<ResourceLocation, BakedEntityTextureLayer>()
+        val geckoLayers = linkedMapOf<String, BakedGeckoLibRenderLayer>()
+        val created = mutableListOf<de.bixilon.minosoft.gui.rendering.util.mesh.Mesh>()
+        try {
+            for ((base, registration) in registered.entityTextureLayers) {
+                val meshes = linkedMapOf<ResourceLocation, de.bixilon.minosoft.gui.rendering.util.mesh.Mesh>()
+                for ((textureName, texture) in registration.textures) {
+                    val override = registration.materials.associateWith { texture }
+                    val mesh = model.bake(
+                        registered.override + override,
+                        registered.mesh.buildMesh(loader.context),
+                        includedMaterials = registration.materials,
+                    ).mesh
+                    meshes[textureName] = mesh
+                    created += mesh
+                }
+                layers[base] = BakedEntityTextureLayer(registration.materials.toSet(), meshes)
+            }
+            for ((name, registration) in registered.geckoRenderLayers) {
+                val override = model.textures.keys.associateWith { registration.texture }
+                val mesh = model.bake(
+                    registered.override + override,
+                    registered.mesh.buildMesh(loader.context),
+                ).mesh
+                geckoLayers[name] = BakedGeckoLibRenderLayer(
+                    registrationId = registration.registrationId,
+                    blend = registration.definition.blend,
+                    fullBright = registration.definition.fullBright,
+                    mesh = mesh,
+                )
+                created += mesh
+            }
+        } catch (error: Throwable) {
+            baked.retireSuppressing(error)
+            for (mesh in created) {
+                if (mesh.state != MeshStates.PREPARING) continue
+                try {
+                    mesh.drop()
+                } catch (cleanup: Throwable) {
+                    error.addSuppressed(cleanup)
+                }
+            }
+            throw error
+        }
+        return baked.copy(
+            entityTextureBase = registered.entityTextureBase,
+            entityTextureLayers = layers,
+            geckoRenderLayers = geckoLayers,
+        )
+    }
+
+    private fun prepareContentReload(
+        snapshot: ContentFidelitySnapshot,
+        textureUpdate: StaticTextureArrayUpdate,
+    ): ContentReloadCandidate {
         val candidate = linkedMapOf<ResourceLocation, BakedSkeletalModel>()
         val entities = linkedMapOf<ResourceLocation, ResourceLocation>()
-        fun existingTexture(resource: ResourceLocation): Texture = requireNotNull(loader.context.textures.static[resource]) {
-            "Live content-fidelity reload requires texture $resource to exist in the uploaded static array."
+        val identities = linkedMapOf<SkeletalContentIdentity, ResourceLocation>()
+        val candidateContentNames = linkedSetOf<ResourceLocation>()
+        fun candidateTexture(resource: ResourceLocation): Texture {
+            val existing = loader.context.textures.static[resource]
+            if (resource !in loader.context.session.assets && existing != null) {
+                return textureUpdate.retain(existing)
+            }
+            require(resource in loader.context.session.assets) {
+                "Live content-fidelity reload requires texture $resource to exist in the active asset stack."
+            }
+            return textureUpdate.resolve(resource)
         }
 
         try {
@@ -294,7 +465,7 @@ class SkeletalLoader(private val loader: ModelLoader) {
                     val override = model.textures[binding.defaultMaterial]
                         ?.takeIf { it.source == null }
                         ?.let { findEntityTexture(entity) }
-                        ?.let { mapOf(binding.defaultMaterial to existingTexture(it)) }
+                        ?.let { mapOf(binding.defaultMaterial to candidateTexture(it)) }
                         ?: emptyMap()
                     val registered = RegisteredModel(
                         template = null,
@@ -303,43 +474,38 @@ class SkeletalLoader(private val loader: ModelLoader) {
                         model = model,
                         contentFidelity = true,
                     )
-                    model.bindLoadedTextures(loader.context, override.keys)
-                    discoverEntityTextureVariants(registered, model, snapshot, ::existingTexture)
+                    model.bindLoadedTextures(override.keys, ::candidateTexture)
+                    discoverEntityTextureVariants(registered, model, snapshot, ::candidateTexture)
+                    discoverGeckoRenderLayers(registered, model, ::candidateTexture)
 
                     val name = ContentSkeletalModelNames.model(source, content.identifier)
                     require(name !in candidate) { "Duplicate content-fidelity model $name." }
-                    val baked = model.bake(override, SkeletalMesh.buildMesh(loader.context))
-                    val materials = linkedMapOf<ResourceLocation, de.bixilon.minosoft.gui.rendering.util.mesh.Mesh>()
-                    try {
-                        for ((material, materialOverride) in registered.materialOverrides) {
-                            materials[material] = model.bake(
-                                override + materialOverride,
-                                SkeletalMesh.buildMesh(loader.context),
-                            ).mesh
-                        }
-                    } catch (error: Throwable) {
-                        baked.retireSuppressing(error)
-                        for (mesh in materials.values) {
-                            if (mesh.state != MeshStates.PREPARING) continue
-                            try {
-                                mesh.drop()
-                            } catch (cleanup: Throwable) {
-                                error.addSuppressed(cleanup)
-                            }
-                        }
-                        throw error
-                    }
-                    val complete = baked.copy(
-                        materialMeshes = materials,
-                        entityTextureBase = registered.entityTextureBase,
-                    )
+                    val complete = bakeRegisteredModel(registered, model)
                     candidate[name] = complete
+                    candidateContentNames += name
+                    complete.contentIdentity?.let { identity ->
+                        require(identities.putIfAbsent(identity, name) == null) {
+                            "Duplicate content-fidelity identity $identity."
+                        }
+                    }
                     if (content.format == SkeletalContentFormat.OPTIFINE_CEM) {
                         entities[entity] = name
                     }
                 }
             }
-            return ContentReloadCandidate(candidate, entities)
+            for ((name, retained) in reloadableEntityModels) {
+                val model = retained.model ?: continue
+                val registered = RegisteredModel(
+                    template = retained.template,
+                    override = retained.override,
+                    mesh = retained.mesh,
+                    model = model,
+                )
+                discoverEntityTextureVariants(registered, model, snapshot, ::candidateTexture)
+                require(name !in candidate) { "Native and content-fidelity models collide at $name." }
+                candidate[name] = bakeRegisteredModel(registered, model)
+            }
+            return ContentReloadCandidate(candidate, entities, identities, candidateContentNames)
         } catch (error: Throwable) {
             candidate.values.forEach { it.retireSuppressing(error) }
             throw error
@@ -348,8 +514,9 @@ class SkeletalLoader(private val loader: ModelLoader) {
 
     private fun applyContentReload(
         candidate: ContentReloadCandidate,
+        textureUpdate: StaticTextureArrayUpdate,
         acquireLease: () -> ContentGenerationLease<ContentFidelitySnapshot>,
-    ) {
+    ): AutoCloseable {
         try {
             candidate.models.values.forEach { model ->
                 check(model.contentLease == null) { "Reload candidate already owns a content lease." }
@@ -360,17 +527,39 @@ class SkeletalLoader(private val loader: ModelLoader) {
             throw error
         }
 
-        val previousNames = contentNames.toSet()
+        val previousNames = (contentNames + reloadableEntityModels.keys).toSet()
         val previousModels = previousNames.mapNotNull { name -> baked[name]?.let { name to it } }.toMap()
         val previousEntities = contentByEntity.toMap()
+        val previousIdentities = contentByIdentity.toMap()
         try {
+            textureUpdate.publish()
             previousNames.forEach(baked::remove)
             baked.putAll(candidate.models)
             contentNames.clear()
-            contentNames.addAll(candidate.models.keys)
+            contentNames.addAll(candidate.contentNames)
             contentByEntity.clear()
             contentByEntity.putAll(candidate.entities)
+            contentByIdentity.clear()
+            contentByIdentity.putAll(candidate.identities)
             loader.context.renderer[EntitiesRenderer]?.renderers?.reloadContentModels()
+            if (GeckoLibBlockEntityModelRegistry.owners().isNotEmpty()) {
+                loader.context.renderer[ChunkRenderer]?.let { chunks ->
+                    chunks.unload(chunks.world)
+                    chunks.invalidate(chunks.world)
+                }
+            }
+            val textureGeneration = textureUpdate.complete()
+            candidate.published = true
+            for (previous in previousModels.values) {
+                try {
+                    previous.retire()
+                } catch (error: Throwable) {
+                    Log.log(LogMessageType.RENDERING, LogLevels.WARN) {
+                        "Content-fidelity model retired with a cleanup failure: $error"
+                    }
+                }
+            }
+            return textureGeneration
         } catch (error: Throwable) {
             candidate.models.keys.forEach(baked::remove)
             baked.putAll(previousModels)
@@ -378,19 +567,20 @@ class SkeletalLoader(private val loader: ModelLoader) {
             contentNames.addAll(previousNames)
             contentByEntity.clear()
             contentByEntity.putAll(previousEntities)
+            contentByIdentity.clear()
+            contentByIdentity.putAll(previousIdentities)
+            textureUpdate.closeSuppressing(error)
             candidate.retireSuppressing(error)
             throw error
         }
-        candidate.published = true
-        for (previous in previousModels.values) {
-            try {
-                previous.retire()
-            } catch (error: Throwable) {
-                Log.log(LogMessageType.RENDERING, LogLevels.WARN) {
-                    "Content-fidelity model retired with a cleanup failure: $error"
-                }
-            }
-        }
+    }
+
+    private fun initialContentTexture(resource: ResourceLocation): Texture {
+        val existing = loader.context.textures.static[resource]
+        val texture = loader.context.textures.static.create(resource)
+        initialGenerationTextures += texture
+        if (existing == null) initialReclaimableTextures += texture
+        return texture
     }
 
     private fun findEntityTexture(entity: ResourceLocation): ResourceLocation? {
@@ -399,6 +589,11 @@ class SkeletalLoader(private val loader: ModelLoader) {
             ResourceLocation(entity.namespace, "textures/entity/${entity.path}.png"),
         )
         return candidates.firstOrNull { it in loader.context.session.assets }
+            ?: loader.context.session.assets.list("textures/entity/${entity.path}/")
+                .asSequence()
+                .filter { it.namespace == entity.namespace && it.path.endsWith(".png", ignoreCase = true) }
+                .sortedWith(compareBy(ResourceLocation::path))
+                .firstOrNull()
     }
 
     private fun findNativeEntityModel(entity: ResourceLocation): SkeletalModel? {
@@ -435,12 +630,26 @@ class SkeletalLoader(private val loader: ModelLoader) {
         var model: SkeletalModel? = null,
         val contentFidelity: Boolean = false,
         var entityTextureBase: ResourceLocation? = null,
-        val materialOverrides: MutableMap<ResourceLocation, SkeletalTextureMap> = linkedMapOf(),
+        val entityTextureLayers: MutableMap<ResourceLocation, RegisteredEntityTextureLayer> = linkedMapOf(),
+        val geckoRenderLayers: MutableMap<String, RegisteredGeckoLibRenderLayer> = linkedMapOf(),
+    )
+
+    private data class RegisteredEntityTextureLayer(
+        val materials: MutableSet<ResourceLocation> = linkedSetOf(),
+        val textures: MutableMap<ResourceLocation, Texture> = linkedMapOf(),
+    )
+
+    private data class RegisteredGeckoLibRenderLayer(
+        val registrationId: Long,
+        val definition: GeckoLibRenderLayerDefinition,
+        val texture: Texture,
     )
 
     private inner class ContentReloadCandidate(
         val models: Map<ResourceLocation, BakedSkeletalModel>,
         val entities: Map<ResourceLocation, ResourceLocation>,
+        val identities: Map<SkeletalContentIdentity, ResourceLocation>,
+        val contentNames: Set<ResourceLocation>,
     ) {
         var published = false
 
@@ -477,6 +686,29 @@ class SkeletalLoader(private val loader: ModelLoader) {
         }
     }
 
+    private class DeferredCloseable : AutoCloseable {
+        private var value: AutoCloseable? = null
+        private var closed = false
+
+        @Synchronized
+        fun set(value: AutoCloseable) {
+            check(this.value == null) { "Deferred cleanup is already assigned." }
+            if (closed) {
+                value.close()
+            } else {
+                this.value = value
+            }
+        }
+
+        @Synchronized
+        override fun close() {
+            if (closed) return
+            closed = true
+            value?.close()
+            value = null
+        }
+    }
+
     companion object {
 
         fun ResourceLocation.sModel(): ResourceLocation {
@@ -487,12 +719,17 @@ class SkeletalLoader(private val loader: ModelLoader) {
 
 internal object ContentSkeletalModelNames {
     fun model(source: ResourceLocation, identifier: String): ResourceLocation {
+        val safeSource = source.path.lowercase().replace(Regex("[^a-z0-9/._-]"), "_")
         val safeIdentifier = identifier.lowercase().replace(Regex("[^a-z0-9/._-]"), "_")
-        return ResourceLocation("minosoft", "content/${source.namespace}/$safeIdentifier.smodel")
+        return ResourceLocation("minosoft", "content/${source.namespace}/$safeSource/$safeIdentifier.smodel")
     }
 
     fun entity(content: de.bixilon.minosoft.assets.model.skeletal.SkeletalContent): ResourceLocation {
-        val path = content.source.path.substringAfterLast('/').substringBeforeLast('.')
+        val file = content.source.path.substringAfterLast('/')
+        val path = when {
+            file.endsWith(".geo.json", ignoreCase = true) -> file.dropLast(".geo.json".length)
+            else -> file.substringBeforeLast('.')
+        }
         return ResourceLocation(content.source.namespace, path)
     }
 }

@@ -69,6 +69,7 @@ object SkeletalModelComposer {
             neutralAnimations = base.neutralAnimations + overlay.neutralAnimations,
             expressions = base.expressions + overlay.expressions,
             expressionAliases = base.expressionAliases + overlay.expressionAliases,
+            contentIdentity = overlay.contentIdentity,
         )
     }
 }

@@ -25,6 +25,7 @@ import de.bixilon.minosoft.gui.rendering.chunk.ChunkRenderer
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.cache.ChunkMeshCache
 import de.bixilon.minosoft.gui.rendering.chunk.queue.meshing.tasks.MeshPrepareTask
 import de.bixilon.minosoft.gui.rendering.chunk.queue.meshing.tasks.MesherTaskManager
+import de.bixilon.minosoft.gui.rendering.models.loader.ModelLoader
 import kotlin.math.abs
 
 class ChunkMeshingQueue(
@@ -109,7 +110,8 @@ class ChunkMeshingQueue(
             val position = SectionPosition.of(section)
 
             val previous = renderer.loaded[position]
-            val cache = renderer.cache[position] ?: ChunkMeshCache(renderer.context)
+            val modelLoader: ModelLoader? = renderer.context.models
+            val cache = renderer.cache[position] ?: ChunkMeshCache(renderer.context, modelLoader?.skeletal)
 
             val mesh = try {
                 task.thread = Thread.currentThread()

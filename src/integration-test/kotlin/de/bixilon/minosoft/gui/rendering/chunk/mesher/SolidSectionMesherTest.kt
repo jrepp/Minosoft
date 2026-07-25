@@ -93,7 +93,7 @@ class SolidSectionMesherTest {
         val section = chunk.sections[0]!!
         val meshes = ChunkMeshesBuilder(context, section, ChunkMeshDetails.ALL + ChunkMeshDetails.CULL_FULL_OPAQUE)
 
-        mesher.mesh(section, ChunkMeshCache(context), chunk.neighbours, section.neighbours, meshes)
+        mesher.mesh(section, ChunkMeshCache(context, contentModels = null), chunk.neighbours, section.neighbours, meshes)
 
         return meshes.build(SectionPosition.of(chunk.position, 0))
     }

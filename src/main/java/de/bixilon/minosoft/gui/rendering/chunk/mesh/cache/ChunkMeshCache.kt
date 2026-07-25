@@ -13,14 +13,18 @@
 
 package de.bixilon.minosoft.gui.rendering.chunk.mesh.cache
 
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibModelTarget
 import de.bixilon.minosoft.data.entities.block.BlockEntity
 import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.data.world.positions.InSectionPosition
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.chunk.entities.BlockEntityRenderer
+import de.bixilon.minosoft.gui.rendering.chunk.entities.renderer.skeletal.GeckoLibBlockEntityRenderer
+import de.bixilon.minosoft.gui.rendering.models.loader.SkeletalLoader
 
 class ChunkMeshCache(
     val context: RenderContext,
+    private val contentModels: SkeletalLoader?,
 ) {
     private var entities: BlockEntityCacheState? = null
 
@@ -31,7 +35,7 @@ class ChunkMeshCache(
         var entities = this.entities
         if (entities == null) {
             // no cache yet
-            renderer = entity.createRenderer(context) ?: return null
+            renderer = createRenderer(entity) ?: return null
             entities = BlockEntityCacheState()
             this.entities = entities
             entities.store(position, renderer)
@@ -40,15 +44,15 @@ class ChunkMeshCache(
 
         if (renderer == null) {
             // cached version is empty (or already created when cache was empty
-            renderer = entity.createRenderer(context) ?: return null
+            renderer = createRenderer(entity) ?: return null
             entities.store(position, renderer)
         } else {
-            if (renderer.entity !== entity) {
+            if (renderer.entity !== entity || !matchesContentRoute(renderer, entity)) {
                 val unload = renderer
                 context.queue += { unload.unload() }
                 entities.store(position, null)
 
-                renderer = entity.createRenderer(context) ?: return null
+                renderer = createRenderer(entity) ?: return null
                 entities.store(position, renderer)
             }
 
@@ -56,6 +60,29 @@ class ChunkMeshCache(
         }
 
         return renderer
+    }
+
+    private fun createRenderer(entity: BlockEntity): BlockEntityRenderer? {
+        val model = contentModel(entity)
+        return model?.let { GeckoLibBlockEntityRenderer(entity, context, it) }
+            ?: entity.createRenderer(context)
+    }
+
+    private fun contentModel(entity: BlockEntity): de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel? {
+        val models = contentModels ?: return null
+        return models.contentModel(
+            GeckoLibModelTarget.BLOCK_ENTITY,
+            entity.state.block.identifier,
+        )?.let(models::get)
+    }
+
+    private fun matchesContentRoute(renderer: BlockEntityRenderer, entity: BlockEntity): Boolean {
+        val model = contentModel(entity)
+        return if (renderer is GeckoLibBlockEntityRenderer) {
+            renderer.contentModel === model
+        } else {
+            model == null
+        }
     }
 
     fun unmark() {

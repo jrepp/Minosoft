@@ -17,6 +17,7 @@ import de.bixilon.minosoft.data.entities.entities.LivingEntity
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.gui.rendering.entities.model.human.HumanoidMobModel
+import de.bixilon.minosoft.gui.rendering.skeletal.instance.GeckoLibAnimationManagerSnapshot
 import kotlin.time.Duration
 import kotlin.time.TimeSource.Monotonic.ValueTimeMark
 
@@ -28,6 +29,7 @@ open class HumanoidMobRenderer<E : LivingEntity>(
     var model: HumanoidMobModel? = null
         private set
     private var unloadModel = false
+    private var pendingGeckoAnimation: GeckoLibAnimationManagerSnapshot? = null
 
     override fun enqueueUnload() {
         super.enqueueUnload()
@@ -42,6 +44,7 @@ open class HumanoidMobRenderer<E : LivingEntity>(
     }
 
     override fun reloadContentModel() {
+        pendingGeckoAnimation = model?.instance?.geckoAnimation?.snapshot()
         unloadModel = true
     }
 
@@ -51,11 +54,16 @@ open class HumanoidMobRenderer<E : LivingEntity>(
 
         val resource = renderer.context.models.skeletal.contentModel(entity.type.identifier) ?: modelResource
         val baked = renderer.context.models.skeletal[resource] ?: return
-        model = HumanoidMobModel(this, baked).also { it.register() }
+        model = HumanoidMobModel(this, baked).also { feature ->
+            pendingGeckoAnimation?.let(feature.instance.geckoAnimation::restore)
+            pendingGeckoAnimation = null
+            feature.register()
+        }
     }
 
     override fun unload() {
         super.unload()
         model = null
+        pendingGeckoAnimation = null
     }
 }

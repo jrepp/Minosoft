@@ -30,6 +30,8 @@ data class SkeletalBakeContext(
 
     val textures: SkeletalInstanceTextureMap,
     val consumer: AbstractSkeletalMeshBuilder,
+    val includedMaterials: Set<ResourceLocation>? = null,
+    val excludedMaterials: Set<ResourceLocation> = emptySet(),
 ) {
 
     fun copy(element: SkeletalElement): SkeletalBakeContext {

@@ -58,7 +58,6 @@ class ItemEntityRenderer(renderer: EntitiesRenderer, entity: ItemEntity) : Entit
         }
     }
 
-
     companion object : RegisteredEntityModelFactory<ItemEntity>, Identified {
         const val CIRCLE = PIf * 2.0f
         override val identifier get() = ItemEntity.identifier

@@ -16,15 +16,26 @@ package de.bixilon.minosoft.gui.rendering.entities.feature.item
 import de.bixilon.kmath.mat.mat4.f.MMat4f
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec3.f.MVec3f
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibAnimationState
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibModelTarget
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLayerBlend
 import de.bixilon.minosoft.data.container.stack.ItemStack
+import de.bixilon.minosoft.data.text.formatting.color.ChatColors
 import de.bixilon.minosoft.gui.rendering.entities.feature.block.BlockMeshBuilder
 import de.bixilon.minosoft.gui.rendering.entities.feature.block.BlockShader
 import de.bixilon.minosoft.gui.rendering.entities.feature.item.ItemFeature.ItemRenderDistance.Companion.getCount
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.skeletal.GeckoLibEntityEventConsumer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.ContentModelReloadable
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
 import de.bixilon.minosoft.gui.rendering.models.item.ItemRenderUtil.getModel
 import de.bixilon.minosoft.gui.rendering.models.raw.display.DisplayPositions
+import de.bixilon.minosoft.gui.rendering.skeletal.baked.SkeletalModelStates
+import de.bixilon.minosoft.gui.rendering.skeletal.instance.GeckoLibAnimationManagerSnapshot
+import de.bixilon.minosoft.gui.rendering.skeletal.instance.SkeletalInstance
+import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
+import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
 import de.bixilon.minosoft.util.Backports.nextFloatPort
 import java.util.*
@@ -35,7 +46,7 @@ open class ItemFeature(
     stack: ItemStack?,
     display: DisplayPositions,
     val many: Boolean = true,
-) : MeshedFeature<Mesh>(renderer) {
+) : MeshedFeature<Mesh>(renderer), ContentModelReloadable {
     var display: DisplayPositions = display
         set(value) {
             if (field == value) return
@@ -45,6 +56,8 @@ open class ItemFeature(
     private var matrix = MMat4f()
     private var displayMatrix = Mat4f.EMPTY
     private var distance: ItemRenderDistance? = null
+    private var skeletal: SkeletalInstance? = null
+    private var pendingGeckoAnimation: GeckoLibAnimationManagerSnapshot? = null
     var stack: ItemStack? = stack
         set(value) {
             if (field == value) return
@@ -58,11 +71,12 @@ open class ItemFeature(
         super.update(delta)
 
         updateDistance()
-        if (this.mesh == null) {
+        if (this.mesh == null && this.skeletal == null) {
             val stack = this.stack ?: return unload()
-            createMesh(stack)
+            if (!createSkeletal(stack)) createMesh(stack)
         }
         updateMatrix()
+        updateSkeletal(delta)
     }
 
     private fun updateDistance() {
@@ -102,6 +116,24 @@ open class ItemFeature(
         this.mesh = mesh.bake()
     }
 
+    private fun createSkeletal(stack: ItemStack): Boolean {
+        val models = renderer.renderer.context.models.skeletal
+        val name = models.contentModel(GeckoLibModelTarget.ITEM, stack.item.identifier) ?: return false
+        val model = models[name] ?: return false
+        val instance = model.createInstance(renderer.renderer.context)
+        val events = GeckoLibEntityEventConsumer(renderer, instance)
+        instance.neutralAnimation.eventConsumer = events::dispatch
+        instance.geckoAnimation.eventConsumer = events::dispatch
+        pendingGeckoAnimation?.let(instance.geckoAnimation::restore)
+        pendingGeckoAnimation = null
+        skeletal = instance
+        unload = false
+
+        val vanilla = stack.item.getModel(renderer.renderer.session)
+        displayMatrix = vanilla?.getDisplay(display, stack)?.matrix ?: Mat4f.EMPTY
+        return true
+    }
+
     private fun updateMatrix() {
         val matrix = this.matrix
 
@@ -112,6 +144,52 @@ open class ItemFeature(
             translateXAssign(-0.5f)
             translateZAssign(-0.5f)
         }
+    }
+
+    private fun updateSkeletal(delta: Duration) {
+        val skeletal = this.skeletal ?: return
+        skeletal.transform.reset()
+        skeletal.animation.draw(delta)
+        val entity = renderer.entity
+        val velocity = entity.physics.velocity
+        val state = GeckoLibAnimationState(
+            ageSeconds = entity.age.coerceAtLeast(0) / 20.0f,
+            moving = velocity.x * velocity.x + velocity.z * velocity.z > MOVEMENT_EPSILON_SQUARED,
+            data = mapOf(
+                "query.is_on_ground" to if (entity.physics.onGround) 1.0 else 0.0,
+                "query.is_in_water" to if (entity.physics.inWater) 1.0 else 0.0,
+            ),
+        )
+        skeletal.geckoAnimation.updateState(state)
+        if (skeletal.geckoAnimation.active) {
+            skeletal.geckoAnimation.draw(delta, state)
+        } else {
+            skeletal.neutralAnimation.draw(delta)
+        }
+        skeletal.matrix.set(matrix.unsafe)
+        skeletal.transform.transform(skeletal.matrix.unsafe)
+        if (skeletal.geckoAnimation.active) {
+            skeletal.geckoAnimation.dispatchEvents()
+        } else {
+            skeletal.neutralAnimation.dispatchEvents()
+        }
+    }
+
+    override fun prepare() {
+        super.prepare()
+        val skeletal = this.skeletal ?: return
+        if (skeletal.state == SkeletalModelStates.PREPARING) skeletal.load()
+    }
+
+    override fun draw() {
+        val skeletal = this.skeletal
+        if (skeletal == null) {
+            super.draw()
+            return
+        }
+        val tint = renderer.light.value
+        skeletal.draw(tint)
+        drawGeckoRenderLayers(skeletal)
     }
 
     override fun draw(mesh: Mesh) {
@@ -130,7 +208,85 @@ open class ItemFeature(
 
     override fun unload() {
         this.displayMatrix = Mat4f.EMPTY
+        releaseSkeletal(enqueue = false)
         super.unload()
+    }
+
+    override fun enqueueUnload() {
+        val release = unload
+        super.enqueueUnload()
+        if (release) releaseSkeletal(enqueue = true)
+    }
+
+    override fun reloadContentModel() {
+        pendingGeckoAnimation = skeletal?.geckoAnimation?.snapshot()
+        unload = true
+    }
+
+    private fun releaseSkeletal(enqueue: Boolean) {
+        val skeletal = this.skeletal ?: return
+        this.skeletal = null
+        skeletal.neutralAnimation.clearEvents()
+        skeletal.geckoAnimation.clearEvents()
+        val release = {
+            when (skeletal.state) {
+                SkeletalModelStates.PREPARING -> skeletal.drop()
+                SkeletalModelStates.LOADED -> skeletal.unload()
+                SkeletalModelStates.UNLOADED -> Unit
+            }
+        }
+        if (enqueue && skeletal.state == SkeletalModelStates.LOADED) {
+            renderer.renderer.queue += release
+        } else {
+            release()
+        }
+    }
+
+    private fun drawGeckoRenderLayers(skeletal: SkeletalInstance) {
+        if (skeletal.model.geckoRenderLayers.isEmpty()) return
+        val system = renderer.renderer.context.system
+        val shader = renderer.renderer.context.skeletal.shader
+        val tint = renderer.light.value
+        try {
+            for ((name, layer) in skeletal.model.geckoRenderLayers) {
+                skeletal.geckoAnimation.renderLayer(name, layer.registrationId) ?: continue
+                when (layer.blend) {
+                    GeckoLibRenderLayerBlend.OPAQUE -> system.reset(
+                        faceCulling = false,
+                        depth = DepthFunctions.EQUAL,
+                    )
+                    GeckoLibRenderLayerBlend.TRANSLUCENT -> system.reset(
+                        blending = true,
+                        faceCulling = false,
+                        depthMask = false,
+                        sourceRGB = BlendingFunctions.SOURCE_ALPHA,
+                        destinationRGB = BlendingFunctions.ONE_MINUS_SOURCE_ALPHA,
+                        sourceAlpha = BlendingFunctions.ONE,
+                        destinationAlpha = BlendingFunctions.ONE_MINUS_SOURCE_ALPHA,
+                        depth = DepthFunctions.EQUAL,
+                    )
+                    GeckoLibRenderLayerBlend.ADDITIVE -> system.reset(
+                        blending = true,
+                        faceCulling = false,
+                        depthMask = false,
+                        sourceRGB = BlendingFunctions.SOURCE_ALPHA,
+                        destinationRGB = BlendingFunctions.ONE,
+                        sourceAlpha = BlendingFunctions.ONE,
+                        destinationAlpha = BlendingFunctions.ONE,
+                        depth = DepthFunctions.EQUAL,
+                    )
+                }
+                shader.use()
+                shader.tint = if (layer.fullBright) ChatColors.WHITE.rgb() else tint
+                skeletal.drawMesh(shader, layer.mesh)
+            }
+        } finally {
+            system.reset()
+        }
+    }
+
+    private companion object {
+        const val MOVEMENT_EPSILON_SQUARED = 1.0E-7
     }
 
     private enum class ItemRenderDistance(distance: Double) {
@@ -143,7 +299,6 @@ open class ItemFeature(
         val distance = distance * distance
 
         companion object {
-
             fun of(distance: Double) = when {
                 distance < CLOSE.distance -> CLOSE
                 distance < MID.distance -> MID

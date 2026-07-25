@@ -21,6 +21,8 @@ import de.bixilon.minosoft.assets.model.skeletal.SkeletalParseContext
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalResourceResolver
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureRuleParsers
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureCatalog
+import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureBlinkSettings
+import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureMaterialPropertiesParser
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureSelectionCache
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 
@@ -39,9 +41,25 @@ class ContentFidelityLoader(
         val skeletal = linkedMapOf<ResourceLocation, List<SkeletalContent>>()
         val animations = linkedMapOf<ResourceLocation, Map<String, de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationClip>>()
         val textureRules = linkedMapOf<ResourceLocation, de.bixilon.minosoft.assets.model.texture.entity.EntityTextureRuleSet>()
+        val blinkSettings = linkedMapOf<ResourceLocation, EntityTextureBlinkSettings>()
+        val emissiveSuffixes = linkedSetOf<String>()
 
         val available = assets.list().toSet()
         for (source in available.sortedWith(compareBy(ResourceLocation::namespace, ResourceLocation::path))) {
+            if (source.path in EMISSIVE_PROPERTIES) {
+                assets[source].use {
+                    emissiveSuffixes += EntityTextureMaterialPropertiesParser.parseEmissiveSuffixes(source, it)
+                }
+                continue
+            }
+            if (source.path.endsWith("_blink.properties", ignoreCase = true)) {
+                val base = ResourceLocation(source.namespace, source.path.removeSuffix("_blink.properties") + ".png")
+                assets[source].use {
+                    blinkSettings[EntityTextureCatalog.blinkPropertiesLocation(base)] =
+                        EntityTextureMaterialPropertiesParser.parseBlink(source, it)
+                }
+                continue
+            }
             if (source.path.endsWith(".jpm", ignoreCase = true)) continue
             SkeletalContentParsers.geometry(source)?.let { parser ->
                 assets[source].use { input ->
@@ -68,14 +86,15 @@ class ContentFidelityLoader(
             val sourceStem = source.path.substringAfterLast('/').removeSuffix(".geo.json")
             val matching = animations.filterKeys {
                 it.namespace == source.namespace &&
-                    it.path.substringAfterLast('/').removeSuffix(".animation.json") == sourceStem
+                    animationStem(it.path) == sourceStem
             }.values.fold(linkedMapOf<String, de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationClip>()) { result, clips ->
                 result.apply { putAll(clips) }
             }
             if (matching.isEmpty()) models else models.map { it.copy(animations = it.animations + matching) }
         }
 
-        val catalog = EntityTextureCatalog.build(textureRules, available)
+        if (emissiveSuffixes.isEmpty()) emissiveSuffixes += EntityTextureCatalog.DEFAULT_EMISSIVE_SUFFIXES
+        val catalog = EntityTextureCatalog.build(textureRules, available, emissiveSuffixes, blinkSettings)
         val cache = EntityTextureSelectionCache()
         return PreparedContent(
             ContentFidelitySnapshot(
@@ -87,6 +106,7 @@ class ContentFidelityLoader(
                     .associateBy { it.base },
                 entityTextureCatalog = catalog,
                 entityTextureCache = cache,
+                entityTextureEmissiveSuffixes = emissiveSuffixes,
                 dataPackFunctions = dataPacks?.let(DataPackFunctionLibrary::load) ?: DataPackFunctionLibrary.EMPTY,
             ),
             cleanup = cache,
@@ -116,5 +136,21 @@ class ContentFidelityLoader(
         return path.startsWith("optifine/random/entity/") ||
             path.startsWith("optifine/mob/") ||
             path.startsWith("textures/entity/")
+    }
+
+    private fun animationStem(path: String): String {
+        val name = path.substringAfterLast('/')
+        return when {
+            name.endsWith(".rp_anim.json", ignoreCase = true) -> name.dropLast(".rp_anim.json".length)
+            else -> name.removeSuffix(".animation.json")
+        }
+    }
+
+    private companion object {
+        val EMISSIVE_PROPERTIES = setOf(
+            "optifine/emissive.properties",
+            "textures/emissive.properties",
+            "etf/emissive.properties",
+        )
     }
 }

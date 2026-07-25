@@ -38,6 +38,8 @@ class ContentFidelityLoaderTest {
         val animations = assetsRoot.resolve("animations").createDirectories()
         val random = assetsRoot.resolve("optifine/random/entity/cow").createDirectories()
         val entityTextures = assetsRoot.resolve("textures/entity/cow").createDirectories()
+        val armorTextures = assetsRoot.resolve("textures/models/armor").createDirectories()
+        val optifine = assetsRoot.resolve("optifine").createDirectories()
         val functions = root.resolve("data/test/functions").createDirectories()
         val functionTags = root.resolve("data/minecraft/tags/functions").createDirectories()
         cem.resolve("part.jpm").writeText("""{"id":"body","boxes":[{"coordinates":[0,0,0,1,1,1],"textureOffset":[0,0]}]}""")
@@ -53,6 +55,12 @@ class ContentFidelityLoaderTest {
         random.resolve("cow2_e.png").writeText("")
         random.resolve("cow3.png").writeText("")
         entityTextures.resolve("cow.png").writeText("")
+        armorTextures.resolve("coat.png").writeText("")
+        armorTextures.resolve("coat_glow.png").writeText("")
+        armorTextures.resolve("coat_blink.png").writeText("")
+        armorTextures.resolve("coat_blink2.png").writeText("")
+        armorTextures.resolve("coat_blink.properties").writeText("blinkFrequency=42\nblinkLength=3")
+        optifine.resolve("emissive.properties").writeText("suffix.emissive=_glow")
         functions.resolve("load.mcfunction").writeText("say loaded")
         functionTags.resolve("load.json").writeText("""{"values":["test:load"]}""")
 
@@ -74,9 +82,21 @@ class ContentFidelityLoaderTest {
             assertEquals(1, snapshot.entityTextureRules.size)
             assertEquals(
                 setOf(1, 2, 3),
-                snapshot.entityTextureCatalog.entries.values.single().materials.keys,
+                snapshot.entityTextureCatalog.entries.getValue(
+                    de.bixilon.minosoft.data.registries.identified.ResourceLocation.of("test:textures/entity/cow/cow.png"),
+                ).materials.keys,
             )
-            assertEquals(3, snapshot.entityTextureMaterials.size)
+            assertEquals(setOf("_glow"), snapshot.entityTextureEmissiveSuffixes)
+            val coat = snapshot.entityTextureCatalog.entries.getValue(
+                de.bixilon.minosoft.data.registries.identified.ResourceLocation.of("test:textures/models/armor/coat.png"),
+            ).materials.getValue(1)
+            assertEquals(
+                de.bixilon.minosoft.data.registries.identified.ResourceLocation.of("test:textures/models/armor/coat_glow.png"),
+                coat.emissive,
+            )
+            assertEquals(42, coat.blinkFrequencyTicks)
+            assertEquals(3, coat.blinkLengthTicks)
+            assertTrue(snapshot.entityTextureMaterials.size >= 4)
             assertEquals(
                 setOf("animation.bird.idle"),
                 snapshot.skeletal.entries.single { it.key.path.endsWith("bird.geo.json") }.value.single().animations.keys,

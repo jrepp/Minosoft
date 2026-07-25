@@ -95,10 +95,24 @@ class EntityRendererManager(val renderer: EntitiesRenderer) : Iterable<EntityRen
         this.renderer.queue += { renderer.unload() }
     }
 
-    fun reloadContentModels() = lock.acquired {
-        renderers.unsafe.values.forEach {
-            (it as? ContentModelReloadable)?.reloadContentModel()
+    fun reloadContentModels() {
+        val reloadables = lock.acquired {
+            buildList {
+                for (renderer in renderers.unsafe.values) {
+                    (renderer as? ContentModelReloadable)?.let(::add)
+                    renderer.features.mapNotNullTo(this) { it as? ContentModelReloadable }
+                }
+            }
         }
+        var failure: Throwable? = null
+        for (reloadable in reloadables) {
+            try {
+                reloadable.reloadContentModel()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        failure?.let { throw it }
     }
 
     override fun iterator(): Iterator<EntityRenderer<*>> {

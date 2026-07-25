@@ -64,6 +64,12 @@ object FirstPersonItemTransform {
                 rotateXAssign(rotation.x.rad)
             }
 
+            if (flat) {
+                // Generated items currently use one zero-thickness textured
+                // quad. Their standard -90-degree handheld display yaw would
+                // otherwise turn that quad exactly edge-on to the camera.
+                rotateYAssign((side * FLAT_ITEM_YAW_DEGREES).rad)
+            }
             this *= display
             if (flat) {
                 // Flat item meshes are kept at the dropped-item 0.3-block size.
@@ -104,4 +110,6 @@ object FirstPersonItemTransform {
             -side * 20.0f * swing,
         )
     }
+
+    private const val FLAT_ITEM_YAW_DEGREES = 45.0f
 }

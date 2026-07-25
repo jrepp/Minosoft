@@ -143,6 +143,7 @@ object SkeletalModelBinder {
             neutralAnimations = content.animations,
             expressions = content.expressions,
             expressionAliases = aliases,
+            contentIdentity = SkeletalContentIdentity(content.source, content.format, content.identifier),
         )
         return SkeletalModelBinding(model, modelMaterial, content.expressions, aliases, attachments)
     }

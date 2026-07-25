@@ -14,7 +14,9 @@
 package de.bixilon.minosoft.gui.rendering.skeletal.instance
 
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationEvent
 import de.bixilon.minosoft.assets.model.skeletal.expression.SkeletalExpressionContext
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibEasingRegistry
 import de.bixilon.minosoft.assets.model.skeletal.runtime.SkeletalAnimationController
 import de.bixilon.minosoft.assets.model.skeletal.runtime.SkeletalPose
 import de.bixilon.minosoft.gui.rendering.models.block.element.ModelElement.Companion.BLOCK_SIZE
@@ -24,9 +26,15 @@ import kotlin.time.Duration
 class NeutralAnimationManager(private val instance: SkeletalInstance) {
     private val controller = SkeletalAnimationController(instance.model.neutralAnimations)
     private val transforms = instance.transform.index()
+    private val pendingEvents = mutableListOf<PendingEvent>()
     var expressionContext: SkeletalExpressionContext = SkeletalExpressionContext()
+    var eventConsumer: ((String, SkeletalAnimationEvent) -> Unit)? = null
 
     val current get() = controller.current
+
+    init {
+        instance.model.neutralAnimations.keys.singleOrNull()?.let(controller::play)
+    }
 
     fun play(name: String, transitionSeconds: Float = 0.0f, restart: Boolean = false) {
         controller.play(name, transitionSeconds, restart)
@@ -34,8 +42,36 @@ class NeutralAnimationManager(private val instance: SkeletalInstance) {
 
     fun draw(delta: Duration) {
         if (current == null) return
-        controller.update(delta.inWholeNanoseconds / 1_000_000_000.0f, expressionContext).apply(transforms)
+        val collect = if (eventConsumer == null) null else event@{ value: SkeletalAnimationEvent ->
+            val animation = current ?: return@event
+            pendingEvents += PendingEvent(animation, value)
+        }
+        controller.update(
+            delta.inWholeNanoseconds / 1_000_000_000.0f,
+            expressionContext,
+            collect,
+            easingResolver = GeckoLibEasingRegistry,
+        ).apply(transforms)
     }
+
+    fun dispatchEvents() {
+        if (pendingEvents.isEmpty()) return
+        val consumer = eventConsumer
+        try {
+            if (consumer != null) {
+                for ((animation, event) in pendingEvents) consumer(animation, event)
+            }
+        } finally {
+            pendingEvents.clear()
+        }
+    }
+
+    fun clearEvents() {
+        pendingEvents.clear()
+        eventConsumer = null
+    }
+
+    private data class PendingEvent(val animation: String, val event: SkeletalAnimationEvent)
 }
 
 internal fun SkeletalPose.apply(transforms: Map<String, TransformInstance>) {
@@ -51,7 +87,7 @@ internal fun SkeletalPose.apply(transforms: Map<String, TransformInstance>) {
     }
 }
 
-private fun TransformInstance.index(): Map<String, TransformInstance> {
+internal fun TransformInstance.index(): Map<String, TransformInstance> {
     val result = linkedMapOf<String, TransformInstance>()
     fun collect(transform: TransformInstance) {
         for ((name, child) in transform.children) {

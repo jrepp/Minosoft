@@ -18,6 +18,8 @@ import de.bixilon.kmath.mat.mat4.f.MMat4f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.data.entities.entities.player.Arms
 import de.bixilon.minosoft.gui.rendering.models.raw.display.DisplayPositions
+import de.bixilon.minosoft.gui.rendering.models.raw.display.ModelDisplay
+import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3fUtil.rad
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -40,6 +42,30 @@ class FirstPersonItemTransformTest {
         assertTrue(abs(right.x + left.x) < 0.0001f)
         assertTrue(abs(right.y - left.y) < 0.0001f)
         assertTrue(abs(right.z - left.z) < 0.0001f)
+    }
+
+    @Test
+    fun `generated handheld model retains visible screen area`() {
+        for ((arm, rotation) in mapOf(
+            Arms.RIGHT to Vec3f(0.0f, -90.0f, 25.0f),
+            Arms.LEFT to Vec3f(0.0f, 90.0f, -25.0f),
+        )) {
+            val display = ModelDisplay(
+                rotation = rotation.rad,
+                translation = Vec3f(1.13f, 3.2f, 1.13f) / 16.0f,
+                scale = Vec3f(0.68f),
+            ).matrix
+            val transform = FirstPersonItemTransform.create(arm, display, true, null)
+            val first = transform * Vec3f(0.3f, 0.0f, 0.5f)
+            val second = transform * Vec3f(0.6f, 0.0f, 0.5f)
+            val third = transform * Vec3f(0.6f, 0.3f, 0.5f)
+            val screenArea = abs(
+                (second.x - first.x) * (third.y - first.y) -
+                    (second.y - first.y) * (third.x - first.x),
+            )
+
+            assertTrue(screenArea > 0.1f, "$arm generated item is edge-on")
+        }
     }
 
     @Test
