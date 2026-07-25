@@ -32,7 +32,9 @@ import de.bixilon.minosoft.gui.rendering.gui.elements.primitive.ImageElement
 import de.bixilon.minosoft.gui.rendering.gui.elements.text.TextElement
 import de.bixilon.minosoft.gui.rendering.gui.mesh.GUIVertexOptions
 import de.bixilon.minosoft.gui.rendering.gui.mesh.consumer.GuiVertexConsumer
+import de.bixilon.minosoft.gui.rendering.models.item.ItemPredicateContext
 import de.bixilon.minosoft.gui.rendering.models.item.ItemRenderUtil.getModel
+import de.bixilon.minosoft.gui.rendering.models.item.resolve
 
 class RawItemElement(
     guiRenderer: GUIRenderer,
@@ -73,7 +75,10 @@ class RawItemElement(
         val textureSize = size - 1
 
         val item = stack.item
-        val model = item.getModel(guiRenderer.session)
+        val model = item.getModel(guiRenderer.session)?.resolve(
+            stack,
+            ItemPredicateContext.of(guiRenderer.session.player, stack, context.itemPredicates),
+        )
 
         if (stack.enchanting.enchantments.isNotEmpty()) {
             ImageElement(guiRenderer, context.textures.whiteTexture.texture, size = this.size, tint = ENCHANTED_COLOR).forceRender(offset, consumer, options)

@@ -7,6 +7,14 @@
 
 package de.bixilon.minosoft.modding.loader.fabric
 
+import de.bixilon.minosoft.config.settings.BooleanConfigControl
+import de.bixilon.minosoft.config.settings.ConfigEntry
+import de.bixilon.minosoft.config.settings.SettingsCategory
+import de.bixilon.minosoft.config.settings.SettingsSchema
+import de.bixilon.minosoft.config.settings.SteppedConfigControl
+import de.bixilon.minosoft.config.settings.TextConfigControl
+import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
+import de.bixilon.minosoft.data.world.World
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLevels
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
@@ -33,6 +41,49 @@ object EntityCullingCompatibilityAdapter : FabricCompatibilityAdapter {
         require(supports(probe.metadata)) { "Unsupported Entity Culling artifact: ${probe.metadata.version}" }
         EntityCullingVisibilityHook.reset()
         scope.own(FabricEntityVisibilityHooks.register(id, EntityCullingVisibilityHook))
+        scope.own(
+            FabricSettings.register(id, minosoft("entity_culling_options"), "Entity Culling settings") { renderer ->
+                val general = renderer.session.profiles.entity.general
+                SettingsSchema(
+                    title = "Entity Culling settings",
+                    entries = listOf(
+                        ConfigEntry(
+                            id = "enabled",
+                            label = "Occlusion culling",
+                            description = "Skips entities hidden behind opaque world geometry while retaining distance and frustum checks.",
+                            defaultValue = true,
+                            control = BooleanConfigControl,
+                            read = EntityCullingOptions::enabled,
+                            write = EntityCullingOptions::setEnabled,
+                        ),
+                        ConfigEntry(
+                            id = "render_distance",
+                            label = "Entity render distance",
+                            description = "Use -1 to follow the terrain view distance.",
+                            defaultValue = -1,
+                            control = SteppedConfigControl(listOf(-1) + (0..World.MAX_VIEW_DISTANCE).toList()) {
+                                if (it < 0) "Follow terrain" else "$it chunks"
+                            },
+                            read = { general.renderDistance },
+                            write = { general.renderDistance = it },
+                        ),
+                        ConfigEntry(
+                            id = "entity_whitelist",
+                            label = "Occlusion whitelist",
+                            description = "Comma-separated entity identifiers that remain visible through occlusion.",
+                            defaultValue = "",
+                            control = TextConfigControl(4_096),
+                            read = EntityCullingOptions::whitelistText,
+                            write = EntityCullingOptions::setWhitelist,
+                            validate = { value, _ -> EntityCullingOptions.validateWhitelist(value) },
+                            category = "advanced",
+                        ),
+                    ),
+                    categories = listOf(SettingsCategory.GENERAL, SettingsCategory("advanced", "Advanced")),
+                    persist = EntityCullingOptions::persist,
+                )
+            },
+        )
         Log.log(LogMessageType.MOD_LOADING, LogLevels.INFO) {
             "ENTITY_CULLING_HOOK_INSTALLED hook=entity-visibility implementation=minosoft-native-occlusion"
         }
@@ -53,6 +104,75 @@ object EntityCullingVisibilityHook : FabricEntityVisibilityHook {
                 "ENTITY_CULLING_HOOK_INVOKED hook=entity-visibility first=${native.name.lowercase()} implementation=minosoft-native-occlusion"
             }
         }
+        if (native != EntityVisibilityLevels.OCCLUDED) return native
+        if (!EntityCullingOptions.enabled()) return EntityVisibilityLevels.VISIBLE
+        if (EntityCullingOptions.whitelisted(renderer.entity.type.identifier.toString())) return EntityVisibilityLevels.VISIBLE
         return native
     }
+}
+
+private object EntityCullingOptions {
+    private val store by lazy {
+        FabricAdapterOptionStore(
+            "entityculling",
+            mapOf(
+                "enabled" to "true",
+                "entity_whitelist" to "",
+            ),
+        )
+    }
+    @Volatile private var enabled = true
+    @Volatile private var whitelistText = ""
+    @Volatile private var whitelist = emptySet<String>()
+    @Volatile private var loaded = false
+
+    fun enabled(): Boolean {
+        load()
+        return enabled
+    }
+
+    fun setEnabled(value: Boolean) {
+        load()
+        enabled = value
+        store.set("enabled", value)
+    }
+
+    fun whitelistText(): String {
+        load()
+        return whitelistText
+    }
+
+    fun setWhitelist(value: String) {
+        require(validateWhitelist(value) == null) { "Invalid entity whitelist." }
+        load()
+        whitelistText = value
+        whitelist = parseWhitelist(value)
+        store.set("entity_whitelist", value)
+    }
+
+    fun whitelisted(identifier: String): Boolean {
+        load()
+        return identifier in whitelist
+    }
+
+    fun validateWhitelist(value: String): String? {
+        val invalid = value.split(',').map(String::trim).filter(String::isNotEmpty).firstOrNull { !IDENTIFIER.matches(it) }
+        return invalid?.let { "Invalid entity identifier: $it" }
+    }
+
+    fun persist() = store.persist()
+
+    @Synchronized
+    private fun load() {
+        if (loaded) return
+        enabled = store.boolean("enabled")
+        whitelistText = store.string("entity_whitelist")
+        whitelist = parseWhitelist(whitelistText)
+        loaded = true
+    }
+
+    private fun parseWhitelist(value: String): Set<String> =
+        value.split(',').map(String::trim).filter(String::isNotEmpty).toSet()
+
+    private val IDENTIFIER = Regex("[a-z0-9_.-]+:[a-z0-9_./-]+")
 }

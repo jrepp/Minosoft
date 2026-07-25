@@ -8,6 +8,9 @@
 package de.bixilon.minosoft.modding.loader.fabric
 
 import de.bixilon.kmath.vec.vec2.f.Vec2f
+import de.bixilon.minosoft.config.settings.BooleanConfigControl
+import de.bixilon.minosoft.config.settings.ConfigEntry
+import de.bixilon.minosoft.config.settings.SettingsSchema
 import de.bixilon.minosoft.data.container.types.PlayerInventory
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
@@ -51,7 +54,47 @@ object InventoryManagementCompatibilityAdapter : FabricCompatibilityAdapter {
             FabricContainerScreenExtensions.register(id, minosoft("inventory_management")) { context ->
                 FabricContainerScreenExtension(
                     offset = Vec2f(context.contentSize.x + 7.0f, 8.0f),
-                    element = InventoryManagementControlsElement(context.renderer, context.container is PlayerInventory),
+                    element = InventoryManagementControlsElement(
+                        context.renderer,
+                        context.container is PlayerInventory,
+                        InventoryManagementOptions.sortButtons(),
+                        InventoryManagementOptions.transferButtons(),
+                        InventoryManagementOptions.stackButtons(),
+                    ),
+                )
+            },
+        )
+        scope.own(
+            FabricSettings.register(id, minosoft("inventory_management_options"), "Inventory Management settings") {
+                SettingsSchema(
+                    title = "Inventory Management settings",
+                    entries = listOf(
+                        ConfigEntry(
+                            id = "sort_buttons",
+                            label = "Sort buttons",
+                            defaultValue = true,
+                            control = BooleanConfigControl,
+                            read = InventoryManagementOptions::sortButtons,
+                            write = InventoryManagementOptions::setSortButtons,
+                        ),
+                        ConfigEntry(
+                            id = "transfer_buttons",
+                            label = "Bulk transfer buttons",
+                            defaultValue = true,
+                            control = BooleanConfigControl,
+                            read = InventoryManagementOptions::transferButtons,
+                            write = InventoryManagementOptions::setTransferButtons,
+                        ),
+                        ConfigEntry(
+                            id = "stack_buttons",
+                            label = "Auto-stack buttons",
+                            defaultValue = true,
+                            control = BooleanConfigControl,
+                            read = InventoryManagementOptions::stackButtons,
+                            write = InventoryManagementOptions::setStackButtons,
+                        ),
+                    ),
+                    persist = InventoryManagementOptions::persist,
                 )
             },
         )
@@ -95,6 +138,9 @@ internal object InventoryManagementProtocol {
 internal class InventoryManagementControlsElement(
     guiRenderer: GUIRenderer,
     playerInventoryOnly: Boolean,
+    sortButtons: Boolean = true,
+    transferButtons: Boolean = true,
+    stackButtons: Boolean = true,
 ) : Element(guiRenderer, 24), AbstractLayout<AbstractButtonElement> {
     private data class PositionedButton(val button: AbstractButtonElement, val offset: Vec2f)
 
@@ -103,15 +149,19 @@ internal class InventoryManagementControlsElement(
     override var activeDragElement: AbstractButtonElement? = null
 
     init {
-        add("Sort inventory", InventoryManagementOperation.SORT, true)
+        if (sortButtons) add("Sort inventory", InventoryManagementOperation.SORT, true)
         if (!playerInventoryOnly) {
-            add("Sort container", InventoryManagementOperation.SORT, false)
-            add("Put all", InventoryManagementOperation.TRANSFER, true)
-            add("Take all", InventoryManagementOperation.TRANSFER, false)
-            add("Stack in", InventoryManagementOperation.STACK, true)
-            add("Stack out", InventoryManagementOperation.STACK, false)
+            if (sortButtons) add("Sort container", InventoryManagementOperation.SORT, false)
+            if (transferButtons) {
+                add("Put all", InventoryManagementOperation.TRANSFER, true)
+                add("Take all", InventoryManagementOperation.TRANSFER, false)
+            }
+            if (stackButtons) {
+                add("Stack in", InventoryManagementOperation.STACK, true)
+                add("Stack out", InventoryManagementOperation.STACK, false)
+            }
         }
-        _size = Vec2f(BUTTON_WIDTH, buttons.size * (BUTTON_HEIGHT + SPACING) - SPACING)
+        _size = Vec2f(BUTTON_WIDTH, maxOf(0.0f, buttons.size * (BUTTON_HEIGHT + SPACING) - SPACING))
     }
 
     private fun add(label: String, operation: InventoryManagementOperation, playerInventory: Boolean) {
@@ -148,4 +198,25 @@ internal class InventoryManagementControlsElement(
         const val BUTTON_HEIGHT = 16.0f
         const val SPACING = 2.0f
     }
+}
+
+private object InventoryManagementOptions {
+    private val store by lazy {
+        FabricAdapterOptionStore(
+            "inventorymanagement",
+            mapOf(
+                "sort_buttons" to "true",
+                "transfer_buttons" to "true",
+                "stack_buttons" to "true",
+            ),
+        )
+    }
+
+    fun sortButtons() = store.boolean("sort_buttons")
+    fun transferButtons() = store.boolean("transfer_buttons")
+    fun stackButtons() = store.boolean("stack_buttons")
+    fun setSortButtons(value: Boolean) = store.set("sort_buttons", value)
+    fun setTransferButtons(value: Boolean) = store.set("transfer_buttons", value)
+    fun setStackButtons(value: Boolean) = store.set("stack_buttons", value)
+    fun persist() = store.persist()
 }

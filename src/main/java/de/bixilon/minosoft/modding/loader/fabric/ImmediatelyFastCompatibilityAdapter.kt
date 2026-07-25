@@ -7,6 +7,10 @@
 
 package de.bixilon.minosoft.modding.loader.fabric
 
+import de.bixilon.minosoft.config.settings.BooleanConfigControl
+import de.bixilon.minosoft.config.settings.ConfigEntry
+import de.bixilon.minosoft.config.settings.SettingsSchema
+import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
@@ -33,6 +37,43 @@ object ImmediatelyFastCompatibilityAdapter : FabricCompatibilityAdapter {
         require(supports(probe.metadata)) { "Unsupported ImmediatelyFast artifact: ${probe.metadata.version}" }
         ImmediatelyFastFrameHook.reset()
         scope.own(FabricFrameHooks.register(id, ImmediatelyFastFrameHook))
+        scope.own(
+            FabricSettings.register(id, minosoft("immediately_fast_options"), "ImmediatelyFast settings") {
+                SettingsSchema(
+                    title = "ImmediatelyFast settings",
+                    entries = listOf(
+                        ConfigEntry(
+                            id = "frame_batching",
+                            label = "Retained frame batching",
+                            description = "Enables the source-native retained queue-flush integration.",
+                            defaultValue = true,
+                            control = BooleanConfigControl,
+                            read = ImmediatelyFastOptions::frameBatching,
+                            write = ImmediatelyFastOptions::setFrameBatching,
+                        ),
+                        ConfigEntry(
+                            id = "hud_batching",
+                            label = "HUD batching",
+                            description = "Records the desired compatibility policy; Minosoft HUD meshes are already retained.",
+                            defaultValue = true,
+                            control = BooleanConfigControl,
+                            read = ImmediatelyFastOptions::hudBatching,
+                            write = ImmediatelyFastOptions::setHudBatching,
+                        ),
+                        ConfigEntry(
+                            id = "screen_batching",
+                            label = "Screen batching",
+                            description = "Records the desired compatibility policy; Minosoft screens are already retained.",
+                            defaultValue = true,
+                            control = BooleanConfigControl,
+                            read = ImmediatelyFastOptions::screenBatching,
+                            write = ImmediatelyFastOptions::setScreenBatching,
+                        ),
+                    ),
+                    persist = ImmediatelyFastOptions::persist,
+                )
+            },
+        )
         Log.log(LogMessageType.MOD_LOADING, LogLevels.INFO) {
             "IMMEDIATELY_FAST_HOOK_INSTALLED hook=frame-batching implementation=minosoft-retained-rendering"
         }
@@ -45,10 +86,32 @@ object ImmediatelyFastFrameHook : FabricFrameHook {
     fun reset() = invoked.set(false)
 
     override fun beforeQueueFlush(context: RenderContext) {
+        if (!ImmediatelyFastOptions.frameBatching()) return
         if (invoked.compareAndSet(false, true)) {
             Log.log(LogMessageType.MOD_LOADING, LogLevels.INFO) {
                 "IMMEDIATELY_FAST_HOOK_INVOKED hook=frame-batching implementation=minosoft-retained-rendering"
             }
         }
     }
+}
+
+private object ImmediatelyFastOptions {
+    private val store by lazy {
+        FabricAdapterOptionStore(
+            "immediatelyfast",
+            mapOf(
+                "frame_batching" to "true",
+                "hud_batching" to "true",
+                "screen_batching" to "true",
+            ),
+        )
+    }
+
+    fun frameBatching() = store.boolean("frame_batching")
+    fun hudBatching() = store.boolean("hud_batching")
+    fun screenBatching() = store.boolean("screen_batching")
+    fun setFrameBatching(value: Boolean) = store.set("frame_batching", value)
+    fun setHudBatching(value: Boolean) = store.set("hud_batching", value)
+    fun setScreenBatching(value: Boolean) = store.set("screen_batching", value)
+    fun persist() = store.persist()
 }
