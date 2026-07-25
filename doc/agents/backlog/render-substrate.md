@@ -73,7 +73,9 @@ described as completion.
 The flat world pipeline and presentation-only Iris substitute have been removed.
 Production now uses one immutable graph, typed main/shadow targets,
 transactional terrain/shader provider registries, stable scene semantics, and
-last-known-good OpenGL program publication.
+last-known-good OpenGL program and texture-array publication. Terrain provider
+generations snapshot their negotiated vertex-layout declaration so a backend
+cannot mutate the shader ABI after publication.
 
 The remaining gap is behavioral rather than structural. The Sodium-labelled
 provider is exclusive, but delegates the existing Minosoft chunk core instead of
@@ -84,7 +86,9 @@ uniform, sampler, program-family, and target contract. Full GPU-object
 steady-state baselines, complete base-scene visual coverage, and the recorded
 performance thresholds also remain open. Typed per-context OpenGL accounting
 now supplies the required counts but has not yet accepted the reload/unload
-baseline protocol. See the dated checkpoint for exact evidence.
+baseline protocol. A real independently owned terrain backend must still prove
+that its physical layout buffers retire with the pinned provider generation.
+See the dated checkpoint for exact evidence.
 
 ## Canonical target shape
 

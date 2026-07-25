@@ -184,6 +184,20 @@ twenty-cycle run has not yet been repeated against stable before/after GPU
 baselines, so `LIFECYCLE_CLEAN` remains partial. See
 [OpenGL resource-accounting evidence](2026-07-24-opengl-resource-accounting.md).
 
+Subsequent implementation closed two CPU-verifiable transaction gaps. Dynamic
+texture reload and capacity/resolution growth now prepare a complete candidate
+array from a stable texture snapshot, restore the active binding after candidate
+failure, publish resolution/capacity with the new handle, and retire the old
+handle afterward. Static content texture refresh already follows the same
+candidate/publish/retire shape. `TerrainBackendRegistry` now snapshots the
+backend descriptor at candidate validation, so its semantic/physical
+vertex-layout declaration remains pinned through every frame lease and retired
+backend generation even if the provider later mutates its descriptor. Focused
+headless tests cover failed texture candidates, growth scheduling, lock release
+after synchronous upload failure, layout pinning, and deferred backend
+retirement. Stable typed real-GL baselines and physical buffer retirement for an
+independently owned terrain backend remain open.
+
 ## Performance checkpoint
 
 Trajectory `render-substrate-r7-metrics-2026-07-24` used 600-sample bounded
@@ -208,7 +222,7 @@ sample exceeded both built-in samples.
 | `SODIUM_OWNS_TERRAIN` | **Not accepted** | Selection/exclusivity is real; scheduling, meshing, upload, visibility, batching, and draw implementation still delegate the Minosoft chunk core. |
 | `IRIS_OWNS_SHADER_PIPELINE` | **Not accepted** | The executable reference pack owns terrain/shadow/composite resources, but it is project-owned and Minosoft-shaped rather than an independent pinned real-world pack. |
 | `IRIS_SODIUM_COMPOSE` | Partial | Reference-path composition and no-duplicate submission are verified; the two full upstream contracts are not. |
-| `TRANSACTIONAL_RESOURCES` | Partial | Graph/program/target publication is last-known-good; texture and physical vertex-layout generation coverage is incomplete. |
+| `TRANSACTIONAL_RESOURCES` | Partial | Graph/program/target publication, dynamic/static content texture swaps, and terrain layout declarations are last-known-good. Stable real-GL texture baselines and physical layout-buffer retirement by an independently owned terrain backend remain unproved. |
 | `LIFECYCLE_CLEAN` | Partial | Twenty invalid/valid cycles and store counts pass, and typed GPU accounting now exists; the loop has not returned every resource type to an accepted steady-state baseline. |
 | `HEADLESS_SAFE` | **Accepted** | Graph, resource, planner, negotiation, timing, and provider tests pass without OpenGL. |
 | `MULTI_VERSION_SAFE` | **Accepted** | The boundary is version-normalized and the broad multi-version registry/integration suite passes. |

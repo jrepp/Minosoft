@@ -214,9 +214,11 @@ Advance the render-mod ladder in this order:
    scheduling, meshing, upload, visibility/batching, and graph-view submission.
 4. Expand the Iris shader-pipeline provider against an independent pinned pack:
    program selection, views, typed targets, uniforms/samplers, and composites.
-5. Complete texture/layout transactions, use the typed driver-side accounting
-   to accept steady-state reload/unload baselines, then prove the producer-rich
-   visual matrix, combined ownership, and percentile performance gates.
+5. Use the completed texture candidate swaps and pinned terrain layout
+   declarations with the typed driver-side accounting to accept steady-state
+   reload/unload baselines. Prove physical layout-buffer retirement in the
+   independently owned terrain backend, then prove the producer-rich visual
+   matrix, combined ownership, and percentile performance gates.
 
 Keep Mojang/Fabric type translation at exact compatibility modules. Do not grow
 a general Mojang renderer facade in the substrate, run the built-in and Sodium

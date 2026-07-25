@@ -33,7 +33,7 @@ in-game GUI/HUD, and audio presentation.
 | Verified | Pause → Mod settings exposes the active pack's shared compatibility catalog and runtime diagnostics, including global FPS context and attributed invocation timing at owned graphics hooks. | `FabricModSettingsMenu`, `FabricModDiagnosticsMenu`, `FabricModDiagnostics`, and [2026-07-22 catalog/diagnostics evidence](../evidence/2026-07-22-fabric-catalog-diagnostics.md). |
 | Verified | Native configuration screens can adapt typed Boolean, text, stepped, and cycle entries into staged forms with validation, dependency-driven disabled states, restart markers, and reset/apply/cancel actions. Variable-height panels render and tick intersecting rows and CPU-clip textured, item, solid, and text quads at the viewport. Live visual acceptance remains. | `SettingsFormMenu`, `CycleSelectorElement`, `ClippedScrollPanelElement`, `ClippedGuiVertexConsumer`, focused tests, and [settings-form evidence](../evidence/2026-07-24-settings-forms.md). |
 | Verified | Categories/tabs, focused filtering, hover descriptions, virtualized grids, status/modal presentation, map canvases, and tank/energy/progress gauges reuse the retained GUI and shared CPU clip path. Iris define overrides are applied before candidate compilation; JEI ingredient/recipe cells retain item tooltip behavior. Live visual acceptance remains. | `TabBarElement`, `SettingsFilter`, `ClippedVirtualGridElement`, `MapCanvasElement`, `GaugeElement`, `IrisShaderPackPlanner`, `JeiCompatibilityAdapter`, focused tests, and [Fabric UI evidence](../evidence/2026-07-24-fabric-ui-framework.md). |
-| Verified | Manual shader and texture reloads execute on the render queue and publish owned Fabric prepare/apply/complete/failed lifecycle events. OpenGL shader reload now prepares and links before swapping; invalid Iris reference-pack reloads preserve the active program/target generation through twenty failure/recovery cycles. Texture-array replacement is still a separate generation and steady-state-baseline gate. | `ReloadCommand`, `FabricResourceReloadEvents`, `OpenGlNativeShader`, `ShaderPipelineRegistry`, and [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
+| Verified | Manual shader and texture reloads execute on the render queue and publish owned Fabric prepare/apply/complete/failed lifecycle events. OpenGL shader reload prepares and links before swapping. Dynamic texture reload/resize and static content texture refresh prepare complete candidate arrays, preserve the active handle on failure, and retire the replaced handle after publication. Invalid Iris reference-pack reloads preserve the active program/target generation through twenty failure/recovery cycles; a repeated typed real-GL texture baseline remains open. | `ReloadCommand`, `FabricResourceReloadEvents`, `OpenGlNativeShader`, `OpenGlDynamicTextureArray`, `StaticTextureArrayUpdate`, `ShaderPipelineRegistry`, focused tests, and [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
 | Verified | Entity-feature mesh disposal is state-aware and idempotent: immediate shutdown does not enqueue a duplicate GPU unload, and queued replacement cleanup rechecks mesh state on the render thread. | `MeshedFeature`, focused entity-rendering tests, live post-reload log sampling, and [entity mesh unload evidence](../evidence/2026-07-22-entity-mesh-unload.md). |
 | Verified | OpenGL texture shaders initialize every active sampler-array slot to a valid 2D-array unit; dynamic arrays grow for high-resolution pack skins, and font arrays allocate independent width/height maxima. Faithful 64x no longer produces Apple's unloadable-array warning or `GL_INVALID_VALUE`. | `OpenGlTextureManager`, `OpenGlDynamicTextureArray`, `OpenGlFontTextureArray`, `OpenGlTextureSizing`, focused tests, and [resource-pack OpenGL evidence](../evidence/2026-07-22-resource-pack-opengl-audio.md). |
 | Verified | Positional audio refreshes the listener from the current camera before attenuation and reports requested, resolved, rejected, buffer-ready, and source-start stages. A harvested stone started at its block-center world coordinate. | `AudioPlayer`, client debug state, and [positional-audio evidence](../evidence/2026-07-22-resource-pack-opengl-audio.md). |
@@ -90,14 +90,17 @@ and combined profiles. Built-in providers keep unmodded Minosoft functional;
 selected mod providers replace ownership on the same graph.
 
 Program, shader-pipeline, render-target, and graph generations now use
-last-known-good publication and frame leases. Texture arrays and the complete
-physical-layout generation still need the same transaction boundary. The exact
-Sodium adapter is graph-exclusive but continues to call Minosoft's scheduling,
-meshing, upload, visibility, and batching core. The Iris adapter executes a
-bounded project reference pack, not an independent real-world pack. Those are
-the next architectural gates, followed by visual, percentile-performance, and
-driver-side steady-state baseline acceptance. Typed per-context OpenGL counts
-now provide the measurement surface for that final gate.
+last-known-good publication and frame leases. Static content and dynamic
+texture arrays now prepare before publication, and each terrain-provider
+generation pins an immutable vertex-layout declaration. A real independently
+owned terrain backend must still prove that its physical layout buffers retire
+with that generation. The exact Sodium adapter is graph-exclusive but
+continues to call Minosoft's scheduling, meshing, upload, visibility, and
+batching core. The Iris adapter executes a bounded project reference pack, not
+an independent real-world pack. Those are the next architectural gates,
+followed by visual, percentile-performance, and driver-side steady-state
+baseline acceptance. Typed per-context OpenGL counts now provide the
+measurement surface for that final gate.
 
 Graphics extensions from mods must register through an owned scope so a mod
 generation can build a candidate graph and enqueue render-thread cleanup before
@@ -116,6 +119,7 @@ choose only after measuring context recreation cost and native ownership.
 | Reported | SM0–SM6 are reported complete. Their useful outputs have been absorbed into the canonical implementation and dated checkpoint; synthetic duplicate graph/harness class names are not repository APIs. | [Render-substrate target](../backlog/render-substrate.md) and [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
 | Verified | The production graph has stable IDs, explicit semantics/dependencies, deterministic validation, typed resource plans, transactional publication, and a CPU-testable execution surface. | `gui/rendering/graph/`, `RendererPipeline`, and focused graph/pipeline tests. |
 | Verified | Base, Sodium, Iris-reference, and combined live profiles use the same graph; twenty invalid/valid Iris reload cycles preserve the selected generation and return lease counts to zero. | `render.substrate`, framebuffer captures, and [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
+| Verified | Dynamic and static content texture replacements preserve last-known-good handles on candidate failure. Terrain backend generations snapshot the negotiated vertex layout and retain that declaration through frame/backend retirement. | `OpenGlDynamicTextureArray`, `StaticTextureArrayUpdate`, `TerrainBackendRegistry`, and focused headless tests. |
 | Open | The adapter has not demonstrated upstream Sodium algorithm ownership, an independent pinned shader pack, a complete producer-rich canary scene, driver-side object baselines, or the required p95 performance improvement. | Predicate table in [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
 
 ## Next evidence
@@ -130,8 +134,8 @@ choose only after measuring context recreation cost and native ownership.
    terrain material classes, entities, block entities, particles, weather,
    overlays, hand, HUD, shadow view, and composite.
 4. Use the typed driver-side program/texture/buffer/framebuffer counts to accept
-   stable reload/unload baselines, and make texture arrays plus physical vertex
-   layouts transactional.
+   stable reload/unload baselines, including dynamic/static texture swaps and
+   physical layout buffers from the first independently owned terrain backend.
 5. Recreate the R0 base percentile baseline and meet the target p95 frame,
    preparation, and submission thresholds for Sodium and combined profiles.
 6. Rerun the four-profile visual matrix, invalid/valid reload loop, unload, and
