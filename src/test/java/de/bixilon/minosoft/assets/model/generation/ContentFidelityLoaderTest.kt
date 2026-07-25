@@ -15,8 +15,13 @@ package de.bixilon.minosoft.assets.model.generation
 
 import de.bixilon.minosoft.assets.directory.DirectoryAssetsManager
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentParsers
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
 import de.bixilon.minosoft.assets.model.skeletal.cem.CEM_PARSER_REGISTRATION
 import de.bixilon.minosoft.assets.model.skeletal.gecko.GECKO_PARSER_REGISTRATION
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibAnimationState
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibControllerBindingRegistry
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibControllerDefinition
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureRuleParsers
 import de.bixilon.minosoft.assets.model.texture.entity.OptifineEntityTexturePropertiesParser
 import java.nio.file.Files
@@ -101,6 +106,24 @@ class ContentFidelityLoaderTest {
                 setOf("animation.bird.idle"),
                 snapshot.skeletal.entries.single { it.key.path.endsWith("bird.geo.json") }.value.single().animations.keys,
             )
+            val identity = SkeletalContentIdentity(
+                de.bixilon.minosoft.data.registries.identified.ResourceLocation.of("test:geo/bird.geo.json"),
+                SkeletalContentFormat.GECKOLIB,
+                "geometry.bird",
+            )
+            val binding = GeckoLibControllerBindingRegistry.register("headless-object", identity) {
+                listOf(GeckoLibControllerDefinition("main", "animation.bird.idle"))
+            }
+            val animatable = requireNotNull(snapshot.geckoAnimatableManager(identity))
+            try {
+                assertTrue(animatable.active)
+                assertTrue(animatable.update(0.05f, GeckoLibAnimationState(0.05f)).bones.containsKey("root"))
+                binding.close()
+                assertTrue(animatable.update(0.05f, GeckoLibAnimationState(0.1f)).bones.isEmpty())
+            } finally {
+                animatable.close()
+                binding.close()
+            }
             assertEquals(listOf("say loaded"), snapshot.dataPackFunctions.resolve("#minecraft:load").single().commands)
             assertTrue(manager.list("optifine/").all { it.path.startsWith("optifine/") })
             prepared.cleanup.close()

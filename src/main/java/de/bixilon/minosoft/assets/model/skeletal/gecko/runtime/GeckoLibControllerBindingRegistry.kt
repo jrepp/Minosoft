@@ -118,6 +118,21 @@ object GeckoLibControllerBindingRegistry {
         return Binding(registration.factory, definitions.toList())
     }
 
+    /**
+     * Creates a headless manager for a generic object animatable. The returned
+     * manager remains bound to this exact registration's quiescent lifecycle.
+     */
+    fun createManager(
+        identity: SkeletalContentIdentity,
+        animations: Map<String, SkeletalAnimationClip>,
+    ): GeckoLibAnimatableManager? {
+        val binding = bind(identity, animations) ?: return null
+        return GeckoLibAnimatableManager(
+            GeckoLibControllerSet(animations, binding.definitions),
+            binding,
+        )
+    }
+
     @Synchronized
     fun owners(): Map<SkeletalContentIdentity, String> = registrations.mapValues { it.value.owner }
 

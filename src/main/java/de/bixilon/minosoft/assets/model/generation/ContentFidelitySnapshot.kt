@@ -16,6 +16,10 @@ package de.bixilon.minosoft.assets.model.generation
 import de.bixilon.minosoft.assets.datapack.DataPackFunctionLibrary
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContent
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationClip
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibAnimatableManager
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibControllerBindingRegistry
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureMaterial
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureCatalog
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureRuleSet
@@ -40,5 +44,25 @@ data class ContentFidelitySnapshot(
         require(skeletal.keys.none { it in animations || it in entityTextureRules || it in entityTextureMaterials }) {
             "A content-fidelity source cannot describe both skeletal and entity-texture content."
         }
+    }
+
+    fun skeletal(identity: SkeletalContentIdentity): SkeletalContent? {
+        val matches = skeletal[identity.source].orEmpty().filter {
+            it.format == identity.format && it.identifier == identity.identifier
+        }
+        require(matches.size <= 1) { "Duplicate skeletal content identity $identity." }
+        return matches.singleOrNull()
+    }
+
+    /**
+     * Builds a renderer-independent generic-object manager from this exact CPU
+     * content generation and the active adapted-mod controller registration.
+     */
+    fun geckoAnimatableManager(identity: SkeletalContentIdentity): GeckoLibAnimatableManager? {
+        require(identity.format == SkeletalContentFormat.GECKOLIB) {
+            "Generic GeckoLib animatables require a GeckoLib content identity."
+        }
+        val content = skeletal(identity) ?: return null
+        return GeckoLibControllerBindingRegistry.createManager(identity, content.animations)
     }
 }

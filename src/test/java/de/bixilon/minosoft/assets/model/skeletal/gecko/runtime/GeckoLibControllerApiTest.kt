@@ -15,6 +15,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -71,6 +72,113 @@ class GeckoLibControllerApiTest {
             cache.getOrPut("other") {
                 GeckoLibControllerSet(clips, listOf(GeckoLibControllerDefinition("main", "idle")))
             }
+        }
+    }
+
+    @Test
+    fun `generic animatable manager owns typed data triggers and reload snapshots`() {
+        val clips = mapOf(
+            "idle" to clip("idle", SkeletalAnimationTarget.TRANSLATION, Vec3f(1.0f, 0.0f, 0.0f)),
+            "pulse" to clip("pulse", SkeletalAnimationTarget.TRANSLATION, Vec3f(4.0f, 0.0f, 0.0f)),
+        )
+        val definitions = listOf(
+            GeckoLibControllerDefinition(
+                name = "main",
+                initialClip = "idle",
+                triggerableAnimations = mapOf("activate" to "pulse"),
+            ),
+        )
+        val ticket = GeckoLibDataTicket(
+            de.bixilon.minosoft.data.registries.identified.ResourceLocation.of("test:mode"),
+            String::class.java,
+        )
+        val primitiveTicket = GeckoLibDataTicket(
+            de.bixilon.minosoft.data.registries.identified.ResourceLocation.of("test:charge"),
+            Int::class.java,
+        )
+        val source = GeckoLibAnimatableManager(clips, definitions)
+        source.setData(ticket, "charged")
+        source.setData(primitiveTicket, 4)
+        assertTrue(source.firstTick)
+        assertEquals("charged", source.getData(ticket))
+        assertEquals(4, source.getData(primitiveTicket))
+        assertTrue(source.trigger("main", "activate"))
+        assertEquals(4.0f, source.update(0.1f, GeckoLibAnimationState(2.0f)).bones.getValue("root").translation.x)
+        assertFalse(source.firstTick)
+        assertEquals(2.0, source.lastUpdateTimeSeconds)
+
+        val replacement = GeckoLibAnimatableManager(clips, definitions)
+        assertEquals(1, replacement.restore(source.snapshot()))
+        assertEquals("charged", replacement.getData(ticket))
+        assertEquals(4, replacement.getData(primitiveTicket))
+        assertEquals("pulse", replacement.current("main"))
+        assertEquals(2.0, replacement.lastUpdateTimeSeconds)
+        assertEquals("charged", replacement.removeData(ticket))
+        assertNull(replacement.getData(ticket))
+
+        source.close()
+        replacement.close()
+        assertFalse(source.active)
+        assertFailsWith<IllegalStateException> {
+            source.update(0.1f, GeckoLibAnimationState(2.1f))
+        }
+    }
+
+    @Test
+    fun `generic animatable caches match instanced and bounded singleton ownership`() {
+        val clips = mapOf("idle" to clip("idle", SkeletalAnimationTarget.SCALE, Vec3f(1.0f)))
+        val definitions = listOf(GeckoLibControllerDefinition("main", "idle"))
+        val instanced = GeckoLibInstancedAnimatableInstanceCache {
+            GeckoLibAnimatableManager(clips, definitions)
+        }
+        val instancedManager = instanced.managerForId(1L)
+        assertSame(instancedManager, instanced.managerForId(99L))
+        instanced.close()
+        assertFalse(instancedManager.active)
+        assertFailsWith<IllegalStateException> { instanced.managerForId(2L) }
+
+        val singleton = GeckoLibSingletonAnimatableInstanceCache(
+            factory = { GeckoLibAnimatableManager(clips, definitions) },
+            capacity = 2,
+        )
+        val first = singleton.managerForId(1L)
+        val second = singleton.managerForId(2L)
+        assertSame(first, singleton.managerForId(1L))
+        val third = singleton.managerForId(3L)
+
+        assertEquals(2, singleton.size)
+        assertTrue(first.active)
+        assertFalse(second.active)
+        assertTrue(third.active)
+        assertTrue(singleton.remove(1L))
+        assertFalse(first.active)
+        assertEquals(1, singleton.size)
+
+        singleton.close()
+        assertFalse(third.active)
+        assertEquals(0, singleton.size)
+        assertFailsWith<IllegalStateException> { singleton.managerForId(4L) }
+        assertFailsWith<IllegalStateException> { singleton.remove(4L) }
+    }
+
+    @Test
+    fun `singleton factory failure preserves the active cache entry`() {
+        val clips = mapOf("idle" to clip("idle", SkeletalAnimationTarget.SCALE, Vec3f(1.0f)))
+        val definitions = listOf(GeckoLibControllerDefinition("main", "idle"))
+        val singleton = GeckoLibSingletonAnimatableInstanceCache(
+            factory = { instanceId ->
+                check(instanceId != 2L) { "candidate failed" }
+                GeckoLibAnimatableManager(clips, definitions)
+            },
+            capacity = 1,
+        )
+        try {
+            val active = singleton.managerForId(1L)
+            assertFailsWith<IllegalStateException> { singleton.managerForId(2L) }
+            assertSame(active, singleton.managerForId(1L))
+            assertTrue(active.active)
+        } finally {
+            singleton.close()
         }
     }
 

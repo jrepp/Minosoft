@@ -11,12 +11,16 @@ package de.bixilon.minosoft.assets.model.generation
 
 import de.bixilon.minosoft.assets.directory.DirectoryAssetsManager
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentParsers
 import de.bixilon.minosoft.assets.model.skeletal.binding.SkeletalPartAliasSet
 import de.bixilon.minosoft.assets.model.skeletal.binding.SkeletalPartAliases
 import de.bixilon.minosoft.assets.model.skeletal.cem.CEM_PARSER_REGISTRATION
 import de.bixilon.minosoft.assets.model.skeletal.expression.SkeletalExpressionContext
 import de.bixilon.minosoft.assets.model.skeletal.gecko.GECKO_PARSER_REGISTRATION
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibAnimationState
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibControllerBindingRegistry
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibControllerDefinition
 import de.bixilon.minosoft.assets.model.skeletal.runtime.CemExpressionEvaluator
 import de.bixilon.minosoft.assets.model.skeletal.runtime.CemTransformProperty
 import de.bixilon.minosoft.assets.model.skeletal.runtime.SkeletalAnimationEvaluator
@@ -39,6 +43,11 @@ class ContentFidelityMultiVersionTest {
         ).parent
         val assets = DirectoryAssetsManager(fixture)
         val entity = ResourceLocation.of("test:zombie")
+        val geckoIdentity = SkeletalContentIdentity(
+            ResourceLocation.of("test:geo/zombie.geo.json"),
+            SkeletalContentFormat.GECKOLIB,
+            "geometry.zombie",
+        )
         val registrations = listOf(
             SkeletalContentParsers.register(CEM_PARSER_REGISTRATION),
             SkeletalContentParsers.register(GECKO_PARSER_REGISTRATION),
@@ -61,6 +70,9 @@ class ContentFidelityMultiVersionTest {
                     mapOf("leftArm" to "left_arm"),
                 ),
             ),
+            GeckoLibControllerBindingRegistry.register("test:multi-version", geckoIdentity) {
+                listOf(GeckoLibControllerDefinition("main", "animation.zombie.walk"))
+            },
         )
         try {
             assets.load()
@@ -84,6 +96,14 @@ class ContentFidelityMultiVersionTest {
                     .single { it.format == SkeletalContentFormat.GECKOLIB }
                 val clip = requireNotNull(gecko.animations["animation.zombie.walk"])
                 assertTrue(SkeletalAnimationEvaluator.evaluate(clip, 0.5f).bones.containsKey("root"))
+                snapshot.geckoAnimatableManager(geckoIdentity).use { manager ->
+                    assertTrue(
+                        requireNotNull(manager)
+                            .update(0.05f, GeckoLibAnimationState(0.05f))
+                            .bones
+                            .containsKey("root"),
+                    )
+                }
 
                 val base = ResourceLocation.of("test:textures/entity/zombie/zombie.png")
                 val materials = requireNotNull(snapshot.entityTextureCatalog[base]).materials
