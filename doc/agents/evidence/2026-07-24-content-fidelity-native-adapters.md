@@ -90,6 +90,23 @@ unmapped.
   Minecraft-version predicates accept exact or inclusive dotted ranges. NBT
   predicates share existence/inversion, integer-range, wildcard list-path,
   raw/string, wildcard, and bounded-regex semantics with EMF expressions.
+  Pinned 7.0.13 bytecode establishes that `blocks` and misleadingly named
+  `blockSpawned` both inspect the current and immediately lower block; the
+  native context retains both identifiers and ETF's colon-separated
+  `property=value` subset representation. Solid vertical probes use the
+  `solid_render`-derived full-opacity flag matching the pinned
+  `isOpaqueFullCube` call. Regional difficulty follows
+  Minecraft 1.20.4's client formula with the client-visible inhabited-time
+  default. The generation-owned selection cache also publishes the prior
+  rule index and suffix while selecting dependent feature materials. Its
+  per-texture and prior-selection maps use the pinned implementation's
+  2,048-entity LRU bound and clear on generation closure.
+- Gecko generic object animatables use the exact CPU snapshot and active
+  controller registration to create a headless manager. Typed data tickets,
+  first-tick/update time, controller triggers, compatible reload snapshots,
+  quiescent registration closure, shared instanced ownership, and a bounded
+  singleton per-ID LRU mirror the pinned 4.4.4 manager/cache boundary without
+  exposing Mojang binary types.
 - The renderer-independent `EtfPlayerSkinProcessor` recognizes ETF 7.0.13's
   64×64 signature and bounded control-pixel choices, derives one- or two-stage
   blink textures plus matching emissive masks without mutating the downloaded
@@ -273,8 +290,10 @@ Java 17 focused runs passed for:
 - entity-part alias version/entity precedence and removal;
 - native player/zombie/cow/pig/sheep aliases without leakage to an unsupported
   entity type;
-- ETF rules, variants, custom and bounded NBT predicates, cache closure, and
-  material frames;
+- ETF rules, variants, custom and bounded NBT predicates, current/below block
+  identifiers and state subsets, opacity-backed vertical probes, vanilla-client
+  regional difficulty, prior rule/suffix chaining, 2,048-entry LRU eviction,
+  cache closure, and material frames;
 - resource discovery and malformed all-or-nothing candidate behavior;
 - generation preparation/commit failure, reader retirement, and cleanup;
 - candidate leases acquired during atomic commit and deferred cleanup after a
@@ -304,6 +323,9 @@ Java 17 focused runs passed for:
   sound/particle/custom routing, native dummy-audio and registered-particle
   delivery, locator placement, and owner-scoped listener cleanup and failure
   isolation;
+- generic object manager typed data, trigger forwarding, first-tick/update
+  state, compatible snapshots, registration quiescence, shared instanced
+  ownership, bounded singleton LRU eviction, and deterministic closure;
 - item predicate selection and display transform interpolation;
 - arbitrary cuboid item-model retention and integration-test compilation;
 - datapack function/tag discovery, macro expansion, deterministic scheduling,
@@ -324,7 +346,8 @@ Java 17 focused runs passed for:
 - the reduced pinned Animated Java 1.10.2 lifecycle fixture described above;
 - a durable headless fixture that binds one CEM/ETF/Gecko pack for both 1.19.4
   and 1.20.4, including version-specific CEM aliases, expression/clip
-  evaluation, and ETF variant/emissive discovery;
+  evaluation, a generic Gecko object manager, and ETF variant/emissive
+  discovery;
 - generation-leased stable texture coordinates, dead-hole reuse, trailing-layer
   compaction, permanent resource-pack slot protection, and a 32-generation
   headless reload accounting fixture; failed OpenGL bucket allocation deletes
@@ -333,16 +356,19 @@ Java 17 focused runs passed for:
 - exact ETF/EMF/GeckoLib adapter activation and scope cleanup;
 - functionality catalog capability honesty.
 
-The real pinned pack was inspected with:
+The real pinned pack was prepared and inspected with:
 
 ```text
-MINOSOFT_JAVA_HOME=/tmp/minosoft-temurin17/Contents/Home \
+./play.sh modpack prepare content-fidelity \
+  --trajectory content-fidelity
 ./play.sh modpack inspect content-fidelity \
-  --trajectory content-fidelity-etf
+  --trajectory content-fidelity
 ```
 
 It reported ETF `7.0.13`, EMF `3.0.17`, GeckoLib `4.4.4`, and Fabric API as
-adapted with no artifact blockers or dependency issues.
+adapted with no artifact blockers or dependency issues. The ETF inventory
+reports the new regional/block/selection context honestly while retaining
+partial status for broader block-entity and feature surfaces.
 
 No live visual or repeated GPU-reload acceptance is claimed by this evidence.
 
@@ -354,16 +380,15 @@ No live visual or repeated GPU-reload acceptance is claimed by this evidence.
    behavior, complex attachment parity, shadow/leash output consumption, raw
    expression diagnostic parity, renderer feature layers, fallback diagnostics,
    and reference captures.
-2. Add accurate historical `blockSpawned` capture, regional difficulty, and
-   complete block-state/tag predicate grammar, then finish broader feature
-   textures, configuration, repeated real-GL validation, and visual reference
-   captures. The retained
+2. Complete broader non-skeletal and block-entity feature textures, then finish
+   configuration, repeated real-GL validation, and visual reference captures.
+   The retained
    skeletal-entity base/emissive, player coat, and transactional new-texture
    reload paths are implemented but are not the whole ETF surface.
 3. Validate the new entity/block-entity/item/armor routes and the
    controller/cache/event/easing/loop/render-layer facade with dependent mods.
-   Add generic object animatables, GUI item rendering, exact armor-to-parent-bone
-   fitting, and rendered reference captures. Binary GeckoLib/Mojang
+   Add GUI item rendering, exact armor-to-parent-bone fitting, and rendered
+   reference captures. Binary GeckoLib/Mojang
    compatibility remains a separate explicit project or requires exact native
    adapters per dependent mod.
 4. Run unmodified compiled Animated Java 1.10.2 output, close any additional
