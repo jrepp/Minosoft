@@ -18,12 +18,12 @@ bridge, not a promise that arbitrary Minecraft Fabric mods can run unchanged.
 | Verified | Native mods have an explicit unload callback that runs before their classloader and asset manager are released; `ModList.clear()` now unloads every distinct generation rather than dropping its maps. | `ModMain.unload`, `MinosoftMod.unload`, `ModList.clear`, and `MinosoftModTest`. |
 | Observed | Event listeners can be unregistered, but registrations are not automatically associated with a mod. | `AbstractEventMaster`/`EventMaster` and callback listener helpers. |
 | Unknown | No test proves an unloaded mod classloader becomes garbage-collectable or that old callbacks stop. | Existing mod integration test covers initial loading only. |
-| Verified | The Java launcher resolves checked-in Packwiz manifests into hash-verified, read-only artifacts outside the source tree and isolates mutable state by trajectory. | `modpacks/`, `util/play/Play.java`, and `./play.sh modpack prepare sodium --trajectory <name>`. |
+| Verified | The Java launcher resolves checked-in Packwiz manifests into hash-verified, read-only artifacts outside the source tree and isolates mutable state by trajectory. An optional portable cache uses the same hash-addressed identity and supports cache-only local builds without committing binaries. | `modpacks/`, `util/play/Play.java`, `./play.sh modpack cache add FILE`, and `./play.sh modpack prepare sodium --trajectory <name>`. |
 | Verified | Fabric metadata is parsed with Fabric Loader's public version and predicate APIs, and unsupported activation capabilities are reported before native loading. | `modding/loader/fabric/`, its focused test, and `./play.sh modpack inspect sodium`. |
 | Observed | Sodium 0.5.8 for Minecraft 1.20.4 targets Mojang/Fabric binary APIs and declares entrypoints, mixins, an access widener, and five nested API JARs; those binaries cannot link directly against Minosoft. | `modpacks/sodium/` plus the resolved artifact metadata. |
-| Verified | The pinned Sodium surface resolves to an explicit Minosoft compatibility adapter. Preflight reports `activation=adapted` with no blockers, runtime activation owns a renderer registration, and the chunk-scheduling hook installs and executes. | `FabricPackLoader`, `SodiumCompatibilityAdapter`, `SodiumRendererHook`, focused tests, and [live activation evidence](../evidence/2026-07-21-sodium-activation.md). |
+| Verified | The pinned Sodium surface resolves to an explicit Minosoft compatibility adapter. It selects one frame-pinned, graph-exclusive terrain-provider generation with duplicate-submission checks and bounded timing/resource telemetry. The backend still delegates Minosoft's terrain algorithms, so `ADAPTED` is not full Sodium behavioral ownership. | `FabricPackLoader`, `SodiumCompatibilityAdapter`, `SodiumRendererHook`, `TerrainBackendRegistry`, focused tests, [live activation evidence](../evidence/2026-07-21-sodium-activation.md), and [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md). |
 | Verified | Adapter discovery is an owner-keyed registry. Duplicate adapter IDs and multiple matches for one artifact fail deterministically; a native pre-phase mod can register an additional adapter before pack preflight. | `FabricCompatibilityAdapterRegistry`, `FabricCompatibilityAdapters.register`, boot ordering in `Minosoft.preBoot`, and `FabricPackPreflightTest`. |
-| Verified | The `fabric-stack` pack pins nine client-visible adapted artifacts plus server-only Terralith and Tectonic. All nine client surfaces activate exact source-native adapters with no preflight blockers. Inventory Management owns reusable container-screen extensions, native sort/transfer/stack controls, operation diagnostics, and the pinned upstream server payload contract. Iris owns a visible world-framebuffer presentation shader plus before-world-render, toggle, cleanup, and completed-shader-reload boundaries. JEI owns a container control and paged viewer backed by the synchronized recipe registry. Naturalist mounts a bounded asset surface and owns 31 entity routes across 24 Gecko geometry identities; its 1.20.1 artifact remains client-only on the 1.20.4 stack, and upstream gameplay remains unmapped. The launcher installs only manifest-declared `both`/`server` support mods into its managed Fabric server set; the worldgen pair stays out of Minosoft's client classpath, and Tectonic selects its embedded Terratonic pack when Loader reports Terralith. | `modpacks/fabric-stack/`, the nine compatibility adapters, `WorldFramebuffer.postProcessors`, `FabricContainerScreenExtensions`, `NaturalistCompatibilityAdapter`, `Play.prepareFabricServer`, focused tests, [Inventory Management evidence](../evidence/2026-07-22-inventory-management.md), [Iris/JEI behavioral acceptance](../evidence/2026-07-23-iris-jei-acceptance.md), [Terralith evidence](../evidence/2026-07-23-terralith-worldgen.md), [Terratonic evidence](../evidence/2026-07-23-terratonic-worldgen.md), and [Naturalist evidence](../evidence/2026-07-24-naturalist-integration.md). |
+| Verified | The `fabric-stack` pack pins nine client-visible adapted artifacts plus server-only Terralith and Tectonic. All nine client surfaces activate exact source-native adapters with no preflight blockers. Inventory Management owns reusable container-screen extensions, native sort/transfer/stack controls, operation diagnostics, and the pinned upstream server payload contract. Iris now selects a transactional shader-pipeline generation executing the bounded project reference pack's terrain, shadow target/view, and final composite; an independent real-world pack remains gated. JEI owns a container control and paged viewer backed by the synchronized recipe registry. Naturalist `5.0.0-pre.4` targets 1.20.4, enters through the portable cache, mounts a bounded client asset surface with 31 entity routes across 24 Gecko geometry identities, and runs upstream gameplay on the managed server beside GeckoLib. The launcher installs only manifest-declared `both`/`server` support mods into its managed Fabric server set; the worldgen pair stays out of Minosoft's client classpath, and Tectonic selects its embedded Terratonic pack when Loader reports Terralith. | `modpacks/fabric-stack/`, the nine compatibility adapters, `ShaderPipelineRegistry`, `FabricContainerScreenExtensions`, `NaturalistCompatibilityAdapter`, `Play.prepareFabricServer`, focused tests, [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md), [Inventory Management evidence](../evidence/2026-07-22-inventory-management.md), [Terralith evidence](../evidence/2026-07-23-terralith-worldgen.md), [Terratonic evidence](../evidence/2026-07-23-terratonic-worldgen.md), and [Naturalist evidence](../evidence/2026-07-24-naturalist-integration.md). |
 | Verified | Every built-in Fabric adapter exposes a version-specific catalog of mapped, partial, and unmapped upstream functionality. Preflight and the in-game Mod settings screen consume the same records. | `FabricFunctionalityCatalog`, `FabricPackPreflightCli`, `FabricModSettingsMenu`, and `FabricFunctionalityCatalogTest`. |
 | Verified | Process-local diagnostics track per-mod activation state/time and installed host hooks with invocation count plus average/maximum hook cost. The in-game screen adds pack, trajectory, generation, uptime, and global FPS context without attributing whole-frame cost to a mod. | `FabricModDiagnostics`, hook registries/call sites, `FabricModDiagnosticsMenu`, focused tests, and [2026-07-22 evidence](../evidence/2026-07-22-fabric-catalog-diagnostics.md). |
 | Verified | Fabric API now publishes a source-level client event bridge with owned client-start/stop, world-render, and HUD phases. Callbacks execute synchronously in registration order on the render thread, isolate failures, expose attributed timing, and disappear when their registration scope closes. | `FabricClientEvents`, render/world/HUD call sites, `FabricClientEventsTest`, and [client-event evidence](../evidence/2026-07-22-fabric-client-events.md). |
@@ -32,11 +32,14 @@ bridge, not a promise that arbitrary Minecraft Fabric mods can run unchanged.
 | Verified | Fabric API publishes normalized render-thread input observations and a source-native configurable key-binding registry. Definitions can precede render sessions, fan into current/future input managers, reject duplicate IDs, isolate callback failures, and detach per registration and per render context. | `FabricInputEvents`, `FabricKeyBindings`, `BindingsManager`, registry tests, and [input/connection evidence](../evidence/2026-07-22-fabric-input-connection-events.md). |
 | Verified | Fabric API publishes generation-owned client connection phases over every play session without assuming a singleton client. | `FabricClientConnectionEvents`, the `PlaySession.state` observer, and [input/connection evidence](../evidence/2026-07-22-fabric-input-connection-events.md). |
 | Verified | Fabric API publishes owned world/dimension transitions, chunk lifecycle, post-commit block mutation batches, bounded client payload channels, screens, HUD layers, client commands, entity lifecycle, player interaction policy, particles, and sound at shared local/remote source boundaries. | `FabricWorldEvents`, `FabricClientPayloadChannels`, `FabricUiHooks`, `FabricClientCommands`, `FabricEntityEvents`, `FabricPlayerInteractionHooks`, `FabricMediaEvents`, focused tests, and [world/UI/gameplay evidence](../evidence/2026-07-22-fabric-world-ui-gameplay-hooks.md). |
+| Verified | Compatibility adapters can register a rendering-independent typed settings schema through the existing owned-screen boundary, and active registrations appear in the native Mod settings menu. Staged validation, reset/apply/cancel, dependency and restart state, failed-apply rollback, cycle controls, and clipped scrolling remain Minosoft source APIs; Mojang, Cloth Config, MidnightLib, and Mod Menu screen classes still do not link. | `ConfigEntry`, `SettingsSession`, `FabricSettings`, `FabricModSettingsMenu`, focused tests, and [settings-form evidence](../evidence/2026-07-24-settings-forms.md). |
+| Verified | Renderer-bound settings factories and atomically persisted adapter values now map Sodium, Entity Culling, ImmediatelyFast, Iris, Naturalist, JEI, and Inventory Management controls. The JEI transfer UI delegates only to supporting container handlers; Xaero terrain/waypoint data and Tech Reborn machine/network authority remain separate non-UI dependencies. | `FabricSettings`, `FabricAdapterOptionStore`, exact compatibility adapters, `FabricRecipeTransfers`, `FabricMachineScreens`, focused tests, and [Fabric UI evidence](../evidence/2026-07-24-fabric-ui-framework.md). |
 | Verified | The Tech Reborn 5.10.4 pack recursively resolves 54 nested provider surfaces and activates three exact source-native adapters in dependency order. Those adapters expose Fabric API module inventory, bounded Team Reborn energy storage, and Tech Reborn's resource catalog in one owned scope; they do not execute upstream gameplay bytecode. | `FabricPackPreflight`, `TechRebornCompatibilityAdapters`, capability tests, `modpacks/tech-reborn/`, and [Tech Reborn activation evidence](../evidence/2026-07-21-tech-reborn-discovery.md). |
 | Verified | The Tech Reborn adapter now decodes and fingerprints blocks, items, block properties/states, and ore features; mounts artifact assets; synchronizes the snapshot into a local play session; and drives deterministic authoritative local ore generation. | `FabricWorldContentReader`, `FabricSessionContentBridge`, `ExternalAssetProviders`, `TechRebornGenerator`, and [world-generation evidence](../evidence/2026-07-21-tech-reborn-worldgen.md). |
 | Verified | The partial content-fidelity trajectory resolves exact ETF 7.0.13, EMF 3.0.17, GeckoLib 4.4.4, and Fabric API artifacts to source-native adapters without executing their upstream Minecraft bytecode. Headless CEM/ETF/Gecko parsing, transactional generations, live version/entity aliases, per-instance CEM expressions, expanded ETF context, source-native Gecko predicate/layer controllers, owner-scoped custom easings, bounded raw animation queues, owner-scoped custom loop types, generation-owned caches, retained rendering, transactional static texture handles, and the Animated Java runtime foundation exist. Content generations lease stable texture coordinates; dead holes are reused and trailing layers compact without renumbering retained meshes. A durable fixture crosses 1.19.4 and 1.20.4; binary APIs, complete exporter/render behavior, repeated real-GL accounting, and visuals remain gated. | `modpacks/content-fidelity/`, `assets/model/`, `assets/datapack/`, `local/datapack/`, `ContentFidelityCompatibilityAdapters`, `GeckoLibRawAnimation`, `GeckoLibEasingRegistry`, `GeckoLibLoopTypeRegistry`, `StaticTextureSlotOwnership`, `SkeletalLoader.reloadContentFidelity`, `ContentGenerationStore.reloadLeased`, `ContentFidelityMultiVersionTest`, focused tests, launcher prepare/inspect validation, and the [native adapter evidence](../evidence/2026-07-24-content-fidelity-native-adapters.md). |
 | Verified | The exact EMF adapter accepts raw `nbt(key,query)` expressions without executing upstream code. Escaped arguments resolve against the same bounded nested-entity context and existence/range/wildcard-path/pattern matcher used by ETF rules, keeping one predicate boundary and one per-session entity truth. | `SkeletalExpression`, `CemExpressionEvaluator`, `SkeletalFeature`, `EntityTextureContextFactory`, `EntityTextureConditions`, focused tests, and the [native adapter evidence](../evidence/2026-07-24-content-fidelity-native-adapters.md). |
 | Verified | OptiFine's runtime is not a viable ordinary-mod path because it transforms a Mojang/Forge class surface Minosoft does not provide. The selected compatibility trajectory is Minosoft-native ingestion and rendering for selected OptiFine formats, surfaced behind exact EMF/ETF adapter identities; OptiFine itself remains a non-redistributed format reference. | `ContentFidelityCompatibilityAdapters`, `SkeletalContentParsers`, `EntityTextureRuleParsers`, `modpacks/content-fidelity/ladder.tsv`, [content-fidelity foundation evidence](../evidence/2026-07-24-content-fidelity-foundation.md), and [native adapter evidence](../evidence/2026-07-24-content-fidelity-native-adapters.md). |
+| Verified | The exact EMF adapter's model-driven shadow and leash outputs reach native Minosoft render features without executing EMF or OptiFine renderer bytecode. Publication is identity-owned so retiring a replaced CEM instance cannot clear the replacement's outputs. The bounded shadow path projects across lit full-collision outline surfaces with size/opacity/offset/distance/light/vertical falloff, baby scaling, terrain-mutation invalidation, and the resource-pack shadow texture using audited UV/clamp/LOD/blend behavior. The leash path applies EMF additions in mob-local space, distinguishes generic, fence-knot, and player-pose holder anchors, and emits the vanilla two crossed 24-segment ribbons with quadratic sag and alternating colors. Mob roots and anchors share previous/current vanilla body-control interpolation; ribbon vertices independently interpolate endpoint block/sky light through the renderer lightmap. Dummy-GPU tests cover mesh/light replacement and retirement. Exact player-holder body-yaw dynamics, non-default shadow sampler-metadata overrides, configuration, and visual parity remain partial. | `EntityBodyRotation`, `EntityRenderInfo`, `EntityRenderEffects`, `EntityShadowProjector`, `EntityShadowFeature`, `EntityLeashProjector`, `EntityLeashFeature`, `LightColorMeshBuilder`, `LightColorShader`, `EntityRenderFeatures.SHADOW_TEXTURE`, `ShaderManager.entityShadowTextureShader`, `ShaderManager.entityLeashShader`, `SkeletalFeature`, `World.blockRevision`, `FabricBlockMutationEvents`, focused tests, and the [native adapter evidence](../evidence/2026-07-24-content-fidelity-native-adapters.md). |
 | Verified | An active adapted Fabric pack publishes one immutable, pack-scoped mod-ID snapshot for ETF `modLoaded` predicates and removes exactly that snapshot on scope closure. Blocked/inactive candidates are excluded, so render predicates cannot mistake discovered metadata for active compatibility. | `EntityTextureRuntimeEnvironment`, `FabricPackLoader`, `FabricRegistrationScope`, and `FabricPackPreflightTest`. |
 | Verified | Gecko dependent-mod adaptation has an owner-scoped, target-isolated route boundary for entities, block entities, items, and armor. Routes refer to stable content identities and retain no generation themselves; each renderer instance acquires the baked model's lease. Closure removes only the exact target route. This is a Minosoft source API, not GeckoLib/Mojang binary linkage. | `GeckoLibModelRouteRegistry`, its four target facades, `SkeletalLoader.contentModel`, focused route and loader tests, [native adapter evidence](../evidence/2026-07-24-content-fidelity-native-adapters.md), and [content-system documentation](../../Assets.md). |
 | Verified | Gecko generic object adaptation mirrors the pinned `GeoAnimatable` manager boundary without Mojang types: exact snapshot content creates a quiescent controller manager with typed data tickets, trigger forwarding, first-tick/update time, compatible snapshots, shared instanced ownership, and a bounded singleton per-ID LRU. Closing a registration suppresses callbacks; eviction and cache closure clear managers deterministically. This remains a Minosoft source API, not GeckoLib binary linkage. | `ContentFidelitySnapshot.geckoAnimatableManager`, `GeckoLibAnimatableManager`, `GeckoLibInstancedAnimatableInstanceCache`, `GeckoLibSingletonAnimatableInstanceCache`, focused API/loader tests, and `ContentFidelityMultiVersionTest`. |
@@ -256,19 +259,22 @@ Minosoft's existing frustum/CPU-occlusion decision; ImmediatelyFast maps to the
 retained renderer's bounded queue-flush boundary. Inventory Management maps its
 first workflow to an owned container-screen extension and delegates
 sort/transfer/stack mutations to the exact pinned upstream mod on the
-launcher-owned Fabric server. Iris maps an owned source-native world
-presentation shader plus before-world-render and completed shader-reload
-boundaries without claiming shader-pack execution. JEI maps an
+launcher-owned Fabric server. Iris selects an owned transactional shader
+generation and executes the project's bounded terrain/shadow/final reference
+pack. Independent shader-pack compatibility and broader program semantics are
+still gated. JEI maps an
 owned container control to a paged view of the current session's synchronized
 recipe registry. Its ingredient overlay, transfer, search, bookmarks, and plugin
 APIs remain explicitly unmapped. GeckoLib supplies the exact 1.20.4 content
-contract used by Naturalist's adapter. Naturalist's exact available Fabric
-artifact targets 1.20.1, so the pack mounts it client-only: the adapter filters
-unsupported geometry, routes 31 animal entity identifiers across 24 content
-identities, and selects deterministic idle/movement clips. Naturalist registry
-synchronization, AI, spawning, and state-specific skins remain unmapped. Mojang
-client bytecode, mixins, access wideners, and Fabric/Mod Menu entrypoints are
-not executed.
+contract used by Naturalist's adapter. The ported Naturalist `5.0.0-pre.4`
+artifact targets 1.20.4 and is hash-pinned through the portable cache. The
+managed Fabric server executes its registry, AI, and spawning behavior beside
+GeckoLib; the Minosoft client does not execute that Mojang-targeted bytecode.
+Instead, its exact adapter filters unsupported geometry, routes 31 animal entity
+identifiers across 24 content identities, and selects deterministic
+idle/movement clips. Remote registry negotiation and state-specific skins
+remain unmapped. Mojang client bytecode, mixins, access wideners, and
+Fabric/Mod Menu entrypoints are not executed.
 General remote-server negotiation and revisioned native transaction plans remain
 backlog work. The adapted artifacts' upstream bytecode, mixins, access wideners,
 nested libraries, and Fabric API modules are inspected but not executed.
@@ -331,7 +337,21 @@ owner-scoped controller factories. Generation-baked opaque, translucent, and
 additive texture passes evaluate entity-state predicates without retaining a
 closed registration or claiming GeckoLib/Mojang binary linkage.
 Version/entity aliases now affect CEM geometry, transforms, and
-expressions, and per-instance CEM evaluation reaches retained transforms. ETF
+expressions. Per-instance CEM evaluation reads live aliased pivot, rotation,
+scale, visibility, and box-hidden state, applies ordered absolute writes,
+rejects missing targets, and keeps subtree visibility distinct from local-box
+hiding. Its centralized live EMF context now owns partial-tick clocks, frame
+counters, degree/radian and body-relative rotations, persistent vanilla limb
+interpolation, movement projection, dimensions, positions, health and
+hurt/death animation timers,
+equipment/use, attachment, locomotion, tame/aggressive/anger, bounded
+fluid/ground probes, exposed-rain wetness using the pinned altitude/frozen-biome
+temperature samplers, hover targeting, and the selected
+ETF rule index. A caller-owned context carries first-person, held, item-frame,
+GUI, head, and shoulder flags, and stopped colliding arrows expose in-ground
+state. Every catalogued input now has an explicit source except the intentional
+IEEE `nan` constant; invoking CEM from those non-world render paths,
+and entity-specific special cases remain explicit gates. ETF
 contexts include bounded entity/client-player/vehicle NBT, biome tags,
 pack-scoped active-mod IDs, equipment and item inputs, general mob variants,
 genes, inventory/jump/movement attributes, and predicate-gated vertical block
@@ -342,9 +362,14 @@ resource/data-pack mounting, a generation-leased local function runtime,
 scoreboard/storage/SNBT state, storage/entity macros, bounded
 execute/selectors, display/interaction passenger trees, entity
 mutation/lifecycle commands, packet-driven reward callbacks, and atomic
-failed-load rollback. A reduced fixture pinned to exporter 1.10.2 proves load,
-summon, tick mutation, and removal; fingerprinted upstream compiler templates
-drive callback and exact signed UUID conversion tests.
+failed-load rollback. Item/block/text rendering now shares mapped-1.20.4
+view-range and visibility-box semantics plus retained transformation, shadow,
+text-style, and teleport-pose interpolation. A reduced fixture pinned to
+exporter 1.10.2 proves load,
+summon, tween-guarded tick mutation, and removal. Returns reached through
+`execute` terminate the owning function without escaping a called function's
+boundary; fingerprinted upstream compiler templates drive that regression,
+callback, and exact signed UUID conversion tests.
 A feet/eyes command anchor and coordinate/entity `execute facing` semantics now
 survive nested function context and are covered against real 1.20.4 entities.
 A durable headless fixture also verifies one CEM/ETF/Gecko content set across
@@ -360,15 +385,24 @@ the already-uploaded static array fails before publication and leaves the old
 generation active.
 This advances artifact adaptation and selected runtime behavior, not full
 compatibility: complete broader ETF non-skeletal/block-entity feature textures,
-complete EMF catalogs/attachments/part semantics, Gecko binary APIs, GUI item
-views, exact armor fitting, real dependent-mod fixtures, an unmodified Animated
-Java exporter fixture and any additional command surface it exposes, repeated
-real-GL accounting, and visual fixtures remain explicit gates.
+complete EMF catalogs/attachments and the remaining live input semantics, diagnostic parity,
+Gecko binary APIs, GUI item
+views, exact armor fitting, real dependent-mod fixtures, additional Animated
+Java blueprints that expose new command or asset surfaces, repeated real-GL
+accounting, remote-server acceptance, and visual fixtures remain explicit
+gates.
 OptiFine is not staged because it is a non-Fabric transformation runtime and
 conflicts with EMF/ETF; it remains a CEM format reference. Animated Java is a
 Blockbench export workflow rather than a runtime JAR. Its remaining gates are
-an unmodified pinned compiled export, closure of any additional command surface
-that export exposes, remote-server behavior, and visual/reload acceptance. The
+glowing/team outlines, real-GPU reload accounting and rendered-reference
+comparison for the passing pinned upstream export, expansion
+with additional blueprints where they expose new command or asset surfaces,
+remote-server behavior, and visual acceptance. Headless repeated runtime
+reload/rollback and CPU-generation cleanup now pass. The exact authoring-side
+reproduction and artifact hashes are in
+the [Blockbench export evidence](../evidence/2026-07-24-animated-java-blockbench-export.md). The
+[display semantics evidence](../evidence/2026-07-24-animated-java-display-semantics.md)
+records the implemented renderer-state boundary. The
 [content-system contract](../../Assets.md) and tracked ladder define the
 acceptance sequence.
 

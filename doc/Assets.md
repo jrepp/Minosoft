@@ -173,10 +173,23 @@ precise Minosoft renderers; other known vanilla block-item families receive a
 visible particle-texture fallback and structured audit output. That fallback is
 diagnostic, not model parity.
 
-Item `overrides` use vanilla last-match selection for `custom_model_data`,
-`damage`, and `damaged`; selected element-backed models retain their cuboid
-geometry. The remaining vanilla predicate catalog and modern component-based
-item-model dispatch still need explicit compatibility fixtures.
+Item `overrides` use vanilla last-match selection. For the audited 1.20.4
+catalog, stack-backed support covers `custom_model_data`, `damage`, `damaged`,
+crossbow `charged`/`firework`, elytra `broken`, and light-block `level`.
+An explicit render context supplies `lefthanded`, `cooldown`, bow/crossbow
+`pull`/`pulling`, `brushing`, fishing-rod `cast`, shield `blocking`, trident
+`throwing`, and goat-horn `tooting`. First-person and GUI selection build this
+context from live player/session state; remote use progress remains incomplete.
+Unknown or wrong-item predicates contribute negative infinity, matching
+vanilla rather than accidentally matching zero or negative thresholds.
+Selected element-backed models retain their cuboid geometry.
+
+The remaining audited 1.20.4 providers are bundle `filled`, clock `time`,
+compass/recovery-compass `angle`, and registry-backed `trim_type`.
+Version-keyed catalogs, those four providers, remote item-use timing, and
+modern component-based item-model dispatch still need explicit compatibility
+fixtures. See the
+[item-model predicate evidence](agents/evidence/2026-07-24-item-model-predicates.md).
 
 ## Textures
 
@@ -249,8 +262,33 @@ runtime applies ordered CEM transform/visibility expressions with persistent
 `var.*`/`varb.*` state. The EMF 3.0.17 public input-name catalog and compatibility
 spellings are recognized. The bounded expression VM covers the audited
 arithmetic, conditional, keyframe/interpolation, random, angle, curve, and
-named-easing methods. Ordered `render.shadow_*` and `render.leash_offset_*`
-assignments are retained for renderer consumption. The renderer publishes its
+named-easing methods. Part-property reads resolve live aliased pivots,
+rotations, scales, visibility, and box-hidden state; missing part reads follow
+the pinned zero fallback. Writes are ordered absolute assignments and reject
+missing targets. `visible=false` suppresses the part subtree, while
+`visible_boxes=true` suppresses only the target part's cubes and leaves its
+children renderable. Ordered `render.shadow_*` and `render.leash_offset_*`
+assignments feed owner-scoped native shadow and leash features. Shadow size,
+opacity, horizontal offsets, distance fading, baby scaling, and EMF's 32-block
+size cap are applied. A bounded vertical scan projects shadows across lit,
+full-collision terrain surfaces with shape bounds and vertical/light falloff;
+block/chunk revisions invalidate stationary projections after world changes.
+Projected quads sample the active resource pack's
+`minecraft:textures/misc/shadow.png` with the audited inverted two-radius UV
+mapping, fixed level-zero clamped sampling, and standard source-alpha blending.
+Leash offsets add to the vanilla local mob anchor and rotate with body yaw
+without conflating the protocol's leash holder with vehicle state. Generic
+holders use the standing-eye-height anchor, fence knots use their distinct
+`+0.2` anchor, and player holders use main-arm plus normal, swimming, and
+elytra/riptide pose formulas. The mesh is the audited pair of crossed
+24-segment ribbons with quadratic sag and alternating vanilla colors rather
+than a chain of generic line prisms. Mobs derive the vanilla body-control pose
+into separate previous/current yaw history; native and adapted skeletal roots
+and the mob-side leash anchor consume its partial-tick interpolation. Each
+leash segment independently interpolates endpoint block and sky light and
+passes the packed value through the renderer lightmap. Exact player-holder
+body-yaw dynamics and rendered-reference comparison remain acceptance gates.
+The renderer publishes its
 observable entity, player, time, health, swing, movement, attachment, and
 visibility state.
 Catalogued values that do not yet have a Minosoft source default safely, so
@@ -264,9 +302,35 @@ arguments, existence/inversion, integer ranges, wildcard list paths, and
 string/pattern/regex queries. Live content reload replaces the retained model
 and rejects new instances of the old model while allowing already-retained
 instances to finish. Broader entity aliases, exact live semantics for every
-catalogued variable, absolute part-property/complex attachment semantics,
-actual shadow/leash render integration, exact diagnostics, and visual reference
+catalogued variable, complex attachment semantics,
+non-default shadow sampler-metadata overrides and reference-render acceptance,
+exact player-holder body-yaw dynamics, diagnostic parity, and visual reference
 fixtures remain gates.
+
+### Display entities
+
+Minecraft 1.20.4 item, block, and text displays share one native Minosoft
+renderer boundary. Item models use the predicate selection described above;
+block displays use the normal baked block-model path; text displays support
+wrapping, alignment, background, opacity, shadow, see-through depth state, and
+packed-light overrides.
+
+The shared display renderer applies billboard constraints and retained
+translation, quaternion rotation, and scale. Transformation, absolute
+terrain-projected shadow radius/strength, and text background/opacity follow
+the display interpolation start/duration metadata. Negative start deltas begin
+partway through the transition. Position and rotation changes follow
+`teleport_duration`, capped to the vanilla `0..59` tick range with
+shortest-path yaw interpolation.
+
+`view_range` applies to every display type at the vanilla 64-block base scale.
+Finite nonnegative `width` and `height` define the visibility AABB; zero on
+either axis disables frustum-box rejection while retaining range rejection.
+`glow_color_override` is parsed and retained, but Minosoft has no entity
+team/glowing outline pass yet. Headless registry and exact
+Animated-Java-export integration tests cover the implemented state; real
+OpenGL rendered-reference and resource-accounting checks remain required. See
+the [display semantics evidence](agents/evidence/2026-07-24-animated-java-display-semantics.md).
 
 ## Higher-fidelity compatibility trajectory
 
@@ -275,11 +339,11 @@ for Blockbench-related content:
 
 | Component | Role | License/distribution | Prepared state | Missing behavior |
 | --- | --- | --- | --- | --- |
-| Entity Model Features (EMF) | Fabric replacement for OptiFine CEM geometry and expressions | LGPL-3.0 | Exact 3.0.17 adapter activates; JEM/JPM, five shipped native-rig alias sets, the public expression input-name catalog, the audited numeric/boolean method surface, raw `nbt(key,query)` predicates, retained shadow/leash outputs, a growing live-value surface, bounded per-instance expressions, targeted native-part replacement, isolated attach roots, discovery, skeletal binding, generation-leased texture slots, and transactional model reload are source-native. | Broader entity aliases, exact live semantics for every catalogued input, exact absolute part-property and complex attachment semantics, shadow/leash renderer consumption, exact diagnostic parity, fallback/visual fixtures, and configuration. |
+| Entity Model Features (EMF) | Fabric replacement for OptiFine CEM geometry and expressions | LGPL-3.0 | Exact 3.0.17 adapter activates; JEM/JPM, five shipped native-rig alias sets, the full public expression input-name catalog (apart from intentional `nan`), the audited numeric/boolean method surface, raw `nbt(key,query)` predicates, centralized live partial-tick clocks/frame counters, degree/radian and body-relative rotations, vanilla limb interpolation, movement projection, dimensions, position/health/hurt/death/equipment/use/attachment/locomotion/tame/aggressive/anger inputs, bounded fluid/ground and stopped-arrow probes, dimension/biome/heightmap-aware rain wetness using the pinned fixed-seed altitude and frozen-biome temperature samplers, hovered state, selected ETF rule index, an explicit first-person/held/item-frame/GUI/head/shoulder context carrier, live aliased part-property reads, ordered absolute writes, distinct subtree visibility versus local-box hiding, missing-target rejection, targeted native-part replacement, isolated attach roots, discovery, skeletal binding, owner-scoped native shadow/leash output consumption, bounded terrain-conforming projection using the resource-pack shadow texture with audited UV/clamp/LOD/blend behavior, audited local mob/EMF and generic/knot/player leash anchors with crossed 24-segment ribbon geometry, previous/current vanilla mob body-control interpolation shared by skeletal roots and leash anchors, per-segment endpoint block/sky lightmap interpolation, generation-leased texture slots, and transactional model reload are source-native. | Broader entity aliases; CEM invocation from non-world render paths; special-case limb/entity parity; complex attachment semantics; exact player-holder body-yaw dynamics; non-default shadow sampler-metadata overrides and reference-render acceptance; diagnostic parity; fallback/visual fixtures; and configuration. |
 | Entity Texture Features (ETF) | OptiFine-style random, emissive, and variant entity textures | LGPL-3.0 | Exact 7.0.13 adapter activates; property parsing, deterministic variants, expanded entity/environment plus bounded entity/client-player/vehicle NBT context, NBT existence/inversion/range/wildcard-path/pattern queries, negated string sets, semantic Minecraft-version ranges, calendar/world/client values, biome tags, active-mod IDs, equipment keywords and item IDs, general mob variants, panda genes, llama inventory strength, horse jump and movement attributes, percent health, spawner false for ordinary entities, and predicate-gated vertical block identifiers exist. Audited `blocks` and ETF's misleadingly named `blockSpawned` both inspect the current and immediately lower block, including ETF's colon-separated block-state subset grammar; `blockAboveSolid`/`blockBelowSolid` consume Minosoft's `solid_render`-derived full-opacity flag, matching the pinned `isOpaqueFullCube` call. Regional difficulty follows the vanilla 1.20.4 client formula, and generation-owned selection state exposes the prior `textureRule` and `textureSuffix` to dependent feature rules. Configured emissive suffixes, two-stage blink timing, generation-owned 2,048-entity LRU selection state per texture, independent skeletal body/feature materials, and additive emissive passes exist. ETF-marked 64×64 player skins derive blink/blink2, matching emissive textures, all eight coat styles and lengths, moved-coat base edits, fat-coat inflation, coat emissives, leggings suppression, forced lower-skin opacity, legacy/controller villager noses, five textured nose sources, removal semantics, nose emissives, marker-selected animated glint masks, and profile-controlled ETF-only base transparency without upstream code. World and first-person views share the derived base/blink material state. Content and native entity models participate in transactional catalog/material replacement and stable-slot texture compaction. | Broader non-skeletal and block-entity feature bindings, the rest of ETF configuration, repeated real-GL validation, and visual fixtures. |
 | GeckoLib | Runtime library for mod-authored geo models and keyframe animations | MIT | Exact 4.4.4 adapter activates; geo and animation JSON—including sound, particle, and custom-instruction keyframes—parses into the neutral model. Matching clips attach to geometry, and the pinned built-in easing catalog plus first easing argument evaluate with 4.4.4 behavior. Owner-scoped custom easing registration reaches both source-native controllers and retained playback. Predicate/layer controllers support transitions, state-driven animation speed/easing overrides, triggerable animations, typed per-controller keyframe handlers that preserve locator and `pre_effect_script` data, and generation-owned caches. A bounded `RawAnimation` stage builder/runtime covers default/play-once/hold/loop clips, tick waits, repeat expansion, cross-stage delta carry, keyframe delivery, stable finished-animation identity, explicit reset, and triggered base-animation reload. Generic object animatables have a headless manager facade with typed data tickets, first-tick/update state, controller triggers, reload snapshots, quiescent registration ownership, a shared instanced cache, and a bounded per-ID singleton cache. Custom loop names survive JSON normalization and resolve through an owner-scoped repeat/advance/hold registry. Stable content identities and owner-scoped routes cover entities, block entities, items, and armor without retaining a content generation. Routed geometry now renders on living entities, block entities, world/item-display entities, first-person held items, and equipped armor slots. Owner-scoped, generation-baked opaque/translucent/additive texture passes support state predicates and optional full-bright rendering. Compatible named controller layers preserve clip/raw-queue progress and fired-event position across retained entity, item, and armor replacement; routed block-entity section caches rebuild after publication. Finalized transforms feed native positional sound and registered particle factories, locator positions resolve after bone transforms, and custom instructions reach an owner-scoped listener. Retained geometry/clip/layer-texture candidates swap transactionally, with generation-leased stable texture slots. | Binary API compatibility; GUI item views; exact armor-to-parent-bone fitting; dependent-mod and visual validation; and repeated real-GL validation. |
 | OptiFine | Original CEM and extended resource-pack implementation | Official-site distribution; no Packwiz redistribution | Catalogued as a format reference only. | The OptiFine JAR cannot be activated as an ordinary Minosoft mod because it transforms Mojang/Forge classes that Minosoft does not expose. Support therefore means native Minosoft parsers and render/runtime bindings for selected OptiFine formats, surfaced through exact EMF/ETF adapters—not a native implementation of OptiFine's binary patcher. |
-| Animated Java | Blockbench authoring/export workflow producing resource-pack and data-pack content | Authoring tool; no runtime artifact staged | Resource and data namespaces mount separately into one session content generation. Local sessions run bounded functions, tags, storage/entity macros, schedules, scoreboards/storage, selectors, an exporter-oriented `execute` subset including score comparisons, entity-data predicates, feet/eyes anchors, coordinate/entity facing, and `on target`/`on attacker`, plus display/entity mutation commands. Session-owned display/interaction/passenger trees support load→summon→tick→remove in a reduced fixture pinned to Animated Java 1.10.2. Its exact pinned compiler templates are fingerprinted, and upstream-shaped tests prove entity-backed callback dispatch plus the exporter's signed four-word UUID-to-string path. Local attack/interact packets populate interaction records and execute the matching advancement reward handler as the player. Failed candidate load tags atomically restore command and entity state. This remains an import workflow, not a runtime JAR. | Accept an unmodified compiled exporter fixture and close any additional command surface it exposes; then prove remote-server, visual, and repeated GPU-reload behavior. |
+| Animated Java | Blockbench authoring/export workflow producing resource-pack and data-pack content | Authoring tool; no runtime artifact staged | Resource and data namespaces mount separately into one session content generation. Local sessions run bounded functions, tags, storage/entity macros, schedules, scoreboards/storage, selectors, an exporter-oriented `execute` subset including score comparisons, entity-data and function predicates, feet/eyes anchors, coordinate/entity facing, and `on target`/`on attacker`, plus display/entity mutation commands. `return`, `return fail`, and `return run` terminate the owning function even when reached through an `execute` condition; a called function still owns its own return boundary. Session-owned display/interaction/passenger trees support load→summon→tick→remove in a reduced fixture pinned to Animated Java 1.10.2, including the exporter's tween-guard command form. Its exact pinned compiler templates are fingerprinted, and upstream-shaped tests prove entity-backed callback dispatch plus the exporter's signed four-word UUID-to-string path. Local attack/interact packets populate interaction records and execute the matching advancement reward handler as the player. Failed candidate load tags atomically restore command and entity state. The exact Blockbench 5.1.4 and official Animated Java 1.10.2 exporter combination reproducibly generates a pinned, unmodified upstream armor-stand fixture with 13 resource files, 109 data files, and a complete output manifest. Minosoft passes its model-discovery, load/summon/walk/remove, repeated runtime replacement, rejected-load recovery, stable-entity, and CPU-generation cleanup gates. This remains an import workflow, not a runtime JAR. | Add broader upstream blueprints where they expand the surface, then prove remote-server, visual, and repeated real-GPU behavior. |
 
 All four pinned artifacts now preflight as `ADAPTED` at the artifact layer.
 That label means their exact metadata surfaces select Minosoft-owned adapters;
@@ -287,6 +351,17 @@ it does not execute upstream bytecode and it is not a full behavioral claim.
 The inspection output separately reports mapped, partial, and unmapped
 functionality. EMF, ETF, and GeckoLib remain partial until their runtime and
 visual gates below pass.
+
+The exact Animated Java authoring/export procedure, hashes, generated-output
+manifest, and acceptance boundary are recorded in the
+[Blockbench export evidence](agents/evidence/2026-07-24-animated-java-blockbench-export.md).
+The exporter result and Minosoft's headless manifest/model discovery,
+load/summon/walk/remove lifecycle, repeated runtime replacement, rejected-load
+rollback/recovery, stable entity identity, and exactly-once CPU-generation
+cleanup pass against the unmodified output. Rendered references, remote-server
+behavior, glowing outlines, and repeated real-GPU accounting remain separate
+gates. The display-state boundary is recorded in the
+[display semantics evidence](agents/evidence/2026-07-24-animated-java-display-semantics.md).
 
 A durable headless fixture loads one CEM/ETF/Gecko content set against both
 Minecraft 1.19.4 and 1.20.4 protocol identities. It verifies version-specific

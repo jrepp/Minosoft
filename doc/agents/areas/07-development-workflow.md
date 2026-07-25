@@ -74,6 +74,12 @@ redefinition is an accelerator inside a generation.
 Tracked manifests under `modpacks/` are the portable source of truth. The
 launcher downloads each declared artifact once, verifies its declared hash, and
 publishes a read-only content-addressed artifact plus an immutable pack view.
+When `MINOSOFT_MODPACK_CACHE` is set, resolution checks the same
+`<hash-format>/<hash>/<filename>` layout before using the network.
+`./play.sh modpack cache add FILE` verifies and publishes a local artifact into
+that portable cache. A `minosoft-cache:` manifest URL requires an exact cache
+hit and has no network fallback, which gives unreleased local builds a portable
+contract without adding binaries to the repository.
 Mutable home and profile state is isolated under a named trajectory. Parallel
 branches and experiments can therefore share artifact bytes without sharing
 world/session/configuration state.
@@ -92,11 +98,15 @@ world/session/configuration state.
 
 Set `MINOSOFT_MODPACK_STORE` to move the runtime store to another absolute path,
 or `MINOSOFT_MODPACKS_DIR` to use the same launcher with manifests from a parallel
-source checkout. Neither override changes the checked-in manifest contract.
+source checkout. Set `MINOSOFT_MODPACK_CACHE` to a portable, read-only artifact
+source independent of that runtime store. None of these overrides changes the
+checked-in manifest contract.
 
-The local Tech Reborn generator is memory-backed. Each `--local-world` launch
-is a clean world regeneration; use the same `--world-seed` for repeatability or
-a different seed for a new deterministic trajectory.
+Local generators are memory-backed. `--local-world` selects the base-safe flat
+generator unless `--world-generator` overrides it; the `tech-reborn` pack
+selects `tech_reborn` by default. Each launch is a clean world regeneration; use
+the same `--world-seed` for repeatability or a different seed for a new
+deterministic trajectory.
 
 ## Parent-supervised hot reload
 

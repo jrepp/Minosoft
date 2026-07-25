@@ -137,12 +137,33 @@ instructions that differ from the root contract.
   records exact ETF/EMF/GeckoLib activation, headless ingestion, the neutral
   renderer bridge, transactional generation leases, existing-texture live
   retained-model swaps, focused tests, and the remaining runtime/visual gates.
+- [Animated Java Blockbench export evidence](evidence/2026-07-24-animated-java-blockbench-export.md)
+  pins the exact Blockbench/plugin/blueprint identities, proves an unmodified
+  1.20.4 export, records its output manifest, and defines the Minosoft runtime,
+  render, reload, and remote-server acceptance boundary.
+- [Animated Java display-entity semantics evidence](evidence/2026-07-24-animated-java-display-semantics.md)
+  records the mapped 1.20.4 display reference, shared visibility bounds/range,
+  transform/shadow/text/teleport interpolation, exact-export regression gate,
+  and the remaining outline, real-render, GPU, and remote-server boundary.
+- [Minecraft 1.20.4 item-model predicate evidence](evidence/2026-07-24-item-model-predicates.md)
+  audits the vanilla provider catalog, records stack and live-context support,
+  protects unknown-provider behavior, and names the remaining bundle,
+  clock/compass, trim-registry, and remote-use-progress gates.
 - [Player-light evidence](evidence/2026-07-23-player-light.md) records the
   player-centered six-block falloff, profile/menu controls, per-fragment
   rendering correction, focused tests, and generation-19 live acceptance.
 - [Stepped-slider evidence](evidence/2026-07-23-stepped-slider.md) records the
   reusable discrete slider contract, complete bounded-setting migration,
   focused/broad tests, and generation-23 visual and interaction acceptance.
+- [Source-native settings-form evidence](evidence/2026-07-24-settings-forms.md)
+  records typed staged entries, validation and rollback, dependency and restart
+  state, cycle selection, clipped visible-row scrolling, owned Fabric screen
+  adaptation, and the focused JVM gate.
+- [Fabric UI framework and adapter evidence](evidence/2026-07-24-fabric-ui-framework.md)
+  records categorized/searchable forms, virtual grids, dialogs, map and machine
+  primitives, atomic adapter options, current-stack configuration mappings,
+  richer JEI/Mod settings surfaces, and the remaining non-UI gameplay/data
+  boundaries.
 - [Right-drag crafting evidence](evidence/2026-07-23-right-drag-crafting.md)
   records the standard quick-craft packet sequence, once-only slot traversal,
   local prediction and eligibility rules, the transaction-queue eviction

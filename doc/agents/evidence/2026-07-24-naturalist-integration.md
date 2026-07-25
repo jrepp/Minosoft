@@ -6,18 +6,26 @@ Date: 2026-07-24
 
 ## Compatibility decision
 
-`fabric-stack` version `0.7.0` pins Naturalist `5.0pre3` and its GeckoLib
-dependency. The available Naturalist Fabric artifact targets Minecraft 1.20.1,
-while the stack targets Minecraft 1.20.4. Running Naturalist's upstream server
-entrypoint on the managed 1.20.4 Fabric server failed at linkage with
-`NoClassDefFoundError: net/minecraft/class_2368`. Both Packwiz entries are
-therefore client-only, and the launcher does not install them into the server
-view.
+`fabric-stack` version `0.8.0` pins the ported Naturalist `5.0.0-pre.4`
+artifact and GeckoLib `4.4.4` for Minecraft 1.20.4. Naturalist and GeckoLib are
+both installed into the client and managed Fabric server views. The ported
+artifact is not published on Modrinth, so its exact SHA-512 identity is declared
+with a `minosoft-cache:` URL and resolved from `MINOSOFT_MODPACK_CACHE`. This
+keeps locally produced third-party binaries out of the repository while making
+their source cache independent of each machine's platform-specific runtime
+store.
+
+The superseded `5.0pre3` artifact targeted Minecraft 1.20.1 and failed when its
+server entrypoint linked against 1.20.4 with
+`NoClassDefFoundError: net/minecraft/class_2368`. The `5.0.0-pre.4` port updates
+that server/runtime boundary and declares Minecraft `>=1.20.4 <1.20.5`.
 
 This is an exact source-native adaptation, not Fabric binary compatibility.
-`NaturalistCompatibilityAdapter` validates the known `5.0pre3` metadata,
+`NaturalistCompatibilityAdapter` validates the exact `5.0.0-pre.4` metadata,
 mounts the artifact's compatible assets, and does not execute Naturalist's
-entrypoints, mixins, nested libraries, AI, spawning, or registry code.
+entrypoints, mixins, nested libraries, AI, spawning, or registry code inside
+the Minosoft client. The managed Fabric server does execute the upstream
+Naturalist runtime and owns gameplay behavior.
 
 ## Content boundary
 
@@ -39,9 +47,10 @@ channel values. Content model names include their source path so the
 `caterpillar` and `lizard` files can safely retain the same upstream
 `geometry.unknown` identifier.
 
-Naturalist's synchronized entity registration, gameplay AI, spawning, and
-state-specific texture selection remain unmapped. Those require a compatible
-server-side content contract before this rung can advance beyond partial.
+Naturalist's remote registry negotiation and state-specific texture selection
+remain unmapped on the Minosoft client. The compatible managed server now owns
+entity registration, gameplay AI, and spawning, but a synchronized content
+contract is still required before this rung can advance beyond partial.
 
 ## Verification
 
@@ -52,17 +61,22 @@ geometry alias against the pinned artifact layout. The adapted Gecko route also
 passed the focused integration test through content baking and render-layer
 creation.
 
-`./play.sh modpack prepare fabric-stack` and `modpack inspect` resolved the
-immutable pack with nine active client artifacts and no activation blocker.
-The supervised `naturalist-integration` trajectory kept the same ready managed
-server while the client advanced through eleven hot-reload generations. The
-final client generation joined the 1.20.4 server, reached render-ready state,
-and reported exact active adapters for GeckoLib `4.4.4` and Naturalist
-`5.0pre3`. Its latest activation emitted:
+The Naturalist fork's `5.0.0-pre.4` build passed client and dedicated-server
+launches on Minecraft 1.20.4, including alligator and giraffe summons and
+Shellstone registration. Minosoft's focused launcher and adapter tests pass on
+Java 17. A fresh runtime store imported the exact Naturalist artifact from the
+portable cache, prepared `fabric-stack` `0.8.0`, and inspected all nine client
+artifacts without an activation or dependency blocker. Preflight selected
+`minosoft:naturalist-5.0.0-pre.4-fabric-mc1.20.4`.
+
+An isolated managed Fabric server then staged seven support mods, reported
+Naturalist `5.0.0-pre.4` and GeckoLib `4.4.4` in Loader inventory, and reached
+`server.game-ready`. It was stopped cleanly after acceptance.
 
 ```text
-NATURALIST_CONTENT_ACTIVE version=5.0pre3 entityRoutes=31 geometries=24 upstreamGameplay=false
+NATURALIST_CONTENT_ACTIVE version=5.0.0-pre.4 entityRoutes=31 geometries=24 upstreamGameplay=false
 ```
 
-No Naturalist-specific missing-texture, exception, or fatal record followed
-that activation.
+The activation message remains explicit that the Minosoft process mounts
+source-native content rather than executing upstream gameplay code; gameplay is
+owned by the managed Fabric server.
