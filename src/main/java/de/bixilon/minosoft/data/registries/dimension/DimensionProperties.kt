@@ -27,7 +27,7 @@ import de.bixilon.minosoft.util.nbt.tag.NBTUtil.get
 
 data class DimensionProperties(
     //   val piglinSafe: Boolean = false,
-    //   val natural: Boolean = true,
+    val natural: Boolean = true,
     val ambientLight: AmbientLight = AmbientLight.DEFAULT,
     //   val respawnAnchorWorks: Boolean = false,
     val light: Boolean = true,
@@ -62,7 +62,7 @@ data class DimensionProperties(
         fun deserialize(identifier: ResourceLocation? = null, data: Map<String, Any>): DimensionProperties {
             return DimensionProperties(
                 //piglinSafe = data["piglin_safe"]?.toBoolean() ?: false,
-                //natural = data["natural"]?.toBoolean() ?: false,
+                natural = data["natural"]?.toBoolean() ?: true,
                 ambientLight = data["ambient_light"]?.toFloat()?.let { AmbientLight(it) } ?: AmbientLight.DEFAULT,
                 //infiniBurn = ResourceLocation(data["infiniburn"].nullCast<String>() ?: "infiniburn_overworld"),
                 //respawnAnchorWorks = data["respawn_anchor_works"]?.toBoolean() ?: false,

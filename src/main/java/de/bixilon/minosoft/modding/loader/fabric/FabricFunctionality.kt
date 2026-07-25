@@ -109,11 +109,11 @@ object FabricFunctionalityCatalog {
 
     val ENTITY_CULLING = listOf(
         mapped("entity-visibility", "Entity visibility", FabricFunctionalityArea.PERFORMANCE, "Owned hook crosses every native entity visibility decision.", "FabricEntityVisibilityHooks"),
-        partial("config-screen", "Configuration screen", FabricFunctionalityArea.OPTIONS, "The host catalog is visible in game, but Entity Culling controls are read-only.", "Pause > Mod settings"),
+        mapped("config-screen", "Configuration screen", FabricFunctionalityArea.OPTIONS, "A writable persisted form controls occlusion policy, native entity distance, and a validated identifier whitelist.", "EntityCullingOptions / FabricSettings"),
         unmapped("block-entity-culling", "Block entity culling", FabricFunctionalityArea.PERFORMANCE, "No block-entity visibility adapter exists."),
         unmapped("tick-culling", "Tick culling", FabricFunctionalityArea.PERFORMANCE, "Client entity ticking is not suppressed by visibility."),
         unmapped("nametag-culling", "Nametag culling", FabricFunctionalityArea.RENDERING, "Nametag-through-wall policy is not mapped."),
-        unmapped("entity-whitelist", "Entity whitelist", FabricFunctionalityArea.OPTIONS, "Per-type entity exclusions are not mapped."),
+        mapped("entity-whitelist", "Entity whitelist", FabricFunctionalityArea.OPTIONS, "Validated resource identifiers bypass only the occluded visibility level while preserving distance and frustum rejection.", "EntityCullingOptions"),
         unmapped("block-entity-whitelist", "Block entity whitelist", FabricFunctionalityArea.OPTIONS, "Per-type block-entity exclusions are not mapped."),
         unmapped("debug-culling", "Culling debug controls", FabricFunctionalityArea.DIAGNOSTICS, "Toggle keys, boxes, tracing distance, and F3 diagnostics are not mapped."),
         unmapped("solid-leaves", "Solid leaves", FabricFunctionalityArea.PERFORMANCE, "Leaves are not promoted to occlusion solids by this adapter."),
@@ -128,7 +128,7 @@ object FabricFunctionalityCatalog {
         unmapped("fast-text-lookup", "Fast text lookup", FabricFunctionalityArea.PERFORMANCE, "ImmediatelyFast text lookup caches are not mapped."),
         unmapped("fast-buffer-upload", "Fast buffer upload", FabricFunctionalityArea.PERFORMANCE, "ImmediatelyFast buffer upload path is not mapped."),
         unmapped("sign-text-buffering", "Sign text buffering", FabricFunctionalityArea.PERFORMANCE, "Experimental sign text buffering is not mapped."),
-        unmapped("runtime-config", "Runtime configuration", FabricFunctionalityArea.OPTIONS, "ImmediatelyFast runtime flags and config access API are not mapped."),
+        mapped("runtime-config", "Runtime configuration", FabricFunctionalityArea.OPTIONS, "Persisted source-native switches control the frame hook and record HUD/screen retained-batching policy.", "ImmediatelyFastOptions / FabricSettings"),
         unmapped("conflict-handling", "Mod and hardware conflict handling", FabricFunctionalityArea.DIAGNOSTICS, "ImmediatelyFast compatibility guards are not mapped."),
     )
 
@@ -147,6 +147,14 @@ object FabricFunctionalityCatalog {
         mapped("sound-events", "Sound request events", FabricFunctionalityArea.API, "2D, world, packet, and local sound requests are observed at the native audio-player boundary before queued resolution.", "FabricSoundEvents"),
         mapped("player-interactions", "Player interaction decisions", FabricFunctionalityArea.GAMEPLAY, "Ordered owner hooks can pass or deny attack-block, attack-entity, use-block, use-entity, and use-item actions before native handling.", "FabricPlayerInteractionHooks"),
         mapped("screens", "Owned screen factories", FabricFunctionalityArea.OPTIONS, "Namespaced screen factories open on the render queue and disappear with their owner scope.", "FabricScreens"),
+        mapped("settings-forms", "Typed settings forms", FabricFunctionalityArea.OPTIONS, "Source-native schemas provide typed staged values, dependency-driven disabled states, validation, reset/apply/cancel, persistence callbacks, rollback on failed apply, and restart markers through owned screens.", "ConfigEntry / SettingsSession / FabricSettings"),
+        mapped("cycle-selectors", "Cycle selectors", FabricFunctionalityArea.OPTIONS, "Reusable cycle selectors expose bounded typed options through mouse, wheel, and keyboard input.", "CycleSelectorElement"),
+        mapped("scroll-panels", "Clipped scroll panels", FabricFunctionalityArea.OPTIONS, "Scrollable panels render and tick only intersecting rows and CPU-clip GUI quads, text, and item quads to the viewport.", "ClippedScrollPanelElement / ClippedGuiVertexConsumer"),
+        mapped("tabs-and-search", "Categories, tabs, descriptions, and search", FabricFunctionalityArea.OPTIONS, "Bounded tab bars, category schemas, hover descriptions, and focused search filtering retain valid selection across result changes.", "TabBarElement / SettingsFilter / TextPopper"),
+        mapped("virtual-grids", "Clipped virtual grids", FabricFunctionalityArea.RENDERING, "Virtual grids instantiate, tick, hit-test, and render only intersecting cells through the shared clip consumer.", "ClippedVirtualGridElement / VirtualGridState"),
+        mapped("dialogs-and-banners", "Dialogs and status banners", FabricFunctionalityArea.OPTIONS, "Source-native modal actions and severity-colored status banners cover confirmation, recovery, warning, and error presentation.", "ConfirmationDialog / StatusBannerElement"),
+        mapped("map-canvases", "Interactive map canvases", FabricFunctionalityArea.RENDERING, "A clipped canvas provides anchored pan/zoom transforms, visible bounds, marker tooltips, selection, and waypoint-edit callbacks.", "MapCanvasElement / MapViewportState"),
+        mapped("machine-screen-primitives", "Synchronized machine-screen primitives", FabricFunctionalityArea.OPTIONS, "Revisioned snapshots, tanks, energy/progress gauges, tabs, tooltips, custom native slots, and bounded payload controls are source-native.", "SynchronizedMachineScreenState / GaugeElement / FabricMachineControl"),
         mapped("hud-layers", "Owned HUD layers", FabricFunctionalityArea.RENDERING, "HUD builders attach to current and future render sessions and unload on the render queue with their owner.", "FabricHudLayers"),
         mapped("input-events", "Normalized input event bridge", FabricFunctionalityArea.API, "Owned key, character, mouse-move, and scroll observations use the normal GLFW/debug-injection event path on the render thread.", "FabricInputEvents"),
         mapped("key-bindings", "Owned key binding bridge", FabricFunctionalityArea.OPTIONS, "Namespaced configurable bindings attach to every render session and remove only their owner callback when closed.", "FabricKeyBindings"),
@@ -205,28 +213,28 @@ object FabricFunctionalityCatalog {
         partial("blocks-items-recipes", "Blocks, items, recipes, and loot", FabricFunctionalityArea.CONTENT, "Standard artifact assets mount on the client, but Minosoft does not source-register Naturalist's gameplay objects or execute its recipes and loot.", "ExternalAssetProviders"),
         unmapped("animal-ai-spawning", "Animal AI and spawning", FabricFunctionalityArea.GAMEPLAY, "Naturalist's Mojang/Fabric entity registrations, goals, spawn rules, breeding, combat, and interactions are not executed in Minosoft."),
         unmapped("naturalist-networking", "Naturalist entity synchronization", FabricFunctionalityArea.NETWORKING, "Custom entity registry negotiation and Naturalist-specific tracked state are not mapped to Minosoft's remote protocol registry."),
-        unmapped("naturalist-config", "Naturalist configuration", FabricFunctionalityArea.OPTIONS, "MidnightLib and Cloth Config screens and values do not link to Minosoft's settings UI."),
+        partial("naturalist-config", "Naturalist configuration", FabricFunctionalityArea.OPTIONS, "A searchable source-native category exposes and persists every client model-removal route from the pinned MidnightLib config; server spawn values remain gameplay-owned.", "NaturalistModelOptions / FabricSettings"),
     )
 
     val JEI = listOf(
         unmapped("ingredient-overlay", "Item and ingredient overlay", FabricFunctionalityArea.RENDERING, "JEI's paged item and ingredient list overlay and cheat-mode rendering are not implemented."),
-        mapped("recipe-viewer", "Recipe viewer", FabricFunctionalityArea.GAMEPLAY, "An owned container control opens a paged view of the play session's synchronized recipe registry.", "JeiRecipeMenu"),
+        mapped("recipe-viewer", "Recipe viewer", FabricFunctionalityArea.GAMEPLAY, "An owned container control opens a clipped searchable recipe-card view with categories, ghost ingredient/result slots, selection, and item tooltips.", "JeiRecipeMenu / JeiRecipeCardElement"),
         unmapped("recipe-transfer", "Recipe transfer", FabricFunctionalityArea.GAMEPLAY, "Crafting and inventory recipe transfer slot routing and packets are not mapped."),
-        unmapped("bookmarks", "Bookmark ingredients", FabricFunctionalityArea.GAMEPLAY, "Sticky ingredient bookmarks and their overlay actions are not implemented."),
-        unmapped("search", "Search and filtering", FabricFunctionalityArea.OPTIONS, "JEI's search syntax, filters, and result routing are not mapped."),
+        partial("bookmarks", "Bookmark ingredients", FabricFunctionalityArea.GAMEPLAY, "Persisted recipe bookmarks and bookmark-only filtering are available; a separate sticky ingredient overlay remains.", "JeiOptions"),
+        partial("search", "Search and filtering", FabricFunctionalityArea.OPTIONS, "Focused term search covers identifiers, categories, ingredients, and results; JEI's full prefix syntax remains.", "JeiRecipeMenu"),
         unmapped("ingredient-sync", "Ingredient sync", FabricFunctionalityArea.NETWORKING, "Server-to-client ingredient and recipe sync channels do not link."),
         unmapped("recipe-plugin-api", "Recipe plugin API", FabricFunctionalityArea.API, "JEI's runtime plugin registration and recipe category API do not link."),
         mapped("container-screen-extensions", "Inventory screen integration", FabricFunctionalityArea.RENDERING, "An owned native extension attaches the Recipes control to current container screens without applying Mojang mixins.", "FabricContainerScreenExtensions"),
-        unmapped("jei-config", "Configuration", FabricFunctionalityArea.OPTIONS, "JEI configuration screens and Mod Menu entrypoint are not mapped."),
+        mapped("jei-config", "Configuration", FabricFunctionalityArea.OPTIONS, "An owned source-native form persists bookmark and tooltip policy.", "JeiOptions / FabricSettings"),
         unmapped("jei-dev-tools", "Ingredient debug tools", FabricFunctionalityArea.DIAGNOSTICS, "JEI's ingredient tree and runtime debugging views are not mapped."),
     )
 
     val MOD_MENU = listOf(
-        partial("installed-mod-list", "Installed mod list", FabricFunctionalityArea.OPTIONS, "Minosoft's Mod settings screen lists every staged top-level Fabric artifact and its mapping counts.", "FabricModSettingsMenu"),
-        partial("config-navigation", "Configuration navigation", FabricFunctionalityArea.OPTIONS, "Source-native host menus can be opened from mapped catalog entries, but upstream ModMenuApi screen factories cannot link.", "FabricModFunctionalityMenu"),
+        mapped("installed-mod-list", "Installed mod list", FabricFunctionalityArea.OPTIONS, "The clipped host catalog lists every staged top-level artifact with version, badges, hierarchy, icon presence, activation state, and mapping counts.", "FabricModSettingsMenu"),
+        mapped("config-navigation", "Configuration navigation", FabricFunctionalityArea.OPTIONS, "Configurable mod rows resolve owner-scoped source-native screen registrations directly; non-configurable rows retain mapping inspection.", "FabricSettings / FabricScreens"),
         unmapped("modmenu-entrypoints", "Mod Menu API entrypoints", FabricFunctionalityArea.API, "ModMenuApi binary entrypoints and provided screen factories are not implemented."),
-        unmapped("search-and-filters", "Search and filters", FabricFunctionalityArea.OPTIONS, "The host mod catalog has no Mod Menu-compatible search, filters, or library grouping."),
-        unmapped("metadata-badges", "Metadata badges and hierarchy", FabricFunctionalityArea.OPTIONS, "Mod Menu custom badges, parent/child grouping, icons, and descriptions are not decoded."),
+        mapped("search-and-filters", "Search and filters", FabricFunctionalityArea.OPTIONS, "Focused search plus all/configurable/library/blocked filters drive a clipped result list.", "FabricModSettingsMenu"),
+        partial("metadata-badges", "Metadata badges and hierarchy", FabricFunctionalityArea.OPTIONS, "Descriptions, icon paths, Mod Menu badges, parents, and dependency grouping are decoded and presented; archive icon pixels are represented by presence rather than decoded into a texture.", "FabricMetadataReader / FabricModSettingsMenu"),
         unmapped("update-checker", "Mod update checker", FabricFunctionalityArea.NETWORKING, "Runtime Modrinth/update-source checks are intentionally not executed by the adapter."),
     )
 
@@ -294,7 +302,7 @@ object FabricFunctionalityCatalog {
         unmapped("recipes", "Recipes", FabricFunctionalityArea.GAMEPLAY, "Recipe resources are cataloged but not executed."),
         unmapped("machines", "Machines", FabricFunctionalityArea.GAMEPLAY, "Machine ticks, inventories, upgrades, and processing are not implemented."),
         unmapped("energy-network", "Energy network", FabricFunctionalityArea.GAMEPLAY, "Energy storage exists, but cable and machine networks do not."),
-        unmapped("containers-and-menus", "Containers and menus", FabricFunctionalityArea.OPTIONS, "Tech Reborn machine GUIs and synchronized containers are not mapped."),
+        partial("containers-and-menus", "Containers and menus", FabricFunctionalityArea.OPTIONS, "Reusable revisioned machine snapshots, custom native slots, tanks, energy/progress gauges, tabs, tooltips, and payload controls exist; Tech Reborn has no machine/network gameplay state to bind them to.", "SynchronizedMachineScreenState / GaugeElement / FabricMachineControl"),
         unmapped("custom-payloads", "Custom payloads", FabricFunctionalityArea.NETWORKING, "Tech Reborn packet channels and payload semantics are not mapped."),
         unmapped("persistent-state", "Persistent machine state", FabricFunctionalityArea.GAMEPLAY, "Machine and network state persistence is not implemented."),
         unmapped("modded-server", "Authoritative modded server", FabricFunctionalityArea.SERVER, "The vanilla test server cannot host Tech Reborn gameplay."),

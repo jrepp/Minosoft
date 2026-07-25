@@ -41,13 +41,13 @@ interface DataPackTransactionalSink {
 }
 
 interface DataPackMacroSource {
-    fun arguments(storage: ResourceLocation, path: String): Map<String, String>
+    fun arguments(storage: ResourceLocation, path: String): Map<String, String>?
 
     fun arguments(
         selector: String,
         path: String,
         context: DataPackCommandContext,
-    ): Map<String, String> {
+    ): Map<String, String>? {
         throw UnsupportedOperationException("Entity-backed function macros are not supported.")
     }
 }
@@ -147,6 +147,7 @@ class DataPackFunctionRuntime(
         inheritedContext: DataPackCommandContext?,
     ): Int {
         require(depth <= limits.maxDepth) { "Data-pack function depth exceeded ${limits.maxDepth} at ${function.id}" }
+        if (!hasRequiredMacroArguments(function, arguments)) return 0
         val context = DataPackCommandContext(
             function = function.id,
             depth = depth,
@@ -157,56 +158,68 @@ class DataPackFunctionRuntime(
             anchor = inheritedContext?.anchor ?: DataPackCommandAnchor.FEET,
         )
         var result = 0
-        for (source in function.commands) {
-            check(--budget.remaining >= 0) { "Data-pack command budget exceeded ${limits.maxCommands} at ${function.id}" }
-            val command = expand(source, arguments)
-            RETURN_VALUE.matchEntire(command)?.let { return it.groupValues[1].toInt() }
-            if (command == "return" || command == "return fail") return 0
-            RETURN_RUN.matchEntire(command)?.let {
-                return executeNestedCommand(it.groupValues[1], function, depth, budget, context)
+        try {
+            for (source in function.commands) {
+                check(--budget.remaining >= 0) { "Data-pack command budget exceeded ${limits.maxCommands} at ${function.id}" }
+                val command = expand(source, arguments)
+                RETURN_VALUE.matchEntire(command)?.let { return it.groupValues[1].toInt() }
+                if (command == "return" || command == "return fail") return 0
+                RETURN_RUN.matchEntire(command)?.let {
+                    return executeNestedCommand(it.groupValues[1], function, depth, budget, context)
+                }
+                val withStorage = FUNCTION_WITH_STORAGE.matchEntire(command)
+                if (withStorage != null) {
+                    val macroSource = sink as? DataPackMacroSource
+                        ?: throw IllegalArgumentException("${function.id} requires command-storage macro arguments.")
+                    val nestedArguments = macroSource.arguments(
+                        ResourceLocation.of(withStorage.groupValues[2]),
+                        withStorage.groupValues[3],
+                    )
+                    if (nestedArguments == null) {
+                        result = 0
+                        continue
+                    }
+                    result = executeReference(withStorage.groupValues[1], nestedArguments, depth, budget, function.id, context)
+                    continue
+                }
+                val withEntity = FUNCTION_WITH_ENTITY.matchEntire(command)
+                if (withEntity != null) {
+                    val macroSource = sink as? DataPackMacroSource
+                        ?: throw IllegalArgumentException("${function.id} requires entity macro arguments.")
+                    val nestedArguments = macroSource.arguments(
+                        withEntity.groupValues[2],
+                        withEntity.groupValues[3],
+                        context,
+                    )
+                    if (nestedArguments == null) {
+                        result = 0
+                        continue
+                    }
+                    result = executeReference(withEntity.groupValues[1], nestedArguments, depth, budget, function.id, context)
+                    continue
+                }
+                val nested = FUNCTION.matchEntire(command)
+                if (nested != null) {
+                    result = executeReference(
+                        nested.groupValues[1],
+                        parseArguments(nested.groupValues[2]),
+                        depth,
+                        budget,
+                        function.id,
+                        context,
+                    )
+                    continue
+                }
+                val schedule = SCHEDULE.matchEntire(command)
+                if (schedule != null) {
+                    schedule(schedule.groupValues[1], parseDelay(schedule.groupValues[2]), schedule.groupValues[3] == "replace")
+                    result = 1
+                    continue
+                }
+                result = executeCommand(command, function, depth, budget, context)
             }
-            val withStorage = FUNCTION_WITH_STORAGE.matchEntire(command)
-            if (withStorage != null) {
-                val macroSource = sink as? DataPackMacroSource
-                    ?: throw IllegalArgumentException("${function.id} requires command-storage macro arguments.")
-                val nestedArguments = macroSource.arguments(
-                    ResourceLocation.of(withStorage.groupValues[2]),
-                    withStorage.groupValues[3],
-                )
-                result = executeReference(withStorage.groupValues[1], nestedArguments, depth, budget, function.id, context)
-                continue
-            }
-            val withEntity = FUNCTION_WITH_ENTITY.matchEntire(command)
-            if (withEntity != null) {
-                val macroSource = sink as? DataPackMacroSource
-                    ?: throw IllegalArgumentException("${function.id} requires entity macro arguments.")
-                val nestedArguments = macroSource.arguments(
-                    withEntity.groupValues[2],
-                    withEntity.groupValues[3],
-                    context,
-                )
-                result = executeReference(withEntity.groupValues[1], nestedArguments, depth, budget, function.id, context)
-                continue
-            }
-            val nested = FUNCTION.matchEntire(command)
-            if (nested != null) {
-                result = executeReference(
-                    nested.groupValues[1],
-                    parseArguments(nested.groupValues[2]),
-                    depth,
-                    budget,
-                    function.id,
-                    context,
-                )
-                continue
-            }
-            val schedule = SCHEDULE.matchEntire(command)
-            if (schedule != null) {
-                schedule(schedule.groupValues[1], parseDelay(schedule.groupValues[2]), schedule.groupValues[3] == "replace")
-                result = 1
-                continue
-            }
-            result = executeCommand(command, function, depth, budget, context)
+        } catch (returned: FunctionReturn) {
+            return returned.result
         }
         return result
     }
@@ -229,10 +242,10 @@ class DataPackFunctionRuntime(
         budget: Budget,
         context: DataPackCommandContext,
     ): Int {
-        RETURN_VALUE.matchEntire(command)?.let { return it.groupValues[1].toInt() }
-        if (command == "return" || command == "return fail") return 0
+        RETURN_VALUE.matchEntire(command)?.let { throw FunctionReturn(it.groupValues[1].toInt()) }
+        if (command == "return" || command == "return fail") throw FunctionReturn(0)
         RETURN_RUN.matchEntire(command)?.let {
-            return executeNestedCommand(it.groupValues[1], owner, depth, budget, context)
+            throw FunctionReturn(executeNestedCommand(it.groupValues[1], owner, depth, budget, context))
         }
         if (command.startsWith("execute ")) {
             val environment = sink as? DataPackExecuteEnvironment
@@ -244,9 +257,11 @@ class DataPackFunctionRuntime(
         FUNCTION_WITH_STORAGE.matchEntire(command)?.let {
             val macroSource = sink as? DataPackMacroSource
                 ?: throw IllegalArgumentException("${owner.id} requires command-storage macro arguments.")
+            val arguments = macroSource.arguments(ResourceLocation.of(it.groupValues[2]), it.groupValues[3])
+                ?: return 0
             return executeReference(
                 it.groupValues[1],
-                macroSource.arguments(ResourceLocation.of(it.groupValues[2]), it.groupValues[3]),
+                arguments,
                 depth,
                 budget,
                 owner.id,
@@ -256,9 +271,11 @@ class DataPackFunctionRuntime(
         FUNCTION_WITH_ENTITY.matchEntire(command)?.let {
             val macroSource = sink as? DataPackMacroSource
                 ?: throw IllegalArgumentException("${owner.id} requires entity macro arguments.")
+            val arguments = macroSource.arguments(it.groupValues[2], it.groupValues[3], context)
+                ?: return 0
             return executeReference(
                 it.groupValues[1],
-                macroSource.arguments(it.groupValues[2], it.groupValues[3], context),
+                arguments,
                 depth,
                 budget,
                 owner.id,
@@ -312,6 +329,17 @@ class DataPackFunctionRuntime(
             arguments[match.groupValues[1]]
                 ?: throw IllegalArgumentException("Missing function macro argument ${match.groupValues[1]}")
         }
+    }
+
+    private fun hasRequiredMacroArguments(
+        function: DataPackFunction,
+        arguments: Map<String, String>,
+    ): Boolean {
+        for (command in function.commands) {
+            if (!command.startsWith('$')) continue
+            if (MACRO.findAll(command).any { it.groupValues[1] !in arguments }) return false
+        }
+        return true
     }
 
     private fun parseArguments(input: String): Map<String, String> {
@@ -404,6 +432,8 @@ class DataPackFunctionRuntime(
     )
 
     private data class Budget(var remaining: Int)
+    private class FunctionReturn(val result: Int) : RuntimeException(null, null, false, false)
+
     private data class Scheduled(
         val tick: Long,
         val sequence: Long,

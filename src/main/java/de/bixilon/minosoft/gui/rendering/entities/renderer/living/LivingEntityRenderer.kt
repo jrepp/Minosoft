@@ -22,6 +22,8 @@ import de.bixilon.minosoft.data.entities.event.events.damage.DamageListener
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
 import de.bixilon.minosoft.data.text.formatting.color.ColorInterpolation
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
+import de.bixilon.minosoft.gui.rendering.entities.effect.EntityLeashFeature
+import de.bixilon.minosoft.gui.rendering.entities.effect.EntityShadowFeature
 import de.bixilon.minosoft.gui.rendering.entities.feature.skeletal.GeckoLibArmorFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import kotlin.time.Duration
@@ -30,6 +32,8 @@ import kotlin.time.TimeSource.Monotonic.ValueTimeMark
 
 abstract class LivingEntityRenderer<E : LivingEntity>(renderer: EntitiesRenderer, entity: E) : EntityRenderer<E>(renderer, entity), DamageListener {
     val damage = Interpolator(ChatColors.WHITE.rgb(), ColorInterpolation::interpolateRGB) // TODO delta^2 or no interpolation at all?
+    val shadow = EntityShadowFeature(this).register()
+    val leash = EntityLeashFeature(this).register()
     val geckoArmor = GeckoLibArmorFeature(this).register()
 
 

@@ -175,6 +175,7 @@ object FabricBlockMutationEvents {
 
     fun dispatch(chunk: Chunk, changes: Collection<ChunkLocalBlockUpdate.Change>) {
         if (changes.isEmpty()) return
+        chunk.world.blockRevision++
         val mutations = changes.map {
             FabricBlockMutation(chunk.position.blockPosition(it.position), it.previous, it.state)
         }

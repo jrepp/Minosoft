@@ -91,6 +91,7 @@ class LocalDataPackEntityAccess(
                 tags = synchronized(entity.commandTags) { entity.commandTags.toSet() },
                 nbt = synchronized(entity.commandNbt) { entity.commandNbt.deepMutableMap() },
                 vehicle = entity.attachment.vehicle,
+                leashHolder = entity.attachment.leashHolder,
                 owned = factory.owns(entity),
             )
         }
@@ -128,6 +129,7 @@ class LocalDataPackEntityAccess(
                 }
                 for ((entity, snapshot) in snapshots) {
                     entity.attachment.vehicle = snapshot.vehicle
+                    entity.attachment.leashHolder = snapshot.leashHolder
                 }
                 completed = true
             }
@@ -202,6 +204,7 @@ class LocalDataPackEntityAccess(
         val tags: Set<String>,
         val nbt: MutableMap<String, Any>,
         val vehicle: Entity?,
+        val leashHolder: Entity?,
         val owned: Boolean,
     )
 

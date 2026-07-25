@@ -31,8 +31,12 @@ class EntityAttachS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
 
     override fun handle(session: PlaySession) {
         val entity = session.world.entities[entityId] ?: return
-        entity.attachment.vehicle = session.world.entities[vehicle]
-        // ToDo leash support
+        val target = if (vehicle < 0) null else session.world.entities[vehicle]
+        if (leash) {
+            entity.attachment.leashHolder = target
+        } else {
+            entity.attachment.vehicle = target
+        }
     }
 
     override fun log(reducedLog: Boolean) {

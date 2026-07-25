@@ -69,6 +69,10 @@ data class EntityTextureMaterialFrame(
     val base: ResourceLocation,
     val emissive: ResourceLocation?,
     val blinkState: EntityTextureBlinkState,
+    /** ETF properties rule that selected this material; zero is the base fallback. */
+    val ruleIndex: Int = 0,
+    /** OptiFine/ETF texture suffix selected by that rule. */
+    val textureSuffix: Int = 1,
 ) {
     val blinking get() = blinkState != EntityTextureBlinkState.OPEN
 }

@@ -18,18 +18,27 @@ import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.shader.generic.ColorShader
 import de.bixilon.minosoft.gui.rendering.shader.generic.Generic2dTextureShader
 import de.bixilon.minosoft.gui.rendering.shader.generic.GenericTextureShader
+import de.bixilon.minosoft.gui.rendering.shader.generic.LightColorShader
 
 class ShaderManager(
     val context: RenderContext,
 ) {
     val genericColorShader = context.system.shader.create(minosoft("generic/color")) { ColorShader(it) }
+    val entityLeashShader = context.system.shader.create(minosoft("generic/color_light")) { LightColorShader(it) }
     val genericTextureShader = context.system.shader.create(minosoft("generic/texture")) { GenericTextureShader(it) }
+    val entityShadowTextureShader = context.system.shader.create(minosoft("generic/texture")) {
+        it.defines["DISABLE_MIPMAPS"] = ""
+        it.defines["CLAMP_TEXTURE_UV"] = ""
+        GenericTextureShader(it)
+    }
     val genericTexture2dShader = context.system.shader.create(minosoft("generic/texture_2d")) { Generic2dTextureShader(it) }
 
 
     fun postInit() {
         genericColorShader.load()
+        entityLeashShader.load()
         genericTextureShader.load()
+        entityShadowTextureShader.load()
         genericTexture2dShader.load()
     }
 }

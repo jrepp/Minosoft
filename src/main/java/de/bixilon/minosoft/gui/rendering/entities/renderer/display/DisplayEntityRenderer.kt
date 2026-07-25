@@ -16,12 +16,18 @@ package de.bixilon.minosoft.gui.rendering.entities.renderer.display
 import de.bixilon.kmath.mat.mat4.f.MMat4f
 import de.bixilon.kmath.mat.mat4.f.Mat4Operations
 import de.bixilon.kmath.vec.vec4.f.Vec4f
-import de.bixilon.minosoft.data.entities.entities.display.DisplayEntity
-import de.bixilon.minosoft.data.entities.entities.display.DisplayTransformationInterpolator
-import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
-import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.kutil.primitive.FloatUtil.rad
 import de.bixilon.minosoft.data.entities.EntityRotation
+import de.bixilon.minosoft.data.entities.entities.display.DisplayEntity
+import de.bixilon.minosoft.data.entities.entities.display.DisplayPose
+import de.bixilon.minosoft.data.entities.entities.display.DisplayPoseInterpolator
+import de.bixilon.minosoft.data.entities.entities.display.DisplayShadowInterpolator
+import de.bixilon.minosoft.data.entities.entities.display.DisplayShadowState
+import de.bixilon.minosoft.data.entities.entities.display.DisplayTransformationInterpolator
+import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
+import de.bixilon.minosoft.gui.rendering.entities.effect.EntityShadowFeature
+import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLevels
 import kotlin.math.sqrt
 import kotlin.time.Duration
 
@@ -30,10 +36,25 @@ abstract class DisplayEntityRenderer<E : DisplayEntity>(
     entity: E,
 ) : EntityRenderer<E>(renderer, entity) {
     private val transformation = DisplayTransformationInterpolator(entity.transformation)
+    private val pose = DisplayPoseInterpolator(DisplayPose(entity.physics.position, entity.physics.rotation))
+    private val shadowState = DisplayShadowInterpolator(DisplayShadowState(entity.shadowRadius, entity.shadowStrength))
+    val shadow = EntityShadowFeature(this).register()
 
     override fun updateMatrix(delta: Duration) {
-        super.updateMatrix(delta)
-        applyBillboard()
+        pose.target(
+            DisplayPose(entity.physics.position, entity.physics.rotation),
+            entity.positionRotationInterpolationDurationTicks,
+        )
+        val pose = pose.advance(delta)
+        val offset = renderer.context.camera.offset.offset
+        matrix.clearAssign()
+        matrix.translateAssign(
+            (pose.position.x - offset.x).toFloat(),
+            (pose.position.y - offset.y).toFloat(),
+            (pose.position.z - offset.z).toFloat(),
+        )
+        applyBillboard(pose.rotation)
+
         transformation.target(
             entity.transformation,
             entity.interpolationStartDeltaTicks,
@@ -44,6 +65,14 @@ abstract class DisplayEntityRenderer<E : DisplayEntity>(
         matrix.rotateQuaternionAssign(transform.leftRotation)
         matrix.scaleAssign(transform.scale)
         matrix.rotateQuaternionAssign(transform.rightRotation)
+
+        shadowState.target(
+            DisplayShadowState(entity.shadowRadius, entity.shadowStrength),
+            entity.interpolationStartDeltaTicks,
+            entity.interpolationDurationTicks,
+        )
+        val shadow = shadowState.advance(delta)
+        renderEffects.publishShadow(this, shadow.radius, shadow.strength)
     }
 
     override fun updateLight(delta: Duration) {
@@ -53,8 +82,22 @@ abstract class DisplayEntityRenderer<E : DisplayEntity>(
         light.add(1.0f)
     }
 
-    private fun applyBillboard() {
-        val entityRotation = info.rotation
+    override fun updateVisibility(level: EntityVisibilityLevels) {
+        super.updateVisibility(
+            if (level > EntityVisibilityLevels.OUT_OF_VIEW_DISTANCE && !entity.isWithinViewRange(distance2)) {
+                EntityVisibilityLevels.OUT_OF_VIEW_DISTANCE
+            } else {
+                level
+            },
+        )
+    }
+
+    override fun unload() {
+        renderEffects.clear(this)
+        super.unload()
+    }
+
+    private fun applyBillboard(entityRotation: EntityRotation) {
         val cameraRotation = renderer.context.camera.view.view.rotation
         when (DisplayBillboard.of(entity.billboard)) {
             DisplayBillboard.FIXED -> {

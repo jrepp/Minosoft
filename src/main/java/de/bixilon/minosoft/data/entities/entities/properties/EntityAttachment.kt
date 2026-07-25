@@ -28,6 +28,7 @@ class EntityAttachment(
     var vehicle: Entity? by observed(null)
 
     var attached: Entity? by observed(null) // TODO: Not changeable for e.g. FireworkRocketEntity
+    var leashHolder: Entity? by observed(null)
 
 
     init {

@@ -30,8 +30,10 @@ import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.entities.feature.block.BlockMeshBuilder
 import de.bixilon.minosoft.gui.rendering.entities.feature.skeletal.GeckoLibEntityEventConsumer
 import de.bixilon.minosoft.gui.rendering.models.item.FlatItemRender
+import de.bixilon.minosoft.gui.rendering.models.item.ItemPredicateContext
 import de.bixilon.minosoft.gui.rendering.models.item.ItemRender
 import de.bixilon.minosoft.gui.rendering.models.item.ItemRenderUtil.getModel
+import de.bixilon.minosoft.gui.rendering.models.item.resolve
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.SkeletalModelStates
 import de.bixilon.minosoft.gui.rendering.skeletal.instance.SkeletalInstance
@@ -58,7 +60,10 @@ class HeldItemRenderer(private val context: RenderContext) {
 
     fun draw(entity: PlayerEntity, slot: EquipmentSlots, arm: Arms, perspective: Mat4f) {
         val stack = entity.equipment[slot] ?: return clear()
-        val model = stack.item.getModel(context.session)
+        val model = stack.item.getModel(context.session)?.resolve(
+            stack,
+            ItemPredicateContext.of(entity, stack, context.itemPredicates),
+        )
         val skeletalName = context.models.skeletal.contentModel(GeckoLibModelTarget.ITEM, stack.item.identifier)
         val skeletalModel = skeletalName?.let(context.models.skeletal::get)
         if (skeletalModel != null) {

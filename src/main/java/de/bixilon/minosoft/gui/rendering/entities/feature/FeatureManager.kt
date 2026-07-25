@@ -24,7 +24,12 @@ class FeatureManager(val renderer: EntityRenderer<*>) : Iterable<EntityRenderFea
 
     operator fun plusAssign(feature: EntityRenderFeature) = register(feature)
     fun register(feature: EntityRenderFeature) {
-        this.features += feature
+        val index = features.indexOfFirst { it.updatePriority > feature.updatePriority }
+        if (index < 0) {
+            features += feature
+        } else {
+            features.add(index, feature)
+        }
     }
 
     operator fun minusAssign(feature: EntityRenderFeature) = remove(feature)

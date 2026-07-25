@@ -26,7 +26,7 @@ import kotlin.test.assertTrue
 class NaturalistCompatibilityAdapterTest {
     @Test
     fun `exact Naturalist surface owns filtered assets routes and controllers`() {
-        val artifact = Files.createTempFile("naturalist-5.0pre3", ".jar")
+        val artifact = Files.createTempFile("naturalist-5.0.0-pre.4", ".jar")
         JarOutputStream(Files.newOutputStream(artifact)).use { jar ->
             for (entry in listOf(
                 "assets/naturalist/geo/entity/alligator.geo.json",
@@ -45,7 +45,7 @@ class NaturalistCompatibilityAdapterTest {
         }
         val metadata = FabricMetadata(
             id = "naturalist",
-            version = "5.0pre3",
+            version = "5.0.0-pre.4",
             name = "Naturalist",
             environment = "*",
             entrypoints = setOf("main", "client"),
@@ -54,13 +54,14 @@ class NaturalistCompatibilityAdapterTest {
             mixins = 2,
             accessWidener = null,
             nestedJarPaths = listOf(
-                "META-INF/jars/cloth-config-fabric-8.2.88.jar",
-                "META-INF/jars/midnightlib-1.4.1-fabric.jar",
+                "META-INF/jars/midnightlib-1.5.3-fabric.jar",
+                "META-INF/jars/cloth-config-fabric-13.0.138-fabric.jar",
             ),
             source = artifact.toString(),
         )
         val adapter = FabricCompatibilityAdapters.resolve(metadata)
         assertEquals(NaturalistCompatibilityAdapter, adapter)
+        assertNull(FabricCompatibilityAdapters.resolve(metadata.copy(version = "5.0pre3")))
         val scope = FabricRegistrationScope()
         try {
             adapter!!.activate(FabricModProbe(metadata, emptySet(), adapter), scope)

@@ -23,7 +23,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTextur
 import de.bixilon.minosoft.gui.rendering.util.mesh.builder.quad.QuadMeshBuilder
 import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
 
-open class SimpleTextureMeshBuilder(context: RenderContext) : QuadMeshBuilder(context, SimpleTextureMeshStruct, 1) {
+open class SimpleTextureMeshBuilder(context: RenderContext, estimate: Int = 1) : QuadMeshBuilder(context, SimpleTextureMeshStruct, estimate) {
 
     inline fun addVertex(x: Float, y: Float, z: Float, texture: ShaderTexture, uv: Vec2f, color: RGBAColor) = data.add(
         x, y, z,

@@ -68,7 +68,7 @@ class GeckoLibArmorFeature(
             } else {
                 instance.neutralAnimation.draw(delta)
             }
-            rotation.y = -livingRenderer.info.rotation.yaw.rad
+            rotation.y = -livingRenderer.info.bodyYaw.rad
             instance.update(rotation.unsafe, livingRenderer.matrix.unsafe)
             instance.transform.transform(instance.matrix.unsafe)
             if (instance.geckoAnimation.active) {

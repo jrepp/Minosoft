@@ -13,16 +13,19 @@
 
 package de.bixilon.minosoft.gui.rendering.entities.feature.register
 
+import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.gui.rendering.entities.feature.block.BlockRegister
 import de.bixilon.minosoft.gui.rendering.entities.feature.hitbox.HitboxManager
 import de.bixilon.minosoft.gui.rendering.entities.feature.text.BillboardTextRegister
 import de.bixilon.minosoft.gui.rendering.entities.feature.text.score.ScoreRegister
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerRegister
+import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
 import de.bixilon.minosoft.util.Initializable
 
 class EntityRenderFeatures(renderer: EntitiesRenderer) : Initializable {
     val features: MutableList<FeatureRegister> = mutableListOf()
+    val shadowTexture = renderer.context.textures.static.create(SHADOW_TEXTURE, mipmaps = false)
 
     val hitbox = HitboxManager(renderer).register()
     val player = PlayerRegister(renderer).register()
@@ -56,5 +59,9 @@ class EntityRenderFeatures(renderer: EntitiesRenderer) : Initializable {
     private fun <T : FeatureRegister> T.register(): T {
         this@EntityRenderFeatures += this
         return this
+    }
+
+    companion object {
+        val SHADOW_TEXTURE = minecraft("misc/shadow").texture()
     }
 }

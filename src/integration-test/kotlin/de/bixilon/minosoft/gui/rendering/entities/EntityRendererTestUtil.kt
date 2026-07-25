@@ -38,10 +38,12 @@ import de.bixilon.minosoft.gui.rendering.entities.factory.DefaultEntityModels
 import de.bixilon.minosoft.gui.rendering.entities.feature.register.EntityRenderFeatures
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.light.RenderLight
+import de.bixilon.minosoft.gui.rendering.models.item.ItemPredicateRuntime
 import de.bixilon.minosoft.gui.rendering.models.loader.ModelLoader
 import de.bixilon.minosoft.gui.rendering.shader.ShaderManager
 import de.bixilon.minosoft.gui.rendering.skeletal.SkeletalManager
 import de.bixilon.minosoft.gui.rendering.system.dummy.DummyRenderSystem
+import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTextureRenderData
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil
 import de.bixilon.minosoft.test.ITUtil.allocate
 import de.bixilon.minosoft.util.KUtil.startInit
@@ -50,33 +52,36 @@ import java.util.*
 object EntityRendererTestUtil {
     val PIG = EntityType(Pig.identifier, minosoft("key"), 1.0f, 1.0f, mapOf(), Pig, null)
 
-    fun createContext(): RenderContext {
-        val session = SessionTestUtil.createSession()
+    fun createContext(worldSize: Int = 0): RenderContext {
+        val session = SessionTestUtil.createSession(worldSize = worldSize)
         session::scoreboard.forceSet(ScoreboardManager(session))
         session::tabList.forceSet(TabList())
         val context = RenderContext::class.java.allocate()
         context::system.forceSet(DummyRenderSystem(context))
         context::textures.forceSet(context.system.createTextureManager())
-        context::shaders.forceSet(ShaderManager(context))
         context::session.forceSet(session)
         context.session::player.forceSet(LocalPlayerEntity(TestAccount, session, SignatureKeyManagement(session, session.account)))
         context::camera.forceSet(Camera(context))
         context::light.forceSet(RenderLight(context))
+        context::shaders.forceSet(ShaderManager(context))
         context::skeletal.forceSet(SkeletalManager(context))
         context::models.forceSet(ModelLoader(context))
+        context::itemPredicates.forceSet(ItemPredicateRuntime())
 
 
         return context
     }
 
-    fun create(): EntitiesRenderer {
-        val context = createContext()
+    fun create(worldSize: Int = 0): EntitiesRenderer {
+        val context = createContext(worldSize)
         val renderer = EntitiesRenderer::class.java.allocate()
         renderer::context.forceSet(context)
         renderer::queue.forceSet(Queue())
         renderer::session.forceSet(context.session)
         renderer::profile.forceSet(EntityProfile())
-        renderer::features.forceSet(EntityRenderFeatures(renderer))
+        renderer::features.forceSet(EntityRenderFeatures(renderer).also {
+            it.shadowTexture.renderData = DummyTextureRenderData
+        })
         renderer::renderers.forceSet(EntityRendererManager(renderer))
         return renderer
     }

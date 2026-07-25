@@ -57,12 +57,15 @@ data class CemExpressionFrame(
  * Model variables persist for the lifetime of this evaluator (one evaluator
  * per rendered model instance). Transform assignments are rebuilt each frame.
  * `this.*`, named-part lookups, `var.*`, and `varb.*` are resolved without
- * reflection; unknown targets fail during construction.
+ * reflection; when the retained part set is supplied, unknown targets fail
+ * during construction.
  */
 class CemExpressionEvaluator(
     bindings: List<SkeletalExpressionBinding>,
     aliases: Map<String, String> = emptyMap(),
+    knownParts: Set<String>? = null,
 ) {
+    private val aliases = aliases.toMap()
     private val bindings = bindings.also {
         require(it.size <= MAX_BINDINGS) {
             "CEM expression model exceeds the $MAX_BINDINGS binding limit."
@@ -70,20 +73,23 @@ class CemExpressionEvaluator(
     }.map { binding ->
         CompiledBinding(
             owner = aliases[binding.owner] ?: binding.owner,
-            target = parseTarget(binding, aliases),
+            target = parseTarget(binding, this.aliases, knownParts),
             expression = binding,
         )
     }
     private val variables = linkedMapOf<String, Double>()
 
     @Synchronized
-    fun evaluate(input: SkeletalExpressionContext = SkeletalExpressionContext()): CemExpressionFrame {
+    fun evaluate(
+        input: SkeletalExpressionContext = SkeletalExpressionContext(),
+        partValues: Map<String, Map<CemTransformProperty, Float>> = emptyMap(),
+    ): CemExpressionFrame {
         val transforms = linkedMapOf<String, MutableMap<CemTransformProperty, Float>>()
         val render = linkedMapOf<CemRenderProperty, Float>()
         for (binding in bindings) {
             val context = SkeletalExpressionContext(
                 variableResolver = { name ->
-                    resolve(name, binding.owner, transforms, render, input)
+                    resolve(name, binding.owner, transforms, render, partValues, input)
                 },
                 rawFunctionResolver = input::resolveRawFunction,
                 random = input.random,
@@ -120,6 +126,7 @@ class CemExpressionEvaluator(
         owner: String,
         transforms: Map<String, Map<CemTransformProperty, Float>>,
         render: Map<CemRenderProperty, Float>,
+        partValues: Map<String, Map<CemTransformProperty, Float>>,
         input: SkeletalExpressionContext,
     ): Double? {
         variables[raw]?.let { return it }
@@ -128,15 +135,7 @@ class CemExpressionEvaluator(
         if (target != null) {
             val assigned = transforms[target.first]?.get(target.second)
             if (assigned != null) return assigned.toDouble()
-            return when (target.second) {
-                CemTransformProperty.SCALE_X,
-                CemTransformProperty.SCALE_Y,
-                CemTransformProperty.SCALE_Z,
-                CemTransformProperty.VISIBLE,
-                CemTransformProperty.VISIBLE_BOXES,
-                -> 1.0
-                else -> 0.0
-            }
+            return (partValues[target.first]?.get(target.second) ?: 0.0f).toDouble()
         }
         return try {
             input.variable(raw)
@@ -150,12 +149,14 @@ class CemExpressionEvaluator(
         if (separator <= 0) return null
         val property = CemTransformProperty.of(raw.substring(separator + 1)) ?: return null
         val sourceBone = raw.substring(0, separator)
-        return (if (sourceBone == "this") owner else sourceBone) to property
+        val bone = if (sourceBone == "this") owner else aliases[sourceBone] ?: sourceBone
+        return bone to property
     }
 
     private fun parseTarget(
         binding: SkeletalExpressionBinding,
         aliases: Map<String, String>,
+        knownParts: Set<String>?,
     ): Target {
         val raw = binding.target
         if (raw.startsWith("var.")) return Target.Variable(raw, boolean = false)
@@ -171,6 +172,9 @@ class CemExpressionEvaluator(
         }
         val property = CemTransformProperty.of(raw.substring(separator + 1))
             ?: throw IllegalArgumentException("Unsupported CEM expression target '$raw'.")
+        require(knownParts == null || bone in knownParts) {
+            "CEM expression target '$raw' resolves to missing part '$bone'."
+        }
         return Target.Transform(bone, property)
     }
 

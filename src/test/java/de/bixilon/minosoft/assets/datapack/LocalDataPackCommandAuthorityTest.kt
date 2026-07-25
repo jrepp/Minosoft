@@ -72,14 +72,30 @@ class LocalDataPackCommandAuthorityTest {
         authority.execute("""data modify storage demo:runtime rigs."1" set value {uuid:"one",frames:[{x:1}]}""", context)
         authority.execute("""data modify storage demo:runtime rigs."1" merge value {playing:true}""", context)
         authority.execute("""data modify storage demo:runtime rigs."1".frames append value {x:2}""", context)
+        authority.execute("""data modify storage demo:runtime rigs."1".uuids append value 7""", context)
         authority.execute("""data modify storage demo:temp selected set from storage demo:runtime rigs."1".frames[-1]""", context)
         authority.execute("""data remove storage demo:runtime rigs."1".uuid""", context)
 
         val rig = ((authority.storage(ResourceLocation.of("demo:runtime"))!!["rigs"] as Map<*, *>)["1"] as Map<*, *>)
         assertEquals(true, rig["playing"])
         assertEquals(listOf(mapOf("x" to 1), mapOf("x" to 2)), rig["frames"])
+        assertEquals(listOf(7), rig["uuids"])
         assertEquals(mapOf("x" to 2), authority.storage(ResourceLocation.of("demo:temp"))!!["selected"])
         assertEquals(null, rig["uuid"])
+    }
+
+    @Test
+    fun `missing storage data source returns command failure`() {
+        val authority = LocalDataPackCommandAuthority()
+
+        assertEquals(
+            0,
+            authority.execute(
+                "data modify storage demo:temp selected set from storage demo:missing value",
+                context,
+            ),
+        )
+        assertEquals(null, authority.storage(ResourceLocation.of("demo:temp")))
     }
 
     @Test

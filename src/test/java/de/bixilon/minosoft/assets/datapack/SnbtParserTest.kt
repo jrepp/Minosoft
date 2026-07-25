@@ -33,6 +33,16 @@ class SnbtParserTest {
     }
 
     @Test
+    fun `accepts trailing collection commas emitted by Animated Java`() {
+        assertEquals(
+            mapOf("passengers" to listOf(mapOf("id" to "minecraft:item_display"))),
+            SnbtParser.compound(
+                """{passengers:[{id:"minecraft:item_display",},],}""",
+            ),
+        )
+    }
+
+    @Test
     fun `rejects trailing and unbalanced input`() {
         assertFailsWith<IllegalArgumentException> { SnbtParser.parse("{a:1} trailing") }
         assertFailsWith<IllegalArgumentException> { SnbtParser.parse("{a:[1,2}") }

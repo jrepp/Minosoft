@@ -29,7 +29,10 @@ import de.bixilon.minosoft.gui.rendering.entities.feature.skeletal.GeckoLibEntit
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.ContentModelReloadable
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
+import de.bixilon.minosoft.gui.rendering.models.item.ItemPredicateContext
+import de.bixilon.minosoft.gui.rendering.models.item.ItemRender
 import de.bixilon.minosoft.gui.rendering.models.item.ItemRenderUtil.getModel
+import de.bixilon.minosoft.gui.rendering.models.item.resolve
 import de.bixilon.minosoft.gui.rendering.models.raw.display.DisplayPositions
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.SkeletalModelStates
 import de.bixilon.minosoft.gui.rendering.skeletal.instance.GeckoLibAnimationManagerSnapshot
@@ -56,6 +59,7 @@ open class ItemFeature(
     private var matrix = MMat4f()
     private var displayMatrix = Mat4f.EMPTY
     private var distance: ItemRenderDistance? = null
+    private var resolvedModel: ItemRender? = null
     private var skeletal: SkeletalInstance? = null
     private var pendingGeckoAnimation: GeckoLibAnimationManagerSnapshot? = null
     var stack: ItemStack? = stack
@@ -68,15 +72,29 @@ open class ItemFeature(
     override val layer get() = EntityLayer.Translucent // TODO
 
     override fun update(delta: Duration) {
+        val stack = this.stack
+        updateResolvedModel(stack)
+        updateDistance()
         super.update(delta)
 
-        updateDistance()
         if (this.mesh == null && this.skeletal == null) {
-            val stack = this.stack ?: return unload()
-            if (!createSkeletal(stack)) createMesh(stack)
+            stack ?: return unload()
+            val model = resolvedModel
+            if (!createSkeletal(stack, model) && model != null) createMesh(stack, model)
         }
         updateMatrix()
         updateSkeletal(delta)
+    }
+
+    private fun updateResolvedModel(stack: ItemStack?) {
+        val context = renderer.renderer.context
+        val model = stack?.item?.getModel(context.session)?.resolve(
+            stack,
+            ItemPredicateContext.of(renderer.entity, stack, context.itemPredicates),
+        )
+        if (model === resolvedModel) return
+        resolvedModel = model
+        unload = true
     }
 
     private fun updateDistance() {
@@ -86,9 +104,8 @@ open class ItemFeature(
         this.distance = distance
     }
 
-    private fun createMesh(stack: ItemStack) {
+    private fun createMesh(stack: ItemStack, model: ItemRender) {
         val distance = this.distance ?: return
-        val model = stack.item.getModel(renderer.renderer.session) ?: return
         val display = model.getDisplay(display, stack)
         this.displayMatrix = display?.matrix ?: Mat4f.EMPTY
         val mesh = BlockMeshBuilder(renderer.renderer.context)
@@ -116,7 +133,7 @@ open class ItemFeature(
         this.mesh = mesh.bake()
     }
 
-    private fun createSkeletal(stack: ItemStack): Boolean {
+    private fun createSkeletal(stack: ItemStack, vanilla: ItemRender?): Boolean {
         val models = renderer.renderer.context.models.skeletal
         val name = models.contentModel(GeckoLibModelTarget.ITEM, stack.item.identifier) ?: return false
         val model = models[name] ?: return false
@@ -129,7 +146,6 @@ open class ItemFeature(
         skeletal = instance
         unload = false
 
-        val vanilla = stack.item.getModel(renderer.renderer.session)
         displayMatrix = vanilla?.getDisplay(display, stack)?.matrix ?: Mat4f.EMPTY
         return true
     }

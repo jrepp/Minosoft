@@ -663,10 +663,9 @@ class LocalDataPackCommandAuthority(
         return linkedMapOf<String, Any>().also { storage[id] = it }
     }
 
-    override fun arguments(storage: ResourceLocation, path: String): Map<String, String> {
-        val root = this.storage[storage] ?: throw IllegalArgumentException("Unknown command storage $storage")
-        val value = NbtPath.get(root, path)
-            ?: throw IllegalArgumentException("Missing command storage path $storage $path")
+    override fun arguments(storage: ResourceLocation, path: String): Map<String, String>? {
+        val root = this.storage[storage] ?: return null
+        val value = NbtPath.get(root, path) ?: return null
         return macroArguments(value, "$storage $path")
     }
 
@@ -674,12 +673,10 @@ class LocalDataPackCommandAuthority(
         selector: String,
         path: String,
         context: DataPackCommandContext,
-    ): Map<String, String> {
+    ): Map<String, String>? {
         val access = entities ?: throw IllegalArgumentException("Entity function macros require a local entity authority.")
-        val entity = access.select(selector, context).singleOrNull()
-            ?: throw IllegalArgumentException("Function macro entity selector $selector must resolve exactly one entity.")
-        val value = NbtPath.get(entitySnapshot(entity), path)
-            ?: throw IllegalArgumentException("Missing entity function macro path $selector $path")
+        val entity = access.select(selector, context).singleOrNull() ?: return null
+        val value = NbtPath.get(entitySnapshot(entity), path) ?: return null
         return macroArguments(value, "$selector $path")
     }
 
@@ -907,7 +904,7 @@ class LocalDataPackCommandAuthority(
             val operation = match.groupValues[3]
             val sourceType = match.groupValues[4]
             val source = match.groupValues[5]
-            val value = dataSource(sourceType, source, command, context)
+            val value = dataSource(sourceType, source, command, context) ?: return 0
             selected.forEach {
                 modifyEntity(it, path, operation, value, command)
                 access.synchronize(it)
@@ -942,13 +939,7 @@ class LocalDataPackCommandAuthority(
                 merge(target as MutableMap<String, Any>, value as Map<String, Any>)
             }
             "append" -> {
-                val target = NbtPath.get(entity.commandNbt, path)
-                require(target is MutableList<*>) { "Data append requires a list target: $command" }
-                require(target.size < MAX_NBT_COLLECTION_SIZE) {
-                    "Entity NBT list exceeds the $MAX_NBT_COLLECTION_SIZE element limit."
-                }
-                @Suppress("UNCHECKED_CAST")
-                (target as MutableList<Any>) += value.deepMutable()
+                NbtPath.append(entity.commandNbt, path, value.deepMutable(), command, "Entity")
             }
             else -> throw UnsupportedDataPackCommandException(command)
         }
@@ -959,16 +950,15 @@ class LocalDataPackCommandAuthority(
         source: String,
         command: String,
         context: DataPackCommandContext,
-    ): Any {
+    ): Any? {
         return when (sourceType) {
             "value" -> SnbtParser.parse(source)
             "from storage" -> {
                 val separator = source.indexOf(' ')
                 require(separator > 0) { "Missing source storage path in: $command" }
                 val sourceRoot = storage[ResourceLocation.of(source.substring(0, separator))]
-                    ?: throw IllegalArgumentException("Unknown source storage in: $command")
+                    ?: return null
                 NbtPath.get(sourceRoot, source.substring(separator + 1))
-                    ?: throw IllegalArgumentException("Missing source storage value in: $command")
             }
             "from entity" -> {
                 val separator = source.indexOf(' ')
@@ -1053,7 +1043,7 @@ class LocalDataPackCommandAuthority(
             val operation = match.groupValues[3]
             val sourceType = match.groupValues[4]
             val source = match.groupValues[5]
-            val value = dataSource(sourceType, source, command, context)
+            val value = dataSource(sourceType, source, command, context) ?: return 0
             val root = storageRoot(id)
             when (operation) {
                 "set" -> NbtPath.set(root, path, value.deepMutable())
@@ -1064,13 +1054,7 @@ class LocalDataPackCommandAuthority(
                     merge(target as MutableMap<String, Any>, value as Map<String, Any>)
                 }
                 "append" -> {
-                    val target = NbtPath.get(root, path)
-                    require(target is MutableList<*>) { "Data append requires a list target: $command" }
-                    require(target.size < MAX_NBT_COLLECTION_SIZE) {
-                        "Storage NBT list exceeds the $MAX_NBT_COLLECTION_SIZE element limit."
-                    }
-                    @Suppress("UNCHECKED_CAST")
-                    (target as MutableList<Any>) += value.deepMutable()
+                    NbtPath.append(root, path, value.deepMutable(), command, "Storage")
                 }
                 else -> throw UnsupportedDataPackCommandException(command)
             }
@@ -1151,6 +1135,27 @@ class LocalDataPackCommandAuthority(
                     list[last.index.resolve(list.size)] = newValue
                 }
             }
+        }
+
+        fun append(
+            root: MutableMap<String, Any>,
+            source: String,
+            newValue: Any,
+            command: String,
+            owner: String,
+        ) {
+            val existing = get(root, source)
+            val target = if (existing == null) {
+                mutableListOf<Any>().also { set(root, source, it) }
+            } else {
+                require(existing is MutableList<*>) { "Data append requires a list target: $command" }
+                @Suppress("UNCHECKED_CAST")
+                existing as MutableList<Any>
+            }
+            require(target.size < MAX_NBT_COLLECTION_SIZE) {
+                "$owner NBT list exceeds the $MAX_NBT_COLLECTION_SIZE element limit."
+            }
+            target += newValue
         }
 
         fun remove(root: MutableMap<String, Any>, source: String): Boolean {

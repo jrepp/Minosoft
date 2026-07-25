@@ -23,13 +23,73 @@ import de.bixilon.minosoft.data.entities.entities.display.TextDisplayEntity
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.RenderingOptions
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil.createSession
+import de.bixilon.minosoft.protocol.packets.s2c.play.entity.passenger.EntityAttachS2CP
+import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayInByteBuffer
 import de.bixilon.minosoft.test.IT
 import org.testng.Assert.assertEquals
 import org.testng.Assert.assertSame
 import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
+import java.nio.ByteBuffer
 
 class LocalDisplayEntityFactoryTest {
+
+    @Test
+    fun `legacy attach packet keeps vehicle and leash modes distinct`() {
+        IT.VERSION
+        val session = createSession(version = "1.8.9")
+
+        val vehiclePacket = ByteBuffer.allocate(Int.SIZE_BYTES * 2 + 1)
+            .putInt(7)
+            .putInt(8)
+            .put(0)
+            .array()
+        val leashPacket = ByteBuffer.allocate(Int.SIZE_BYTES * 2 + 1)
+            .putInt(7)
+            .putInt(8)
+            .put(1)
+            .array()
+
+        assertEquals(
+            false,
+            EntityAttachS2CP(PlayInByteBuffer(vehiclePacket, session)).leash,
+        )
+        assertEquals(
+            true,
+            EntityAttachS2CP(PlayInByteBuffer(leashPacket, session)).leash,
+        )
+    }
+
+    @Test
+    fun `modern attach packet owns leash state without creating a vehicle mount`() {
+        val previous = RenderingOptions.disabled
+        RenderingOptions.disabled = true
+        try {
+            IT.VERSION
+            val session = createSession(version = "1.20.4")
+            val factory = LocalDisplayEntityFactory(session)
+            val entity = factory.summon(ResourceLocation.of("minecraft:marker"), emptyMap(), Vec3d.EMPTY)
+            val holder = factory.summon(ResourceLocation.of("minecraft:marker"), emptyMap(), Vec3d(1.0, 0.0, 0.0))
+            val attach = ByteBuffer.allocate(Int.SIZE_BYTES * 2)
+                .putInt(requireNotNull(entity.id))
+                .putInt(requireNotNull(holder.id))
+                .array()
+
+            EntityAttachS2CP(PlayInByteBuffer(attach, session)).handle(session)
+
+            assertSame(holder, entity.attachment.leashHolder)
+            assertEquals(null, entity.attachment.vehicle)
+
+            val detach = ByteBuffer.allocate(Int.SIZE_BYTES * 2)
+                .putInt(requireNotNull(entity.id))
+                .putInt(-1)
+                .array()
+            EntityAttachS2CP(PlayInByteBuffer(detach, session)).handle(session)
+            assertEquals(null, entity.attachment.leashHolder)
+        } finally {
+            RenderingOptions.disabled = previous
+        }
+    }
 
     @Test
     fun `summons an Animated Java root with retained display passenger state`() {
@@ -39,7 +99,7 @@ class LocalDisplayEntityFactoryTest {
             IT.VERSION // initialize the integration-test version/registry catalog
             val session = createSession(version = "1.20.4")
             val nbt = SnbtParser.compound(
-                """{Tags:["aj.global.root","demo.rig.root"],billboard:"center",brightness:{sky:15,block:7},transformation:{translation:[1f,2f,3f],left_rotation:[0f,0f,0f,1f],scale:[2f,2f,2f],right_rotation:[0f,0f,0f,1f]},item:{id:"minecraft:carrot_on_a_stick",Count:1b,tag:{CustomModelData:42}},item_display:"head",Passengers:[{id:"minecraft:text_display",Tags:["demo.rig.label"],text:'{"text":"Hello"}',line_width:80,shadow:1b,alignment:"left"}]}""",
+                """{Tags:["aj.global.root","demo.rig.root"],billboard:"center",brightness:{sky:15,block:7},view_range:2f,width:4f,height:3f,shadow_radius:2f,shadow_strength:0.75f,teleport_duration:4,glow_color_override:16711935,transformation:{translation:[1f,2f,3f],left_rotation:[0f,0f,0f,1f],scale:[2f,2f,2f],right_rotation:[0f,0f,0f,1f]},item:{id:"minecraft:carrot_on_a_stick",Count:1b,tag:{CustomModelData:42}},item_display:"head",Passengers:[{id:"minecraft:text_display",Tags:["demo.rig.label"],text:'{"text":"Hello"}',line_width:80,shadow:1b,alignment:"left"}]}""",
             )
 
             val factory = LocalDisplayEntityFactory(session)
@@ -66,6 +126,16 @@ class LocalDisplayEntityFactoryTest {
             assertEquals(15, root.brightness!!.sky)
             assertEquals(7, root.brightness!!.block)
             assertEquals(1.0f, root.translation.x)
+            assertEquals(4.0f, root.dimensions.x)
+            assertEquals(3.0f, root.dimensions.y)
+            assertEquals(Vec3d(-2.0, 0.0, -2.0), root.defaultAABB!!.min)
+            assertEquals(Vec3d(2.0, 3.0, 2.0), root.defaultAABB!!.max)
+            assertTrue(root.isWithinViewRange(127.0 * 127.0))
+            assertEquals(false, root.isWithinViewRange(128.0 * 128.0))
+            assertEquals(2.0f, root.shadowRadius)
+            assertEquals(0.75f, root.shadowStrength)
+            assertEquals(4, root.positionRotationInterpolationDurationTicks)
+            assertEquals(0xFF00FF, root.glowColorOverride)
             val passenger = root.attachment.passengers.single() as TextDisplayEntity
             assertSame(root, passenger.attachment.vehicle)
             assertTrue(passenger.shadow)

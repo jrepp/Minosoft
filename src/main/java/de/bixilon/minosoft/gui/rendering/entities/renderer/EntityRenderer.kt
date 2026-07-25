@@ -24,6 +24,7 @@ import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.gui.rendering.entities.draw.EntityDrawer
 import de.bixilon.minosoft.gui.rendering.entities.easteregg.EntityEasterEggs.FLIP_ROTATION
 import de.bixilon.minosoft.gui.rendering.entities.easteregg.EntityEasterEggs.isFlipped
+import de.bixilon.minosoft.gui.rendering.entities.effect.EntityRenderEffects
 import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderFeature
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureManager
 import de.bixilon.minosoft.gui.rendering.entities.feature.hitbox.HitboxFeature
@@ -40,6 +41,7 @@ abstract class EntityRenderer<E : Entity>(
 ) {
     private var update = TimeUtil.NULL
     val features = FeatureManager(this)
+    val renderEffects = EntityRenderEffects(entity.dimensions.x * 0.5f)
     val info = entity.renderInfo
     var distance2 = 0.0
 

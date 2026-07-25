@@ -18,6 +18,7 @@ import de.bixilon.kutil.math.interpolation.FloatInterpolation.interpolateLinear
 import de.bixilon.minosoft.data.Tickable
 import de.bixilon.minosoft.data.entities.EntityRotation.Companion.interpolateYaw
 import de.bixilon.minosoft.data.entities.entities.Entity
+import de.bixilon.minosoft.data.entities.entities.Mob
 import de.bixilon.minosoft.data.registries.shapes.aabb.AABB
 import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3dUtil
 import de.bixilon.minosoft.protocol.network.session.play.tick.TickUtil
@@ -42,6 +43,14 @@ class EntityRenderInfo(private val entity: Entity) : Tickable {
     private var rotation0 = EntityRotation.EMPTY
     private var rotation1 = entity.physics.rotation
     var rotation: EntityRotation = rotation1
+        private set
+    private val bodyRotation = (entity as? Mob)?.let { EntityBodyRotation(rotation1.yaw, entity.physics.headYaw) }
+    var bodyYaw: Float = rotation1.yaw
+        private set
+    var headYaw: Float = entity.physics.headYaw
+        private set
+    /** Current render interpolation within the entity's most recent game tick. */
+    var partialTick: Float = 0.0f
         private set
 
     init {
@@ -75,15 +84,24 @@ class EntityRenderInfo(private val entity: Entity) : Tickable {
 
     private fun interpolateRotation(delta: Float) {
         val rotation1 = this.rotation1
-        if (rotation == rotation1) {
+        if (rotation != rotation1) {
+            val rotation0 = this.rotation0
+            rotation = EntityRotation(interpolateYaw(delta, rotation0.yaw, rotation1.yaw), interpolateLinear(delta, rotation0.pitch, rotation1.pitch))
+        }
+
+        val bodyRotation = this.bodyRotation
+        if (bodyRotation == null) {
+            bodyYaw = rotation.yaw
+            headYaw = entity.physics.headYaw
             return
         }
-        val rotation0 = this.rotation0
-        rotation = EntityRotation(interpolateYaw(delta, rotation0.yaw, rotation1.yaw), interpolateLinear(delta, rotation0.pitch, rotation1.pitch))
+        bodyYaw = bodyRotation.interpolateBody(delta)
+        headYaw = bodyRotation.interpolateHead(delta)
     }
 
     fun draw(time: ValueTimeMark) {
-        val delta = ((time - entity.lastTickTime) / TickUtil.TIME_PER_TICK).toFloat()
+        val delta = ((time - entity.lastTickTime) / TickUtil.TIME_PER_TICK).toFloat().coerceIn(0.0f, 1.0f)
+        partialTick = delta
         interpolatePosition(delta)
         interpolateRotation(delta)
     }
@@ -112,9 +130,34 @@ class EntityRenderInfo(private val entity: Entity) : Tickable {
         eyeHeight1 = eyeHeight
     }
 
+    private fun tickBodyRotation() {
+        val entity = entity as? Mob ?: return
+        val bodyRotation = bodyRotation ?: return
+        val current = entity.physics.position
+        val previous = position1
+        val deltaX = current.x - previous.x
+        val deltaZ = current.z - previous.z
+        bodyRotation.tick(
+            entityYaw = entity.physics.rotation.yaw,
+            headYaw = entity.physics.headYaw,
+            moving = deltaX * deltaX + deltaZ * deltaZ > MOVEMENT_THRESHOLD,
+            independent = entity.primaryPassenger !is Mob,
+            maxHeadRotation = entity.maxHeadRotation,
+        )
+        // Vanilla body control writes its moving-head clamp back to the entity.
+        // Preserve that client-derived state until a later head-rotation packet
+        // supplies a new value.
+        entity.physics.forceSetHeadYaw(bodyRotation.currentHeadYaw)
+    }
+
     override fun tick() {
+        tickBodyRotation()
         tickPosition()
         tickEyeHeight()
         tickRotation()
+    }
+
+    private companion object {
+        const val MOVEMENT_THRESHOLD = 2.500000277905201E-7
     }
 }

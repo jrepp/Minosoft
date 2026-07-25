@@ -103,4 +103,68 @@ class CemExpressionEvaluatorTest {
             frame.transforms.getValue("root").getValue(CemTransformProperty.VISIBLE),
         )
     }
+
+    @Test
+    fun `part lookups read live absolute values and resolve aliases`() {
+        val evaluator = CemExpressionEvaluator(
+            listOf(
+                SkeletalExpressionBinding("body", "var.snapshot", "this.tx + arm.ry + this.sx"),
+                SkeletalExpressionBinding("body", "this.rz", "arm.ry + 0.25"),
+                SkeletalExpressionBinding("body", "var.after", "this.rz"),
+            ),
+            aliases = mapOf("body" to "torso", "arm" to "left_arm"),
+            knownParts = setOf("torso", "left_arm"),
+        )
+        val parts = mapOf(
+            "torso" to properties(tx = 12.0f, sx = 1.5f),
+            "left_arm" to properties(ry = 0.75f),
+        )
+
+        val frame = evaluator.evaluate(partValues = parts)
+
+        assertEquals(14.25, frame.variables.getValue("var.snapshot"))
+        assertEquals(1.0f, frame.transforms.getValue("torso").getValue(CemTransformProperty.ROTATE_Z))
+        assertEquals(1.0, frame.variables.getValue("var.after"))
+    }
+
+    @Test
+    fun `missing part lookups use EMF zero while missing assignment targets fail`() {
+        val frame = CemExpressionEvaluator(
+            listOf(SkeletalExpressionBinding("root", "var.missing", "ghost.sx + ghost.visible")),
+        ).evaluate()
+        assertEquals(0.0, frame.variables.getValue("var.missing"))
+
+        assertFailsWith<IllegalArgumentException> {
+            CemExpressionEvaluator(
+                listOf(SkeletalExpressionBinding("root", "ghost.rx", "1")),
+                knownParts = setOf("root"),
+            )
+        }
+    }
+
+    private fun properties(
+        tx: Float = 0.0f,
+        ty: Float = 0.0f,
+        tz: Float = 0.0f,
+        rx: Float = 0.0f,
+        ry: Float = 0.0f,
+        rz: Float = 0.0f,
+        sx: Float = 1.0f,
+        sy: Float = 1.0f,
+        sz: Float = 1.0f,
+        visible: Float = 1.0f,
+        hidden: Float = 0.0f,
+    ) = mapOf(
+        CemTransformProperty.TRANSLATE_X to tx,
+        CemTransformProperty.TRANSLATE_Y to ty,
+        CemTransformProperty.TRANSLATE_Z to tz,
+        CemTransformProperty.ROTATE_X to rx,
+        CemTransformProperty.ROTATE_Y to ry,
+        CemTransformProperty.ROTATE_Z to rz,
+        CemTransformProperty.SCALE_X to sx,
+        CemTransformProperty.SCALE_Y to sy,
+        CemTransformProperty.SCALE_Z to sz,
+        CemTransformProperty.VISIBLE to visible,
+        CemTransformProperty.VISIBLE_BOXES to hidden,
+    )
 }

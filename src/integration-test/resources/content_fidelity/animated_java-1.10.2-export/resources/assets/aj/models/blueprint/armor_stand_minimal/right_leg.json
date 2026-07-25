@@ -1,0 +1,48 @@
+{
+	"textures": {
+		"0": "aj:blueprint/armor_stand_minimal/wood",
+		"particle": "minecraft:item/pufferfish"
+	},
+	"display": {
+		"head": {
+			"rotation": [0, 180, 0]
+		}
+	},
+	"elements": [
+		{
+			"from": [7, -3, 7],
+			"to": [9, 8, 9],
+			"rotation": {
+				"angle": 0,
+				"axis": "y",
+				"origin": [8, 2.5, 8]
+			},
+			"faces": {
+				"north": {
+					"uv": [11, 4.5, 10.5, 7.25],
+					"texture": "#0"
+				},
+				"east": {
+					"uv": [11.5, 4.5, 11, 7.25],
+					"texture": "#0"
+				},
+				"south": {
+					"uv": [12, 4.5, 11.5, 7.25],
+					"texture": "#0"
+				},
+				"west": {
+					"uv": [10.5, 4.5, 10, 7.25],
+					"texture": "#0"
+				},
+				"up": {
+					"uv": [10.5, 4, 11, 4.5],
+					"texture": "#0"
+				},
+				"down": {
+					"uv": [11, 4, 11.5, 4.5],
+					"texture": "#0"
+				}
+			}
+		}
+	]
+}

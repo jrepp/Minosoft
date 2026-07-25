@@ -41,6 +41,7 @@ data class RotateKeyframe(
 
     override fun instance() = object : Vec3KeyframeInstance(data, loop, interpolation) {
         override fun apply(value: Vec3f, transform: TransformInstance) {
+            transform.recordRotation(value)
             transform.matrix.apply {
                 translateAssign(transform.nPivot)
                 rotateRadAssign(value)

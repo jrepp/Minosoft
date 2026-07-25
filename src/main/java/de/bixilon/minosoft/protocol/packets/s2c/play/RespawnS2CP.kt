@@ -103,6 +103,7 @@ class RespawnS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
 
     override fun handle(session: PlaySession) {
         session.util.prepareSpawn()
+        session.player.lastDeathPosition = lastDeathPosition
         session.player.additional.gamemode = gamemode
         session.player.abilities = gamemode.abilities
 

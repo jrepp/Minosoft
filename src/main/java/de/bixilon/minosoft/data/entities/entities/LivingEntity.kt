@@ -48,6 +48,12 @@ abstract class LivingEntity(session: PlaySession, entityType: EntityType, data: 
     val effects = StatusEffectProperty()
     val attributes = EntityAttributes(entityType.attributes)
 
+    /** Client-side vanilla hurt animation countdown, in game ticks. */
+    var hurtTime = 0
+        private set
+    /** Client-side vanilla death animation age, in game ticks. */
+    var deathTime = 0
+        private set
 
     override val canRaycast: Boolean get() = super.canRaycast && health > 0.0
     override val name: ChatComponent? get() = super.name
@@ -110,6 +116,8 @@ abstract class LivingEntity(session: PlaySession, entityType: EntityType, data: 
     override fun tick() {
         super.tick()
         effects.tick()
+        if (hurtTime > 0) hurtTime--
+        deathTime = if (health <= 0.0) deathTime + 1 else 0
     }
 
     val activelyRiding: Boolean get() = false
@@ -117,10 +125,12 @@ abstract class LivingEntity(session: PlaySession, entityType: EntityType, data: 
     override fun physics(): LivingEntityPhysics<*> = super.physics().unsafeCast()
 
     override fun onDamage(type: DamageEvent) {
+        hurtTime = HURT_ANIMATION_TICKS
         this.renderer?.nullCast<DamageListener>()?.onDamage(type)
     }
 
     companion object {
+        private const val HURT_ANIMATION_TICKS = 10
         private val FLAGS_DATA = EntityDataField("LIVING_ENTITY_FLAGS")
         private val HEALTH_DATA = EntityDataField("LIVING_ENTITY_HEALTH")
         private val EFFECT_COLOR_DATA = EntityDataField("LIVING_ENTITY_EFFECT_COLOR")

@@ -24,6 +24,14 @@ import kotlin.time.Duration.Companion.seconds
 @Test(groups = ["textures"])
 class AnimationPropertiesTest {
 
+    fun `read vanilla texture sampling properties`() {
+        val json = """{"texture":{"blur":false,"clamp":true}}"""
+        val properties: ImageProperties =
+            ByteArrayInputStream(json.encodeToByteArray()).readJson(reader = ImageProperties.READER)
+
+        assertEquals(properties.texture, TextureProperties(blur = false, clamp = true))
+    }
+
     fun `read and collect animation properties`() {
         val json = """{
   "animation": {

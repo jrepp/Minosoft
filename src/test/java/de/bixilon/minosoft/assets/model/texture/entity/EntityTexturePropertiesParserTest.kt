@@ -273,6 +273,7 @@ class EntityTexturePropertiesParserTest {
             val frames = (0L until 100L).map {
                 catalog.select(base, "cow-1", EntityTextureContext(7), it, cache)!!
             }
+            assertTrue(frames.all { it.ruleIndex == 1 && it.textureSuffix == 2 })
             assertTrue(frames.any(EntityTextureMaterialFrame::blinking))
             assertTrue(frames.any { !it.blinking })
         } finally {

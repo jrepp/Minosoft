@@ -1,0 +1,20 @@
+{
+	"formatVersion": "1.0.0",
+	"rigs": {
+		"aj:armor_stand_minimal": {
+			"coreFiles": ["assets/minecraft/atlases/blocks.json", "pack.mcmeta"],
+			"versionedFiles": [
+				"assets/aj/models/blueprint/armor_stand_minimal/baseplate_pivot_a.json",
+				"assets/aj/models/blueprint/armor_stand_minimal/body.json",
+				"assets/aj/models/blueprint/armor_stand_minimal/head.json",
+				"assets/aj/models/blueprint/armor_stand_minimal/left_arm.json",
+				"assets/aj/models/blueprint/armor_stand_minimal/left_leg.json",
+				"assets/aj/models/blueprint/armor_stand_minimal/right_arm.json",
+				"assets/aj/models/blueprint/armor_stand_minimal/right_leg.json",
+				"assets/aj/textures/blueprint/armor_stand_minimal/wood.png",
+				"assets/animated_java/models/empty.json",
+				"assets/minecraft/models/item/white_dye.json"
+			]
+		}
+	}
+}

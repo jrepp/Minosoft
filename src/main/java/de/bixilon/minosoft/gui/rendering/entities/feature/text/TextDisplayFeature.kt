@@ -16,6 +16,8 @@ package de.bixilon.minosoft.gui.rendering.entities.feature.text
 import de.bixilon.kmath.mat.mat4.f.MMat4f
 import de.bixilon.kmath.mat.mat4.f.Mat4Operations
 import de.bixilon.kmath.vec.vec2.f.Vec2f
+import de.bixilon.minosoft.data.entities.entities.display.DisplayTextStyle
+import de.bixilon.minosoft.data.entities.entities.display.DisplayTextStyleInterpolator
 import de.bixilon.minosoft.data.entities.entities.display.TextDisplayAlignment
 import de.bixilon.minosoft.data.entities.entities.display.TextDisplayEntity
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
@@ -23,7 +25,6 @@ import de.bixilon.minosoft.gui.rendering.RenderConstants
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
-import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLevels
 import de.bixilon.minosoft.gui.rendering.font.renderer.component.ChatComponentRenderer
 import de.bixilon.minosoft.gui.rendering.font.renderer.element.TextRenderInfo
 import de.bixilon.minosoft.gui.rendering.font.renderer.element.TextRenderProperties
@@ -40,12 +41,20 @@ class TextDisplayFeature(
     private var renderKey: RenderKey? = null
     private var info: TextRenderInfo? = null
     private val matrix = MMat4f()
+    private val style = DisplayTextStyleInterpolator(
+        DisplayTextStyle(displayEntity.textOpacity.toInt(), displayEntity.background),
+    )
 
     override val layer get() = EntityLayer.Translucent
 
     override fun update(delta: Duration) {
         super.update(delta)
-        val key = RenderKey.of(displayEntity)
+        style.target(
+            DisplayTextStyle(displayEntity.textOpacity.toInt(), displayEntity.background),
+            displayEntity.interpolationStartDeltaTicks,
+            displayEntity.interpolationDurationTicks,
+        )
+        val key = RenderKey.of(displayEntity, style.advance(delta))
         if (key != renderKey) {
             renderKey = key
             rebuild(key)
@@ -106,14 +115,6 @@ class TextDisplayFeature(
         }
     }
 
-    override fun updateVisibility(level: EntityVisibilityLevels) {
-        val viewRange = displayEntity.viewRange.takeIf(Float::isFinite)?.coerceIn(0.0f, MAX_VIEW_RANGE) ?: 0.0f
-        val maxDistance = BASE_VIEW_DISTANCE * viewRange
-        super.updateVisibility(
-            if (renderer.distance2 > maxDistance * maxDistance) EntityVisibilityLevels.OUT_OF_VIEW_DISTANCE else level,
-        )
-    }
-
     private class OpacityTextMeshBuilder(
         context: de.bixilon.minosoft.gui.rendering.RenderContext,
         private val opacity: Int,
@@ -142,11 +143,11 @@ class TextDisplayFeature(
         val alignment: TextDisplayAlignment,
     ) {
         companion object {
-            fun of(entity: TextDisplayEntity) = RenderKey(
+            fun of(entity: TextDisplayEntity, style: DisplayTextStyle) = RenderKey(
                 entity.text,
                 entity.lineWidth,
-                entity.background,
-                entity.textOpacity.toInt() and 0xFF,
+                style.background,
+                style.opacity and 0xFF,
                 entity.shadow,
                 entity.defaultBackground,
                 entity.alignment,
@@ -155,8 +156,6 @@ class TextDisplayFeature(
     }
 
     private companion object {
-        const val BASE_VIEW_DISTANCE = 64.0f
-        const val MAX_VIEW_RANGE = 1_024.0f
         const val MAX_LINE_WIDTH = 32_768
         const val MAX_TEXT_LENGTH = 4_096
 

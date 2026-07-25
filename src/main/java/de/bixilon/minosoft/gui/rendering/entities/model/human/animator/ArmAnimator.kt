@@ -54,6 +54,7 @@ class ArmAnimator(
         transform.matrix.translateAssign(right.pivot)
 
         if (swinging.isNaN()) {
+            transform.recordRotation(Vec3f(walking, 0.0f, 0.0f))
             transform.matrix.rotateXAssign(walking)
         } else {
             var swing = 1.0f - (swinging)
@@ -67,8 +68,9 @@ class ArmAnimator(
             val y = sin * 0.2f
             val x = sin * -1.4f
 
-
-            transform.matrix.rotateRadAssign(Vec3f(x, y, if (arm == Arms.RIGHT) z else -z))
+            val rotation = Vec3f(x, y, if (arm == Arms.RIGHT) z else -z)
+            transform.recordRotation(rotation)
+            transform.matrix.rotateRadAssign(rotation)
         }
         transform.matrix
             .translateAssign(right.nPivot)

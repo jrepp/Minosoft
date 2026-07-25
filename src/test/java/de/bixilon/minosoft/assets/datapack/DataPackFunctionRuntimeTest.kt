@@ -177,6 +177,61 @@ class DataPackFunctionRuntimeTest {
     }
 
     @Test
+    fun `missing storage macro source does not enter function`() {
+        val outer = ResourceLocation.of("test:outer")
+        val inner = ResourceLocation.of("test:inner")
+        val library = DataPackFunctionLibrary(
+            functions = mapOf(
+                outer to DataPackFunction(
+                    outer,
+                    listOf("function test:inner with storage test:missing args"),
+                ),
+                inner to DataPackFunction(inner, listOf("\$say \$(name)")),
+            ),
+            tags = emptyMap(),
+        )
+        val messages = mutableListOf<String>()
+
+        val result = DataPackFunctionRuntime(
+            library,
+            LocalDataPackCommandAuthority(messages::add),
+        ).execute("test:outer")
+
+        assertEquals(0, result)
+        assertEquals(emptyList(), messages)
+    }
+
+    @Test
+    fun `missing macro key rejects function before side effects`() {
+        val outer = ResourceLocation.of("test:outer")
+        val inner = ResourceLocation.of("test:inner")
+        val library = DataPackFunctionLibrary(
+            functions = mapOf(
+                outer to DataPackFunction(
+                    outer,
+                    listOf("function test:inner with storage test:runtime args"),
+                ),
+                inner to DataPackFunction(
+                    inner,
+                    listOf("say should-not-run", "\$say \$(name)"),
+                ),
+            ),
+            tags = emptyMap(),
+        )
+        val messages = mutableListOf<String>()
+        val authority = LocalDataPackCommandAuthority(messages::add)
+        authority.execute(
+            "data modify storage test:runtime args set value {other:1}",
+            DataPackCommandContext(outer, 0, 0),
+        )
+
+        val result = DataPackFunctionRuntime(library, authority).execute("test:outer")
+
+        assertEquals(0, result)
+        assertEquals(emptyList(), messages)
+    }
+
+    @Test
     fun `executes score and storage conditions with result stores`() {
         val outer = ResourceLocation.of("test:outer")
         val nested = ResourceLocation.of("test:nested")
@@ -205,5 +260,55 @@ class DataPackFunctionRuntimeTest {
         assertEquals(3, authority.score("rig", "test.frame"))
         assertEquals(3, authority.storage(ResourceLocation.of("test:runtime"))!!["frame"])
         assertEquals(listOf("matched"), messages)
+    }
+
+    @Test
+    fun `execute run return stops the owning function`() {
+        val outer = ResourceLocation.of("test:outer")
+        val library = DataPackFunctionLibrary(
+            functions = mapOf(
+                outer to DataPackFunction(
+                    outer,
+                    listOf(
+                        "scoreboard objectives add aj.i dummy",
+                        "scoreboard players set #success aj.i 1",
+                        "execute if score #success aj.i matches 1 run return 7",
+                        "scoreboard players set #success aj.i 99",
+                    ),
+                ),
+            ),
+            tags = emptyMap(),
+        )
+        val authority = LocalDataPackCommandAuthority()
+
+        val result = DataPackFunctionRuntime(library, authority).execute("test:outer")
+
+        assertEquals(7, result)
+        assertEquals(1, authority.score("#success", "aj.i"))
+    }
+
+    @Test
+    fun `execute if function can return a nested function result`() {
+        val outer = ResourceLocation.of("test:outer")
+        val predicate = ResourceLocation.of("test:is_rig_outdated")
+        val value = ResourceLocation.of("test:value")
+        val library = DataPackFunctionLibrary(
+            functions = mapOf(
+                outer to DataPackFunction(
+                    outer,
+                    listOf(
+                        "execute if function test:is_rig_outdated run return run function test:value",
+                        "return fail",
+                    ),
+                ),
+                predicate to DataPackFunction(predicate, listOf("return 1")),
+                value to DataPackFunction(value, listOf("return 9")),
+            ),
+            tags = emptyMap(),
+        )
+
+        val result = DataPackFunctionRuntime(library, LocalDataPackCommandAuthority()).execute("test:outer")
+
+        assertEquals(9, result)
     }
 }

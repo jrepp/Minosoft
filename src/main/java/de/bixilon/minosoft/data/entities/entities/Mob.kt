@@ -24,6 +24,9 @@ import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 abstract class Mob(session: PlaySession, entityType: EntityType, data: EntityData, position: Vec3d, rotation: EntityRotation) : LivingEntity(session, entityType, data, position, rotation) {
     private var flags by data(FLAGS_DATA, 0x00) { it.toInt() }
 
+    /** Maximum vanilla body-control head deviation in degrees. */
+    open val maxHeadRotation: Float get() = 75.0f
+
     private fun getMobFlags(bitMask: Int): Boolean {
         return flags.isBitMask(bitMask)
     }

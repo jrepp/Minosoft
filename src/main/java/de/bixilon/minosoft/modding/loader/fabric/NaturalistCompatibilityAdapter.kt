@@ -23,21 +23,26 @@ import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
 import de.bixilon.kutil.latch.AbstractLatch
+import de.bixilon.minosoft.config.settings.BooleanConfigControl
+import de.bixilon.minosoft.config.settings.ConfigEntry
+import de.bixilon.minosoft.config.settings.SettingsCategory
+import de.bixilon.minosoft.config.settings.SettingsSchema
+import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 
 object NaturalistCompatibilityAdapter : FabricCompatibilityAdapter {
-    override val id = "minosoft:naturalist-5.0pre3-fabric-mc1.20.1"
+    override val id = "minosoft:naturalist-5.0.0-pre.4-fabric-mc1.20.4"
     override val handledBlockers = FabricCompatibilityBlocker.entries.toSet()
     override val capabilities = setOf(FabricHostCapability.SKELETAL_CONTENT)
     override val functionality = FabricFunctionalityCatalog.NATURALIST
 
     override fun supports(metadata: FabricMetadata): Boolean =
         metadata.id == "naturalist" &&
-            metadata.version == "5.0pre3" &&
+            metadata.version == "5.0.0-pre.4" &&
             metadata.environment == "*" &&
             metadata.entrypoints == setOf("main", "client") &&
             metadata.mixins == 2 &&
             metadata.accessWidener == null &&
-            metadata.nestedJars == 2
+            metadata.nestedJarPaths.toSet() == NESTED_JARS
 
     override fun activate(probe: FabricModProbe, scope: FabricRegistrationScope) {
         require(supports(probe.metadata)) { "Unsupported Naturalist artifact: ${probe.metadata.version}" }
@@ -49,9 +54,13 @@ object NaturalistCompatibilityAdapter : FabricCompatibilityAdapter {
         for (model in MODELS.values.distinct()) {
             scope.own(GeckoLibControllerBindingRegistry.register(id, model.identity, ::controller))
         }
-        for ((entity, model) in MODELS) {
-            scope.own(GeckoLibEntityModelRegistry.register(id, naturalist(entity), model.identity))
-        }
+        val modelOptions = NaturalistModelOptions()
+        scope.own(modelOptions)
+        scope.own(
+            FabricSettings.register(id, minosoft("naturalist_options"), "Naturalist settings") {
+                modelOptions.schema()
+            },
+        )
         Log.log(LogMessageType.MOD_LOADING, LogLevels.INFO) {
             "NATURALIST_CONTENT_ACTIVE version=${probe.metadata.version} entityRoutes=${MODELS.size} geometries=${MODELS.values.distinct().size} upstreamGameplay=false"
         }
@@ -91,6 +100,67 @@ object NaturalistCompatibilityAdapter : FabricCompatibilityAdapter {
     }
 
     private fun naturalist(path: String) = ResourceLocation("naturalist", path)
+
+    private class NaturalistModelOptions : AutoCloseable {
+        private val defaults = MODELS.keys.associate { "removed.$it" to "false" }
+        private val store = FabricAdapterOptionStore("naturalist", defaults)
+        private val registrations = linkedMapOf<String, AutoCloseable>()
+        private var closed = false
+
+        init {
+            for ((entity, model) in MODELS) {
+                if (!removed(entity)) {
+                    registrations[entity] = GeckoLibEntityModelRegistry.register(id, naturalist(entity), model.identity)
+                }
+            }
+        }
+
+        fun schema(): SettingsSchema = SettingsSchema(
+            title = "Naturalist settings",
+            entries = MODELS.keys.sorted().map { entity ->
+                ConfigEntry(
+                    id = "remove_$entity",
+                    label = "Remove ${entity.replace('_', ' ')}",
+                    description = "Disables Naturalist's source-native client model route for this entity.",
+                    defaultValue = false,
+                    control = BooleanConfigControl,
+                    read = { removed(entity) },
+                    write = { setRemoved(entity, it) },
+                    category = "mob_removal",
+                )
+            },
+            categories = listOf(
+                SettingsCategory(
+                    "mob_removal",
+                    "Mob removal",
+                    "Client model-route equivalents of Naturalist's MidnightLib removal values.",
+                ),
+            ),
+            persist = store::persist,
+        )
+
+        private fun removed(entity: String): Boolean = store.boolean("removed.$entity")
+
+        @Synchronized
+        private fun setRemoved(entity: String, removed: Boolean) {
+            check(!closed) { "Naturalist model options are closed." }
+            val model = requireNotNull(MODELS[entity]) { "Unknown Naturalist entity: $entity" }
+            store.set("removed.$entity", removed)
+            if (removed) {
+                registrations.remove(entity)?.close()
+            } else if (entity !in registrations) {
+                registrations[entity] = GeckoLibEntityModelRegistry.register(id, naturalist(entity), model.identity)
+            }
+        }
+
+        @Synchronized
+        override fun close() {
+            if (closed) return
+            closed = true
+            registrations.values.toList().asReversed().forEach(AutoCloseable::close)
+            registrations.clear()
+        }
+    }
 
     private class NaturalistAssetsManager(path: String) :
         ZipAssetsManager(path, entryFilter = ::includeArtifactEntry) {
@@ -184,4 +254,8 @@ object NaturalistCompatibilityAdapter : FabricCompatibilityAdapter {
     private const val GEOMETRY_PREFIX = "assets/naturalist/geo/entity/"
     private const val ANIMATION_PREFIX = "assets/naturalist/animations/"
     private const val ZEBRA_GEOMETRY_SOURCE = "ostrich"
+    private val NESTED_JARS = setOf(
+        "META-INF/jars/midnightlib-1.5.3-fabric.jar",
+        "META-INF/jars/cloth-config-fabric-13.0.138-fabric.jar",
+    )
 }

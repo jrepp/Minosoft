@@ -13,11 +13,14 @@
 
 package de.bixilon.minosoft.data.entities.entities.display
 
+import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.kmath.vec.vec4.f.Vec4f
-import kotlin.math.sqrt
+import de.bixilon.minosoft.data.entities.EntityRotation
+import de.bixilon.minosoft.data.entities.EntityRotation.Companion.interpolateYaw
 import de.bixilon.minosoft.protocol.network.session.play.tick.TickUtil
 import kotlin.time.Duration
+import kotlin.math.sqrt
 
 data class DisplayTransformation(
     val translation: Vec3f = Vec3f.EMPTY,
@@ -66,7 +69,7 @@ class DisplayTransformationInterpolator(initial: DisplayTransformation = Display
         start = current()
         target = value
         elapsedTicks = 0.0f
-        this.startDelayTicks = startDelayTicks.coerceAtLeast(0)
+        this.startDelayTicks = startDelayTicks
         this.durationTicks = durationTicks.coerceAtLeast(0)
     }
 
@@ -81,3 +84,124 @@ class DisplayTransformationInterpolator(initial: DisplayTransformation = Display
         return start.interpolate(target, progress)
     }
 }
+
+data class DisplayShadowState(
+    val radius: Float = 0.0f,
+    val strength: Float = 1.0f,
+) {
+    fun interpolate(target: DisplayShadowState, delta: Float): DisplayShadowState {
+        val t = delta.finiteProgress()
+        return DisplayShadowState(
+            radius = radius + (target.radius - radius) * t,
+            strength = strength + (target.strength - strength) * t,
+        )
+    }
+}
+
+class DisplayShadowInterpolator(initial: DisplayShadowState = DisplayShadowState()) {
+    private val state = DisplayTimedInterpolator(initial, DisplayShadowState::interpolate)
+
+    fun target(value: DisplayShadowState, startDelayTicks: Int, durationTicks: Int) =
+        state.target(value, startDelayTicks, durationTicks)
+
+    fun advance(delta: Duration) = state.advance(delta)
+    fun current() = state.current()
+}
+
+data class DisplayTextStyle(
+    val opacity: Int = -1,
+    val background: Int = 0x40000000,
+) {
+    fun interpolate(target: DisplayTextStyle, delta: Float): DisplayTextStyle {
+        val t = delta.finiteProgress()
+        return DisplayTextStyle(
+            opacity = lerpInt(opacity, target.opacity, t),
+            background = lerpArgb(background, target.background, t),
+        )
+    }
+
+    private fun lerpArgb(from: Int, to: Int, delta: Float): Int {
+        val alpha = lerpInt(from ushr 24 and 0xFF, to ushr 24 and 0xFF, delta)
+        val red = lerpInt(from ushr 16 and 0xFF, to ushr 16 and 0xFF, delta)
+        val green = lerpInt(from ushr 8 and 0xFF, to ushr 8 and 0xFF, delta)
+        val blue = lerpInt(from and 0xFF, to and 0xFF, delta)
+        return alpha shl 24 or (red shl 16) or (green shl 8) or blue
+    }
+
+    private fun lerpInt(from: Int, to: Int, delta: Float) = (from + delta * (to - from)).toInt()
+}
+
+class DisplayTextStyleInterpolator(initial: DisplayTextStyle = DisplayTextStyle()) {
+    private val state = DisplayTimedInterpolator(initial, DisplayTextStyle::interpolate)
+
+    fun target(value: DisplayTextStyle, startDelayTicks: Int, durationTicks: Int) =
+        state.target(value, startDelayTicks, durationTicks)
+
+    fun advance(delta: Duration) = state.advance(delta)
+    fun current() = state.current()
+}
+
+data class DisplayPose(
+    val position: Vec3d,
+    val rotation: EntityRotation,
+) {
+    fun interpolate(target: DisplayPose, delta: Float): DisplayPose {
+        val t = delta.finiteProgress()
+        return DisplayPose(
+            position = Vec3d(
+                position.x + (target.position.x - position.x) * t,
+                position.y + (target.position.y - position.y) * t,
+                position.z + (target.position.z - position.z) * t,
+            ),
+            rotation = EntityRotation(
+                interpolateYaw(t, rotation.yaw, target.rotation.yaw),
+                rotation.pitch + (target.rotation.pitch - rotation.pitch) * t,
+            ),
+        )
+    }
+}
+
+class DisplayPoseInterpolator(initial: DisplayPose) {
+    private val state = DisplayTimedInterpolator(initial, DisplayPose::interpolate)
+
+    fun target(value: DisplayPose, durationTicks: Int) = state.target(value, 0, durationTicks.coerceIn(0, MAX_TELEPORT_DURATION))
+    fun advance(delta: Duration) = state.advance(delta)
+    fun current() = state.current()
+
+    private companion object {
+        const val MAX_TELEPORT_DURATION = 59
+    }
+}
+
+private class DisplayTimedInterpolator<T>(
+    initial: T,
+    private val interpolate: (T, T, Float) -> T,
+) {
+    private var start = initial
+    private var target = initial
+    private var elapsedTicks = 0.0f
+    private var startDelayTicks = 0
+    private var durationTicks = 0
+
+    fun target(value: T, startDelayTicks: Int, durationTicks: Int) {
+        if (value == target && startDelayTicks == this.startDelayTicks && durationTicks == this.durationTicks) return
+        start = current()
+        target = value
+        elapsedTicks = 0.0f
+        this.startDelayTicks = startDelayTicks
+        this.durationTicks = durationTicks.coerceAtLeast(0)
+    }
+
+    fun advance(delta: Duration): T {
+        elapsedTicks += delta.inWholeNanoseconds / 1_000_000_000.0f * TickUtil.TICKS_PER_SECOND
+        return current()
+    }
+
+    fun current(): T {
+        if (durationTicks <= 0) return target
+        val progress = ((elapsedTicks - startDelayTicks) / durationTicks).finiteProgress()
+        return interpolate(start, target, progress)
+    }
+}
+
+private fun Float.finiteProgress(): Float = if (isFinite()) coerceIn(0.0f, 1.0f) else 0.0f

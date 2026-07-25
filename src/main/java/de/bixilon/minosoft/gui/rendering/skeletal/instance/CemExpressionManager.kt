@@ -18,10 +18,10 @@ import de.bixilon.minosoft.assets.model.skeletal.runtime.CemTransformProperty
 import de.bixilon.minosoft.gui.rendering.models.block.element.ModelElement.Companion.BLOCK_SIZE
 
 class CemExpressionManager(instance: SkeletalInstance) {
+    private val transforms = instance.transform.expressionIndex()
     private val evaluator = instance.model.expressions
         .takeIf(List<*>::isNotEmpty)
-        ?.let { CemExpressionEvaluator(it, instance.model.expressionAliases) }
-    private val transforms = instance.transform.expressionIndex()
+        ?.let { CemExpressionEvaluator(it, instance.model.expressionAliases, transforms.keys) }
     var context = SkeletalExpressionContext()
     var render: Map<CemRenderProperty, Float> = emptyMap()
         private set
@@ -30,43 +30,89 @@ class CemExpressionManager(instance: SkeletalInstance) {
 
     fun draw() {
         val evaluator = evaluator ?: return
-        val frame = evaluator.evaluate(context)
-        frame.apply(transforms)
+        val partValues = transforms.mapValues { it.value.partProperties() }
+        val frame = evaluator.evaluate(context, partValues)
+        frame.apply(transforms, partValues)
         render = frame.render
     }
 }
 
-internal fun CemExpressionFrame.apply(transforms: Map<String, TransformInstance>) {
+internal fun CemExpressionFrame.apply(
+    transforms: Map<String, TransformInstance>,
+    partValues: Map<String, Map<CemTransformProperty, Float>>,
+) {
     for ((bone, values) in this.transforms) {
         val transform = transforms[bone] ?: continue
-        val visible = values[CemTransformProperty.VISIBLE] ?: values[CemTransformProperty.VISIBLE_BOXES]
-        val translation = Vec3f(
-            values[CemTransformProperty.TRANSLATE_X] ?: 0.0f,
-            values[CemTransformProperty.TRANSLATE_Y] ?: 0.0f,
-            values[CemTransformProperty.TRANSLATE_Z] ?: 0.0f,
-        ) / BLOCK_SIZE
-        val rotation = Vec3f(
-            values[CemTransformProperty.ROTATE_X] ?: 0.0f,
-            values[CemTransformProperty.ROTATE_Y] ?: 0.0f,
-            values[CemTransformProperty.ROTATE_Z] ?: 0.0f,
+        val base = requireNotNull(partValues[bone]) { "Missing CEM part state for '$bone'." }
+        val basePivot = base.vector(
+            CemTransformProperty.TRANSLATE_X,
+            CemTransformProperty.TRANSLATE_Y,
+            CemTransformProperty.TRANSLATE_Z,
         )
-        val scale = if (visible != null && visible == 0.0f) {
-            Vec3f.EMPTY
-        } else {
-            Vec3f(
-                values[CemTransformProperty.SCALE_X] ?: 1.0f,
-                values[CemTransformProperty.SCALE_Y] ?: 1.0f,
-                values[CemTransformProperty.SCALE_Z] ?: 1.0f,
-            )
-        }
+        val pivot = values.vectorOr(basePivot,
+            CemTransformProperty.TRANSLATE_X,
+            CemTransformProperty.TRANSLATE_Y,
+            CemTransformProperty.TRANSLATE_Z,
+        )
+        val baseRotation = base.vector(
+            CemTransformProperty.ROTATE_X,
+            CemTransformProperty.ROTATE_Y,
+            CemTransformProperty.ROTATE_Z,
+        )
+        val rotation = values.vectorOr(baseRotation,
+            CemTransformProperty.ROTATE_X,
+            CemTransformProperty.ROTATE_Y,
+            CemTransformProperty.ROTATE_Z,
+        )
+        val baseScale = base.vector(
+            CemTransformProperty.SCALE_X,
+            CemTransformProperty.SCALE_Y,
+            CemTransformProperty.SCALE_Z,
+        )
+        val scale = values.vectorOr(baseScale,
+            CemTransformProperty.SCALE_X,
+            CemTransformProperty.SCALE_Y,
+            CemTransformProperty.SCALE_Z,
+        )
+        val visible = (values[CemTransformProperty.VISIBLE] ?: base.getValue(CemTransformProperty.VISIBLE)) != 0.0f
+        val hidden = (values[CemTransformProperty.VISIBLE_BOXES] ?: base.getValue(CemTransformProperty.VISIBLE_BOXES)) != 0.0f
+
+        val translationDelta = (pivot - basePivot) / BLOCK_SIZE
+        val rotationDelta = rotation - baseRotation
+        val scaleRatio = Vec3f(
+            ratio(scale.x, baseScale.x),
+            ratio(scale.y, baseScale.y),
+            ratio(scale.z, baseScale.z),
+        )
+        val matrixPivot = basePivot / BLOCK_SIZE
         transform.matrix.apply {
-            translateAssign(translation)
-            translateAssign(transform.nPivot)
-            rotateRadAssign(rotation)
-            scaleAssign(scale)
-            translateAssign(transform.pivot)
+            translateAssign(translationDelta)
+            translateAssign(-matrixPivot)
+            rotateRadAssign(rotationDelta)
+            scaleAssign(scaleRatio)
+            translateAssign(matrixPivot)
         }
+        transform.setPartState(pivot, rotation, scale, visible, hidden)
     }
+}
+
+private fun Map<CemTransformProperty, Float>.vector(
+    x: CemTransformProperty,
+    y: CemTransformProperty,
+    z: CemTransformProperty,
+) = Vec3f(getValue(x), getValue(y), getValue(z))
+
+private fun Map<CemTransformProperty, Float>.vectorOr(
+    fallback: Vec3f,
+    x: CemTransformProperty,
+    y: CemTransformProperty,
+    z: CemTransformProperty,
+) = Vec3f(this[x] ?: fallback.x, this[y] ?: fallback.y, this[z] ?: fallback.z)
+
+private fun ratio(target: Float, current: Float): Float = when {
+    current != 0.0f -> target / current
+    target == 0.0f -> 1.0f
+    else -> target
 }
 
 private fun TransformInstance.expressionIndex(): Map<String, TransformInstance> {

@@ -41,7 +41,7 @@ import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.framebuffer.FramebufferManager
-import de.bixilon.minosoft.gui.rendering.framebuffer.world.WorldFramebuffer
+import de.bixilon.minosoft.gui.rendering.framebuffer.world.MainWorldTarget
 import de.bixilon.minosoft.gui.rendering.models.loader.SkeletalLoader.Companion.sModel
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalTransform
 import de.bixilon.minosoft.gui.rendering.skeletal.model.SkeletalModel
@@ -59,6 +59,7 @@ import org.testng.Assert.assertSame
 import org.testng.Assert.assertThrows
 import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
+import kotlin.math.cos
 
 @Test(groups = ["skeletal"])
 class SkeletalLoaderTest {
@@ -217,7 +218,7 @@ class SkeletalLoaderTest {
         session::dataPacks.forceSet(dataPacks)
         context::thread.forceSet(Thread.currentThread())
         val framebuffer = FramebufferManager::class.java.allocate()
-        framebuffer::world.forceSet(WorldFramebuffer::class.java.allocate())
+        framebuffer::main.forceSet(MainWorldTarget::class.java.allocate())
         context::framebuffer.forceSet(framebuffer)
         context::renderer.forceSet(RendererManager(context))
         val modelLoader = ModelLoader(context)
@@ -255,6 +256,7 @@ class SkeletalLoaderTest {
             val first = modelLoader.skeletal[modelName]!!
             val retained = first.createInstance(context)
             retained.load()
+            assertCemAbsolutePartRead(retained)
 
             assets.push(source, cem(6))
             assertEquals(modelLoader.skeletal.reloadContentFidelity(), 2L)
@@ -263,6 +265,10 @@ class SkeletalLoaderTest {
             assertEquals(modelLoader.skeletal.contentModel(entity), modelName)
             assertThrows(IllegalStateException::class.java) { first.createInstance(context) }
             assertEquals(staticTextures.liveTextureSlots, 2)
+            second.createInstance(context).also {
+                assertCemAbsolutePartRead(it)
+                it.drop()
+            }
 
             val newTexture = ResourceLocation.of("test:textures/entity/new.png")
             assets.push(source, cem(8, texture = "textures/entity/new.png"))
@@ -384,7 +390,7 @@ class SkeletalLoaderTest {
         context::models.forceSet(modelLoader)
         context::thread.forceSet(Thread.currentThread())
         val framebuffer = FramebufferManager::class.java.allocate()
-        framebuffer::world.forceSet(WorldFramebuffer::class.java.allocate())
+        framebuffer::main.forceSet(MainWorldTarget::class.java.allocate())
         context::framebuffer.forceSet(framebuffer)
         context::renderer.forceSet(RendererManager(context))
         val assets = MemoryAssetsManager()
@@ -441,6 +447,16 @@ class SkeletalLoaderTest {
 
     private fun cem(size: Int, texture: String? = null): String {
         val rootTexture = texture?.let { ",\"texture\":\"$it\"" }.orEmpty()
-        return """{"textureSize":[64,64]$rootTexture,"models":[{"id":"body","part":"body","boxes":[{"coordinates":[0,0,0,$size,$size,$size],"textureOffset":[0,0]}]}]}"""
+        return """{"textureSize":[64,64]$rootTexture,"models":[{"id":"body","part":"body","translate":[4,0,0],"boxes":[{"coordinates":[0,0,0,$size,$size,$size],"textureOffset":[0,0]}],"animations":[{"this.ry":"this.tx / 16"}]}]}"""
+    }
+
+    private fun assertCemAbsolutePartRead(instance: de.bixilon.minosoft.gui.rendering.skeletal.instance.SkeletalInstance) {
+        instance.transform.reset()
+        instance.cemExpression.draw()
+        assertEquals(
+            instance.transform["body"]!!.matrix[0, 0],
+            cos(0.25f),
+            0.0001f,
+        )
     }
 }

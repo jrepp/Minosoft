@@ -163,6 +163,7 @@ class InitializeS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
     override fun handle(session: PlaySession) {
         session.util.prepareSpawn()
         val playerEntity = session.player
+        playerEntity.lastDeathPosition = lastDeathPosition
         val previousGamemode = playerEntity.additional.gamemode
 
         if (previousGamemode != gamemode) {

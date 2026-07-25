@@ -1,0 +1,33 @@
+{
+  "producer": "Animated Java",
+  "version": "1.10.2",
+  "source_commit": "a5fc548d2a53cc0887fa070db33ccfcef1cd3541",
+  "minecraft": "1.20.4",
+  "purpose": "Unmodified output roots exported from Animated Java's upstream armor_stand_minimal_1.20.4.ajblueprint for native Minosoft acceptance.",
+  "host": {
+    "name": "Blockbench",
+    "version": "5.1.4",
+    "artifact": "Blockbench_arm64_5.1.4.zip",
+    "sha256": "f77037d42226e281caf88e2b989b281b97e84441a067c48d31e86cf1b2d95f10"
+  },
+  "plugin": {
+    "artifact": "animated_java.js",
+    "release_url": "https://github.com/Animated-Java/animated-java/releases/download/v1.10.2/animated_java.js",
+    "sha256": "81aadc4def796d97dab6642ad05b564b470ecadcaf455c8cc5826c9e24759672"
+  },
+  "blueprint": {
+    "path": "test-packs/1.20.4/blueprints/armor_stand_minimal_1.20.4.ajblueprint",
+    "sha256": "d5802d0c275f27cfab33c09914b5dbdc1477ecbe35e49fba6f49e4ee7079a03e"
+  },
+  "output": {
+    "resource_files": 13,
+    "data_files": 109,
+    "manifest_sha256": "d4ae9d007aeb6c736255de8738e5c63c54d6e2b9a0c0f6fbb3dfb5c2d5192c11",
+    "manifest_algorithm": "SHA-256 of sorted lines '<file-sha256>  <path>\\n' for all regular files below resources/ and datapacks/."
+  },
+  "audited_templates": {
+    "src/systems/datapackCompiler/1.20.4/global.mcb": "74fed176785c4f725d3a32be252d6380d4797205008a3b3ceff38ea307f2ef50",
+    "src/systems/datapackCompiler/1.20.4/global.mcbt": "0d184452489de7132dcf8df9a5cf1cb60183a14f191e08f780567d72d45f9cff",
+    "src/systems/datapackCompiler/1.20.4/main.mcb": "4167fc5328e1536a3dc6cea6cba922a31192ce2b524c246bb751e42541729ea6"
+  }
+}

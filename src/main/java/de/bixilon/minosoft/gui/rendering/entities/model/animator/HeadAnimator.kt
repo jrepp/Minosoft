@@ -33,6 +33,7 @@ class HeadAnimator(
         if (renderer.entity.isFlipped()) {
             this.rotation.x = -this.rotation.x // TODO: not 100% correct
         }
+        transform.recordRotation(rotation.unsafe)
         transform.matrix.apply {
             translateAssign(transform.pivot)
             rotateRadAssign(rotation)

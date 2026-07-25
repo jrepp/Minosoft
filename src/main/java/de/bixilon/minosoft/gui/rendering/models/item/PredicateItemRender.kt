@@ -34,7 +34,8 @@ class PredicateItemRender(
 ) : ItemRender {
     override val particle get() = base.particle
 
-    fun select(stack: ItemStack): ItemRender = overrides.lastOrNull { it.predicate.matches(stack) }?.model ?: base
+    fun select(stack: ItemStack, context: ItemPredicateContext = ItemPredicateContext.EMPTY): ItemRender =
+        overrides.lastOrNull { it.predicate.matches(stack, context) }?.model ?: base
 
     override fun render(gui: GUIRenderer, offset: Vec2f, consumer: GuiVertexConsumer, options: GUIVertexOptions?, size: Vec2f, stack: ItemStack, tints: RGBArray?) {
         select(stack).render(gui, offset, consumer, options, size, stack, tints)
@@ -49,3 +50,6 @@ class PredicateItemRender(
 
     override fun isFlat(stack: ItemStack) = select(stack).isFlat(stack)
 }
+
+fun ItemRender.resolve(stack: ItemStack, context: ItemPredicateContext = ItemPredicateContext.EMPTY): ItemRender =
+    (this as? PredicateItemRender)?.select(stack, context) ?: this

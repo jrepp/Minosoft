@@ -52,7 +52,11 @@ in mediump vec2 finTextureUV;
 
 
 void applyTexel() {
-vec4 texel = getTexture(finTextureArray, vec3(finTextureUV, finTextureLayer));
+vec2 textureUV = finTextureUV;
+    #ifdef CLAMP_TEXTURE_UV
+    textureUV = clamp(textureUV, vec2(0.0f), vec2(1.0f));
+    #endif
+vec4 texel = getTexture(finTextureArray, vec3(textureUV, finTextureLayer));
 discard_if_0(texel.a);
 
 foutColor *= texel;

@@ -13,6 +13,7 @@
 
 package de.bixilon.minosoft.gui.rendering.entities.model.human.animator
 
+import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.kutil.primitive.FloatUtil.rad
 import de.bixilon.minosoft.gui.rendering.entities.model.human.HumanModel
 import de.bixilon.minosoft.gui.rendering.skeletal.instance.TransformInstance
@@ -31,11 +32,13 @@ class LegAnimator(
     private fun apply() {
         val angle = model.speedAnimator.getAngle(MAX_ANGLE).rad
 
+        left.recordRotation(Vec3f(-angle, 0.0f, 0.0f))
         left.matrix.apply {
             translateAssign(left.pivot)
             rotateXAssign(-angle)
             translateAssign(left.nPivot)
         }
+        right.recordRotation(Vec3f(angle, 0.0f, 0.0f))
         right.matrix.apply {
             translateAssign(left.pivot)
             rotateXAssign(angle)

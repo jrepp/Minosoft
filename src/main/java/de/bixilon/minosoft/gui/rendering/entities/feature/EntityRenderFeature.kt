@@ -19,6 +19,8 @@ import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLev
 import kotlin.time.Duration
 
 abstract class EntityRenderFeature(val renderer: EntityRenderer<*>) {
+    /** Lower priorities update first; equal priorities preserve registration order. */
+    open val updatePriority: Int get() = 0
     var visibility = EntityVisibilityLevels.OUT_OF_VIEW_DISTANCE
         private set
 

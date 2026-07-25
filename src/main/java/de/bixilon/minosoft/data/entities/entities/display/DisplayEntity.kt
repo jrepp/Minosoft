@@ -21,12 +21,11 @@ import de.bixilon.minosoft.data.entities.data.EntityData
 import de.bixilon.minosoft.data.entities.data.EntityDataField
 import de.bixilon.minosoft.data.entities.entities.Entity
 import de.bixilon.minosoft.data.registries.entities.EntityType
+import de.bixilon.minosoft.data.registries.shapes.aabb.AABB
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.data.world.chunk.light.types.LightLevel
 
 abstract class DisplayEntity(session: PlaySession, entityType: EntityType, data: EntityData, position: Vec3d, rotation: EntityRotation) : Entity(session, entityType, data, position, rotation) {
-
-    override val dimensions get() = SIZE // TODO
 
     val interpolationStartDeltaTicks: Int by data(INTERPOLATION_START, 0)
     val interpolationDurationTicks: Int by data(INTERPOLATION_DURATION, 0)
@@ -44,6 +43,27 @@ abstract class DisplayEntity(session: PlaySession, entityType: EntityType, data:
     val displayHeight: Float by data(HEIGHT, 0.0f)
     val glowColorOverride: Int by data(GLOW_COLOR_OVERRIDE, -1)
 
+    override val dimensions: Vec2f
+        get() = Vec2f(
+            displayWidth.takeIf { it.isFinite() }?.coerceAtLeast(0.0f) ?: 0.0f,
+            displayHeight.takeIf { it.isFinite() }?.coerceAtLeast(0.0f) ?: 0.0f,
+        )
+
+    /**
+     * Vanilla uses width/height only as a visibility box. Zero on either axis
+     * disables frustum rejection while view-range rejection remains active.
+     */
+    override val defaultAABB: AABB?
+        get() {
+            val size = dimensions
+            if (size.x == 0.0f || size.y == 0.0f) return null
+            val halfWidth = size.x / 2.0f
+            return AABB(
+                Vec3d(-halfWidth.toDouble(), 0.0, -halfWidth.toDouble()),
+                Vec3d(halfWidth.toDouble(), size.y.toDouble(), halfWidth.toDouble()),
+            )
+        }
+
     val transformation: DisplayTransformation
         get() = DisplayTransformation(translation, scale, leftRotation, rightRotation)
 
@@ -55,8 +75,15 @@ abstract class DisplayEntity(session: PlaySession, entityType: EntityType, data:
             return LightLevel(block, sky)
         }
 
+    fun isWithinViewRange(distanceSquared: Double, renderDistanceMultiplier: Float = 1.0f): Boolean {
+        if (!distanceSquared.isFinite() || distanceSquared < 0.0) return false
+        val range = viewRange.takeIf(Float::isFinite)?.coerceAtLeast(0.0f) ?: return false
+        val multiplier = renderDistanceMultiplier.takeIf(Float::isFinite)?.coerceAtLeast(0.0f) ?: return false
+        val distance = 64.0 * range * multiplier
+        return distanceSquared < distance * distance
+    }
+
     companion object {
-        val SIZE = Vec2f(1.0f)
         val IDENTITY_ROTATION = Vec4f(0.0f, 0.0f, 0.0f, 1.0f)
         val INTERPOLATION_START = EntityDataField("INTERPOLATION_START")
         val INTERPOLATION_DURATION = EntityDataField("INTERPOLATION_DURATION")

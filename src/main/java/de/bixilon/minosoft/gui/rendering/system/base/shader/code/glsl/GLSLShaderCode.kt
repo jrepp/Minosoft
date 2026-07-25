@@ -33,8 +33,10 @@ class GLSLShaderCode(
         get() {
             // ToDo: This is complete trash and should be replaced
             val code = StringBuilder()
+            val comments = GLSLCommentStripper()
 
-            for (line in rawCode.lines()) {
+            for (rawLine in rawCode.lines()) {
+                val line = comments.strip(rawLine)
                 val lineReader = StringReader(line)
                 lineReader.skipWhitespaces()
 
@@ -105,10 +107,6 @@ class GLSLShaderCode(
                         }
                     }
 
-                    remaining.startsWith("//") -> continue
-                    remaining.startsWith("/*") -> continue
-                    remaining.startsWith("*/") -> continue
-                    remaining.startsWith("*") -> continue
                     else -> pushLine()
                 }
             }
@@ -127,5 +125,60 @@ class GLSLShaderCode(
 
             return "$this.glsl"
         }
+    }
+}
+
+internal class GLSLCommentStripper {
+    private var inBlockComment = false
+
+    fun strip(line: String): String {
+        val output = StringBuilder(line.length)
+        var index = 0
+        var quote: Char? = null
+        var escaped = false
+
+        while (index < line.length) {
+            if (inBlockComment) {
+                val end = line.indexOf("*/", index)
+                if (end < 0) break
+                inBlockComment = false
+                index = end + 2
+                continue
+            }
+
+            val character = line[index]
+            if (quote != null) {
+                output.append(character)
+                when {
+                    escaped -> escaped = false
+                    character == '\\' -> escaped = true
+                    character == quote -> quote = null
+                }
+                index++
+                continue
+            }
+
+            if (character == '"' || character == '\'') {
+                quote = character
+                output.append(character)
+                index++
+                continue
+            }
+            if (character == '/' && index + 1 < line.length) {
+                when (line[index + 1]) {
+                    '/' -> break
+                    '*' -> {
+                        if (output.isNotEmpty() && !output.last().isWhitespace()) output.append(' ')
+                        inBlockComment = true
+                        index += 2
+                        continue
+                    }
+                }
+            }
+
+            output.append(character)
+            index++
+        }
+        return output.toString()
     }
 }

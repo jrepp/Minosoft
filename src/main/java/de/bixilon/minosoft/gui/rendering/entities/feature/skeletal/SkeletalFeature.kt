@@ -21,27 +21,18 @@ import de.bixilon.minosoft.gui.rendering.entities.easteregg.EntityEasterEggs.isF
 import de.bixilon.minosoft.gui.rendering.entities.feature.DrawableEntityRenderFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.LivingEntityRenderer
-import de.bixilon.minosoft.assets.model.skeletal.expression.CemExpressionVariableCatalog
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibAnimationState
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLayerBlend
-import de.bixilon.minosoft.data.entities.entities.AgeableMob
-import de.bixilon.minosoft.data.entities.entities.LivingEntity
-import de.bixilon.minosoft.data.entities.entities.player.Arms
-import de.bixilon.minosoft.data.entities.entities.player.PlayerEntity
-import de.bixilon.minosoft.data.registries.effects.attributes.MinecraftAttributes
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.SkeletalModelStates
 import de.bixilon.minosoft.gui.rendering.skeletal.instance.SkeletalInstance
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureMaterialFrame
-import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureConditions
-import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureContextFactory
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import kotlin.time.Duration
 import kotlin.random.Random
-import kotlin.math.sqrt
 
 open class SkeletalFeature(
     renderer: EntityRenderer<*>,
@@ -50,9 +41,12 @@ open class SkeletalFeature(
     protected val manager = renderer.renderer.context.skeletal
     private val rotation = MVec3f()
     private val expressionRandom = Random(renderer.entity.uuid?.hashCode() ?: renderer.entity.id ?: 0)
+    private val expressionContext = CemEntityExpressionContextFactory(renderer)
     private var entityTexture: EntityTextureMaterialFrame? = null
     private var entityTextures: Map<de.bixilon.minosoft.data.registries.identified.ResourceLocation, EntityTextureMaterialFrame> = emptyMap()
     private val geckoEvents = GeckoLibEntityEventConsumer(renderer, instance)
+    private val publishesCemRenderEffects =
+        instance.model.contentIdentity?.format == SkeletalContentFormat.OPTIFINE_CEM
 
     protected var position = Vec3d.EMPTY
     protected var yaw = 0.0f
@@ -69,7 +63,7 @@ open class SkeletalFeature(
 
     protected open fun updatePosition() {
         val renderInfo = renderer.info
-        val yaw = renderInfo.rotation.yaw
+        val yaw = renderInfo.bodyYaw
         val position = renderInfo.position
 
         var changes = 0
@@ -121,75 +115,17 @@ open class SkeletalFeature(
         } else {
             instance.neutralAnimation.draw(delta)
         }
+        entityTextures = renderer.renderer.context.models.skeletal.entityTextures(renderer.entity, instance.model)
+        entityTexture = if (instance.model.entityTextureLayers.isEmpty()) entityTextures.values.singleOrNull() else null
+        expressionContext.ruleIndex = entityTexture?.ruleIndex
+            ?: entityTextures.values.firstOrNull()?.ruleIndex
+            ?: 0
         if (instance.cemExpression.active) {
-            val entity = renderer.entity
-            val position = entity.physics.position
-            val living = entity as? LivingEntity
-            val playerEntity = entity as? PlayerEntity
-            val localPlayer = renderer.renderer.context.session.player
-            val localPosition = localPlayer.physics.position
-            val frameTime = delta.inWholeNanoseconds / 1_000_000_000.0
-            val worldTime = renderer.renderer.context.session.world.time
-            val leftSwing = playerEntity?.armSwing?.progress(Arms.LEFT)
-            val rightSwing = playerEntity?.armSwing?.progress(Arms.RIGHT)
-            val health = living?.health ?: 0.0
-            val maxHealth = living?.attributes?.get(MinecraftAttributes.MAX_HEALTH) ?: 0.0
-            val distanceX = position.x - localPosition.x
-            val distanceY = position.y - localPosition.y
-            val distanceZ = position.z - localPosition.z
-            val entityTextureContext = EntityTextureContextFactory.create(entity)
-            instance.cemExpression.context = CemExpressionVariableCatalog.context(
-                variables = mapOf(
-                    "age" to (entity.age % 27_720) + frameTime,
-                    "frame_time" to frameTime,
-                    "head_yaw" to renderer.info.rotation.yaw.rad.toDouble(),
-                    "head_pitch" to renderer.info.rotation.pitch.rad.toDouble(),
-                    "rot_x" to renderer.info.rotation.pitch.rad.toDouble(),
-                    "rot_y" to renderer.info.rotation.yaw.rad.toDouble(),
-                    "player_rot_x" to localPlayer.physics.rotation.pitch.rad.toDouble(),
-                    "player_rot_y" to localPlayer.physics.rotation.yaw.rad.toDouble(),
-                    "health" to health,
-                    "max_health" to maxHealth,
-                    "id" to (entity.id ?: 0).toDouble(),
-                    "time" to (worldTime.age % 27_720) + frameTime,
-                    "day_time" to (worldTime.time % 31_415) + frameTime,
-                    "day_count" to worldTime.age / 27_720.0,
-                    "swing_progress" to maxOf(leftSwing ?: 0.0f, rightSwing ?: 0.0f).toDouble(),
-                    "distance" to sqrt(distanceX * distanceX + distanceY * distanceY + distanceZ * distanceZ),
-                    "is_alive" to if (living == null || health > 0.0) 1.0 else 0.0,
-                    "is_burning" to if (entity.isOnFire) 1.0 else 0.0,
-                    "is_child" to if (entity is AgeableMob && entity.isBaby) 1.0 else 0.0,
-                    "is_gliding" to if (entity.isFlyingWithElytra) 1.0 else 0.0,
-                    "is_glowing" to if (entity.hasGlowingEffect) 1.0 else 0.0,
-                    "is_in_water" to if (entity.physics.inWater) 1.0 else 0.0,
-                    "is_invisible" to if (entity.isInvisible) 1.0 else 0.0,
-                    "is_on_ground" to if (entity.physics.onGround) 1.0 else 0.0,
-                    "is_ridden" to if (entity.attachment.passengers.isNotEmpty()) 1.0 else 0.0,
-                    "is_riding" to if (entity.attachment.vehicle != null) 1.0 else 0.0,
-                    "is_right_handed" to if (playerEntity?.mainArm == Arms.RIGHT) 1.0 else 0.0,
-                    "is_sneaking" to if (entity.isSneaking) 1.0 else 0.0,
-                    "is_sprinting" to if (entity.isSprinting) 1.0 else 0.0,
-                    "is_swimming" to if (entity.isSwimming) 1.0 else 0.0,
-                    "is_swinging_left_arm" to if (leftSwing != null) 1.0 else 0.0,
-                    "is_swinging_right_arm" to if (rightSwing != null) 1.0 else 0.0,
-                    "is_using_item" to if (living?.usingHand != null) 1.0 else 0.0,
-                    "player_pos_x" to localPosition.x,
-                    "player_pos_y" to localPosition.y,
-                    "player_pos_z" to localPosition.z,
-                    "pos_x" to position.x,
-                    "pos_y" to position.y,
-                    "pos_z" to position.z,
-                ),
-                rawFunctionResolver = { name, arguments ->
-                    if (name != "nbt" || arguments.size != 2) {
-                        null
-                    } else {
-                        if (EntityTextureConditions.matchesNbt(arguments[0], arguments[1], entityTextureContext)) 1.0 else 0.0
-                    }
-                },
-                random = { expressionRandom.nextDouble() },
-            )
+            instance.cemExpression.context = expressionContext.create(expressionRandom::nextDouble)
             instance.cemExpression.draw()
+            if (publishesCemRenderEffects) {
+                renderer.renderEffects.publish(this, instance.cemExpression.render)
+            }
         }
         instance.transform.transform(instance.matrix.unsafe)
         if (instance.geckoAnimation.active) {
@@ -197,8 +133,6 @@ open class SkeletalFeature(
         } else {
             instance.neutralAnimation.dispatchEvents()
         }
-        entityTextures = renderer.renderer.context.models.skeletal.entityTextures(renderer.entity, instance.model)
-        entityTexture = if (instance.model.entityTextureLayers.isEmpty()) entityTextures.values.singleOrNull() else null
         instance.material = entityTexture?.base
     }
 
@@ -299,6 +233,7 @@ open class SkeletalFeature(
 
     override fun unload() {
         super.unload()
+        if (publishesCemRenderEffects) renderer.renderEffects.clear(this)
         instance.neutralAnimation.clearEvents()
         instance.geckoAnimation.clearEvents()
         if (instance.state == SkeletalModelStates.PREPARING) {

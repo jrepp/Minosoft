@@ -77,6 +77,9 @@ class NeutralAnimationManager(private val instance: SkeletalInstance) {
 internal fun SkeletalPose.apply(transforms: Map<String, TransformInstance>) {
     for ((bone, pose) in bones) {
         val transform = transforms[bone] ?: continue
+        transform.recordTranslationPixels(pose.translation)
+        transform.recordRotation(pose.rotation.rad)
+        transform.recordScale(pose.scale)
         transform.matrix.apply {
             translateAssign(pose.translation / BLOCK_SIZE)
             translateAssign(transform.nPivot)

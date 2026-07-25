@@ -41,9 +41,12 @@ data class EntityTextureCatalog(
         cache: EntityTextureSelectionCache,
     ): EntityTextureMaterialFrame? {
         val entry = entries[base] ?: return null
-        val suffix = cache.select(EntityTextureCacheKey(entityKey, base), entry.rules, context)
-        val material = entry.materials[suffix] ?: entry.materials[1] ?: return null
-        return material.at(tick, context.seed)
+        val selection = cache.selectResult(EntityTextureCacheKey(entityKey, base), entry.rules, context)
+        val material = entry.materials[selection.suffix] ?: entry.materials[1] ?: return null
+        return material.at(tick, context.seed).copy(
+            ruleIndex = selection.ruleIndex,
+            textureSuffix = selection.suffix,
+        )
     }
 
     companion object {

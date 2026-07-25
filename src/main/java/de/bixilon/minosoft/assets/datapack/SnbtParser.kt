@@ -93,6 +93,8 @@ object SnbtParser {
                 whitespace()
                 if (consume('}')) return result
                 expect(',')
+                whitespace()
+                if (consume('}')) return result
             }
         }
 
@@ -114,6 +116,8 @@ object SnbtParser {
                 whitespace()
                 if (consume(']')) return result
                 expect(',')
+                whitespace()
+                if (consume(']')) return result
             }
         }
 

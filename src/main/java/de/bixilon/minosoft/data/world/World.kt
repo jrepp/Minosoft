@@ -77,6 +77,9 @@ class World(
     var particle: AbstractParticleRenderer? = null
 
     var occlusion by observed(0)
+    @Volatile
+    var blockRevision = 0
+        internal set
 
 
     operator fun get(position: BlockPosition): BlockState? {

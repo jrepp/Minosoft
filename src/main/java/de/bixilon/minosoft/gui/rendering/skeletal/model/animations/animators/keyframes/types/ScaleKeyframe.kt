@@ -41,6 +41,7 @@ data class ScaleKeyframe(
 
     override fun instance() = object : Vec3KeyframeInstance(data, loop, interpolation) {
         override fun apply(value: Vec3f, transform: TransformInstance) {
+            transform.recordScale(value)
             transform.matrix
                 .scaleAssign(value)
         }

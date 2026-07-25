@@ -19,6 +19,7 @@ import de.bixilon.minosoft.data.registries.registries.Registries
 import de.bixilon.minosoft.data.registries.registries.registry.RegistryItem
 import de.bixilon.minosoft.data.registries.registries.registry.codec.IdentifierCodec
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor
+import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.gui.rendering.tint.TintManager.Companion.jsonTint
 import de.bixilon.minosoft.gui.rendering.tint.tints.ColorMapTint
 
@@ -31,12 +32,30 @@ data class Biome(
     val waterColor: RGBColor? = null,
     val waterFogColor: RGBColor? = null,
     val precipitation: BiomePrecipitation? = null,
+    val temperatureModifier: BiomeTemperatureModifier = BiomeTemperatureModifier.NONE,
 ) : RegistryItem() {
     val grassModifier = GrassColorModifiers.BIOME_MAP[identifier]
 
 
     val temperatureIndex = ColorMapTint.getIndex(temperature)
     val downfallIndex = ColorMapTint.getIndex(downfall * temperature)
+
+    /**
+     * Position-dependent vanilla biome temperature. Since 1.18 the client
+     * uses this value to distinguish rain from snow, including the fixed-seed
+     * high-altitude noise term.
+     */
+    fun temperatureAt(position: BlockPosition): Float =
+        VanillaBiomeTemperature.at(this, position)
+
+    fun precipitationAt(position: BlockPosition): BiomePrecipitation? {
+        if (precipitation == null) return null
+        return if (temperatureAt(position) < SNOW_TEMPERATURE) {
+            BiomePrecipitation.SNOW
+        } else {
+            BiomePrecipitation.RAIN
+        }
+    }
 
     override fun toString() = identifier.toString()
 
@@ -48,6 +67,11 @@ data class Biome(
             val fogColor = (data["fog_color"] ?: effects?.get("fog_color"))?.jsonTint()
             val waterColor = (data["water_color"] ?: effects?.get("water_color"))?.jsonTint()
             val waterFogColor = (data["water_fog_color"] ?: effects?.get("water_fog_color"))?.jsonTint()
+            val precipitation = when (val value = data["precipitation"]) {
+                is Int -> BiomePrecipitation.getOrNull(value - 1)
+                null -> if (data["has_precipitation"] == true) BiomePrecipitation.RAIN else null
+                else -> if (value.toString().lowercase() == "none") null else BiomePrecipitation[value]
+            }
 
             return Biome(
                 identifier = identifier,
@@ -57,8 +81,11 @@ data class Biome(
                 fogColor = fogColor,
                 waterColor = waterColor,
                 waterFogColor = waterFogColor,
-                precipitation = data["precipitation"]?.let { if (it is Int) BiomePrecipitation.getOrNull(it - 1) else if (it.toString().lowercase() == "none") null else BiomePrecipitation[it] },
+                precipitation = precipitation,
+                temperatureModifier = data["temperature_modifier"]?.let(BiomeTemperatureModifier::get) ?: BiomeTemperatureModifier.NONE,
             )
         }
+
+        private const val SNOW_TEMPERATURE = 0.15f
     }
 }

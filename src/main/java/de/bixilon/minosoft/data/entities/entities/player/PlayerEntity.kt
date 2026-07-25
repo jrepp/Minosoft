@@ -125,8 +125,7 @@ abstract class PlayerEntity(
         get() = data.get(RIGHT_SHOULDER_DATA_DATA, null)
 
     @get:SynchronizedEntityData
-    val lastDeathPosition: GlobalPosition?
-        get() = data.get(LAST_DEATH_POSITION_DATA, null)
+    var lastDeathPosition: GlobalPosition? by data(LAST_DEATH_POSITION_DATA, null)
 
     override val hitboxColor: RGBAColor
         get() {

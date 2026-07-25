@@ -487,12 +487,20 @@ class EntityTextureSelectionCache(
     }
 
     fun select(key: EntityTextureCacheKey, rules: EntityTextureRuleSet, context: EntityTextureContext): Int {
+        return selectResult(key, rules, context).suffix
+    }
+
+    fun selectResult(
+        key: EntityTextureCacheKey,
+        rules: EntityTextureRuleSet,
+        context: EntityTextureContext,
+    ): EntityTextureSelection {
         while (true) {
             val previous = synchronized(this) {
                 check(!closed) { "Entity texture cache is closed." }
                 selected[key.texture]?.get(key.entity)?.let { result ->
                     lastSelection.putBounded(key.entity, result)
-                    return result.suffix
+                    return result
                 }
                 lastSelection[key.entity] ?: EMPTY_SELECTION
             }
@@ -511,7 +519,7 @@ class EntityTextureSelectionCache(
                 }
                 textureSelections[key.entity]?.let { result ->
                     lastSelection.putBounded(key.entity, result)
-                    return result.suffix
+                    return result
                 }
                 if ((lastSelection[key.entity] ?: EMPTY_SELECTION) != previous) {
                     retry = true
@@ -521,7 +529,7 @@ class EntityTextureSelectionCache(
                 }
             }
             if (retry) continue
-            return candidate.suffix
+            return candidate
         }
     }
 
