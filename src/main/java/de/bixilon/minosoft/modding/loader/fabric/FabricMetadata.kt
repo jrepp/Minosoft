@@ -36,6 +36,10 @@ data class FabricMetadata(
     val accessWidener: String?,
     val nestedJarPaths: List<String>,
     val source: String,
+    val description: String? = null,
+    val icon: String? = null,
+    val badges: Set<String> = emptySet(),
+    val parent: String? = null,
 ) {
     val nestedJars: Int get() = nestedJarPaths.size
 }
@@ -66,6 +70,24 @@ object FabricMetadataReader {
             }.toList()
         }
 
+        val modMenu = root.path("custom").path("modmenu")
+        val icon = root.path("icon").let { value ->
+            when {
+                value.isTextual -> value.asText()
+                value.isObject -> value.properties().asSequence()
+                    .mapNotNull { (size, path) -> size.toIntOrNull()?.let { it to path.asText() } }
+                    .maxByOrNull { it.first }
+                    ?.second
+                else -> null
+            }
+        }
+        val badges = modMenu.path("badges").takeIf(JsonNode::isArray)
+            ?.mapNotNull { it.takeIf(JsonNode::isTextual)?.asText()?.takeIf(String::isNotBlank) }
+            ?.take(MAX_BADGES)
+            ?.toSet()
+            ?: emptySet()
+        val parent = modMenu.path("parent").takeIf(JsonNode::isTextual)?.asText()?.takeIf(ID::matches)
+
         return FabricMetadata(
             id = id,
             version = version,
@@ -84,6 +106,10 @@ object FabricMetadataReader {
                 value
             } ?: emptyList(),
             source = source,
+            description = root.path("description").takeIf(JsonNode::isTextual)?.asText()?.take(MAX_DESCRIPTION_LENGTH),
+            icon = icon?.take(MAX_ICON_LENGTH),
+            badges = badges,
+            parent = parent,
         )
     }
 
@@ -101,4 +127,8 @@ object FabricMetadataReader {
         }
         else -> throw IllegalArgumentException("$source field '$field' must be a string or string array.")
     }
+
+    private const val MAX_DESCRIPTION_LENGTH = 8_192
+    private const val MAX_ICON_LENGTH = 1_024
+    private const val MAX_BADGES = 32
 }

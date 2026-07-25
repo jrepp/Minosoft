@@ -68,7 +68,7 @@ open class TextInputElement(
 
     init {
         this.parent = parent
-        this._value.append(if (value.length > maxLength) value.substring(0, maxLength) else value)
+        this._value.append(TextInputEditing.initialValue(value, maxLength))
         _pointer = this._value.length
         forceSilentApply()
     }
@@ -162,16 +162,16 @@ open class TextInputElement(
         if (!editable) {
             return
         }
-        val insert = string.replace("\n", "").replace("\r", "").replace('§', '&')
-        if (textElement.marked) {
-            _value.delete(textElement.markStartPosition, textElement.markEndPosition)
-            if (_pointer > textElement.markStartPosition) {
-                _pointer = textElement.markStartPosition
-            }
-        }
-        val appendLength = minOf(insert.length, maxLength - _value.length)
-        _value.insert(_pointer, insert.substring(0, appendLength))
-        _pointer += appendLength
+        val edit = TextInputEditing.insert(
+            value = value,
+            pointer = _pointer,
+            selectionStart = textElement.markStartPosition.takeIf { textElement.marked },
+            selectionEnd = textElement.markEndPosition.takeIf { textElement.marked },
+            inserted = string,
+            maxLength = maxLength,
+        )
+        _value.replace(0, _value.length, edit.value)
+        _pointer = edit.pointer
         textUpToDate = false
         onChange()
     }

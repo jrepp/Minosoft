@@ -113,13 +113,7 @@ open class SwitchElement(
     }
 
     override fun onMouseAction(position: Vec2f, button: MouseButtons, action: MouseActions, count: Int): Boolean {
-        if (disabled) {
-            return true
-        }
-        if (button != MouseButtons.LEFT) {
-            return true
-        }
-        if (action != MouseActions.PRESS) {
+        if (!CheckboxInput.togglesOnMouse(button, action, disabled)) {
             return true
         }
 
@@ -128,16 +122,7 @@ open class SwitchElement(
     }
 
     override fun onKey(key: KeyCodes, type: KeyChangeTypes): Boolean {
-        if (!hovered) {
-            return true
-        }
-        if (disabled) {
-            return true
-        }
-        if (key != KeyCodes.KEY_ENTER) {
-            return true
-        }
-        if (type != KeyChangeTypes.PRESS) {
+        if (!CheckboxInput.togglesOnKey(key, type, hovered, disabled)) {
             return true
         }
         switchState()
@@ -159,7 +144,7 @@ open class SwitchElement(
     }
 
     open fun switchState() {
-        state = !state
+        state = CheckboxInput.toggled(state)
         if (guiRenderer.session.profiles.audio.gui.button) {
             guiRenderer.session.world.audio?.play2D(CLICK_SOUND)
         }

@@ -80,7 +80,7 @@ abstract class AbstractButtonElement(
             if (_disabled == value) {
                 return
             }
-            _disabled = disabled
+            _disabled = value
             forceApply()
         }
 

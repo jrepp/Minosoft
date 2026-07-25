@@ -40,9 +40,11 @@ class SteppedSliderElement(
     val maximumStep: Int,
     initialStep: Int,
     private val label: (step: Int) -> Any,
+    disabled: Boolean = false,
     private val onChange: (step: Int) -> Unit,
 ) : Element(guiRenderer) {
     private val atlas = guiRenderer.atlas[minecraft("elements/button")]
+    private val disabledAtlas = atlas["disabled"]
     private val normalAtlas = atlas["normal"]
     private val hoveredAtlas = atlas["hovered"]
     private val textElement: TextElement
@@ -61,11 +63,20 @@ class SteppedSliderElement(
             forceApply()
         }
 
+    var disabled: Boolean = disabled
+        set(value) {
+            if (field == value) {
+                return
+            }
+            field = value
+            forceApply()
+        }
+
     var step: Int = SteppedSliderSteps.clamp(initialStep, minimumStep, maximumStep)
         private set
 
     override val canFocus: Boolean
-        get() = true
+        get() = !disabled
 
     init {
         textElement = TextElement(guiRenderer, label(step), background = null, parent = this)
@@ -88,7 +99,11 @@ class SteppedSliderElement(
 
     override fun forceRender(offset: Vec2f, consumer: GuiVertexConsumer, options: GUIVertexOptions?) {
         val size = size
-        val backgroundTexture = (if (hovered) hoveredAtlas else normalAtlas) ?: guiRenderer.context.textures.whiteTexture
+        val backgroundTexture = when {
+            disabled -> disabledAtlas
+            hovered -> hoveredAtlas
+            else -> normalAtlas
+        } ?: guiRenderer.context.textures.whiteTexture
         background.texturePart = backgroundTexture
         background.size = size
         background.render(offset, consumer, options)
@@ -129,7 +144,7 @@ class SteppedSliderElement(
     }
 
     override fun onMouseAction(position: Vec2f, button: MouseButtons, action: MouseActions, count: Int): Boolean {
-        if (button != MouseButtons.LEFT || action != MouseActions.PRESS) {
+        if (disabled || button != MouseButtons.LEFT || action != MouseActions.PRESS) {
             return true
         }
 
@@ -140,7 +155,7 @@ class SteppedSliderElement(
     }
 
     override fun onKey(key: KeyCodes, type: KeyChangeTypes): Boolean {
-        if (!hovered || type == KeyChangeTypes.RELEASE) {
+        if (disabled || !hovered || type == KeyChangeTypes.RELEASE) {
             return true
         }
 
@@ -155,6 +170,9 @@ class SteppedSliderElement(
     }
 
     override fun onScroll(position: Vec2f, scrollOffset: Vec2f): Boolean {
+        if (disabled) {
+            return true
+        }
         when {
             scrollOffset.y > 0.0f -> setStep(step + 1)
             scrollOffset.y < 0.0f -> setStep(step - 1)
@@ -164,7 +182,9 @@ class SteppedSliderElement(
 
     override fun onMouseEnter(position: Vec2f, absolute: Vec2f): Boolean {
         hovered = true
-        context.window.cursorShape = CursorShapes.HAND
+        if (!disabled) {
+            context.window.cursorShape = CursorShapes.HAND
+        }
         return true
     }
 
