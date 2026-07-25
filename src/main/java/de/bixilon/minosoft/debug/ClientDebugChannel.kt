@@ -24,9 +24,12 @@ import de.bixilon.minosoft.gui.rendering.events.input.KeyInputEvent
 import de.bixilon.minosoft.gui.rendering.events.input.MouseMoveEvent
 import de.bixilon.minosoft.gui.rendering.events.input.MouseScrollEvent
 import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.TextureBuffer
+import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.window.KeyChangeTypes
 import de.bixilon.minosoft.modding.loader.ModOptions
 import de.bixilon.minosoft.modding.loader.fabric.FabricModDiagnostics
+import de.bixilon.minosoft.modding.loader.fabric.FabricResourceReloadEvents
+import de.bixilon.minosoft.modding.loader.fabric.FabricResourceReloadType
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.network.session.play.PlaySessionStates
 import de.bixilon.minosoft.util.logging.Log
@@ -70,7 +73,7 @@ object ClientDebugChannel : AutoCloseable {
                 try {
                     registration.close()
                 } catch (error: Throwable) {
-                    if (failure == null) failure = error else failure!!.addSuppressed(error)
+                    failure?.addSuppressed(error) ?: run { failure = error }
                 }
             }
             failure?.let { throw it }
@@ -108,6 +111,7 @@ object ClientDebugChannel : AutoCloseable {
         server.operations().register("client", "world.aoi") { _, body -> completed(sampleBlocks(body)) }
         server.operations().register("client", "mods.debug") { _, _ -> completed(modDiagnostics()) }
         server.operations().register("client", "render.substrate") { _, _ -> onRender(::renderSubstrate) }
+        server.operations().register("client", "render.reload-content") { _, _ -> onRender(::reloadContent) }
     }
 
     private fun status(): JsonNode {
@@ -496,6 +500,24 @@ object ClientDebugChannel : AutoCloseable {
         val owners = result.putArray("owners")
         graph.passes.map { it.owner.value }.distinct().sorted().forEach(owners::add)
 
+        (context.system as? OpenGlRenderSystem)?.resources?.snapshot()?.let { snapshot ->
+            result.putObject("gpuResources").apply {
+                put("backend", "opengl")
+                put("created", snapshot.created)
+                put("deleted", snapshot.deleted)
+                put("live", snapshot.live)
+                val types = putArray("types")
+                snapshot.types.forEach { type ->
+                    types.addObject().apply {
+                        put("type", type.type.name.lowercase())
+                        put("created", type.created)
+                        put("deleted", type.deleted)
+                        put("live", type.live)
+                    }
+                }
+            }
+        }
+
         context.renderer[ChunkRenderer]?.let { chunks ->
             val terrain = chunks.terrain.selection()
             val descriptor = chunks.terrain.descriptor()
@@ -535,6 +557,21 @@ object ClientDebugChannel : AutoCloseable {
             }
         }
         return DebugOperationResult.json(result)
+    }
+
+    /** Runs the production content-fidelity transaction on the render thread. */
+    private fun reloadContent(context: RenderContext): DebugOperationResult {
+        var generation: Long? = null
+        FabricResourceReloadEvents.run(
+            session = context.session,
+            type = FabricResourceReloadType.CONTENT_FIDELITY,
+            prepare = { Unit },
+            apply = { generation = context.models.skeletal.reloadContentFidelity() },
+        )
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("generation", requireNotNull(generation))
+            put("frame", context.frameNumber)
+        })
     }
 
     private fun onRender(work: (RenderContext) -> DebugOperationResult): CompletableFuture<DebugOperationResult> {
