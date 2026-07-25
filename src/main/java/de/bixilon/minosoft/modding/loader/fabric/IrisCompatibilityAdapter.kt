@@ -202,11 +202,18 @@ private class IrisPresentationController : AutoCloseable {
     @Synchronized
     fun setEnabled(context: RenderContext, enabled: Boolean): Boolean {
         check(!closed) { "Iris shader pipeline controller is closed" }
-        this.enabled = enabled
         if (enabled) {
+            val previous = this.enabled
+            this.enabled = true
             if (presentations[context]?.registration != null) return true
-            return attach(context)
+            try {
+                return attach(context)
+            } catch (failure: Throwable) {
+                this.enabled = previous
+                throw failure
+            }
         }
+        this.enabled = false
         presentations.remove(context)?.let { presentation ->
             presentation.registration?.close()
             presentation.registration = null
@@ -234,17 +241,11 @@ private class IrisPresentationController : AutoCloseable {
         options.set("shader_pack", path?.toString() ?: "")
         options.set("shader_options", "")
         if (!enabled) return
-        presentations.remove(context)?.registration?.close()
         try {
             attach(context)
         } catch (error: Throwable) {
             options.set("shader_pack", previous?.toString() ?: "")
             options.set("shader_options", previousOptions)
-            try {
-                attach(context)
-            } catch (cleanup: Throwable) {
-                error.addSuppressed(cleanup)
-            }
             throw error
         }
     }
