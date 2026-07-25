@@ -30,9 +30,10 @@ import kotlin.time.Duration
 
 class SpriteAnimator(val context: RenderContext) {
     private val animations: MutableList<TextureAnimation> = ArrayList()
+    @Volatile
     private var enabled = true
     private var previous = TimeUtil.NULL
-    val size get() = animations.size
+    val size get() = synchronized(this) { animations.size }
 
     fun init() {
         context.profile.animations::sprites.observe(this, true) { enabled = it }
@@ -49,7 +50,7 @@ class SpriteAnimator(val context: RenderContext) {
     fun update() {
         if (!enabled) return
 
-        for (animation in animations) {
+        for (animation in snapshot()) {
             context.textures.static.update(animation.texture) // TODO: split from interpolation (async)?
         }
     }
@@ -68,7 +69,7 @@ class SpriteAnimator(val context: RenderContext) {
     }
 
     private fun updateAsync(delta: Duration) {
-        for (animation in animations) {
+        for (animation in snapshot()) {
             animation.update(delta)
 
             interpolate(animation)
@@ -108,4 +109,12 @@ class SpriteAnimator(val context: RenderContext) {
 
         return animation
     }
+
+    fun remove(texture: Texture) {
+        synchronized(this) {
+            animations.removeAll { it.texture === texture }
+        }
+    }
+
+    private fun snapshot(): List<TextureAnimation> = synchronized(this) { animations.toList() }
 }

@@ -43,15 +43,12 @@ abstract class StaticTextureArray(
 
 
     operator fun get(name: ResourceLocation): Texture? {
-        val state = state
-        if (state != TextureArrayStates.UPLOADED) {
-            lock.acquire()
-        }
-        val texture = this.named[name]
-        if (state != TextureArrayStates.UPLOADED) {
+        lock.acquire()
+        return try {
+            this.named[name]
+        } finally {
             lock.release()
         }
-        return texture
     }
 
     operator fun plusAssign(texture: Texture) = push(texture)
@@ -96,6 +93,54 @@ abstract class StaticTextureArray(
     protected abstract fun upload(textures: Collection<Texture>)
 
     abstract fun update(texture: Texture)
+
+    abstract fun beginUpdate(): StaticTextureArrayUpdate
+
+    /**
+     * Retains the shader slots used by one content generation. Only textures
+     * in [reclaimable] may turn their slots into reusable holes after the
+     * returned lifetime closes; pre-existing resource-pack textures remain
+     * permanent even when a content model references them.
+     */
+    abstract fun retainGeneration(
+        textures: Collection<Texture>,
+        reclaimable: Collection<Texture> = textures,
+    ): AutoCloseable
+
+    protected fun publishNamed(textures: Map<ResourceLocation, Texture>) {
+        lock.lock()
+        named.putAll(textures)
+        lock.unlock()
+    }
+
+    protected fun restoreNamed(textures: Map<ResourceLocation, Texture?>) {
+        lock.lock()
+        for ((name, texture) in textures) {
+            if (texture == null) {
+                named.remove(name)
+            } else {
+                named[name] = texture
+            }
+        }
+        lock.unlock()
+    }
+
+    protected fun removeNamed(predicate: (Texture) -> Boolean): Map<ResourceLocation, Texture> {
+        lock.lock()
+        return try {
+            val removed = linkedMapOf<ResourceLocation, Texture>()
+            val iterator = named.iterator()
+            while (iterator.hasNext()) {
+                val (name, texture) = iterator.next()
+                if (!predicate(texture)) continue
+                removed[name] = texture
+                iterator.remove()
+            }
+            removed
+        } finally {
+            lock.unlock()
+        }
+    }
 
     override fun load(latch: AbstractLatch?) {
         if (state != TextureArrayStates.PREPARING) throw IllegalStateException("Already loaded!")

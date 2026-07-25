@@ -69,7 +69,7 @@ class ContentGenerationStore<T> : AutoCloseable {
             synchronized(lock) { preparing = false }
             throw error
         }
-        val candidate = Generation(id, prepared.value, prepared.cleanup)
+        val candidate = Generation(id, prepared.value, mutableListOf(prepared.cleanup))
         val (accepted, cleanup) = try {
             synchronized(lock) {
                 check(preparing)
@@ -128,6 +128,30 @@ class ContentGenerationStore<T> : AutoCloseable {
         }
     }
 
+    /**
+     * Adds a resource to the active generation after preparation. This is used
+     * by renderers whose generation-owned GPU metadata can only be established
+     * after the shared content snapshot has been installed.
+     */
+    fun attachCleanup(generationId: Long, cleanup: AutoCloseable) {
+        try {
+            synchronized(lock) {
+                val generation = active
+                check(generation != null && generation.id == generationId && !generation.retired) {
+                    "Content generation $generationId is not active."
+                }
+                generation.cleanups += cleanup
+            }
+        } catch (error: Throwable) {
+            try {
+                cleanup.close()
+            } catch (cleanupError: Throwable) {
+                error.addSuppressed(cleanupError)
+            }
+            throw error
+        }
+    }
+
     private fun release(generation: Generation<T>) {
         val cleanup = synchronized(lock) {
             check(generation.readers > 0) { "Content generation ${generation.id} lease was released too many times." }
@@ -152,7 +176,7 @@ class ContentGenerationStore<T> : AutoCloseable {
     private class Generation<T>(
         val id: Long,
         val value: T,
-        val cleanup: AutoCloseable,
+        val cleanups: MutableList<AutoCloseable>,
         var readers: Int = 0,
         var retired: Boolean = false,
         var cleaned: Boolean = false,
@@ -163,7 +187,17 @@ class ContentGenerationStore<T> : AutoCloseable {
             return this
         }
 
-        fun closeCleanup() = cleanup.close()
+        fun closeCleanup() {
+            var failure: Throwable? = null
+            for (cleanup in cleanups.asReversed()) {
+                try {
+                    cleanup.close()
+                } catch (error: Throwable) {
+                    failure?.addSuppressed(error) ?: run { failure = error }
+                }
+            }
+            failure?.let { throw it }
+        }
     }
 }
 

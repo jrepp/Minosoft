@@ -139,4 +139,34 @@ class ContentGenerationStoreTest {
         assertTrue(candidateCleaned)
         store.close()
     }
+
+    @Test
+    fun `attached cleanup follows active generation readers`() {
+        val store = ContentGenerationStore<String>()
+        var attachedCleaned = false
+        val generation = store.reload { PreparedContent("first") }
+        store.attachCleanup(generation, AutoCloseable { attachedCleaned = true })
+        val reader = store.lease()!!
+
+        store.reload { PreparedContent("second") }
+        assertFalse(attachedCleaned)
+
+        reader.close()
+        assertTrue(attachedCleaned)
+        store.close()
+    }
+
+    @Test
+    fun `rejected attached cleanup is closed`() {
+        val store = ContentGenerationStore<String>()
+        var cleaned = false
+        store.reload { PreparedContent("active") }
+
+        assertFailsWith<IllegalStateException> {
+            store.attachCleanup(99L, AutoCloseable { cleaned = true })
+        }
+
+        assertTrue(cleaned)
+        store.close()
+    }
 }
