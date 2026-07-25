@@ -105,7 +105,10 @@ class FabricPackPreflightTest {
         try {
             adapter!!.activate(FabricModProbe(metadata, emptySet(), adapter), scope)
             assertEquals(listOf(minosoft("jei_container")), FabricContainerScreenExtensions.registrations())
-            assertEquals(listOf(minosoft("jei_recipes")), FabricScreens.registrations().map { it.id })
+            assertEquals(
+                listOf(minosoft("jei_recipes"), minosoft("jei_options")),
+                FabricScreens.registrations().map { it.id },
+            )
         } finally {
             scope.close()
         }
@@ -263,7 +266,7 @@ class FabricPackPreflightTest {
         try {
             FabricPackLoader.activate(root)
             assertEquals(report.pack.id, FabricPackLoader.current()?.report?.pack?.id)
-            assertTrue(SodiumRendererHook in FabricRendererRegistry.snapshot())
+            assertTrue(FabricRendererRegistry.snapshot().any { it is SodiumRendererHookBuilder })
             assertTrue("sodium" in EntityTextureRuntimeEnvironment.loadedMods())
         } finally {
             FabricPackLoader.deactivate()
@@ -415,7 +418,10 @@ class FabricPackPreflightTest {
         FabricPackLoader.deactivate()
         try {
             FabricPackLoader.activate(root)
-            assertEquals(listOf(SodiumCompatibilityAdapter.id), FabricRendererRegistry.registrations().map { it.owner })
+            assertEquals(
+                listOf(SodiumCompatibilityAdapter.id, IrisCompatibilityAdapter.id),
+                FabricRendererRegistry.registrations().map { it.owner },
+            )
             assertEquals(FabricModRuntimeStatus.ACTIVE, FabricModDiagnostics.snapshot()?.mods?.single { it.id == "iris" }?.status)
             assertEquals(listOf(IrisCompatibilityAdapter.id), FabricClientEvents.registrations(FabricClientEventPhase.BEFORE_WORLD_RENDER))
         } finally {
