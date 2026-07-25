@@ -30,9 +30,11 @@ import de.bixilon.minosoft.data.world.chunk.update.WorldUpdateEvent
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.gui.rendering.RenderConstants
 import de.bixilon.minosoft.gui.rendering.RenderContext
+import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.MeshSwapper
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
@@ -65,7 +67,13 @@ class BlockOutlineRenderer(
     override var unload: Boolean = false
 
     override fun registerLayers() {
-        layers.register(BlockOutlineLayer, context.shaders.genericColorShader, this::draw) { this.mesh == null }
+        layers.registerSemantic(
+            BlockOutlineLayer,
+            context.shaders.genericColorShader,
+            this::draw,
+            PipelineSemantic.WORLD_OVERLAY,
+            passId = RenderPassId("minosoft:scene/block-outline"),
+        ) { this.mesh == null }
     }
 
     override fun init(latch: AbstractLatch) {

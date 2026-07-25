@@ -16,40 +16,40 @@ package de.bixilon.minosoft.gui.rendering.framebuffer
 import de.bixilon.kutil.observer.DataObserver.Companion.observe
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.framebuffer.gui.GUIFramebuffer
-import de.bixilon.minosoft.gui.rendering.framebuffer.world.WorldFramebuffer
+import de.bixilon.minosoft.gui.rendering.framebuffer.world.MainWorldTarget
 import de.bixilon.minosoft.gui.rendering.renderer.drawable.Drawable
 import de.bixilon.minosoft.gui.rendering.system.base.PolygonModes
 
 class FramebufferManager(
     private val context: RenderContext,
 ) : Drawable {
-    val world = WorldFramebuffer(context)
+    val main = MainWorldTarget(context)
     val gui = GUIFramebuffer(context)
 
 
     fun init() {
-        world.init()
+        main.init()
         gui.init()
 
         context.window::size.observe(this, true) {
-            world.size = it
+            main.size = it
             gui.size = it
         }
     }
 
     fun postInit() {
-        world.postInit()
+        main.postInit()
         gui.postInit()
     }
 
 
     fun clear() {
-        world.clear()
+        main.clear()
         gui.clear()
     }
 
     fun update() {
-        world.update()
+        main.update()
         gui.update()
     }
 
@@ -58,7 +58,7 @@ class FramebufferManager(
         context.system.framebuffer = null
         context.system.polygonMode = PolygonModes.FILL
 
-        world.draw()
+        main.draw()
         gui.draw()
     }
 }

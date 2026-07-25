@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -45,6 +46,9 @@ class OpenGlNativeShader(
     private val vertex: ResourceLocation,
     private val geometry: ResourceLocation?,
     private val fragment: ResourceLocation,
+    private val vertexSource: String? = null,
+    private val geometrySource: String? = null,
+    private val fragmentSource: String? = null,
 ) : NativeShader {
     override val context get() = system.context
     override var loaded: Boolean = false
@@ -53,67 +57,103 @@ class OpenGlNativeShader(
     private var handler = -1
     private val uniformLocations: Object2IntOpenHashMap<String> = Object2IntOpenHashMap()
 
-    private fun load(file: ResourceLocation, type: ShaderType, code: String?): Int {
-        val code = GLSLShaderCode(context, code ?: context.session.assets[file].readAsString(), file)
+    private inline fun cleanup(failure: Throwable?, action: () -> Unit) {
+        try {
+            action()
+        } catch (cleanupError: Throwable) {
+            if (failure == null) throw cleanupError
+            failure.addSuppressed(cleanupError)
+        }
+    }
+
+    private fun compile(
+        file: ResourceLocation,
+        type: ShaderType,
+        source: String?,
+        programDefines: Map<String, Any>,
+    ): Int {
+        val code = GLSLShaderCode(context, source ?: context.session.assets[file].readAsString(), file)
         system.log { "Compiling shader $file" }
 
-        code.defines += defines
+        code.defines += programDefines
         code.defines["SHADER_TYPE_${type.name}"] = ""
         for (hack in system.vendor.hacks) {
             code.defines[hack.name] = ""
         }
 
-        val program = gl { glCreateShader(type.native) }
-        if (program.toLong() == MemoryUtil.NULL) {
+        val shader = gl { glCreateShader(type.native) }
+        if (shader.toLong() == MemoryUtil.NULL) {
             throw ShaderLoadingException()
         }
 
-        val glsl = code.code
-        gl { glShaderSource(program, glsl) }
+        try {
+            val glsl = code.code
+            gl { glShaderSource(shader, glsl) }
 
-        gl { glCompileShader(program) }
+            gl { glCompileShader(shader) }
 
-        if (gl { glGetShaderi(program, GL_COMPILE_STATUS) } == GL_FALSE) {
-            throw ShaderLoadingException("Can not load shader: $file:\n" + gl { glGetShaderInfoLog(program) }, glsl)
+            if (gl { glGetShaderi(shader, GL_COMPILE_STATUS) } == GL_FALSE) {
+                throw ShaderLoadingException("Can not load shader: $file:\n" + gl { glGetShaderInfoLog(shader) }, glsl)
+            }
+
+            return shader
+        } catch (error: Throwable) {
+            cleanup(error) { gl { glDeleteShader(shader) } }
+            throw error
         }
-
-        return program
     }
 
-    override fun load() {
-        val geometryCode = geometry?.let { catchAll { context.session.assets[it].readAsString() } }
+    private fun prepareProgram(): Int {
+        val geometryCode = geometrySource ?: geometry?.let { catchAll { context.session.assets[it].readAsString() } }
+        val programDefines = defines.toMutableMap()
         if (geometryCode != null) {
-            defines["HAS_GEOMETRY_SHADER"] = " "
+            programDefines["HAS_GEOMETRY_SHADER"] = " "
         }
-        handler = gl { glCreateProgram() }
+        val candidate = gl { glCreateProgram() }
 
-        if (handler.toLong() == MemoryUtil.NULL) {
+        if (candidate.toLong() == MemoryUtil.NULL) {
             throw ShaderLoadingException()
         }
 
         val programs = IntArrayList(3)
-
-        programs += load(vertex, ShaderType.VERTEX, null)
+        var failure: Throwable? = null
         try {
-            geometry?.let { programs += load(it, ShaderType.GEOMETRY, geometryCode) }
-        } catch (_: FileNotFoundException) {
-        }
-        programs += load(fragment, ShaderType.FRAGMENT, null)
+            programs += compile(vertex, ShaderType.VERTEX, vertexSource, programDefines)
+            try {
+                geometry?.let { programs += compile(it, ShaderType.GEOMETRY, geometryCode, programDefines) }
+            } catch (_: FileNotFoundException) {
+            }
+            programs += compile(fragment, ShaderType.FRAGMENT, fragmentSource, programDefines)
 
-        for (program in programs) {
-            gl { glAttachShader(handler, program) }
-        }
+            for (index in 0 until programs.size) {
+                val program = programs.getInt(index)
+                gl { glAttachShader(candidate, program) }
+            }
 
-        gl { glLinkProgram(handler) }
+            gl { glLinkProgram(candidate) }
 
-        gl { glValidateProgram(handler) }
+            gl { glValidateProgram(candidate) }
 
-        if (gl { glGetProgrami(handler, GL_LINK_STATUS) } == GL_FALSE) {
-            throw ShaderLinkingException("Can not link shaders: $vertex with $geometry with ${fragment}: \n ${glGetProgramInfoLog(handler)}")
+            if (gl { glGetProgrami(candidate, GL_LINK_STATUS) } == GL_FALSE) {
+                throw ShaderLinkingException("Can not link shaders: $vertex with $geometry with ${fragment}: \n ${glGetProgramInfoLog(candidate)}")
+            }
+            return candidate
+        } catch (error: Throwable) {
+            failure = error
+            cleanup(error) { gl { glDeleteProgram(candidate) } }
+            throw error
+        } finally {
+            for (index in 0 until programs.size) {
+                val program = programs.getInt(index)
+                cleanup(failure) { gl { glDeleteShader(program) } }
+            }
         }
-        for (program in programs) {
-            gl { glDeleteShader(program) }
-        }
+    }
+
+    override fun load() {
+        check(!loaded) { "Already loaded!" }
+        handler = prepareProgram()
+        uniformLocations.clear()
         loaded = true
     }
 
@@ -122,11 +162,18 @@ class OpenGlNativeShader(
         gl { glDeleteProgram(this.handler) }
         loaded = false
         this.handler = -1
+        uniformLocations.clear()
     }
 
     override fun reload() {
-        unload()
-        load()
+        check(loaded) { "Not loaded!" }
+        val candidate = prepareProgram()
+        val previous = handler
+        val selected = system.shader.shader?.native === this
+        handler = candidate
+        uniformLocations.clear()
+        if (selected) unsafeUse()
+        gl { glDeleteProgram(previous) }
     }
 
 

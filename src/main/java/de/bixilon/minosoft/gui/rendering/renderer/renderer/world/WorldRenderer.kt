@@ -20,7 +20,7 @@ import de.bixilon.minosoft.gui.rendering.renderer.renderer.Renderer
  * A renderer that renders in world space (world framebuffer)
  */
 interface WorldRenderer : Renderer {
-    override val framebuffer: IntegratedFramebuffer? get() = context.framebuffer.world
+    override val framebuffer: IntegratedFramebuffer? get() = context.framebuffer.main
 
     val layers: LayerSettings
     fun registerLayers()

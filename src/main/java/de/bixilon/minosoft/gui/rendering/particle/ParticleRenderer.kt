@@ -22,10 +22,12 @@ import de.bixilon.minosoft.data.world.chunk.ChunkUtil.isInViewDistance
 import de.bixilon.minosoft.data.world.particle.AbstractParticleRenderer
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.events.CameraMatrixChangeEvent
+import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.particle.mesh.ParticleMeshBuilder
 import de.bixilon.minosoft.gui.rendering.particle.types.Particle
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.OpaqueLayer
@@ -84,8 +86,22 @@ class ParticleRenderer(
         get() = particles.size
 
     override fun registerLayers() {
-        layers.register(OpaqueLayer, shader, renderer = { mesh?.draw() }, skip = { mesh != null })
-        layers.register(TranslucentLayer, shader, renderer = { translucentMesh?.draw() }, skip = { translucentMesh != null })
+        layers.registerSemantic(
+            OpaqueLayer,
+            shader,
+            renderer = { mesh?.draw() },
+            semantic = PipelineSemantic.PARTICLES,
+            passId = RenderPassId("minosoft:scene/particles-opaque"),
+            skip = { mesh == null },
+        )
+        layers.registerSemantic(
+            TranslucentLayer,
+            shader,
+            renderer = { translucentMesh?.draw() },
+            semantic = PipelineSemantic.PARTICLES,
+            passId = RenderPassId("minosoft:scene/particles-translucent"),
+            skip = { translucentMesh == null },
+        )
     }
 
     private fun loadTextures() {
@@ -159,7 +175,7 @@ class ParticleRenderer(
         ticker.tick(mesh, translucent)
 
         mesh._data?.takeIf { !it.isEmpty }?.let { this.mesh = mesh.bake() }
-        translucent._data?.takeIf { !it.isEmpty }?.let { this.translucentMesh = mesh.bake() }
+        translucent._data?.takeIf { !it.isEmpty }?.let { this.translucentMesh = translucent.bake() }
     }
 
     override fun postPrepareDraw() {

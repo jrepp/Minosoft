@@ -16,6 +16,7 @@ package de.bixilon.minosoft.gui.rendering.system.opengl.shader
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader.Companion.shader
+import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShaderSource
 import de.bixilon.minosoft.gui.rendering.system.base.shader.ShaderManagement
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
@@ -47,6 +48,18 @@ class OpenGlShaderManagement(val system: OpenGlRenderSystem) : ShaderManagement 
 
     override fun create(vertex: ResourceLocation, geometry: ResourceLocation?, fragment: ResourceLocation): OpenGlNativeShader {
         return OpenGlNativeShader(system, vertex.shader(), geometry?.shader(), fragment.shader())
+    }
+
+    override fun create(vertex: NativeShaderSource, geometry: NativeShaderSource?, fragment: NativeShaderSource): OpenGlNativeShader {
+        return OpenGlNativeShader(
+            system = system,
+            vertex = vertex.id,
+            geometry = geometry?.id,
+            fragment = fragment.id,
+            vertexSource = vertex.code,
+            geometrySource = geometry?.code,
+            fragmentSource = fragment.code,
+        )
     }
 
     override fun plusAssign(shader: Shader) {

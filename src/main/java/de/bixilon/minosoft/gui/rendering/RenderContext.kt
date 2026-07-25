@@ -26,6 +26,7 @@ import de.bixilon.minosoft.gui.rendering.light.RenderLight
 import de.bixilon.minosoft.gui.rendering.models.loader.ModelLoader
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererManager
 import de.bixilon.minosoft.gui.rendering.shader.ShaderManager
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderPipelineRegistry
 import de.bixilon.minosoft.gui.rendering.skeletal.SkeletalManager
 import de.bixilon.minosoft.gui.rendering.stats.AbstractRenderStats
 import de.bixilon.minosoft.gui.rendering.stats.ExperimentalRenderStats
@@ -55,6 +56,7 @@ class RenderContext(
 
     val shaders = ShaderManager(this)
     val framebuffer = FramebufferManager(this)
+    val shaderPipeline = ShaderPipelineRegistry()
     val renderer = RendererManager(this)
     val models = ModelLoader(this)
 

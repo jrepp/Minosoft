@@ -32,7 +32,7 @@ import de.bixilon.minosoft.gui.rendering.gui.hud.elements.other.debug.DebugHUDEl
 import de.bixilon.minosoft.gui.rendering.system.base.PolygonModes
 
 class DebugRenderingMenu(guiRenderer: GUIRenderer) : Menu(guiRenderer, preferredElementWidth = 180.0f) {
-    private val worldFramebuffer = guiRenderer.context.framebuffer.world
+    private val worldFramebuffer = guiRenderer.context.framebuffer.main
     private val debugHud = guiRenderer.hud[DebugHUDElement]
     private lateinit var wireframe: ButtonElement
     private lateinit var debugHudToggle: ButtonElement

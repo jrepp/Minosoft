@@ -27,9 +27,11 @@ import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.gui.rendering.RenderConstants
 import de.bixilon.minosoft.gui.rendering.RenderContext
+import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.MeshSwapper
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
@@ -56,7 +58,13 @@ class ChunkBorderRenderer(
     override var unload = false
 
     override fun registerLayers() {
-        layers.register(ChunkBorderLayer, context.shaders.genericColorShader, this::draw) { mesh == null || !profile.chunkBorder.enabled }
+        layers.registerSemantic(
+            ChunkBorderLayer,
+            context.shaders.genericColorShader,
+            this::draw,
+            PipelineSemantic.WORLD_OVERLAY,
+            passId = RenderPassId("minosoft:scene/chunk-border"),
+        ) { mesh == null || !profile.chunkBorder.enabled }
     }
 
     override fun init(latch: AbstractLatch) {

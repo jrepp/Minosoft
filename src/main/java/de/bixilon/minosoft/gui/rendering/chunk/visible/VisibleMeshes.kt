@@ -32,11 +32,11 @@ class VisibleMeshes(
     val camera: BlockPosition = BlockPosition.EMPTY,
     previous: VisibleMeshes? = null,
 ) {
-    val meshes: Array<ArrayList<ChunkMesh>> = arrayOf(
-        ArrayList(previous?.meshes?.get(ChunkMeshTypes.OPAQUE.ordinal)?.size ?: 128),
-        ArrayList(previous?.meshes?.get(ChunkMeshTypes.TRANSLUCENT.ordinal)?.size ?: 16),
-        ArrayList(previous?.meshes?.get(ChunkMeshTypes.TEXT.ordinal)?.size ?: 16),
-    )
+    val meshes: Array<ArrayList<ChunkMesh>> = Array(ChunkMeshTypes.VALUES.size) { ordinal ->
+        val type = ChunkMeshTypes.VALUES[ordinal]
+        val defaultCapacity = if (type == ChunkMeshTypes.OPAQUE) 128 else 16
+        ArrayList(previous?.meshes?.getOrNull(ordinal)?.size ?: defaultCapacity)
+    }
     val entities: ArrayList<BlockEntityRenderer> = ArrayList(previous?.entities?.size ?: 128)
 
     val sizeString: String

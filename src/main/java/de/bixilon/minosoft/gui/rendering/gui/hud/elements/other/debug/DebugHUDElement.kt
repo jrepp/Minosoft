@@ -186,7 +186,7 @@ class DebugHUDElement(guiRenderer: GUIRenderer) : Element(guiRenderer), Layouted
             }
         }
 
-        layout += AutoTextElement(guiRenderer) { "Fun effect: " + context.framebuffer.world.`fun`.effect?.identifier.format() }
+        layout += AutoTextElement(guiRenderer) { "Fun effect: " + context.framebuffer.main.`fun`.effect?.identifier.format() }
 
         return layout
     }

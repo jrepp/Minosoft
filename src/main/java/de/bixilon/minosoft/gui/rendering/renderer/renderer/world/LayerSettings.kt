@@ -14,13 +14,33 @@
 package de.bixilon.minosoft.gui.rendering.renderer.renderer.world
 
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineElement
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
+import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
+import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
 
 class LayerSettings {
     val elements: MutableList<PipelineElement> = mutableListOf()
 
-    fun register(layer: RenderLayer, shader: Shader?, renderer: () -> Unit, skip: (() -> Boolean)? = null) {
+    fun register(
+        layer: RenderLayer,
+        shader: Shader?,
+        renderer: () -> Unit,
+        skip: (() -> Boolean)? = null,
+    ) {
         elements += PipelineElement(layer, shader, renderer, skip)
+    }
+
+    fun registerSemantic(
+        layer: RenderLayer,
+        shader: Shader?,
+        renderer: () -> Unit,
+        semantic: PipelineSemantic,
+        owner: (() -> RenderOwnerId)? = null,
+        passId: RenderPassId,
+        skip: (() -> Boolean)? = null,
+    ) {
+        elements += PipelineElement(layer, shader, renderer, skip, semantic, owner, passId)
     }
 }

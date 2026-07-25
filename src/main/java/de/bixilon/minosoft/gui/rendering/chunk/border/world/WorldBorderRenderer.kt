@@ -25,8 +25,10 @@ import de.bixilon.minosoft.data.world.border.WorldBorderState
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.chunk.border.world.mesh.WorldBorderMesh
 import de.bixilon.minosoft.gui.rendering.chunk.border.world.mesh.WorldBorderMeshBuilder
+import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
@@ -51,7 +53,13 @@ class WorldBorderRenderer(
     private var reload = false
 
     override fun registerLayers() {
-        layers.register(WorldBorderLayer, shader, this::draw) { this.mesh == null }
+        layers.registerSemantic(
+            WorldBorderLayer,
+            shader,
+            this::draw,
+            PipelineSemantic.WORLD_OVERLAY,
+            passId = RenderPassId("minosoft:scene/world-border"),
+        ) { this.mesh == null }
     }
 
     override fun init(latch: AbstractLatch) {

@@ -18,6 +18,7 @@ import de.bixilon.kutil.enums.ValuesEnum.Companion.names
 
 enum class ChunkMeshTypes(val inverseDistance: Boolean) {
     OPAQUE(false),
+    CUTOUT(false),
     TRANSLUCENT(true),
     TEXT(false),
     ;

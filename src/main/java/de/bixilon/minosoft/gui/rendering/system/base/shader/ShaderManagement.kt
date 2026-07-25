@@ -22,6 +22,7 @@ interface ShaderManagement : Iterable<Shader> {
 
 
     fun create(vertex: ResourceLocation, geometry: ResourceLocation? = null, fragment: ResourceLocation): NativeShader
+    fun create(vertex: NativeShaderSource, geometry: NativeShaderSource? = null, fragment: NativeShaderSource): NativeShader
 
     fun create(path: ResourceLocation) = create(
         vertex = "$path.vsh".toResourceLocation(),
@@ -42,5 +43,14 @@ interface ShaderManagement : Iterable<Shader> {
         for (shader in this) {
             shader.reload()
         }
+    }
+}
+
+data class NativeShaderSource(
+    val id: ResourceLocation,
+    val code: String,
+) {
+    init {
+        require(code.isNotBlank()) { "Shader source must not be blank: $id" }
     }
 }

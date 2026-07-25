@@ -70,8 +70,8 @@ object DebugKeyBindings {
             KeyActions.MODIFIER to setOf(KeyCodes.KEY_F4),
             KeyActions.STICKY to setOf(KeyCodes.KEY_P),
         )) {
-            val nextMode = DebugRenderingControls.toggleWireframe(context.framebuffer.world.polygonMode)
-            context.framebuffer.world.polygonMode = nextMode
+            val nextMode = DebugRenderingControls.toggleWireframe(context.framebuffer.main.polygonMode)
+            context.framebuffer.main.polygonMode = nextMode
             session.util.sendDebugMessage("Polygon mode: ${nextMode.format()}")
         }
 

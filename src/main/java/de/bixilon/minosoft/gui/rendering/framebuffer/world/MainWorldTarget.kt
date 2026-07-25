@@ -23,20 +23,37 @@ import de.bixilon.minosoft.gui.rendering.framebuffer.FramebufferShader
 import de.bixilon.minosoft.gui.rendering.framebuffer.IntegratedFramebuffer
 import de.bixilon.minosoft.gui.rendering.framebuffer.world.`fun`.FunEffectManager
 import de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay.OverlayManager
+import de.bixilon.minosoft.gui.rendering.graph.resource.RenderClearPolicy
+import de.bixilon.minosoft.gui.rendering.graph.resource.RenderColorAttachment
+import de.bixilon.minosoft.gui.rendering.graph.resource.RenderColorFormat
+import de.bixilon.minosoft.gui.rendering.graph.resource.RenderDepthFormat
+import de.bixilon.minosoft.gui.rendering.graph.resource.RenderResourceId
+import de.bixilon.minosoft.gui.rendering.graph.resource.RenderTargetDescriptor
+import de.bixilon.minosoft.gui.rendering.graph.resource.RenderTargetSize
 import de.bixilon.minosoft.gui.rendering.system.base.PolygonModes
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.Framebuffer
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.depth.DepthModes
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.texture.TextureModes
 
-class WorldFramebuffer(
+class MainWorldTarget(
     override val context: RenderContext,
 ) : IntegratedFramebuffer {
     private val overlay = OverlayManager(context)
     val `fun` = FunEffectManager(context)
-    val postProcessors = WorldPostProcessors<FramebufferShader>()
     private val defaultShader = context.system.shader.create(minosoft("framebuffer/world")) { FramebufferShader(it) }
-    override val shader: FramebufferShader
-        get() = `fun`.shader ?: postProcessors.processor ?: defaultShader
+    val descriptor = RenderTargetDescriptor(
+        id = RenderResourceId("minosoft:main-world"),
+        size = RenderTargetSize.Relative(1.0f),
+        colorAttachments = listOf(
+            RenderColorAttachment(
+                id = RenderResourceId("minosoft:main-world-color"),
+                format = RenderColorFormat.RGBA8,
+                clear = RenderClearPolicy.CLEAR,
+            ),
+        ),
+        depth = RenderDepthFormat.DEPTH24,
+    )
+    override val shader: FramebufferShader get() = defaultShader
     override var framebuffer: Framebuffer = unsafeNull()
     override val mesh = FramebufferMeshBuilder(context).bake()
     override var polygonMode: PolygonModes = PolygonModes.DEFAULT
@@ -59,9 +76,15 @@ class WorldFramebuffer(
     }
 
     override fun draw() {
-        shader.use()
         `fun`.preDraw()
-        super.draw()
+        val effect = `fun`.shader
+        if (effect != null) {
+            super.draw(effect)
+        } else {
+            context.shaderPipeline.withPipeline { pipeline ->
+                super.draw(pipeline.composite(defaultShader))
+            }
+        }
         overlay.draw()
     }
 }

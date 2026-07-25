@@ -56,6 +56,7 @@ object RenderUtil {
         val cleanup = listOf<() -> Unit>(
             input::unload,
             renderer::unload,
+            shaderPipeline::close,
             models::unload,
             skeletal::unload,
             light::unload,

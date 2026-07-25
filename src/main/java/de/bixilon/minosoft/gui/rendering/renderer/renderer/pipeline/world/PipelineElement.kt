@@ -16,6 +16,8 @@ package de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world
 import de.bixilon.kutil.profiler.stack.StackedProfiler.Companion.invoke
 import de.bixilon.kutil.reflection.ReflectionUtil.realName
 import de.bixilon.minosoft.gui.rendering.RenderContext
+import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
+import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
 
@@ -23,12 +25,20 @@ class PipelineElement(
     val layer: RenderLayer,
     val shader: Shader?,
     val renderer: () -> Unit,
-    val skip: (() -> Boolean)?
+    val skip: (() -> Boolean)?,
+    val semantic: PipelineSemantic = PipelineSemantic.AUTO,
+    val owner: (() -> RenderOwnerId)? = null,
+    val passId: RenderPassId? = null,
 ) : Comparable<PipelineElement> {
 
     fun draw(context: RenderContext) {
-        if (skip != null && skip.invoke()) return
+        if (!isEnabled()) return
+        drawEnabled(context)
+    }
 
+    fun isEnabled(): Boolean = skip?.invoke() != true
+
+    fun drawEnabled(context: RenderContext) {
         context.system.set(layer.settings)
         shader?.use()
         context.profiler(renderer::class.java.realName) { renderer.invoke() }
@@ -37,4 +47,18 @@ class PipelineElement(
     override fun compareTo(other: PipelineElement): Int {
         return layer.priority.compareTo(other.layer.priority)
     }
+}
+
+enum class PipelineSemantic {
+    AUTO,
+    SKY,
+    TERRAIN_OPAQUE,
+    TERRAIN_CUTOUT,
+    TERRAIN_TRANSLUCENT,
+    TERRAIN_EMISSIVE,
+    ENTITIES,
+    BLOCK_ENTITIES,
+    PARTICLES,
+    WEATHER,
+    WORLD_OVERLAY,
 }

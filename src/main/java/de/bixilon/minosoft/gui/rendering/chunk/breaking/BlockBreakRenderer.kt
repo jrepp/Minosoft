@@ -24,7 +24,9 @@ import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.chunk.breaking.mesh.BlockBreakShader
 import de.bixilon.minosoft.gui.rendering.chunk.breaking.mesh.BreakingMeshBuilder
+import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
@@ -97,7 +99,13 @@ class BlockBreakRenderer(
     }
 
     override fun registerLayers() {
-        layers.register(BlockDestroyLayer, shader, this::draw) { this.instances.isEmpty() }
+        layers.registerSemantic(
+            BlockDestroyLayer,
+            shader,
+            this::draw,
+            PipelineSemantic.WORLD_OVERLAY,
+            passId = RenderPassId("minosoft:scene/block-breaking"),
+        ) { this.instances.isEmpty() }
     }
 
     override fun prePrepareDraw() = lock.locked {

@@ -64,6 +64,10 @@ interface IntegratedFramebuffer : Drawable {
     }
 
     override fun draw() {
+        draw(shader)
+    }
+
+    fun draw(shader: FramebufferShader) {
         context.system.framebuffer = null
         context.system.reset(
             blending = true,

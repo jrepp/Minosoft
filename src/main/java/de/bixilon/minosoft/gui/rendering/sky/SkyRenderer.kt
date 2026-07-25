@@ -20,24 +20,27 @@ import de.bixilon.kutil.observer.DataObserver.Companion.observe
 import de.bixilon.kutil.observer.DataObserver.Companion.observed
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.events.CameraMatrixChangeEvent
-import de.bixilon.minosoft.gui.rendering.framebuffer.IntegratedFramebuffer
+import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.Renderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.sky.box.SkyboxRenderer
 import de.bixilon.minosoft.gui.rendering.sky.planet.MoonRenderer
 import de.bixilon.minosoft.gui.rendering.sky.planet.SunRenderer
 import de.bixilon.minosoft.gui.rendering.sky.planet.scatter.SunScatterRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
-import de.bixilon.minosoft.gui.rendering.system.base.phases.PreDrawable
+import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
+import de.bixilon.minosoft.gui.rendering.system.base.settings.RenderSettings
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
 class SkyRenderer(
     val session: PlaySession,
     override val context: RenderContext,
-) : Renderer, PreDrawable, AsyncRenderer {
-    override val framebuffer: IntegratedFramebuffer? = null
+) : WorldRenderer, AsyncRenderer {
+    override val layers = LayerSettings()
     private val renderer: MutableList<SkyChildRenderer> = mutableListOf()
     var effects by observed(session.world.dimension.effects)
     var matrix by observed(Mat4f())
@@ -50,6 +53,16 @@ class SkyRenderer(
     val sun = SunRenderer(this)
     val sunScatter = SunScatterRenderer(this, sun)
     val moon = MoonRenderer(this)
+
+    override fun registerLayers() {
+        layers.registerSemantic(
+            SkyLayer,
+            null,
+            this::drawSky,
+            PipelineSemantic.SKY,
+            passId = RenderPassId("minosoft:scene/sky"),
+        )
+    }
 
     override fun init(latch: AbstractLatch) {
         box.register()
@@ -92,7 +105,7 @@ class SkyRenderer(
         }
     }
 
-    override fun drawPre() {
+    private fun drawSky() {
         context.system.reset(depth = DepthFunctions.LESS_OR_EQUAL, depthMask = false)
         for (renderer in renderer) {
             renderer.draw()
@@ -109,5 +122,10 @@ class SkyRenderer(
         override fun build(session: PlaySession, context: RenderContext): SkyRenderer {
             return SkyRenderer(session, context)
         }
+    }
+
+    private object SkyLayer : RenderLayer {
+        override val settings = RenderSettings(depth = DepthFunctions.LESS_OR_EQUAL, depthMask = false)
+        override val priority = Int.MIN_VALUE
     }
 }

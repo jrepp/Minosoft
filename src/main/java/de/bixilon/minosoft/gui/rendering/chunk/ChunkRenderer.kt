@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -45,13 +46,19 @@ import de.bixilon.minosoft.gui.rendering.chunk.visible.VisibilityGraphInvalidRea
 import de.bixilon.minosoft.gui.rendering.events.VisibilityGraphChangeEvent
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.layer.OpaqueLayer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.TranslucentLayer
+import de.bixilon.minosoft.gui.rendering.system.base.layer.CutoutLayer
 import de.bixilon.minosoft.gui.rendering.system.base.settings.RenderSettings
+import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
+import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
+import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendRegistry
+import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
@@ -74,22 +81,36 @@ class ChunkRenderer(
     val mesher = ChunkMesher(this)
     val loaded = LoadedMeshes(this)
     val cache = ChunkCacheManager(this)
+    val terrain = TerrainBackendRegistry(BuiltInChunkTerrainBackend(this))
 
 
     var limitChunkTransferTime = true
 
-    private fun registerMeshLayer(layer: RenderLayer, shader: ChunkShader, type: ChunkMeshTypes) {
-        layers.register(layer, shader, {
-            val meshes = visibility.meshes
-            meshes.lock.locked { meshes.meshes[type.ordinal].forEach(ChunkMesh::draw) }
-        }) { visibility.meshes.meshes[type.ordinal].isEmpty() }
+    private fun registerMeshLayer(layer: RenderLayer, material: TerrainMaterialClass, type: ChunkMeshTypes) {
+        layers.registerSemantic(
+            layer = layer,
+            shader = null,
+            renderer = { terrain.submit(RenderViewId.MAIN, material) },
+            semantic = material.semantic,
+            owner = { terrain.selection().owner },
+            passId = material.passId,
+            skip = { visibility.meshes.meshes[type.ordinal].isEmpty() },
+        )
     }
 
     override fun registerLayers() {
-        registerMeshLayer(OpaqueLayer, shader, ChunkMeshTypes.OPAQUE)
-        registerMeshLayer(TranslucentLayer, shader, ChunkMeshTypes.TRANSLUCENT)
-        registerMeshLayer(TextLayer, textShader, ChunkMeshTypes.TEXT)
-        layers.register(BlockEntitiesLayer, shader, this::drawBlockEntities) { visibility.meshes.entities.isEmpty() }
+        registerMeshLayer(OpaqueLayer, TerrainMaterialClass.OPAQUE, ChunkMeshTypes.OPAQUE)
+        registerMeshLayer(CutoutLayer, TerrainMaterialClass.CUTOUT, ChunkMeshTypes.CUTOUT)
+        registerMeshLayer(TranslucentLayer, TerrainMaterialClass.TRANSLUCENT, ChunkMeshTypes.TRANSLUCENT)
+        registerMeshLayer(TextLayer, TerrainMaterialClass.EMISSIVE_ADDITIVE, ChunkMeshTypes.TEXT)
+        layers.registerSemantic(
+            BlockEntitiesLayer,
+            shader,
+            this::drawBlockEntities,
+            semantic = PipelineSemantic.BLOCK_ENTITIES,
+            passId = RenderPassId("minosoft:scene/block-entities"),
+            skip = { visibility.meshes.entities.isEmpty() },
+        )
     }
 
     override fun postInit(latch: AbstractLatch) {
@@ -206,18 +227,34 @@ class ChunkRenderer(
         invalidate(section)
     }
 
+    fun invalidate(position: SectionPosition) {
+        invalidate(world.chunks[position.chunkPosition], position.y)
+    }
+
     override fun prepareDrawAsync() {
+        terrain.prepare()
+    }
+
+    internal fun prepareTerrainCore() {
         visibility.update()
         meshingQueue.work()
     }
 
     override fun postPrepareDraw() {
+        terrain.finishPreparation()
+    }
+
+    internal fun finishTerrainPreparationCore() {
         context.profiler("unloading") { unloadingQueue.work() }
         context.profiler("loading") { loadingQueue.work() }
     }
 
 
     override fun postDraw() {
+        terrain.finishFrame()
+    }
+
+    internal fun finishTerrainFrameCore() {
         val meshes = visibility.meshes
         meshes.lock.locked { meshes.meshes[ChunkMeshTypes.OPAQUE.ordinal].firstOrNull() }?.updateOcclusion() // don't lock all meshes, updateOcclusion is a blocking operation
 
@@ -228,9 +265,27 @@ class ChunkRenderer(
         }
     }
 
+    internal fun submitTerrainCore(view: RenderViewId, material: TerrainMaterialClass) {
+        val (type, activeShader) = when (material) {
+            TerrainMaterialClass.OPAQUE -> ChunkMeshTypes.OPAQUE to shader
+            TerrainMaterialClass.CUTOUT -> ChunkMeshTypes.CUTOUT to shader
+            TerrainMaterialClass.TRANSLUCENT -> ChunkMeshTypes.TRANSLUCENT to shader
+            TerrainMaterialClass.EMISSIVE_ADDITIVE -> ChunkMeshTypes.TEXT to textShader
+        }
+        context.shaderPipeline.withPipeline { pipeline ->
+            pipeline.bindTerrain(view, material, activeShader)
+            val meshes = visibility.meshes
+            meshes.lock.locked { meshes.meshes[type.ordinal].forEach(ChunkMesh::draw) }
+        }
+    }
+
     private fun drawBlockEntities() = visibility.meshes.apply { lock.locked { entities.forEach(BlockEntityRenderer::draw) } }
 
     override fun unload() {
+        terrain.close()
+    }
+
+    internal fun closeTerrainCore() {
         culledQueue.clear()
         meshingQueue.clear()
         meshingQueue.tasks.interrupt(false)
@@ -252,3 +307,14 @@ class ChunkRenderer(
         override fun build(session: PlaySession, context: RenderContext) = ChunkRenderer(session, context)
     }
 }
+
+private val TerrainMaterialClass.semantic: PipelineSemantic
+    get() = when (this) {
+        TerrainMaterialClass.OPAQUE -> PipelineSemantic.TERRAIN_OPAQUE
+        TerrainMaterialClass.CUTOUT -> PipelineSemantic.TERRAIN_CUTOUT
+        TerrainMaterialClass.TRANSLUCENT -> PipelineSemantic.TERRAIN_TRANSLUCENT
+        TerrainMaterialClass.EMISSIVE_ADDITIVE -> PipelineSemantic.TERRAIN_EMISSIVE
+    }
+
+private val TerrainMaterialClass.passId: RenderPassId
+    get() = RenderPassId("minosoft:terrain/${name.lowercase().replace('_', '-')}")

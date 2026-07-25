@@ -23,6 +23,11 @@ interface AbstractRenderStats {
     val smoothAvgFPS: Double
 
     val totalFrames: Long
+    val timingSamples: Int get() = 0
+    val medianFrameNanos: Long get() = 0L
+    val p95FrameNanos: Long get() = 0L
+    val medianDrawNanos: Long get() = 0L
+    val p95DrawNanos: Long get() = 0L
 
 
     fun startFrame() = Unit

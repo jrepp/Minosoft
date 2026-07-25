@@ -16,6 +16,7 @@ package de.bixilon.minosoft.gui.rendering.system.dummy.shader
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.system.base.shader.ShaderManagement
+import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShaderSource
 import de.bixilon.minosoft.gui.rendering.system.dummy.DummyRenderSystem
 
 class DummyShaderManagement(val system: DummyRenderSystem) : ShaderManagement {
@@ -38,6 +39,10 @@ class DummyShaderManagement(val system: DummyRenderSystem) : ShaderManagement {
 
 
     override fun create(vertex: ResourceLocation, geometry: ResourceLocation?, fragment: ResourceLocation): DummyNativeShader {
+        return DummyNativeShader(system.context)
+    }
+
+    override fun create(vertex: NativeShaderSource, geometry: NativeShaderSource?, fragment: NativeShaderSource): DummyNativeShader {
         return DummyNativeShader(system.context)
     }
 

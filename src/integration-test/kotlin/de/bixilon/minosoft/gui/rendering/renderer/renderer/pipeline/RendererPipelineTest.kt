@@ -11,25 +11,24 @@
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
 
-package de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world
+package de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline
 
 import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.kutil.cast.CastUtil.unsafeCast
 import de.bixilon.kutil.exception.Broken
 import de.bixilon.kutil.reflection.ReflectionUtil.forceSet
-import de.bixilon.kutil.reflection.ReflectionUtil.getFieldOrNull
 import de.bixilon.minosoft.data.registries.identified.Identified
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.font.manager.FontManager
 import de.bixilon.minosoft.gui.rendering.font.types.dummy.DummyFontType
 import de.bixilon.minosoft.gui.rendering.framebuffer.FramebufferManager
-import de.bixilon.minosoft.gui.rendering.framebuffer.world.WorldFramebuffer
+import de.bixilon.minosoft.gui.rendering.framebuffer.world.MainWorldTarget
 import de.bixilon.minosoft.gui.rendering.gui.atlas.textures.CodeTexturePart
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererManager
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.RendererPipeline
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderPipelineRegistry
 import de.bixilon.minosoft.gui.rendering.system.base.PolygonModes
 import de.bixilon.minosoft.gui.rendering.system.base.layer.OpaqueLayer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
@@ -46,14 +45,7 @@ import org.testng.Assert.assertEquals
 import org.testng.annotations.Test
 
 @Test(groups = ["rendering"])
-class WorldRendererPipelineTest {
-    private val elements = WorldRendererPipeline::class.java.getFieldOrNull("elements")!!
-    val WorldRendererPipeline.elements: Array<PipelineElement> get() = this@WorldRendererPipelineTest.elements.get(this).unsafeCast()
-
-    private val pipeline = RendererManager::class.java.getFieldOrNull("pipeline")!!
-    val RendererManager.pipeline: RendererPipeline get() = this@WorldRendererPipelineTest.pipeline.get(this).unsafeCast()
-
-
+class RendererPipelineTest {
     fun construct() {
         manager()
         renderer()
@@ -65,9 +57,9 @@ class WorldRendererPipelineTest {
 
         renderer.layers.register(OpaqueLayer, null, renderer::run)
 
-        manager.pipeline.world.rebuild()
+        manager.pipeline.rebuild()
 
-        val elements = manager.pipeline.world.elements
+        val elements = manager.pipeline.elements
         assertEquals(elements.size, 1)
         assertEquals(elements[0].layer, OpaqueLayer)
     }
@@ -79,9 +71,9 @@ class WorldRendererPipelineTest {
         renderer.layers.register(OpaqueLayer, null, renderer::run)
         renderer.layers.register(layer("abc", OpaqueLayer.priority), null, renderer::run)
 
-        manager.pipeline.world.rebuild()
+        manager.pipeline.rebuild()
 
-        val elements = manager.pipeline.world.elements
+        val elements = manager.pipeline.elements
         assertEquals(elements.size, 2)
         assertEquals(elements[0].layer, OpaqueLayer)
         assertEquals(elements[1].layer.priority, OpaqueLayer.priority)
@@ -94,9 +86,9 @@ class WorldRendererPipelineTest {
         renderer.layers.register(OpaqueLayer, null, renderer::run)
         renderer.layers.register(layer("abc", 10), null, renderer::run)
 
-        manager.pipeline.world.rebuild()
+        manager.pipeline.rebuild()
 
-        val elements = manager.pipeline.world.elements
+        val elements = manager.pipeline.elements
         assertEquals(elements.size, 2)
         assertEquals(elements[0].layer, OpaqueLayer)
         assertEquals(elements[1].layer.priority, 10)
@@ -109,9 +101,9 @@ class WorldRendererPipelineTest {
         renderer.layers.register(layer("abc", 10), null, renderer::run)
         renderer.layers.register(OpaqueLayer, null, renderer::run)
 
-        manager.pipeline.world.rebuild()
+        manager.pipeline.rebuild()
 
-        val elements = manager.pipeline.world.elements
+        val elements = manager.pipeline.elements
         assertEquals(elements.size, 2)
         assertEquals(elements[0].layer, OpaqueLayer)
         assertEquals(elements[1].layer.priority, 10)
@@ -126,9 +118,9 @@ class WorldRendererPipelineTest {
         renderer.layers.register(layer("b", -10), null, renderer::run)
         renderer.layers.register(layer("c", -10), null, renderer::run)
 
-        manager.pipeline.world.rebuild()
+        manager.pipeline.rebuild()
 
-        val elements = manager.pipeline.world.elements
+        val elements = manager.pipeline.elements
         assertEquals(elements.size, 4)
         assertEquals(elements[0].layer.unsafeCast<Identified>().identifier.path, "b")
         assertEquals(elements[1].layer.unsafeCast<Identified>().identifier.path, "c")
@@ -144,9 +136,9 @@ class WorldRendererPipelineTest {
         renderer.layers.register(TranslucentLayer, null, renderer::run)
         renderer.layers.register(OpaqueLayer, null, renderer::run)
 
-        manager.pipeline.world.rebuild()
+        manager.pipeline.rebuild()
 
-        val elements = manager.pipeline.world.elements
+        val elements = manager.pipeline.elements
         assertEquals(elements.size, 3)
         assertEquals(elements[0].layer, OpaqueLayer)
         assertEquals(elements[1].layer, TransparentLayer)
@@ -163,9 +155,9 @@ class WorldRendererPipelineTest {
         second.layers.register(OpaqueLayer, null, second::run)
         second.layers.register(TranslucentLayer, null, second::run)
 
-        manager.pipeline.world.rebuild()
+        manager.pipeline.rebuild()
 
-        val elements = manager.pipeline.world.elements
+        val elements = manager.pipeline.elements
         assertEquals(elements.size, 3)
         assertEquals(elements[0].layer, OpaqueLayer)
         assertEquals(elements[1].layer, OpaqueLayer)
@@ -184,11 +176,33 @@ class WorldRendererPipelineTest {
         second.layers.register(OpaqueLayer, null, { list += "b" })
         second.layers.register(TranslucentLayer, null, { list += "c" })
 
-        manager.pipeline.world.rebuild()
+        manager.pipeline.rebuild()
 
-        manager.pipeline.world.draw()
+        val execution = FrameGraphExecution(manager.context)
+        manager.pipeline.generation.passes
+            .filter { it.owner.value == "minosoft:built-in-world" }
+            .forEach { it.draw(execution) }
 
         assertEquals(list, listOf("a", "b", "c"))
+    }
+
+    fun `rebuild publishes an immutable graph generation without consuming layers`() {
+        val manager = manager()
+        val renderer = manager.register(renderer())
+        renderer.layers.register(OpaqueLayer, null, renderer::run)
+
+        manager.pipeline.rebuild()
+        val first = manager.pipeline.generation
+        renderer.layers.register(TranslucentLayer, null, renderer::run)
+
+        assertEquals(first.passes.count { it.owner.value == "minosoft:built-in-world" }, 1)
+        assertEquals(manager.pipeline.generation.number, first.number)
+
+        manager.pipeline.rebuild()
+
+        assertEquals(manager.pipeline.generation.passes.count { it.owner.value == "minosoft:built-in-world" }, 2)
+        assertEquals(manager.pipeline.generation.number, first.number + 1L)
+        assertEquals(renderer.layers.elements.size, 2)
     }
 
     private fun context(): RenderContext {
@@ -196,9 +210,10 @@ class WorldRendererPipelineTest {
         context.font = FontManager(DummyFontType)
         context::system.forceSet(DummyRenderSystem(context))
         context::textures.forceSet(DummyTextureManager(context))
+        context::shaderPipeline.forceSet(ShaderPipelineRegistry())
 
         val framebuffer = FramebufferManager::class.java.allocate()
-        framebuffer::world.forceSet(WorldFramebuffer::class.java.allocate().apply {
+        framebuffer::main.forceSet(MainWorldTarget::class.java.allocate().apply {
             this::polygonMode.forceSet(PolygonModes.FILL)
             this::size.forceSet(Vec2i(1, 1)._0)
             this::scale.forceSet(1.0f)

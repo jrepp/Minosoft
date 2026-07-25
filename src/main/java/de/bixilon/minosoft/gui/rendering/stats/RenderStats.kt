@@ -29,6 +29,14 @@ class RenderStats : AbstractRenderStats {
     private var lastFrameStartTime = TimeUtil.NULL
 
     private var lastSmoothFPSCalculationTime = TimeUtil.NULL
+    private val frameTimings = RenderTimingWindow()
+    private val drawTimings = RenderTimingWindow()
+
+    override val timingSamples: Int get() = frameTimings.samples
+    override val medianFrameNanos: Long get() = frameTimings.percentile(0.5)
+    override val p95FrameNanos: Long get() = frameTimings.percentile(0.95)
+    override val medianDrawNanos: Long get() = drawTimings.percentile(0.5)
+    override val p95DrawNanos: Long get() = drawTimings.percentile(0.95)
 
     override var smoothAvgFPS: Double = 0.0
         get() {
@@ -59,6 +67,7 @@ class RenderStats : AbstractRenderStats {
         val delta = time - lastFrameStartTime
 
         avgFrameTime += delta
+        frameTimings.add(delta.inWholeNanoseconds)
 
         totalFrames++
     }
@@ -68,5 +77,6 @@ class RenderStats : AbstractRenderStats {
         val delta = time - lastFrameStartTime
 
         avgDrawTime += delta
+        drawTimings.add(delta.inWholeNanoseconds)
     }
 }

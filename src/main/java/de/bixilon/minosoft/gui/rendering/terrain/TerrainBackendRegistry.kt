@@ -1,0 +1,249 @@
+/*
+ * Minosoft
+ * Copyright (C) 2026 Jacob Repp
+ *
+ * This program is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free Software
+ * Foundation, either version 3 of the License, or (at your option) any later
+ * version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package de.bixilon.minosoft.gui.rendering.terrain
+
+import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
+import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
+import de.bixilon.minosoft.gui.rendering.graph.resource.TransactionalGenerationStore
+import de.bixilon.minosoft.gui.rendering.stats.RenderTimingWindow
+import java.util.concurrent.atomic.AtomicBoolean
+
+class TerrainBackendRegistry(
+    private val builtIn: TerrainBackend,
+) : AutoCloseable {
+    internal data class Generation(
+        val backend: TerrainBackend,
+        val closeOnRetire: Boolean,
+    )
+
+    data class Selection(
+        val generation: Long,
+        val owner: RenderOwnerId,
+        val implementation: String,
+    )
+
+    data class RuntimeStats(
+        val resources: TransactionalGenerationStore.Stats,
+        val preparedFrames: Long,
+        val submittedBatches: Long,
+        val preparationTimingSamples: Int,
+        val medianPreparationNanos: Long,
+        val p95PreparationNanos: Long,
+        val submissionTimingSamples: Int,
+        val medianSubmissionNanos: Long,
+        val p95SubmissionNanos: Long,
+        val currentFrameSubmissions: Set<Pair<RenderViewId, TerrainMaterialClass>>,
+    )
+
+    class Lease internal constructor(
+        private val delegate: TransactionalGenerationStore.Lease<Generation>,
+    ) : AutoCloseable {
+        val generation: Long get() = delegate.generation
+        val backend: TerrainBackend get() = delegate.value.backend
+
+        override fun close() = delegate.close()
+    }
+
+    private val lock = Any()
+    private val store = TransactionalGenerationStore(Generation(builtIn, false)) { generation ->
+        if (generation.closeOnRetire) generation.backend.close()
+    }
+    private var nextToken = 1L
+    private var overrideToken: Long? = null
+    private var closed = false
+    private var frameOpen = false
+    private var frameLease: Lease? = null
+    private var preparedFrames = 0L
+    private var submittedBatches = 0L
+    private var preparationStartedNanos = 0L
+    private val preparationTimings = RenderTimingWindow()
+    private val submissionTimings = RenderTimingWindow()
+    private val frameSubmissions = linkedSetOf<Pair<RenderViewId, TerrainMaterialClass>>()
+
+    fun acquire(): Lease = Lease(store.acquire())
+
+    fun selection(): Selection = acquire().use { lease ->
+        Selection(
+            generation = lease.generation,
+            owner = lease.backend.descriptor.owner,
+            implementation = lease.backend.descriptor.implementation,
+        )
+    }
+
+    fun descriptor(): TerrainBackendDescriptor = acquire().use { it.backend.descriptor }
+
+    fun replace(candidate: () -> TerrainBackend): AutoCloseable {
+        val backend = candidate()
+
+        val token: Long
+        try {
+            validate(backend)
+            synchronized(lock) {
+                check(!closed) { "Terrain backend registry is closed" }
+                token = nextToken++
+                store.replace { Generation(backend, true) }
+                overrideToken = token
+            }
+        } catch (failure: Throwable) {
+            try {
+                backend.close()
+            } catch (cleanup: Throwable) {
+                failure.addSuppressed(cleanup)
+            }
+            throw failure
+        }
+        return Registration(token)
+    }
+
+    inline fun <T> withBackend(action: (TerrainBackend) -> T): T =
+        acquire().use { lease -> action(lease.backend) }
+
+    fun prepare() {
+        val lease: Lease
+        synchronized(lock) {
+            check(!closed) { "Terrain backend registry is closed" }
+            check(!frameOpen) { "Terrain frame preparation started before the previous frame finished" }
+            lease = acquire()
+            frameLease = lease
+            frameOpen = true
+            frameSubmissions.clear()
+            preparedFrames++
+            preparationStartedNanos = System.nanoTime()
+        }
+        try {
+            lease.backend.prepare()
+        } catch (failure: Throwable) {
+            synchronized(lock) {
+                frameOpen = false
+                frameLease = null
+                preparationStartedNanos = 0L
+            }
+            lease.close()
+            throw failure
+        }
+    }
+
+    fun finishPreparation() {
+        try {
+            currentFrameBackend().finishPreparation()
+        } finally {
+            val started = synchronized(lock) {
+                check(preparationStartedNanos != 0L) { "Terrain preparation has no start timestamp" }
+                preparationStartedNanos.also { preparationStartedNanos = 0L }
+            }
+            preparationTimings.add(System.nanoTime() - started)
+        }
+    }
+
+    fun submit(view: RenderViewId, material: TerrainMaterialClass) {
+        synchronized(lock) {
+            check(frameOpen) { "Terrain submission requires an open prepared frame" }
+            require(frameSubmissions.add(view to material)) {
+                "Duplicate terrain submission for view=$view material=$material"
+            }
+            submittedBatches++
+        }
+        val started = System.nanoTime()
+        try {
+            currentFrameBackend().submit(view, material)
+        } finally {
+            submissionTimings.add(System.nanoTime() - started)
+        }
+    }
+
+    fun finishFrame() {
+        val lease = synchronized(lock) {
+            check(frameOpen) { "Terrain frame completion requires an open prepared frame" }
+            checkNotNull(frameLease) { "Terrain frame has no selected backend generation" }
+        }
+        try {
+            lease.backend.finishFrame()
+        } finally {
+            synchronized(lock) {
+                frameOpen = false
+                frameLease = null
+            }
+            lease.close()
+        }
+    }
+
+    fun stats(): RuntimeStats = synchronized(lock) {
+        RuntimeStats(
+            resources = store.stats(),
+            preparedFrames = preparedFrames,
+            submittedBatches = submittedBatches,
+            preparationTimingSamples = preparationTimings.samples,
+            medianPreparationNanos = preparationTimings.percentile(0.5),
+            p95PreparationNanos = preparationTimings.percentile(0.95),
+            submissionTimingSamples = submissionTimings.samples,
+            medianSubmissionNanos = submissionTimings.percentile(0.5),
+            p95SubmissionNanos = submissionTimings.percentile(0.95),
+            currentFrameSubmissions = frameSubmissions.toSet(),
+        )
+    }
+
+    private fun validate(backend: TerrainBackend) {
+        TerrainBackendDescriptor(
+            owner = backend.descriptor.owner,
+            implementation = backend.descriptor.implementation,
+            materials = backend.descriptor.materials,
+            vertexLayout = backend.descriptor.vertexLayout,
+            supportsAuxiliaryViews = backend.descriptor.supportsAuxiliaryViews,
+        )
+        require(backend !== builtIn) { "A provider can not replace terrain with the built-in backend instance" }
+    }
+
+    private fun currentFrameBackend(): TerrainBackend = synchronized(lock) {
+        check(frameOpen) { "Terrain frame operation requires an open prepared frame" }
+        checkNotNull(frameLease) { "Terrain frame has no selected backend generation" }.backend
+    }
+
+    private fun remove(token: Long) {
+        synchronized(lock) {
+            if (closed || overrideToken != token) return
+            store.replace { Generation(builtIn, false) }
+            overrideToken = null
+        }
+    }
+
+    override fun close() {
+        val activeFrame: Lease?
+        synchronized(lock) {
+            if (closed) return
+            closed = true
+            frameOpen = false
+            preparationStartedNanos = 0L
+            activeFrame = frameLease
+            frameLease = null
+            overrideToken = null
+        }
+        activeFrame?.close()
+        store.close()
+        builtIn.close()
+    }
+
+    private inner class Registration(
+        private val token: Long,
+    ) : AutoCloseable {
+        private val closed = AtomicBoolean()
+
+        override fun close() {
+            if (closed.compareAndSet(false, true)) remove(token)
+        }
+    }
+}

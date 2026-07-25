@@ -19,8 +19,10 @@ import de.bixilon.kutil.observer.DataObserver.Companion.observe
 import de.bixilon.kutil.time.TimeUtil.now
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.gui.rendering.RenderContext
+import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.sky.SkyRenderer
@@ -57,7 +59,14 @@ class CloudRenderer(
 
 
     override fun registerLayers() {
-        layers.register(CloudRenderLayer, shader, this::draw, this::canSkip)
+        layers.registerSemantic(
+            CloudRenderLayer,
+            shader,
+            this::draw,
+            PipelineSemantic.SKY,
+            passId = RenderPassId("minosoft:scene/clouds"),
+            skip = this::canSkip,
+        )
     }
 
     override fun asyncInit(latch: AbstractLatch) {

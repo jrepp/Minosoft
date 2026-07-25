@@ -35,7 +35,7 @@ class RendererManager(
 ) : Drawable, Iterable<Renderer> {
     private val list: MutableList<Renderer> = mutableListOf()
     private val renderers: MutableMap<RendererBuilder<*>, Renderer> = linkedMapOf()
-    private val pipeline = RendererPipeline(this)
+    val pipeline = RendererPipeline(this)
     private val session = context.session
 
 
@@ -79,7 +79,7 @@ class RendererManager(
             if (renderer !is WorldRenderer) continue
             renderer.registerLayers()
         }
-        pipeline.world.rebuild()
+        pipeline.rebuild()
 
         runAsync(latch, Renderer::asyncInit)
 

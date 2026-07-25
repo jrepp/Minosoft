@@ -20,6 +20,9 @@ abstract class Shader(override val native: NativeShader) : AbstractShader {
     private val uniforms: MutableMap<String, ShaderUniform> = mutableMapOf()
 
     fun unload() {
+        if (native.context.system.shader.shader === this) {
+            native.context.system.shader.shader = null
+        }
         native.unload()
         native.context.system.shader -= this
     }

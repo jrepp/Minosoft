@@ -18,6 +18,8 @@ import de.bixilon.kutil.concurrent.lock.LockUtil.locked
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
+import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 
 class EntityDrawer(
     val renderer: EntitiesRenderer,
@@ -29,8 +31,14 @@ class EntityDrawer(
         private set
 
     fun registerLayers() {
-        for (layer in EntityLayer.LAYERS) {
-            renderer.layers.register(layer, null, { layers[layer]?.draw() })
+        for ((index, layer) in EntityLayer.LAYERS.withIndex()) {
+            renderer.layers.registerSemantic(
+                layer,
+                null,
+                { layers[layer]?.draw() },
+                PipelineSemantic.ENTITIES,
+                passId = RenderPassId("minosoft:scene/entities-$index"),
+            )
         }
     }
 

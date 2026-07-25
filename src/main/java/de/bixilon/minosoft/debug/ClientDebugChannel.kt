@@ -17,6 +17,7 @@ import de.bixilon.minosoft.config.key.KeyCodes
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.RenderingStates
+import de.bixilon.minosoft.gui.rendering.chunk.ChunkRenderer
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.gui.rendering.events.input.CharInputEvent
 import de.bixilon.minosoft.gui.rendering.events.input.KeyInputEvent
@@ -106,6 +107,7 @@ object ClientDebugChannel : AutoCloseable {
         server.operations().register("client", "world.blocks.sample") { _, body -> completed(sampleBlocks(body)) }
         server.operations().register("client", "world.aoi") { _, body -> completed(sampleBlocks(body)) }
         server.operations().register("client", "mods.debug") { _, _ -> completed(modDiagnostics()) }
+        server.operations().register("client", "render.substrate") { _, _ -> onRender(::renderSubstrate) }
     }
 
     private fun status(): JsonNode {
@@ -121,6 +123,11 @@ object ClientDebugChannel : AutoCloseable {
                 put("fps", it.renderStats.smoothAvgFPS)
                 put("averageFrameNanos", it.renderStats.avgFrameTime.avg.inWholeNanoseconds)
                 put("averageDrawNanos", it.renderStats.avgDrawTime.avg.inWholeNanoseconds)
+                put("timingSamples", it.renderStats.timingSamples)
+                put("medianFrameNanos", it.renderStats.medianFrameNanos)
+                put("p95FrameNanos", it.renderStats.p95FrameNanos)
+                put("medianDrawNanos", it.renderStats.medianDrawNanos)
+                put("p95DrawNanos", it.renderStats.p95DrawNanos)
             }
             active?.let {
                 put("sessionId", it.sessionId.toString())
@@ -453,6 +460,79 @@ object ClientDebugChannel : AutoCloseable {
                 put("kind", hook.kind); put("installed", hook.installed); put("invocations", hook.invocations)
                 put("totalNanos", hook.totalNanos); put("averageNanos", hook.averageNanos); put("maxNanos", hook.maxNanos)
             } }
+        }
+        return DebugOperationResult.json(result)
+    }
+
+    private fun renderSubstrate(context: RenderContext): DebugOperationResult {
+        val graph = context.renderer.pipeline.generation
+        val shader = context.shaderPipeline.selection()
+        val shaderStats = context.shaderPipeline.stats()
+        val result = DebugJson.MAPPER.createObjectNode().apply {
+            put("frame", context.frameNumber)
+            put("graphGeneration", graph.number)
+            put("passCount", graph.passes.size)
+            put("shaderGeneration", shader.generation)
+            put("shaderOwner", shader.owner.value)
+            put("shaderPack", shader.packName)
+            put("shaderFingerprint", shader.fingerprint)
+            putObject("shaderResources").apply {
+                put("activeLeases", shaderStats.activeLeases)
+                put("retiredAwaitingLeases", shaderStats.retiredAwaitingLeases)
+                put("closed", shaderStats.closed)
+            }
+        }
+        val passes = result.putArray("passes")
+        graph.passes.forEach { pass ->
+            passes.addObject().apply {
+                put("id", pass.id.value)
+                put("owner", pass.owner.value)
+                put("view", pass.view.value)
+                put("phase", pass.phase.name.lowercase())
+                put("semantic", pass.semantic)
+                put("order", pass.order)
+            }
+        }
+        val owners = result.putArray("owners")
+        graph.passes.map { it.owner.value }.distinct().sorted().forEach(owners::add)
+
+        context.renderer[ChunkRenderer]?.let { chunks ->
+            val terrain = chunks.terrain.selection()
+            val descriptor = chunks.terrain.descriptor()
+            val terrainStats = chunks.terrain.stats()
+            result.putObject("terrain").apply {
+                put("generation", terrain.generation)
+                put("owner", terrain.owner.value)
+                put("implementation", terrain.implementation)
+                put("supportsAuxiliaryViews", descriptor.supportsAuxiliaryViews)
+                put("vertexLayout", descriptor.vertexLayout.id.value)
+                put("vertexStrideBytes", descriptor.vertexLayout.strideBytes)
+                val materials = putArray("materials")
+                descriptor.materials.map { it.name.lowercase() }.sorted().forEach(materials::add)
+                val semantics = putArray("vertexSemantics")
+                descriptor.vertexLayout.attributes.map { it.semantic.name.lowercase() }.forEach(semantics::add)
+                put("preparedFrames", terrainStats.preparedFrames)
+                put("submittedBatches", terrainStats.submittedBatches)
+                put("preparationTimingSamples", terrainStats.preparationTimingSamples)
+                put("medianPreparationNanos", terrainStats.medianPreparationNanos)
+                put("p95PreparationNanos", terrainStats.p95PreparationNanos)
+                put("submissionTimingSamples", terrainStats.submissionTimingSamples)
+                put("medianSubmissionNanos", terrainStats.medianSubmissionNanos)
+                put("p95SubmissionNanos", terrainStats.p95SubmissionNanos)
+                val submissions = putArray("currentFrameSubmissions")
+                terrainStats.currentFrameSubmissions
+                    .sortedWith(compareBy({ it.first.value }, { it.second.name }))
+                    .forEach { (view, material) ->
+                        submissions.addObject()
+                            .put("view", view.value)
+                            .put("material", material.name.lowercase())
+                    }
+                putObject("resources").apply {
+                    put("activeLeases", terrainStats.resources.activeLeases)
+                    put("retiredAwaitingLeases", terrainStats.resources.retiredAwaitingLeases)
+                    put("closed", terrainStats.resources.closed)
+                }
+            }
         }
         return DebugOperationResult.json(result)
     }
