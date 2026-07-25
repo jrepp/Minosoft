@@ -31,6 +31,7 @@ data class ItemPredicate(val thresholds: Map<ResourceLocation, Float>) {
     private fun value(key: ResourceLocation, stack: ItemStack, context: ItemPredicateContext): Float? {
         context.values[key]?.let { return it }
         if (key.namespace != "minecraft") return null
+        if (!context.catalog.supports(key.path)) return null
         return when (key.path) {
             "custom_model_data" -> stack.customModelData()
             "damage" -> stack.damage()

@@ -63,6 +63,18 @@ class ItemPredicateTest {
     }
 
     @Test
+    fun `release catalog rejects providers introduced by a later version`() {
+        val brush = ItemStack(item("brush"))
+        val trim = ItemStack(item("diamond_helmet"))
+        val old = ItemPredicateContext(catalog = ItemPredicateCatalog.V1_19_4)
+        val current = ItemPredicateContext(catalog = ItemPredicateCatalog.V1_20_4)
+
+        assertFalse(predicate("brushing", -1.0f).matches(brush, old))
+        assertFalse(predicate("trim_type", -1.0f).matches(trim, old))
+        assertTrue(predicate("brushing", 0.0f).matches(brush, current))
+    }
+
+    @Test
     fun `stack backed 1_20_4 properties retain vanilla item gates`() {
         val charged = ItemStack(
             item("crossbow"),

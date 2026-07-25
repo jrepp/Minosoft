@@ -44,6 +44,7 @@ import de.bixilon.minosoft.gui.rendering.shader.ShaderManager
 import de.bixilon.minosoft.gui.rendering.skeletal.SkeletalManager
 import de.bixilon.minosoft.gui.rendering.system.dummy.DummyRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTextureRenderData
+import de.bixilon.minosoft.gui.rendering.tint.TintManager
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil
 import de.bixilon.minosoft.test.ITUtil.allocate
 import de.bixilon.minosoft.util.KUtil.startInit
@@ -52,8 +53,8 @@ import java.util.*
 object EntityRendererTestUtil {
     val PIG = EntityType(Pig.identifier, minosoft("key"), 1.0f, 1.0f, mapOf(), Pig, null)
 
-    fun createContext(worldSize: Int = 0): RenderContext {
-        val session = SessionTestUtil.createSession(worldSize = worldSize)
+    fun createContext(worldSize: Int = 0, version: String? = null): RenderContext {
+        val session = SessionTestUtil.createSession(worldSize = worldSize, version = version)
         session::scoreboard.forceSet(ScoreboardManager(session))
         session::tabList.forceSet(TabList())
         val context = RenderContext::class.java.allocate()
@@ -67,13 +68,13 @@ object EntityRendererTestUtil {
         context::skeletal.forceSet(SkeletalManager(context))
         context::models.forceSet(ModelLoader(context))
         context::itemPredicates.forceSet(ItemPredicateRuntime())
-
+        context::tints.forceSet(TintManager(session))
 
         return context
     }
 
-    fun create(worldSize: Int = 0): EntitiesRenderer {
-        val context = createContext(worldSize)
+    fun create(worldSize: Int = 0, version: String? = null): EntitiesRenderer {
+        val context = createContext(worldSize, version)
         val renderer = EntitiesRenderer::class.java.allocate()
         renderer::context.forceSet(context)
         renderer::queue.forceSet(Queue())

@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -18,6 +19,7 @@ import de.bixilon.kutil.cast.CastUtil.nullCast
 import de.bixilon.kutil.cast.CastUtil.unsafeCast
 import de.bixilon.kutil.primitive.IntUtil.toInt
 import de.bixilon.minosoft.data.container.equipment.EntityEquipment
+import de.bixilon.minosoft.data.container.stack.ItemStack
 import de.bixilon.minosoft.data.entities.EntityRotation
 import de.bixilon.minosoft.data.entities.Poses
 import de.bixilon.minosoft.data.entities.data.EntityData
@@ -54,6 +56,11 @@ abstract class LivingEntity(session: PlaySession, entityType: EntityType, data: 
     /** Client-side vanilla death animation age, in game ticks. */
     var deathTime = 0
         private set
+    /** Client-visible elapsed use time for the currently tracked hand/stack. */
+    var itemUseTicks = 0
+        private set
+    private var trackedUsingHand: Hands? = null
+    private var trackedUsingStack: ItemStack? = null
 
     override val canRaycast: Boolean get() = super.canRaycast && health > 0.0
     override val name: ChatComponent? get() = super.name
@@ -116,8 +123,27 @@ abstract class LivingEntity(session: PlaySession, entityType: EntityType, data: 
     override fun tick() {
         super.tick()
         effects.tick()
+        tickItemUse()
         if (hurtTime > 0) hurtTime--
         deathTime = if (health <= 0.0) deathTime + 1 else 0
+    }
+
+    private fun tickItemUse() {
+        val hand = usingHand
+        val stack = hand?.let { equipment[it.slot] }
+        if (hand == null || stack == null) {
+            trackedUsingHand = null
+            trackedUsingStack = null
+            itemUseTicks = 0
+            return
+        }
+        if (hand != trackedUsingHand || stack !== trackedUsingStack) {
+            trackedUsingHand = hand
+            trackedUsingStack = stack
+            itemUseTicks = 1
+            return
+        }
+        if (itemUseTicks < Int.MAX_VALUE) itemUseTicks++
     }
 
     val activelyRiding: Boolean get() = false
@@ -131,7 +157,7 @@ abstract class LivingEntity(session: PlaySession, entityType: EntityType, data: 
 
     companion object {
         private const val HURT_ANIMATION_TICKS = 10
-        private val FLAGS_DATA = EntityDataField("LIVING_ENTITY_FLAGS")
+        val FLAGS_DATA = EntityDataField("LIVING_ENTITY_FLAGS")
         private val HEALTH_DATA = EntityDataField("LIVING_ENTITY_HEALTH")
         private val EFFECT_COLOR_DATA = EntityDataField("LIVING_ENTITY_EFFECT_COLOR")
         private val EFFECT_AMBIENT_DATA = EntityDataField("LIVING_ENTITY_EFFECT_AMBIENCE")

@@ -39,6 +39,7 @@ data class ItemPredicateContext(
     val fishingCast: Boolean = false,
     val entity: Entity? = null,
     val runtime: ItemPredicateRuntime? = null,
+    val catalog: ItemPredicateCatalog = ItemPredicateCatalog.V1_20_4,
     val seed: Int = 0,
     val values: Map<ResourceLocation, Float> = emptyMap(),
 ) {
@@ -72,12 +73,19 @@ data class ItemPredicateContext(
             }
             return ItemPredicateContext(
                 active = activeStack === stack,
-                useTicks = local?.using?.takeIf { activeStack === stack }?.tick ?: 0,
+                useTicks = when {
+                    activeStack !== stack -> 0
+                    local != null -> local.using?.tick ?: 0
+                    else -> living.itemUseTicks
+                },
                 leftHanded = (entity as? PlayerEntity)?.mainArm == Arms.LEFT,
                 cooldownProgress = cooldownProgress,
                 fishingCast = fishingCast,
                 entity = entity,
                 runtime = runtime,
+                catalog = entity?.session?.version?.versionId
+                    ?.let(ItemPredicateCatalog::forVersion)
+                    ?: ItemPredicateCatalog.V1_20_4,
                 seed = seed,
             )
         }
