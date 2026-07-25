@@ -19,10 +19,16 @@ package de.bixilon.minosoft.gui.rendering.terrain
 
 import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
 import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
+import de.bixilon.minosoft.gui.rendering.graph.resource.RenderResourceId
+import de.bixilon.minosoft.gui.rendering.graph.resource.VertexAttribute
+import de.bixilon.minosoft.gui.rendering.graph.resource.VertexAttributeFormat
+import de.bixilon.minosoft.gui.rendering.graph.resource.VertexLayoutDeclaration
+import de.bixilon.minosoft.gui.rendering.graph.resource.VertexSemantic
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class TerrainBackendRegistryTest {
@@ -137,7 +143,60 @@ class TerrainBackendRegistryTest {
         registry.close()
     }
 
+    @Test
+    fun `backend generation pins its physical vertex layout declaration`() {
+        val builtIn = backend("minosoft:built-in")
+        val registry = TerrainBackendRegistry(builtIn)
+        val original = vertexLayout("test:terrain/original", VertexAttributeFormat.FLOAT3)
+        val changed = vertexLayout("test:terrain/changed", VertexAttributeFormat.FLOAT4)
+        val candidate = MutableDescriptorBackend(original)
+
+        val registration = registry.replace { candidate }
+        val lease = registry.acquire()
+        candidate.layout = changed
+
+        assertSame(original, registry.descriptor().vertexLayout)
+        assertSame(original, lease.descriptor.vertexLayout)
+
+        registration.close()
+        assertFalse(candidate.closed)
+        assertSame(original, lease.descriptor.vertexLayout)
+        lease.close()
+        assertTrue(candidate.closed)
+        assertSame(BuiltInTerrainVertexLayout.VALUE, registry.descriptor().vertexLayout)
+        registry.close()
+    }
+
+    private fun vertexLayout(id: String, format: VertexAttributeFormat) = VertexLayoutDeclaration(
+        id = RenderResourceId(id),
+        strideBytes = format.byteSize,
+        attributes = listOf(VertexAttribute(VertexSemantic.POSITION, format, 0)),
+    )
+
     private fun backend(owner: String) = RecordingBackend(owner)
+
+    private class MutableDescriptorBackend(
+        var layout: VertexLayoutDeclaration,
+    ) : TerrainBackend {
+        override val descriptor: TerrainBackendDescriptor
+            get() = TerrainBackendDescriptor(
+                owner = RenderOwnerId("test:mutable"),
+                implementation = "mutable",
+                materials = TerrainMaterialClass.entries.toSet(),
+                vertexLayout = layout,
+                supportsAuxiliaryViews = false,
+            )
+        var closed = false
+
+        override fun prepare() = Unit
+        override fun finishPreparation() = Unit
+        override fun submit(view: RenderViewId, material: TerrainMaterialClass) = Unit
+        override fun finishFrame() = Unit
+        override fun invalidate(snapshot: TerrainSectionSnapshot, reason: TerrainInvalidationReason) = Unit
+        override fun close() {
+            closed = true
+        }
+    }
 
     private class RecordingBackend(
         owner: String,

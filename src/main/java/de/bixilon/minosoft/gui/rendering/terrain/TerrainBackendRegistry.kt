@@ -28,6 +28,7 @@ class TerrainBackendRegistry(
 ) : AutoCloseable {
     internal data class Generation(
         val backend: TerrainBackend,
+        val descriptor: TerrainBackendDescriptor,
         val closeOnRetire: Boolean,
     )
 
@@ -55,12 +56,14 @@ class TerrainBackendRegistry(
     ) : AutoCloseable {
         val generation: Long get() = delegate.generation
         val backend: TerrainBackend get() = delegate.value.backend
+        val descriptor: TerrainBackendDescriptor get() = delegate.value.descriptor
 
         override fun close() = delegate.close()
     }
 
     private val lock = Any()
-    private val store = TransactionalGenerationStore(Generation(builtIn, false)) { generation ->
+    private val builtInDescriptor = snapshot(builtIn.descriptor)
+    private val store = TransactionalGenerationStore(Generation(builtIn, builtInDescriptor, false)) { generation ->
         if (generation.closeOnRetire) generation.backend.close()
     }
     private var nextToken = 1L
@@ -80,23 +83,24 @@ class TerrainBackendRegistry(
     fun selection(): Selection = acquire().use { lease ->
         Selection(
             generation = lease.generation,
-            owner = lease.backend.descriptor.owner,
-            implementation = lease.backend.descriptor.implementation,
+            owner = lease.descriptor.owner,
+            implementation = lease.descriptor.implementation,
         )
     }
 
-    fun descriptor(): TerrainBackendDescriptor = acquire().use { it.backend.descriptor }
+    fun descriptor(): TerrainBackendDescriptor = acquire().use { it.descriptor }
 
     fun replace(candidate: () -> TerrainBackend): AutoCloseable {
         val backend = candidate()
 
         val token: Long
         try {
-            validate(backend)
+            val descriptor = snapshot(backend.descriptor)
+            require(backend !== builtIn) { "A provider can not replace terrain with the built-in backend instance" }
             synchronized(lock) {
                 check(!closed) { "Terrain backend registry is closed" }
                 token = nextToken++
-                store.replace { Generation(backend, true) }
+                store.replace { Generation(backend, descriptor, true) }
                 overrideToken = token
             }
         } catch (failure: Throwable) {
@@ -197,16 +201,14 @@ class TerrainBackendRegistry(
         )
     }
 
-    private fun validate(backend: TerrainBackend) {
+    private fun snapshot(descriptor: TerrainBackendDescriptor) =
         TerrainBackendDescriptor(
-            owner = backend.descriptor.owner,
-            implementation = backend.descriptor.implementation,
-            materials = backend.descriptor.materials,
-            vertexLayout = backend.descriptor.vertexLayout,
-            supportsAuxiliaryViews = backend.descriptor.supportsAuxiliaryViews,
+            owner = descriptor.owner,
+            implementation = descriptor.implementation,
+            materials = descriptor.materials.toSet(),
+            vertexLayout = descriptor.vertexLayout,
+            supportsAuxiliaryViews = descriptor.supportsAuxiliaryViews,
         )
-        require(backend !== builtIn) { "A provider can not replace terrain with the built-in backend instance" }
-    }
 
     private fun currentFrameBackend(): TerrainBackend = synchronized(lock) {
         check(frameOpen) { "Terrain frame operation requires an open prepared frame" }
@@ -216,7 +218,7 @@ class TerrainBackendRegistry(
     private fun remove(token: Long) {
         synchronized(lock) {
             if (closed || overrideToken != token) return
-            store.replace { Generation(builtIn, false) }
+            store.replace { Generation(builtIn, builtInDescriptor, false) }
             overrideToken = null
         }
     }
