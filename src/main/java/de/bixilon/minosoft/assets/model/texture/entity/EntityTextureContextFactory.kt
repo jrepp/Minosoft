@@ -58,7 +58,8 @@ object EntityTextureContextFactory {
             ?: entity.type.identifier.hashCode().toLong()
         val position = entity.physics.positionInfo
         val world = entity.session.world
-        val localPlayer = runCatching { entity.session.player }.getOrNull()
+        val localPlayer: PlayerEntity? = entity.session.player
+        val difficulty = world.difficulty?.difficulty
         val biome = position.biome?.identifier
         val weather = when {
             world.weather.thunder > 0.0f -> "thunder"
@@ -97,10 +98,10 @@ object EntityTextureContextFactory {
             }
         }
         strings("weather", weather)
-        runCatching { world.name }.getOrNull()?.let {
+        world.name?.let {
             strings("dimension", it.toString(), it.path)
         }
-        runCatching { world.difficulty }.getOrNull()?.difficulty?.name?.lowercase()?.let { strings("difficulty", it) }
+        difficulty?.name?.lowercase()?.let { strings("difficulty", it) }
         strings("minecraft_version", entity.session.version.name)
         strings("minecraftVersion", entity.session.version.name)
         strings(
@@ -161,6 +162,17 @@ object EntityTextureContextFactory {
         number("day", world.time.day)
         number("moon_phase", world.time.moonPhase.ordinal)
         number("moonPhase", world.time.moonPhase.ordinal)
+        difficulty?.let {
+            number(
+                "regional_difficulty",
+                EntityTextureRegionalDifficulty.calculate(
+                    it,
+                    world.time.age,
+                    inhabitedTime = 0L,
+                    moonSize = if (position.chunk != null) world.time.moonPhase.light else 0.0f,
+                ),
+            )
+        }
         number("hour", calendar.get(Calendar.HOUR_OF_DAY))
         number("minute", calendar.get(Calendar.MINUTE))
         number("second", calendar.get(Calendar.SECOND))
@@ -197,7 +209,7 @@ object EntityTextureContextFactory {
         boolean("sprinting", entity.isSprinting)
         boolean("swimming", entity.isSwimming)
         boolean("moving", velocity > MOVING_EPSILON)
-        boolean("hardcore", runCatching { world.hardcore }.getOrDefault(false))
+        boolean("hardcore", world.hardcore)
         boolean("spawner", false)
         boolean("client_player", entity === localPlayer)
         boolean("creative", entity is PlayerEntity && entity.gamemode == Gamemodes.CREATIVE)
@@ -216,17 +228,26 @@ object EntityTextureContextFactory {
         localPlayer?.let { appendEntityNbt("nbt_client", it, strings, numbers, booleans) }
         entity.attachment.vehicle?.let { appendEntityNbt("nbt_vehicle", it, strings, numbers, booleans) }
 
+        if (requestedKeys.any(CURRENT_BLOCK_KEYS::contains) && position.chunk != null) {
+            val below = if (position.position.y > world.dimension.minY) {
+                world[BlockPosition(position.position.x, position.position.y - 1, position.position.z)]
+            } else {
+                null
+            }
+            populateBlocks("blocks", listOf(position.state, below), strings, includeAir = true)
+            populateBlocks("block_spawned", listOf(position.state, below), strings, includeAir = true)
+        }
         if ("blockAbove" in requestedKeys || "block_above" in requestedKeys) {
-            populateVerticalBlock("block_above", firstVerticalBlock(entity, 1, solid = false), strings)
+            populateBlocks("block_above", listOf(firstVerticalBlock(entity, 1, solid = false)), strings)
         }
         if ("blockAboveSolid" in requestedKeys || "block_above_solid" in requestedKeys) {
-            populateVerticalBlock("block_above_solid", firstVerticalBlock(entity, 1, solid = true), strings)
+            populateBlocks("block_above_solid", listOf(firstVerticalBlock(entity, 1, solid = true)), strings)
         }
         if ("blockBelow" in requestedKeys || "block_below" in requestedKeys) {
-            populateVerticalBlock("block_below", firstVerticalBlock(entity, -1, solid = false), strings)
+            populateBlocks("block_below", listOf(firstVerticalBlock(entity, -1, solid = false)), strings)
         }
         if ("blockBelowSolid" in requestedKeys || "block_below_solid" in requestedKeys) {
-            populateVerticalBlock("block_below_solid", firstVerticalBlock(entity, -1, solid = true), strings)
+            populateBlocks("block_below_solid", listOf(firstVerticalBlock(entity, -1, solid = true)), strings)
         }
 
         return EntityTextureContext(seed, strings.mapValues { it.value.toList() }, numbers, booleans)
@@ -291,7 +312,7 @@ object EntityTextureContextFactory {
         val limit = if (direction > 0) world.dimension.maxY else world.dimension.minY
         while (if (direction > 0) y <= limit else y >= limit) {
             val state = world[BlockPosition(position.position.x, y, position.position.z)]
-            if (state != null && (!solid || BlockStateFlags.FULL_COLLISION in state.flags || BlockStateFlags.FULL_OPAQUE in state.flags)) {
+            if (state != null && (!solid || BlockStateFlags.FULL_OPAQUE in state.flags)) {
                 return state
             }
             y += direction
@@ -299,16 +320,40 @@ object EntityTextureContextFactory {
         return null
     }
 
-    private fun populateVerticalBlock(
+    private fun populateBlocks(
         key: String,
-        state: BlockState?,
+        states: Collection<BlockState?>,
         strings: MutableMap<String, MutableList<String>>,
+        includeAir: Boolean = false,
     ) {
-        val identifier = state?.block?.identifier ?: return
-        strings.getOrPut(key, ::mutableListOf).apply {
-            add(identifier.toString())
-            add(identifier.path)
+        for (state in states) {
+            if (state == null) {
+                if (includeAir) strings.getOrPut(key, ::mutableListOf).apply {
+                    add("minecraft:air")
+                    add("air")
+                }
+                continue
+            }
+            val identifier = state.block.identifier
+            strings.getOrPut(key, ::mutableListOf).apply {
+                add(identifier.toString())
+                add(identifier.path)
+                if (state.properties.isNotEmpty()) {
+                    val properties = state.properties.entries
+                        .sortedBy { it.key.name }
+                        .joinToString(":") { "${it.key.name}=${blockPropertyValue(it.value)}" }
+                    add("$identifier:$properties")
+                    if (identifier.namespace == "minecraft") {
+                        add("${identifier.path}:$properties")
+                    }
+                }
+            }
         }
+    }
+
+    private fun blockPropertyValue(value: Any): String = when (value) {
+        is Enum<*> -> value.name.lowercase()
+        else -> value.toString().lowercase()
     }
 
     private fun variant(entity: Entity): String? {
@@ -365,4 +410,5 @@ object EntityTextureContextFactory {
     private const val MOVING_EPSILON = 1.0E-8
     private const val MAX_NBT_DEPTH = 32
     private const val MAX_NBT_VALUES = 4096
+    private val CURRENT_BLOCK_KEYS = setOf("block", "blocks", "blockSpawned", "block_spawned")
 }

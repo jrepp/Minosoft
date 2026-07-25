@@ -119,6 +119,57 @@ class EntityTexturePropertiesParserTest {
     }
 
     @Test
+    fun `selection cache exposes prior rule and suffix to dependent feature textures`() {
+        val bodySource = ResourceLocation.of("test:textures/entity/horse.properties")
+        val armorSource = ResourceLocation.of("test:textures/entity/horse_armor.properties")
+        val bodyRules = EntityTextureRuleSet(bodySource, listOf(EntityTextureRule(4, listOf(2))))
+        val armorRules = EntityTextureRuleSet(
+            armorSource,
+            listOf(
+                EntityTextureRule(
+                    7,
+                    listOf(3),
+                    conditions = listOf(
+                        EntityTextureCondition("textureRule", "4"),
+                        EntityTextureCondition("textureSuffix", "2"),
+                    ),
+                ),
+            ),
+        )
+        val bodyKey = EntityTextureCacheKey("horse-1", ResourceLocation.of("minecraft:textures/entity/horse/horse.png"))
+        val armorKey = EntityTextureCacheKey("horse-1", ResourceLocation.of("minecraft:textures/entity/horse/armor.png"))
+        val cache = EntityTextureSelectionCache()
+        try {
+            assertEquals(2, cache.select(bodyKey, bodyRules, EntityTextureContext(7)))
+            assertEquals(3, cache.select(armorKey, armorRules, EntityTextureContext(7)))
+        } finally {
+            cache.close()
+        }
+    }
+
+    @Test
+    fun `selection cache evicts least recently used entities per texture`() {
+        val source = ResourceLocation.of("test:textures/entity/cow.properties")
+        val texture = ResourceLocation.of("minecraft:textures/entity/cow/cow.png")
+        val rules = EntityTextureRuleSet(source, listOf(EntityTextureRule(1, listOf(2))))
+        val replacementRules = EntityTextureRuleSet(source, listOf(EntityTextureRule(1, listOf(9))))
+        val cache = EntityTextureSelectionCache(capacity = 2)
+        try {
+            cache.select(EntityTextureCacheKey("cow-1", texture), rules, EntityTextureContext(1))
+            cache.select(EntityTextureCacheKey("cow-2", texture), rules, EntityTextureContext(2))
+            cache.select(EntityTextureCacheKey("cow-1", texture), rules, EntityTextureContext(3))
+            cache.select(EntityTextureCacheKey("cow-3", texture), rules, EntityTextureContext(4))
+
+            assertEquals(2, cache.size)
+            assertEquals(9, cache.select(EntityTextureCacheKey("cow-2", texture), replacementRules, EntityTextureContext(5)))
+            cache.invalidate(EntityTextureCacheKey("cow-3", texture))
+            assertEquals(1, cache.size)
+        } finally {
+            cache.close()
+        }
+    }
+
+    @Test
     fun `material selects deterministic blink and emissive frames`() {
         val base = ResourceLocation.of("test:base")
         val emissive = ResourceLocation.of("test:base_e")

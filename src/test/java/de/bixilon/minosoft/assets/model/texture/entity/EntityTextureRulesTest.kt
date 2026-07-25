@@ -143,4 +143,30 @@ class EntityTextureRulesTest {
         assertFalse(EntityTextureConditions.matches(EntityTextureCondition("items", "any"), empty))
         assertFalse(EntityTextureConditions.matches(EntityTextureCondition("items", "none minecraft:stick"), empty))
     }
+
+    @Test
+    fun `ETF block predicates accept identifiers regex and state subsets`() {
+        val context = EntityTextureContext(
+            seed = 1,
+            strings = mapOf(
+                "blocks" to listOf(
+                    "minecraft:oak_log",
+                    "oak_log",
+                    "minecraft:oak_log:axis=y:waterlogged=false",
+                    "oak_log:axis=y:waterlogged=false",
+                ),
+                "block_spawned" to listOf("minecraft:oak_log", "oak_log"),
+            ),
+        )
+
+        assertTrue(EntityTextureConditions.matches(EntityTextureCondition("block", "oak_log"), context))
+        assertTrue(EntityTextureConditions.matches(EntityTextureCondition("blocks", "minecraft:oak_log"), context))
+        assertTrue(EntityTextureConditions.matches(EntityTextureCondition("blocks", "oak_log:axis=y"), context))
+        assertTrue(EntityTextureConditions.matches(EntityTextureCondition("blocks", "minecraft:oak_log:axis=y"), context))
+        assertTrue(EntityTextureConditions.matches(EntityTextureCondition("blocks", "oak_log:waterlogged=false:axis=y"), context))
+        assertTrue(EntityTextureConditions.matches(EntityTextureCondition("blocks", "regex:.*oak_log.*"), context))
+        assertTrue(EntityTextureConditions.matches(EntityTextureCondition("blockSpawned", "oak_log"), context))
+        assertFalse(EntityTextureConditions.matches(EntityTextureCondition("blocks", "oak_log:axis=x"), context))
+        assertFalse(EntityTextureConditions.matches(EntityTextureCondition("blocks", "!oak_log"), context))
+    }
 }

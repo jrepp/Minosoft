@@ -68,6 +68,7 @@ data class EntityTextureContext(
             "modsLoaded" to "mod_loaded",
             "nbtClient" to "nbt_client",
             "nbtVehicle" to "nbt_vehicle",
+            "block" to "blocks",
             "blockAbove" to "block_above",
             "blockAboveSolid" to "block_above_solid",
             "blockBelow" to "block_below",
@@ -138,15 +139,27 @@ data class EntityTextureRuleSet(
     val source: ResourceLocation,
     val rules: List<EntityTextureRule>,
 ) {
+    private val orderedRules = rules.sortedBy(EntityTextureRule::index)
+
     init {
         require(rules.map { it.index }.distinct().size == rules.size) { "Duplicate entity texture rule index." }
     }
 
     fun select(context: EntityTextureContext): Int {
-        val rule = rules.sortedBy { it.index }.firstOrNull { it.matches(context) } ?: return 1
-        return rule.select(context)
+        return selectResult(context).suffix
+    }
+
+    fun selectResult(context: EntityTextureContext): EntityTextureSelection {
+        val rule = orderedRules.firstOrNull { it.matches(context) }
+            ?: return EntityTextureSelection(ruleIndex = 0, suffix = 1)
+        return EntityTextureSelection(rule.index, rule.select(context))
     }
 }
+
+data class EntityTextureSelection(
+    val ruleIndex: Int,
+    val suffix: Int,
+)
 
 fun interface EntityTextureConditionTester {
     fun matches(condition: EntityTextureCondition, context: EntityTextureContext): Boolean
@@ -168,6 +181,9 @@ object EntityTextureConditions {
         }
         if (condition.key == "items" || condition.key == "item") {
             return matchesItems(condition.value, context)
+        }
+        if (condition.key in BLOCK_KEYS) {
+            return matchesBlocks(condition.key, condition.value, context)
         }
         context.boolean(condition.key)?.let { actual ->
             return condition.value.split(WHITESPACE).any { it.equals(actual.toString(), ignoreCase = true) }
@@ -206,6 +222,36 @@ object EntityTextureConditions {
             if (special != null) return context.boolean(special) == true
         }
         return stringMatches(context.strings("items").orEmpty(), expected)
+    }
+
+    /**
+     * ETF 7.0.13 first compares the block identifier, then—for non-regex
+     * values containing state separators—accepts a state when every colon
+     * segment occurs in its `block:property=value` representation. Preserve
+     * that unusual subset behavior without materializing every property
+     * combination in the per-entity context.
+     */
+    private fun matchesBlocks(key: String, input: String, context: EntityTextureContext): Boolean {
+        val actual = context.strings(key).orEmpty()
+        val expected = input.split(WHITESPACE).filter(String::isNotBlank)
+        val excluded = expected.filter { it.startsWith('!') && it.length > 1 }.map { it.drop(1) }
+        if (excluded.any { blockTokenMatches(actual, it) }) return false
+        val included = expected.filterNot { it.startsWith('!') }
+        return included.isEmpty() || included.any { blockTokenMatches(actual, it) }
+    }
+
+    private fun blockTokenMatches(actual: List<String>, expected: String): Boolean {
+        if (actual.any { patternMatches(it, expected) }) return true
+        if (expected.startsWith("regex:") || expected.startsWith("iregex:") ||
+            expected.startsWith("pattern:") || expected.startsWith("ipattern:")
+        ) {
+            return false
+        }
+        val segments = expected.split(':').filter(String::isNotEmpty)
+        if (segments.size < 2) return false
+        return actual.any { candidate ->
+            candidate.count { it == ':' } >= 2 && segments.all(candidate::contains)
+        }
     }
 
     private fun nbtCondition(key: String): Pair<String, String>? {
@@ -347,6 +393,20 @@ object EntityTextureConditions {
     private val WHITESPACE = Regex("\\s+")
     private val RANGE = Regex("(-?\\d+(?:\\.\\d+)?)-(-?\\d+(?:\\.\\d+)?)")
     private val SEMVER_RANGE_SEPARATOR = Regex("(?<!^)-(?=\\d)")
+    private val BLOCK_KEYS = setOf(
+        "block",
+        "blocks",
+        "blockSpawned",
+        "block_spawned",
+        "blockAbove",
+        "block_above",
+        "blockAboveSolid",
+        "block_above_solid",
+        "blockBelow",
+        "block_below",
+        "blockBelowSolid",
+        "block_below_solid",
+    )
     private const val MAX_PATTERN_LENGTH = 256
     private const val MAX_MATCH_INPUT = 1024
     private const val MAX_NBT_MATCHES = 4096
@@ -415,23 +475,88 @@ data class EntityTextureCacheKey(
     val texture: ResourceLocation,
 )
 
-class EntityTextureSelectionCache : AutoCloseable {
-    private val selected = ConcurrentHashMap<EntityTextureCacheKey, Int>()
+class EntityTextureSelectionCache(
+    private val capacity: Int = DEFAULT_CAPACITY,
+) : AutoCloseable {
+    private val selected = linkedMapOf<ResourceLocation, LinkedHashMap<String, EntityTextureSelection>>()
+    private val lastSelection = LinkedHashMap<String, EntityTextureSelection>(16, 0.75f, true)
     @Volatile private var closed = false
 
+    init {
+        require(capacity > 0) { "Entity texture cache capacity must be positive." }
+    }
+
     fun select(key: EntityTextureCacheKey, rules: EntityTextureRuleSet, context: EntityTextureContext): Int {
-        check(!closed) { "Entity texture cache is closed." }
-        return selected.computeIfAbsent(key) { rules.select(context) }
+        while (true) {
+            val previous = synchronized(this) {
+                check(!closed) { "Entity texture cache is closed." }
+                selected[key.texture]?.get(key.entity)?.let { result ->
+                    lastSelection.putBounded(key.entity, result)
+                    return result.suffix
+                }
+                lastSelection[key.entity] ?: EMPTY_SELECTION
+            }
+            val contextual = context.copy(
+                numbers = context.numbers + mapOf(
+                    "texture_rule" to previous.ruleIndex.toDouble(),
+                    "texture_suffix" to previous.suffix.toDouble(),
+                ),
+            )
+            val candidate = rules.selectResult(contextual)
+            var retry = false
+            synchronized(this) {
+                check(!closed) { "Entity texture cache is closed." }
+                val textureSelections = selected.getOrPut(key.texture) {
+                    LinkedHashMap(16, 0.75f, true)
+                }
+                textureSelections[key.entity]?.let { result ->
+                    lastSelection.putBounded(key.entity, result)
+                    return result.suffix
+                }
+                if ((lastSelection[key.entity] ?: EMPTY_SELECTION) != previous) {
+                    retry = true
+                } else {
+                    textureSelections.putBounded(key.entity, candidate)
+                    lastSelection.putBounded(key.entity, candidate)
+                }
+            }
+            if (retry) continue
+            return candidate.suffix
+        }
     }
 
+    @Synchronized
     fun invalidate(key: EntityTextureCacheKey) {
-        selected.remove(key)
+        selected[key.texture]?.let {
+            it.remove(key.entity)
+            if (it.isEmpty()) selected.remove(key.texture)
+        }
+        lastSelection.remove(key.entity)
     }
 
-    val size get() = selected.size
+    @get:Synchronized
+    val size get() = selected.values.sumOf { it.size }
 
+    @Synchronized
     override fun close() {
         closed = true
         selected.clear()
+        lastSelection.clear()
+    }
+
+    private fun <K, V> LinkedHashMap<K, V>.putBounded(key: K, value: V) {
+        if (size >= capacity && key !in this) {
+            val eldest = entries.iterator()
+            if (eldest.hasNext()) {
+                eldest.next()
+                eldest.remove()
+            }
+        }
+        this[key] = value
+    }
+
+    companion object {
+        const val DEFAULT_CAPACITY = 2048
+        private val EMPTY_SELECTION = EntityTextureSelection(ruleIndex = 0, suffix = 0)
     }
 }

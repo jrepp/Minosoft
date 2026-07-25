@@ -56,6 +56,7 @@ object WorldTestUtil {
         world::weather.forceSet(DataObserver(WorldWeather.SUNNY))
         world::hardcore.forceSet(DataObserver(false))
         world::difficulty.forceSet(DataObserver(null))
+        world::name.forceSet(DataObserver(null))
 
         return world
     }

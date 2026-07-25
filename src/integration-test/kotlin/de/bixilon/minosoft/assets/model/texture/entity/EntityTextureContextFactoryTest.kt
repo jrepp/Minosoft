@@ -27,6 +27,9 @@ import de.bixilon.minosoft.data.registries.registries.registry.RegistryItem
 import de.bixilon.minosoft.data.world.WorldTestUtil.fill
 import de.bixilon.minosoft.data.world.WorldTestUtil.initialize
 import de.bixilon.minosoft.data.world.biome.source.DummyBiomeSource
+import de.bixilon.minosoft.data.world.difficulty.Difficulties
+import de.bixilon.minosoft.data.world.difficulty.WorldDifficulty
+import de.bixilon.minosoft.data.world.time.WorldTime
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil.createSession
 import de.bixilon.minosoft.tags.MinecraftTagTypes.BIOME
 import de.bixilon.minosoft.tags.Tag
@@ -90,6 +93,8 @@ class EntityTextureContextFactoryTest {
         val session = createSession()
         val plains = Biome(ResourceLocation.of("minecraft:plains"), 0.8f, 0.4f)
         session.world.initialize(1) { DummyBiomeSource(plains) }
+        session.world.difficulty = WorldDifficulty(Difficulties.HARD, false)
+        session.world.time = WorldTime(age = 1_536_000L)
         session.tags = TagManager(
             mapOf(
                 BIOME to TagList(
@@ -101,6 +106,7 @@ class EntityTextureContextFactoryTest {
         )
         session.world.fill(0, 66, 0, 0, 66, 0, TestBlockStates.TEST1)
         session.world.fill(0, 68, 0, 0, 68, 0, TestBlockStates.OPAQUE1)
+        session.world.fill(0, 63, 0, 0, 63, 0, TestBlockStates.TEST3)
         session.world.fill(0, 62, 0, 0, 62, 0, TestBlockStates.TEST2)
         session.world.fill(0, 60, 0, 0, 60, 0, TestBlockStates.OPAQUE2)
         val pandaType = requireNotNull(session.registries.entityType[Panda.identifier])
@@ -108,13 +114,17 @@ class EntityTextureContextFactoryTest {
 
         val context = EntityTextureContextFactory.create(
             panda,
-            setOf("blockAbove", "blockAboveSolid", "blockBelow", "blockBelowSolid"),
+            setOf("blocks", "blockSpawned", "blockAbove", "blockAboveSolid", "blockBelow", "blockBelowSolid"),
         )
 
         assertTrue("minecraft:is_overworld" in context.strings("biomeTag").orEmpty())
+        assertTrue("minecraft:test3" in context.strings("blocks").orEmpty())
+        assertTrue("minecraft:air" in context.strings("blocks").orEmpty())
+        assertEquals(context.strings("blocks"), context.strings("blockSpawned"))
+        assertEquals(context.number("regionalDifficulty"), 3.75)
         assertTrue("minecraft:test1" in context.strings("blockAbove").orEmpty())
         assertTrue("minecraft:opaque1" in context.strings("blockAboveSolid").orEmpty())
-        assertTrue("minecraft:test2" in context.strings("blockBelow").orEmpty())
+        assertTrue("minecraft:test3" in context.strings("blockBelow").orEmpty())
         assertTrue("minecraft:opaque2" in context.strings("blockBelowSolid").orEmpty())
     }
 }
