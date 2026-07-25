@@ -41,4 +41,16 @@ class SkeletalPartAliasRegistryTest {
         registration.close()
         assertEquals(registry.resolve(150, zombie, "leftArm"), "left_arm")
     }
+
+    @Test
+    fun `native EMF aliases match Minosoft humanoid and quadruped rigs`() {
+        val registry = SkeletalPartAliasRegistry(SkeletalPartAliasRegistry.MINOSOFT_NATIVE)
+
+        assertEquals("left_arm", registry.resolve(0, minecraft("player"), "leftArm"))
+        assertEquals("hat", registry.resolve(0, minecraft("zombie"), "headwear"))
+        assertEquals("hind_right", registry.resolve(0, minecraft("cow"), "leg1"))
+        assertEquals("hind_left", registry.resolve(0, minecraft("pig"), "leg2"))
+        assertEquals("front_right", registry.resolve(0, minecraft("sheep"), "leg3"))
+        assertEquals("leg1", registry.resolve(0, minecraft("wolf"), "leg1"))
+    }
 }

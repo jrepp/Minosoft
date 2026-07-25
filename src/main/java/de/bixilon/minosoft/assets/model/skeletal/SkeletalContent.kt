@@ -68,6 +68,12 @@ data class SkeletalContentDocument(
     val models: List<SkeletalContent>,
 )
 
+data class SkeletalContentIdentity(
+    val source: ResourceLocation,
+    val format: SkeletalContentFormat,
+    val identifier: String,
+)
+
 enum class SkeletalContentFormat {
     MINOSOFT,
     OPTIFINE_CEM,
@@ -86,7 +92,13 @@ data class SkeletalBone(
     val mirrorTextureV: Boolean = false,
     val cubes: List<SkeletalCube> = emptyList(),
     val children: List<SkeletalBone> = emptyList(),
-)
+) {
+    init {
+        require(pivot.finite() && rotation.finite() && scale.finite()) {
+            "Skeletal bone transforms must be finite: $name"
+        }
+    }
+}
 
 data class SkeletalCube(
     val origin: Vec3f,
@@ -99,7 +111,12 @@ data class SkeletalCube(
     val uv: SkeletalUv,
 ) {
     init {
-        require(size.x >= 0.0f && size.y >= 0.0f && size.z >= 0.0f) { "Skeletal cube size must not be negative: $size" }
+        require(origin.finite() && size.finite() && pivot?.finite() != false && rotation.finite() && inflate.finite()) {
+            "Skeletal cube transforms must be finite."
+        }
+        require(size.x >= 0.0f && size.y >= 0.0f && size.z >= 0.0f) {
+            "Skeletal cube size must not be negative: $size"
+        }
     }
 }
 
@@ -113,18 +130,71 @@ data class SkeletalFaceUv(
     val size: Vec2f,
     val rotation: Int = 0,
     val material: String? = null,
-)
+) {
+    init {
+        require(offset.x.isFinite() && offset.y.isFinite() && size.x.isFinite() && size.y.isFinite()) {
+            "Skeletal face UV coordinates must be finite."
+        }
+    }
+}
 
 data class SkeletalAnimationClip(
     val name: String,
     val lengthSeconds: Float,
     val loop: SkeletalAnimationLoop,
     val channels: Map<String, List<SkeletalAnimationChannel>>,
+    val events: List<SkeletalAnimationEvent> = emptyList(),
+    val sourceLoopType: String? = null,
 ) {
     init {
         require(name.isNotBlank()) { "Animation name must not be blank." }
-        require(lengthSeconds >= 0.0f) { "Animation length must not be negative." }
+        require(lengthSeconds.isFinite() && lengthSeconds >= 0.0f) {
+            "Animation length must be finite and non-negative."
+        }
+        require(sourceLoopType == null || sourceLoopType.isNotBlank() && sourceLoopType.length <= MAX_LOOP_TYPE_LENGTH) {
+            "Animation source loop type must contain 1..$MAX_LOOP_TYPE_LENGTH characters."
+        }
+        require(events.zipWithNext().all { (left, right) -> left.timeSeconds <= right.timeSeconds }) {
+            "Animation events must be ordered by time."
+        }
     }
+
+    private companion object {
+        const val MAX_LOOP_TYPE_LENGTH = 256
+    }
+}
+
+data class SkeletalAnimationEvent(
+    val timeSeconds: Float,
+    val type: SkeletalAnimationEventType,
+    val payload: String,
+    val locator: String? = null,
+    val preEffectScript: String? = null,
+) {
+    init {
+        require(timeSeconds.isFinite() && timeSeconds >= 0.0f) {
+            "Animation event time must be finite and non-negative."
+        }
+        require(payload.length <= MAX_PAYLOAD_LENGTH) {
+            "Animation event payload exceeds $MAX_PAYLOAD_LENGTH characters."
+        }
+        require(locator == null || locator.length <= MAX_PAYLOAD_LENGTH) {
+            "Animation event locator exceeds $MAX_PAYLOAD_LENGTH characters."
+        }
+        require(preEffectScript == null || preEffectScript.length <= MAX_PAYLOAD_LENGTH) {
+            "Animation event script exceeds $MAX_PAYLOAD_LENGTH characters."
+        }
+    }
+
+    private companion object {
+        const val MAX_PAYLOAD_LENGTH = 16_384
+    }
+}
+
+enum class SkeletalAnimationEventType {
+    SOUND,
+    PARTICLE,
+    CUSTOM_INSTRUCTION,
 }
 
 enum class SkeletalAnimationLoop {
@@ -152,18 +222,33 @@ data class SkeletalAnimationKeyframe(
     val easingArguments: List<Float> = emptyList(),
 ) {
     init {
-        require(timeSeconds >= 0.0f) { "Keyframe time must not be negative." }
+        require(timeSeconds.isFinite() && timeSeconds >= 0.0f) {
+            "Keyframe time must be finite and non-negative."
+        }
+        require(easingArguments.size <= MAX_EASING_ARGUMENTS && easingArguments.all(Float::isFinite)) {
+            "A skeletal keyframe may contain at most $MAX_EASING_ARGUMENTS finite easing arguments."
+        }
+    }
+
+    private companion object {
+        const val MAX_EASING_ARGUMENTS = 16
     }
 }
 
 sealed interface SkeletalVectorValue {
-    data class Constant(val value: Vec3f) : SkeletalVectorValue
+    data class Constant(val value: Vec3f) : SkeletalVectorValue {
+        init {
+            require(value.finite()) { "A constant skeletal vector must be finite." }
+        }
+    }
     data class Expression(val components: List<String>) : SkeletalVectorValue {
         init {
             require(components.size == 3) { "A skeletal vector expression requires three components." }
         }
     }
 }
+
+private fun Vec3f.finite(): Boolean = x.isFinite() && y.isFinite() && z.isFinite()
 
 enum class SkeletalInterpolation {
     LINEAR,

@@ -25,7 +25,7 @@ object GeckoGeometryParser : SkeletalGeometryParser {
 
 object GeckoAnimationParser : SkeletalAnimationParser {
     override val format = SkeletalContentFormat.GECKOLIB
-    override val suffixes = setOf(".animation.json")
+    override val suffixes = setOf(".animation.json", ".rp_anim.json")
 
     override fun parse(context: SkeletalParseContext, input: InputStream) = GeckoLibParser().parseAnimations(context.source, input)
 }

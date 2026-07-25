@@ -16,6 +16,7 @@ package de.bixilon.minosoft.assets.model.skeletal.expression
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class SkeletalExpressionTest {
 
@@ -50,6 +51,53 @@ class SkeletalExpressionTest {
     }
 
     @Test
+    fun `EMF numeric method catalog evaluates interpolation wrapping and seeded random`() {
+        val context = SkeletalExpressionContext()
+
+        assertEquals(5.0, SkeletalExpression.compile("lerp(0.5, 0, 10)").evaluate(context))
+        assertEquals(-170.0, SkeletalExpression.compile("wrapdeg(190)").evaluate(context))
+        assertEquals(20.0, SkeletalExpression.compile("degdiff(170, -170)").evaluate(context))
+        assertEquals(2.0, SkeletalExpression.compile("fmod(-3, 5)").evaluate(context))
+        assertEquals(5.0, SkeletalExpression.compile("quadbezier(0.5, 0, 10, 0)").evaluate(context))
+        assertEquals(5.0, SkeletalExpression.compile("easeinoutquad(0.5, 0, 10)").evaluate(context))
+
+        val seeded = SkeletalExpression.compile("random(12.5)").evaluate(context)
+        assertEquals(seeded, SkeletalExpression.compile("random(12.5)").evaluate(context))
+        assertTrue(SkeletalExpression.compile("randomb(12.5)").evaluate(context) in setOf(0.0, 1.0))
+    }
+
+    @Test
+    fun `EMF keyframe and catch methods preserve lazy branches`() {
+        val context = SkeletalExpressionContext()
+
+        assertEquals(4.0, SkeletalExpression.compile("keyframe(0, 4, missing)").evaluate(context))
+        assertEquals(20.0, SkeletalExpression.compile("keyframeloop(1, 10, 20, 30)").evaluate(context))
+        assertEquals(6.0, SkeletalExpression.compile("catch(0 / 0, 6)").evaluate(context))
+        assertEquals(7.0, SkeletalExpression.compile("print(7)").evaluate(context))
+        assertEquals(1.0, SkeletalExpression.compile("printb(4)").evaluate(context))
+    }
+
+    @Test
+    fun `EMF nbt method preserves raw escaped arguments`() {
+        val calls = mutableListOf<Pair<String, List<String>>>()
+        val context = SkeletalExpressionContext(
+            rawFunctionResolver = { name, arguments ->
+                calls += name to arguments
+                1.0
+            },
+        )
+
+        assertEquals(
+            2.0,
+            SkeletalExpression.compile("""nbt(data.label,ipattern:this\, that) + 1""").evaluate(context),
+        )
+        assertEquals(
+            listOf("nbt" to listOf("data.label", "ipattern:this, that")),
+            calls,
+        )
+    }
+
+    @Test
     fun `unknown values and bounded evaluation fail explicitly`() {
         assertFailsWith<SkeletalExpressionException> {
             SkeletalExpression.compile("missing + 1").evaluate(SkeletalExpressionContext())
@@ -59,6 +107,15 @@ class SkeletalExpressionTest {
         }
         assertFailsWith<SkeletalExpressionException> {
             SkeletalExpression.compile("unknown_function(1)").evaluate(SkeletalExpressionContext())
+        }
+        assertFailsWith<SkeletalExpressionException> {
+            SkeletalExpression.compile("nbt(data.label,exists:true)").evaluate(SkeletalExpressionContext())
+        }
+        assertFailsWith<SkeletalExpressionException> {
+            SkeletalExpression.compile("nbt(data.label,one,two)")
+        }
+        assertFailsWith<SkeletalExpressionException> {
+            SkeletalExpression.compile("if(true, 1, false, 2)").evaluate(SkeletalExpressionContext())
         }
     }
 

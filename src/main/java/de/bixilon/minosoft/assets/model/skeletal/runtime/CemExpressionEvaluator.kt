@@ -31,9 +31,24 @@ enum class CemTransformProperty(val key: String) {
     }
 }
 
+enum class CemRenderProperty(val key: String, val default: Float) {
+    SHADOW_SIZE("render.shadow_size", Float.NaN),
+    SHADOW_OPACITY("render.shadow_opacity", Float.NaN),
+    SHADOW_OFFSET_X("render.shadow_offset_x", 0.0f),
+    SHADOW_OFFSET_Z("render.shadow_offset_z", 0.0f),
+    LEASH_OFFSET_X("render.leash_offset_x", 0.0f),
+    LEASH_OFFSET_Y("render.leash_offset_y", 0.0f),
+    LEASH_OFFSET_Z("render.leash_offset_z", 0.0f);
+
+    companion object {
+        fun of(key: String): CemRenderProperty? = entries.firstOrNull { it.key == key.lowercase() }
+    }
+}
+
 data class CemExpressionFrame(
     val transforms: Map<String, Map<CemTransformProperty, Float>>,
     val variables: Map<String, Double>,
+    val render: Map<CemRenderProperty, Float>,
 )
 
 /**
@@ -64,11 +79,13 @@ class CemExpressionEvaluator(
     @Synchronized
     fun evaluate(input: SkeletalExpressionContext = SkeletalExpressionContext()): CemExpressionFrame {
         val transforms = linkedMapOf<String, MutableMap<CemTransformProperty, Float>>()
+        val render = linkedMapOf<CemRenderProperty, Float>()
         for (binding in bindings) {
             val context = SkeletalExpressionContext(
                 variableResolver = { name ->
-                    resolve(name, binding.owner, transforms, input)
+                    resolve(name, binding.owner, transforms, render, input)
                 },
+                rawFunctionResolver = input::resolveRawFunction,
                 random = input.random,
             )
             val value = binding.expression.compiled.evaluate(context)
@@ -83,6 +100,7 @@ class CemExpressionEvaluator(
                 } else {
                     value
                 }
+                is Target.Render -> render[target.property] = value.toFloat()
                 is Target.Transform -> transforms
                     .getOrPut(target.bone, ::linkedMapOf)[target.property] = value.toFloat()
             }
@@ -90,6 +108,7 @@ class CemExpressionEvaluator(
         return CemExpressionFrame(
             transforms = transforms.mapValues { it.value.toMap() },
             variables = variables.toMap(),
+            render = render.toMap(),
         )
     }
 
@@ -100,9 +119,11 @@ class CemExpressionEvaluator(
         raw: String,
         owner: String,
         transforms: Map<String, Map<CemTransformProperty, Float>>,
+        render: Map<CemRenderProperty, Float>,
         input: SkeletalExpressionContext,
     ): Double? {
         variables[raw]?.let { return it }
+        CemRenderProperty.of(raw)?.let { return (render[it] ?: it.default).toDouble() }
         val target = parseLookup(raw, owner)
         if (target != null) {
             val assigned = transforms[target.first]?.get(target.second)
@@ -139,6 +160,7 @@ class CemExpressionEvaluator(
         val raw = binding.target
         if (raw.startsWith("var.")) return Target.Variable(raw, boolean = false)
         if (raw.startsWith("varb.")) return Target.Variable(raw, boolean = true)
+        CemRenderProperty.of(raw)?.let { return Target.Render(it) }
         val separator = raw.lastIndexOf('.')
         require(separator > 0) { "Invalid CEM expression target '$raw'." }
         val rawBone = raw.substring(0, separator)
@@ -160,6 +182,7 @@ class CemExpressionEvaluator(
 
     private sealed interface Target {
         data class Variable(val name: String, val boolean: Boolean) : Target
+        data class Render(val property: CemRenderProperty) : Target
         data class Transform(val bone: String, val property: CemTransformProperty) : Target
     }
 

@@ -62,4 +62,45 @@ class CemExpressionEvaluatorTest {
             ).evaluate()
         }
     }
+
+    @Test
+    fun `evaluates ordered EMF render outputs`() {
+        val frame = CemExpressionEvaluator(
+            listOf(
+                SkeletalExpressionBinding("root", "render.shadow_size", "0.75"),
+                SkeletalExpressionBinding("root", "render.shadow_opacity", "render.shadow_size / 2"),
+                SkeletalExpressionBinding("root", "render.shadow_offset_x", "2"),
+                SkeletalExpressionBinding("root", "render.leash_offset_y", "-1"),
+            ),
+        ).evaluate()
+
+        assertEquals(0.75f, frame.render.getValue(CemRenderProperty.SHADOW_SIZE))
+        assertEquals(0.375f, frame.render.getValue(CemRenderProperty.SHADOW_OPACITY))
+        assertEquals(2.0f, frame.render.getValue(CemRenderProperty.SHADOW_OFFSET_X))
+        assertEquals(-1.0f, frame.render.getValue(CemRenderProperty.LEASH_OFFSET_Y))
+    }
+
+    @Test
+    fun `passes raw NBT calls through the per-frame entity context`() {
+        val frame = CemExpressionEvaluator(
+            listOf(
+                SkeletalExpressionBinding(
+                    "root",
+                    "this.visible",
+                    "nbt(Items.*.id,ipattern:minecraft:d*)",
+                ),
+            ),
+        ).evaluate(
+            SkeletalExpressionContext(
+                rawFunctionResolver = { name, arguments ->
+                    if (name == "nbt" && arguments == listOf("Items.*.id", "ipattern:minecraft:d*")) 1.0 else 0.0
+                },
+            ),
+        )
+
+        assertEquals(
+            1.0f,
+            frame.transforms.getValue("root").getValue(CemTransformProperty.VISIBLE),
+        )
+    }
 }

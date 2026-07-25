@@ -195,7 +195,8 @@ class GeckoLibParser {
             }
         }
         val length = node["animation_length"]?.numberOrNull()?.toFloat() ?: maximumTime
-        val loop = when (val value = node["loop"]) {
+        val loopValue = node["loop"]
+        val loop = when (val value = loopValue) {
             null -> SkeletalAnimationLoop.ONCE
             else -> when {
                 value.isBoolean && value.booleanValue() -> SkeletalAnimationLoop.LOOP
@@ -204,11 +205,65 @@ class GeckoLibParser {
                 else -> SkeletalAnimationLoop.ONCE
             }
         }
-        return SkeletalAnimationClip(name, length, loop, channels)
+        val sourceLoopType = loopValue
+            ?.takeIf(JsonNode::isTextual)
+            ?.asText()
+            ?.lowercase()
+            ?.takeUnless { it in BUILT_IN_LOOP_TYPES }
+        return SkeletalAnimationClip(
+            name = name,
+            lengthSeconds = length,
+            loop = loop,
+            channels = channels,
+            events = parseEvents(source, node, path),
+            sourceLoopType = sourceLoopType,
+        )
+    }
+
+    private fun parseEvents(source: ResourceLocation, animation: JsonNode, path: String): List<SkeletalAnimationEvent> {
+        val events = mutableListOf<SkeletalAnimationEvent>()
+
+        fun entries(field: String, consume: (Float, JsonNode, String) -> Unit) {
+            val values = animation[field] ?: return
+            if (!values.isObject) fail(source, "$path.$field", "Expected an event timeline object.")
+            values.fields().forEachRemaining { (rawTime, value) ->
+                if (events.size >= MAX_EVENTS) fail(source, "$path.$field", "Animation exceeds $MAX_EVENTS events.")
+                val time = rawTime.toFloatOrNull()
+                    ?.takeIf { it.isFinite() && it >= 0.0f }
+                    ?: fail(source, "$path.$field.$rawTime", "Event key must be a non-negative time in seconds.")
+                consume(time, value, "$path.$field.$rawTime")
+            }
+        }
+
+        entries("sound_effects") { time, value, eventPath ->
+            if (!value.isObject) fail(source, eventPath, "Expected a sound event object.")
+            val effect = value["effect"]?.textOrNull()
+                ?: fail(source, "$eventPath.effect", "Missing sound effect.")
+            events += SkeletalAnimationEvent(time, SkeletalAnimationEventType.SOUND, effect)
+        }
+        entries("particle_effects") { time, value, eventPath ->
+            if (!value.isObject) fail(source, eventPath, "Expected a particle event object.")
+            events += SkeletalAnimationEvent(
+                timeSeconds = time,
+                type = SkeletalAnimationEventType.PARTICLE,
+                payload = value["effect"]?.textOrNull().orEmpty(),
+                locator = value["locator"]?.textOrNull()?.takeIf(String::isNotEmpty),
+                preEffectScript = value["pre_effect_script"]?.textOrNull()?.takeIf(String::isNotEmpty),
+            )
+        }
+        entries("timeline") { time, value, eventPath ->
+            val instructions = when {
+                value.isTextual -> value.asText()
+                value.isArray && value.all(JsonNode::isTextual) -> value.joinToString(";") { it.asText() }
+                else -> fail(source, eventPath, "Expected a custom instruction string or string array.")
+            }
+            events += SkeletalAnimationEvent(time, SkeletalAnimationEventType.CUSTOM_INSTRUCTION, instructions)
+        }
+        return events.sortedBy(SkeletalAnimationEvent::timeSeconds)
     }
 
     private fun parseChannel(source: ResourceLocation, node: JsonNode, path: String): List<SkeletalAnimationKeyframe> {
-        if (node.isArray || node.isTextual || node["vector"] != null) {
+        if (node.isArray || node.isNumber || node.isTextual || node["vector"] != null) {
             return listOf(parseKeyframe(source, 0.0f, node, path))
         }
         if (!node.isObject) fail(source, path, "Expected a vector or keyed channel object.")
@@ -237,6 +292,13 @@ class GeckoLibParser {
     }
 
     private fun vectorValue(source: ResourceLocation, node: JsonNode, path: String): SkeletalVectorValue {
+        if (node.isNumber) {
+            val value = node.floatValue()
+            return SkeletalVectorValue.Constant(Vec3f(value))
+        }
+        if (node.isTextual) {
+            return SkeletalVectorValue.Expression(List(3) { node.asText() })
+        }
         if (!node.isArray || node.size() != 3) fail(source, path, "Expected a three-component vector.")
         return if (node.all(JsonNode::isNumber)) {
             SkeletalVectorValue.Constant(Vec3f(node[0].floatValue(), node[1].floatValue(), node[2].floatValue()))
@@ -282,8 +344,10 @@ class GeckoLibParser {
     )
 
     private companion object {
+        val BUILT_IN_LOOP_TYPES = setOf("false", "play_once", "hold_on_last_frame", "true", "loop")
         const val MAX_JSON_BYTES = 8 * 1024 * 1024
         const val MAX_BONES = 65_536
         const val MAX_BONE_DEPTH = 64
+        const val MAX_EVENTS = 16_384
     }
 }

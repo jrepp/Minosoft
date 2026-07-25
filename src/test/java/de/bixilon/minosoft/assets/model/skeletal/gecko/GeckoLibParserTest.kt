@@ -97,6 +97,19 @@ class GeckoLibParserTest {
                     "move": {
                       "loop": true,
                       "animation_length": 2,
+                      "sound_effects": {
+                        "0.25": {"effect": "test:step"}
+                      },
+                      "particle_effects": {
+                        "0.5": {
+                          "effect": "test:dust",
+                          "locator": "foot",
+                          "pre_effect_script": "variable.alpha = 1;"
+                        }
+                      },
+                      "timeline": {
+                        "0.75": ["instruction.one", "instruction.two"]
+                      },
                       "bones": {
                         "root": {
                           "rotation": {
@@ -119,5 +132,37 @@ class GeckoLibParserTest {
         val rotation = animation.channels.getValue("root").first { it.target == SkeletalAnimationTarget.ROTATION }
         assertEquals(rotation.keyframes.last().interpolation, SkeletalInterpolation.CATMULL_ROM)
         assertTrue(rotation.keyframes.last().value is SkeletalVectorValue.Expression)
+        assertEquals(
+            listOf(
+                SkeletalAnimationEventType.SOUND,
+                SkeletalAnimationEventType.PARTICLE,
+                SkeletalAnimationEventType.CUSTOM_INSTRUCTION,
+            ),
+            animation.events.map(SkeletalAnimationEvent::type),
+        )
+        assertEquals("test:step", animation.events[0].payload)
+        assertEquals("foot", animation.events[1].locator)
+        assertEquals("instruction.one;instruction.two", animation.events[2].payload)
+    }
+
+    @Test
+    fun `custom animation loop type survives neutral parsing`() {
+        val animation = GeckoLibParser().parseAnimations(
+            minosoft("animations/custom_loop.animation.json"),
+            """
+                {
+                  "animations": {
+                    "pulse": {
+                      "loop": "test:conditional",
+                      "animation_length": 1,
+                      "bones": {}
+                    }
+                  }
+                }
+            """.trimIndent().stream(),
+        ).getValue("pulse")
+
+        assertEquals(SkeletalAnimationLoop.ONCE, animation.loop)
+        assertEquals("test:conditional", animation.sourceLoopType)
     }
 }

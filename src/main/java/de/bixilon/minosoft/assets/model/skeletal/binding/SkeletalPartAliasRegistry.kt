@@ -14,6 +14,7 @@
 package de.bixilon.minosoft.assets.model.skeletal.binding
 
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
+import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 
 data class SkeletalPartAliasSet(
     val id: String,
@@ -74,16 +75,44 @@ class SkeletalPartAliasRegistry(initial: Iterable<SkeletalPartAliasSet> = emptyL
     }
 
     companion object {
+        private val HUMANOID_ALIASES = mapOf(
+            "headwear" to "hat",
+            "leftArm" to "left_arm",
+            "rightArm" to "right_arm",
+            "leftLeg" to "left_leg",
+            "rightLeg" to "right_leg",
+        )
+        private val QUADRUPED_ALIASES = mapOf(
+            "leg1" to "hind_right",
+            "leg2" to "hind_left",
+            "leg3" to "front_right",
+            "leg4" to "front_left",
+        )
+
+        /**
+         * Legacy generic aliases retained for callers that explicitly opt in.
+         * EMF activation uses [MINOSOFT_NATIVE] so unrelated entity rigs are
+         * never silently assigned humanoid part names.
+         */
         val HUMANOID = SkeletalPartAliasSet(
             id = "minosoft:humanoid",
             entity = null,
-            aliases = mapOf(
-                "headwear" to "hat",
-                "leftArm" to "left_arm",
-                "rightArm" to "right_arm",
-                "leftLeg" to "left_leg",
-                "rightLeg" to "right_leg",
-            ),
+            aliases = HUMANOID_ALIASES,
+        )
+
+        val PLAYER = native("player", HUMANOID_ALIASES)
+        val ZOMBIE = native("zombie", HUMANOID_ALIASES)
+        val COW = native("cow", QUADRUPED_ALIASES)
+        val PIG = native("pig", QUADRUPED_ALIASES)
+        val SHEEP = native("sheep", QUADRUPED_ALIASES)
+
+        /** Aliases for every skeletal entity model currently shipped by Minosoft. */
+        val MINOSOFT_NATIVE = listOf(PLAYER, ZOMBIE, COW, PIG, SHEEP)
+
+        private fun native(entity: String, aliases: Map<String, String>) = SkeletalPartAliasSet(
+            id = "minosoft:emf/$entity",
+            entity = minecraft(entity),
+            aliases = aliases,
         )
     }
 }
