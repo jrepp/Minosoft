@@ -33,6 +33,7 @@ data class Biome(
     val waterFogColor: RGBColor? = null,
     val precipitation: BiomePrecipitation? = null,
     val temperatureModifier: BiomeTemperatureModifier = BiomeTemperatureModifier.NONE,
+    val moodSettings: BiomeMoodSettings? = null,
 ) : RegistryItem() {
     val grassModifier = GrassColorModifiers.BIOME_MAP[identifier]
 
@@ -83,6 +84,7 @@ data class Biome(
                 waterFogColor = waterFogColor,
                 precipitation = precipitation,
                 temperatureModifier = data["temperature_modifier"]?.let(BiomeTemperatureModifier::get) ?: BiomeTemperatureModifier.NONE,
+                moodSettings = BiomeMoodSettings.deserialize(effects?.get("mood_sound")),
             )
         }
 

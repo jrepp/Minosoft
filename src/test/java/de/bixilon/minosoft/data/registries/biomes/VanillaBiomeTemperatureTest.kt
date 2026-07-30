@@ -78,4 +78,34 @@ class VanillaBiomeTemperatureTest {
         assertEquals(BiomePrecipitation.RAIN, biome.precipitation)
         assertEquals(BiomeTemperatureModifier.FROZEN, biome.temperatureModifier)
     }
+
+    @Test
+    fun `modern biome codec retains ambient mood settings`() {
+        val biome = Biome.deserialize(
+            registries = null,
+            identifier = minecraft("plains"),
+            data = mapOf(
+                "temperature" to 0.8f,
+                "downfall" to 0.4f,
+                "effects" to mapOf(
+                    "mood_sound" to mapOf(
+                        "sound" to "minecraft:ambient.cave",
+                        "tick_delay" to 6000,
+                        "block_search_extent" to 8,
+                        "offset" to 2.0,
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(
+            BiomeMoodSettings(
+                sound = minecraft("ambient.cave"),
+                tickDelay = 6000,
+                blockSearchExtent = 8,
+                soundPositionOffset = 2.0,
+            ),
+            biome.moodSettings,
+        )
+    }
 }

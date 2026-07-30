@@ -26,6 +26,7 @@ import de.bixilon.minosoft.data.registries.dimension.DimensionProperties
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.registries.shapes.aabb.AABB
 import de.bixilon.minosoft.data.world.audio.AbstractAudioPlayer
+import de.bixilon.minosoft.data.world.audio.BiomeMoodState
 import de.bixilon.minosoft.data.world.biome.WorldBiomes
 import de.bixilon.minosoft.data.world.border.WorldBorder
 import de.bixilon.minosoft.data.world.chunk.chunk.Chunk
@@ -59,6 +60,7 @@ class World(
 ) : Tickable {
     val lock = RWLock.rwlock()
     val random = Random()
+    val mood = BiomeMoodState(this)
     val biomes = WorldBiomes(this)
     val chunks = ChunkManager(this, 1000)
     val entities = WorldEntities()
@@ -99,6 +101,7 @@ class World(
             time = WorldTime()
             weather = WorldWeather.SUNNY
             border.reset()
+            mood.reset()
         } finally {
             lock.unlock()
         }
@@ -139,6 +142,7 @@ class World(
         val simulationDistance = view.simulationDistance
         val cameraPosition = session.player.physics.positionInfo.chunkPosition
         lock.acquired { chunks.tick(simulationDistance, cameraPosition) }
+        mood.tick()
         border.tick()
     }
 

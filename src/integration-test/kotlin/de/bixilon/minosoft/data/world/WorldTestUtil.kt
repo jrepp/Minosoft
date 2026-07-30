@@ -19,6 +19,7 @@ import de.bixilon.kutil.reflection.ReflectionUtil.forceSet
 import de.bixilon.kutil.reflection.ReflectionUtil.getFieldOrNull
 import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.registries.dimension.DimensionProperties
+import de.bixilon.minosoft.data.world.audio.BiomeMoodState
 import de.bixilon.minosoft.data.world.biome.WorldBiomes
 import de.bixilon.minosoft.data.world.biome.source.BiomeSource
 import de.bixilon.minosoft.data.world.biome.source.DummyBiomeSource
@@ -53,6 +54,7 @@ object WorldTestUtil {
         world::view.forceSet(TEST_WORLD_VIEW)
         world::time.forceSet(DataObserver(WorldTime()))
         world::biomes.forceSet(WorldBiomes(world))
+        world::mood.forceSet(BiomeMoodState(world))
         world::weather.forceSet(DataObserver(WorldWeather.SUNNY))
         world::hardcore.forceSet(DataObserver(false))
         world::difficulty.forceSet(DataObserver(null))
