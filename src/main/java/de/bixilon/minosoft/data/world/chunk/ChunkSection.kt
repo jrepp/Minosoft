@@ -22,6 +22,7 @@ import de.bixilon.minosoft.data.world.container.biome.BiomeSectionDataProvider
 import de.bixilon.minosoft.data.world.container.block.BlockSectionDataProvider
 import de.bixilon.minosoft.data.world.container.entity.BlockEntityDataProvider
 import de.bixilon.minosoft.data.world.positions.*
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Collection of 16x16x16 blocks
@@ -30,6 +31,8 @@ class ChunkSection(
     val height: SectionHeight,
     val chunk: Chunk,
 ) : Tickable {
+    val terrainRevision = AtomicLong()
+
     val blocks = BlockSectionDataProvider(chunk.lock, this)
     val biomes = BiomeSectionDataProvider(chunk.lock, this)
     val entities = BlockEntityDataProvider(chunk.lock, this)
