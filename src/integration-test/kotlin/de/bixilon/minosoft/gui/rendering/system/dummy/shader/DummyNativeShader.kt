@@ -15,7 +15,9 @@ package de.bixilon.minosoft.gui.rendering.system.dummy.shader
 
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec2.f.Vec2f
+import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.kmath.vec.vec3.i.Vec3i
 import de.bixilon.kmath.vec.vec4.f.Vec4f
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor
@@ -23,7 +25,7 @@ import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.uniform.UniformBuffer
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 
-class DummyNativeShader(
+open class DummyNativeShader(
     override val context: RenderContext,
 ) : NativeShader {
     override val loaded: Boolean = true
@@ -45,9 +47,14 @@ class DummyNativeShader(
 
     override fun setVec2f(uniform: String, vec2: Vec2f) = Unit
 
+    override fun setVec2i(uniform: String, vec2: Vec2i) = Unit
+
     override fun setVec3f(uniform: String, vec3: Vec3f) = Unit
 
+    override fun setVec3i(uniform: String, vec3: Vec3i) = Unit
+
     override fun setVec4f(uniform: String, vec4: Vec4f) = Unit
+    override fun setVec4i(uniform: String, x: Int, y: Int, z: Int, w: Int) = Unit
 
     override fun setRGBColor(uniform: String, color: RGBColor) = Unit
     override fun setRGBAColor(uniform: String, color: RGBAColor) = Unit

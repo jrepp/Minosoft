@@ -15,7 +15,9 @@ package de.bixilon.minosoft.gui.rendering.system.base.shader
 
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec2.f.Vec2f
+import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.kmath.vec.vec3.i.Vec3i
 import de.bixilon.kmath.vec.vec4.f.Vec4f
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
@@ -34,6 +36,15 @@ interface NativeShader {
 
     fun reload()
 
+    /**
+     * Returns whether a linked program retained a source-declared program
+     * input. This includes ordinary uniforms and named uniform blocks because
+     * both participate in the shared scene-state synchronization boundary.
+     *
+     * Non-introspecting backends keep the historical strict-setter behavior.
+     */
+    fun hasUniform(uniform: String): Boolean = true
+
     fun setBoolean(uniform: String, boolean: Boolean)
     fun setFloat(uniform: String, value: Float)
 
@@ -43,8 +54,11 @@ interface NativeShader {
     fun setMat4f(uniform: String, mat4: Mat4f)
 
     fun setVec2f(uniform: String, vec2: Vec2f)
+    fun setVec2i(uniform: String, vec2: Vec2i)
     fun setVec3f(uniform: String, vec3: Vec3f)
+    fun setVec3i(uniform: String, vec3: Vec3i)
     fun setVec4f(uniform: String, vec4: Vec4f)
+    fun setVec4i(uniform: String, x: Int, y: Int, z: Int, w: Int)
 
     fun setRGBColor(uniform: String, color: RGBColor)
     fun setRGBAColor(uniform: String, color: RGBAColor)
@@ -59,7 +73,9 @@ interface NativeShader {
     operator fun set(uniform: String, mat4: Mat4f) = setMat4f(uniform, mat4)
 
     operator fun set(uniform: String, vec2: Vec2f) = setVec2f(uniform, vec2)
+    operator fun set(uniform: String, vec2: Vec2i) = setVec2i(uniform, vec2)
     operator fun set(uniform: String, vec3: Vec3f) = setVec3f(uniform, vec3)
+    operator fun set(uniform: String, vec3: Vec3i) = setVec3i(uniform, vec3)
     operator fun set(uniform: String, vec4: Vec4f) = setVec4f(uniform, vec4)
 
     operator fun set(name: String, value: RGBColor) = setRGBColor(name, value)

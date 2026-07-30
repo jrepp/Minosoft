@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -20,9 +21,51 @@ import de.bixilon.minosoft.util.KUtil.toResourceLocation
 interface ShaderManagement : Iterable<Shader> {
     var shader: Shader?
 
-
     fun create(vertex: ResourceLocation, geometry: ResourceLocation? = null, fragment: ResourceLocation): NativeShader
     fun create(vertex: NativeShaderSource, geometry: NativeShaderSource? = null, fragment: NativeShaderSource): NativeShader
+    fun createGraphics(
+        vertex: ResourceLocation,
+        tessellationControl: ResourceLocation?,
+        tessellationEvaluation: ResourceLocation?,
+        geometry: ResourceLocation?,
+        fragment: ResourceLocation,
+        patchVertices: Int? = null,
+    ): NativeShader {
+        require((tessellationControl == null) == (tessellationEvaluation == null)) {
+            "Tessellation control and evaluation stages must be provided together"
+        }
+        require((tessellationControl == null) == (patchVertices == null)) {
+            "Tessellation stages require an explicit patch vertex count"
+        }
+        require(tessellationControl == null) {
+            "Tessellation shaders are not supported by this rendering backend"
+        }
+        return create(vertex, geometry, fragment)
+    }
+
+    fun createGraphics(
+        vertex: NativeShaderSource,
+        tessellationControl: NativeShaderSource?,
+        tessellationEvaluation: NativeShaderSource?,
+        geometry: NativeShaderSource?,
+        fragment: NativeShaderSource,
+        patchVertices: Int? = null,
+    ): NativeShader {
+        require((tessellationControl == null) == (tessellationEvaluation == null)) {
+            "Tessellation control and evaluation stages must be provided together"
+        }
+        require((tessellationControl == null) == (patchVertices == null)) {
+            "Tessellation stages require an explicit patch vertex count"
+        }
+        require(tessellationControl == null) {
+            "Tessellation shaders are not supported by this rendering backend"
+        }
+        return create(vertex, geometry, fragment)
+    }
+
+    fun createCompute(compute: NativeShaderSource): NativeShader {
+        throw UnsupportedOperationException("Compute shaders are not supported by this rendering backend")
+    }
 
     fun create(path: ResourceLocation) = create(
         vertex = "$path.vsh".toResourceLocation(),

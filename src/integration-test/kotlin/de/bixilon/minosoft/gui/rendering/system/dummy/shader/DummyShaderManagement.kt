@@ -46,6 +46,30 @@ class DummyShaderManagement(val system: DummyRenderSystem) : ShaderManagement {
         return DummyNativeShader(system.context)
     }
 
+    override fun createGraphics(
+        vertex: ResourceLocation,
+        tessellationControl: ResourceLocation?,
+        tessellationEvaluation: ResourceLocation?,
+        geometry: ResourceLocation?,
+        fragment: ResourceLocation,
+        patchVertices: Int?,
+    ): DummyNativeShader {
+        validateTessellation(tessellationControl, tessellationEvaluation, patchVertices)
+        return DummyNativeShader(system.context)
+    }
+
+    override fun createGraphics(
+        vertex: NativeShaderSource,
+        tessellationControl: NativeShaderSource?,
+        tessellationEvaluation: NativeShaderSource?,
+        geometry: NativeShaderSource?,
+        fragment: NativeShaderSource,
+        patchVertices: Int?,
+    ): DummyNativeShader {
+        validateTessellation(tessellationControl, tessellationEvaluation, patchVertices)
+        return DummyNativeShader(system.context)
+    }
+
     override fun plusAssign(shader: Shader) {
         this.shaders += shader
     }
@@ -55,4 +79,16 @@ class DummyShaderManagement(val system: DummyRenderSystem) : ShaderManagement {
     }
 
     override fun iterator() = shaders.iterator()
+
+    private fun validateTessellation(control: Any?, evaluation: Any?, patchVertices: Int?) {
+        require((control == null) == (evaluation == null)) {
+            "Tessellation control and evaluation stages must be provided together"
+        }
+        require((control == null) == (patchVertices == null)) {
+            "Tessellation stages require an explicit patch vertex count"
+        }
+        require(patchVertices == null || patchVertices > 0) {
+            "Tessellation patch vertex count must be positive"
+        }
+    }
 }

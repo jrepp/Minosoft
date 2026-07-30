@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -24,6 +25,8 @@ import org.lwjgl.opengl.GL30.glUseProgram
 
 class OpenGlShaderManagement(val system: OpenGlRenderSystem) : ShaderManagement {
     private val shaders: MutableSet<Shader> = mutableSetOf()
+    internal var activePatchVertices: Int? = null
+        private set
 
     override var shader: Shader? = null
         set(value) {
@@ -31,6 +34,7 @@ class OpenGlShaderManagement(val system: OpenGlRenderSystem) : ShaderManagement 
 
             if (value == null) {
                 gl { glUseProgram(0) }
+                activePatchVertices = null
                 field = null
                 return
             }
@@ -42,12 +46,36 @@ class OpenGlShaderManagement(val system: OpenGlRenderSystem) : ShaderManagement 
 
             native.unsafeUse()
 
+            activePatchVertices = native.patchVertices
             field = value
         }
 
-
     override fun create(vertex: ResourceLocation, geometry: ResourceLocation?, fragment: ResourceLocation): OpenGlNativeShader {
-        return OpenGlNativeShader(system, vertex.shader(), geometry?.shader(), fragment.shader())
+        return OpenGlNativeShader(
+            system = system,
+            vertex = vertex.shader(),
+            geometry = geometry?.shader(),
+            fragment = fragment.shader(),
+        )
+    }
+
+    override fun createGraphics(
+        vertex: ResourceLocation,
+        tessellationControl: ResourceLocation?,
+        tessellationEvaluation: ResourceLocation?,
+        geometry: ResourceLocation?,
+        fragment: ResourceLocation,
+        patchVertices: Int?,
+    ): OpenGlNativeShader {
+        return OpenGlNativeShader(
+            system = system,
+            vertex = vertex.shader(),
+            tessellationControl = tessellationControl?.shader(),
+            tessellationEvaluation = tessellationEvaluation?.shader(),
+            geometry = geometry?.shader(),
+            fragment = fragment.shader(),
+            patchVertices = patchVertices,
+        )
     }
 
     override fun create(vertex: NativeShaderSource, geometry: NativeShaderSource?, fragment: NativeShaderSource): OpenGlNativeShader {
@@ -59,6 +87,41 @@ class OpenGlShaderManagement(val system: OpenGlRenderSystem) : ShaderManagement 
             vertexSource = vertex.code,
             geometrySource = geometry?.code,
             fragmentSource = fragment.code,
+        )
+    }
+
+    override fun createGraphics(
+        vertex: NativeShaderSource,
+        tessellationControl: NativeShaderSource?,
+        tessellationEvaluation: NativeShaderSource?,
+        geometry: NativeShaderSource?,
+        fragment: NativeShaderSource,
+        patchVertices: Int?,
+    ): OpenGlNativeShader {
+        return OpenGlNativeShader(
+            system = system,
+            vertex = vertex.id,
+            tessellationControl = tessellationControl?.id,
+            tessellationEvaluation = tessellationEvaluation?.id,
+            geometry = geometry?.id,
+            fragment = fragment.id,
+            vertexSource = vertex.code,
+            tessellationControlSource = tessellationControl?.code,
+            tessellationEvaluationSource = tessellationEvaluation?.code,
+            geometrySource = geometry?.code,
+            fragmentSource = fragment.code,
+            patchVertices = patchVertices,
+        )
+    }
+
+    override fun createCompute(compute: NativeShaderSource): OpenGlNativeShader {
+        return OpenGlNativeShader(
+            system = system,
+            vertex = null,
+            geometry = null,
+            fragment = null,
+            compute = compute.id,
+            computeSource = compute.code,
         )
     }
 
