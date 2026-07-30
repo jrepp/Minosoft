@@ -139,6 +139,48 @@ open class Registry<T : RegistryItem>(
         identifierMap[item.identifier] = item
     }
 
+    /**
+     * Replaces this registry's numeric overlay after validating the complete
+     * candidate, while preserving its identifier overlay and parent. This is
+     * used when a remote registry owns the wire IDs but the session still
+     * resolves values by stable identifier.
+     */
+    @Synchronized
+    fun replaceIds(entries: Map<Int, T>, additions: Collection<T> = emptyList()) {
+        require(entries.keys.all { it >= 0 }) { "Registry IDs must be non-negative." }
+        require(entries.values.map { it.identifier }.toSet().size == entries.size) {
+            "A registry identifier can not own multiple numeric IDs."
+        }
+
+        val additionsByIdentifier = linkedMapOf<ResourceLocation, T>()
+        for (addition in additions) {
+            val duplicate = additionsByIdentifier.putIfAbsent(addition.identifier, addition)
+            require(duplicate == null || duplicate === addition) {
+                "Registry identifier ${addition.identifier} has multiple pending values."
+            }
+            val existing = get(addition.identifier)
+            require(existing == null || existing === addition) {
+                "Registry identifier ${addition.identifier} is already owned by a different value."
+            }
+        }
+        for (value in entries.values) {
+            val resolved = additionsByIdentifier[value.identifier] ?: get(value.identifier)
+            require(resolved === value) {
+                "Registry identifier ${value.identifier} does not resolve to its numeric value."
+            }
+        }
+
+        idValueMap.clear()
+        valueIdMap.clear()
+        for (addition in additionsByIdentifier.values) {
+            identifierMap[addition.identifier] = addition
+        }
+        for ((id, value) in entries) {
+            idValueMap[id] = value
+            valueIdMap[value] = id
+        }
+    }
+
     open fun postInit(registries: Registries) {
         for ((_, value) in identifierMap) {
             value.inject(registries)

@@ -89,6 +89,33 @@ class RegistryTest {
         assertSame(registry[minosoft("b")], b)
     }
 
+    fun `replace ids validates the complete candidate before mutation`() {
+        val registry = create()
+        val first = Entry(minosoft("remote"))
+        val duplicate = Entry(minosoft("remote"))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            registry.replaceIds(mapOf(9 to first), listOf(first, duplicate))
+        }
+
+        assertSame(registry[0], a)
+        assertSame(registry[1], b)
+        assertNull(registry.getOrNull(9))
+        assertNull(registry[minosoft("remote")])
+    }
+
+    fun `replace ids keeps identifier and numeric views consistent`() {
+        val registry = create()
+        val remote = Entry(minosoft("remote"))
+
+        registry.replaceIds(mapOf(9 to remote, 4 to b), listOf(remote))
+
+        assertNull(registry.getOrNull(0))
+        assertSame(registry[4], b)
+        assertSame(registry[9], remote)
+        assertSame(registry[minosoft("remote")], remote)
+    }
+
     fun `iterate no parent`() {
         val registry = create()
         val entries = registry.toSet()
