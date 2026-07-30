@@ -39,9 +39,7 @@ class BlockDataS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
         if (nbt == null) return
 
         val chunk = session.world.chunks[position.chunkPosition] ?: return
-        val entity = chunk.updateBlockEntity(position.inChunkPosition) ?: return
-
-        entity.updateNBT(nbt)
+        chunk.applyBlockEntityData(position.inChunkPosition, nbt)
     }
 
     override fun log(reducedLog: Boolean) {

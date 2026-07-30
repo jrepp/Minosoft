@@ -22,6 +22,7 @@ import de.bixilon.minosoft.data.registries.blocks.types.fluid.FluidBlock
 import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.data.world.chunk.update.AbstractWorldUpdate
 import de.bixilon.minosoft.data.world.chunk.update.WorldUpdateEvent
+import de.bixilon.minosoft.data.world.chunk.update.block.BlockEntityDataUpdate
 import de.bixilon.minosoft.data.world.chunk.update.block.ChunkLocalBlockUpdate
 import de.bixilon.minosoft.data.world.chunk.update.block.SingleBlockUpdate
 import de.bixilon.minosoft.data.world.chunk.update.chunk.ChunkDataUpdate
@@ -152,6 +153,10 @@ object ChunkRendererChangeListener {
         }
     }
 
+    private fun ChunkRenderer.handle(update: BlockEntityDataUpdate) {
+        invalidate(update.chunk, update.position.sectionHeight)
+    }
+
     private fun ChunkRenderer.handle(update: ChunkLightUpdate) {
         if (update.cause == ChunkLightUpdate.Causes.BLOCK_CHANGE) return // change is already covered
         // TODO: Enqueue neighbour sections (light level from cullface)
@@ -180,6 +185,7 @@ object ChunkRendererChangeListener {
             is NeighbourSetUpdate -> handle(update)
             is SingleBlockUpdate -> handle(update)
             is ChunkLocalBlockUpdate -> handle(update)
+            is BlockEntityDataUpdate -> handle(update)
             is ChunkLightUpdate -> handle(update)
             is ChunkUnloadUpdate -> handle(update)
             is ChunkDataUpdate -> handle(update)

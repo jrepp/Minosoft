@@ -16,6 +16,7 @@ import de.bixilon.kutil.cast.CastUtil.unsafeNull
 import de.bixilon.kutil.concurrent.lock.LockUtil.acquired
 import de.bixilon.kutil.concurrent.lock.LockUtil.locked
 import de.bixilon.kutil.concurrent.lock.locks.reentrant.ReentrantRWLock
+import de.bixilon.kutil.json.JsonObject
 import de.bixilon.minosoft.data.Tickable
 import de.bixilon.minosoft.data.entities.block.BlockEntity
 import de.bixilon.minosoft.data.registries.blocks.state.BlockState
@@ -25,6 +26,7 @@ import de.bixilon.minosoft.data.world.chunk.ChunkSection
 import de.bixilon.minosoft.data.world.chunk.light.section.ChunkLight
 import de.bixilon.minosoft.data.world.chunk.neighbours.ChunkNeighbours
 import de.bixilon.minosoft.data.world.chunk.update.block.ChunkLocalBlockUpdate
+import de.bixilon.minosoft.data.world.chunk.update.block.BlockEntityDataUpdate
 import de.bixilon.minosoft.data.world.chunk.update.block.ProposedBlockChange
 import de.bixilon.minosoft.data.world.chunk.update.chunk.ChunkLightUpdate.Causes
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
@@ -62,6 +64,13 @@ class Chunk(
 
     fun updateBlockEntity(position: InChunkPosition): BlockEntity? {
         return this[position.sectionHeight]?.entities?.update(position.inSectionPosition)
+    }
+
+    fun applyBlockEntityData(position: InChunkPosition, nbt: JsonObject): BlockEntity? {
+        val entity = updateBlockEntity(position) ?: return null
+        entity.updateNBT(nbt)
+        BlockEntityDataUpdate(this, position).fire(world.session)
+        return entity
     }
 
     fun apply(update: ProposedBlockChange) {
@@ -140,4 +149,3 @@ class Chunk(
 
     override fun toString() = "Chunk($position)"
 }
-

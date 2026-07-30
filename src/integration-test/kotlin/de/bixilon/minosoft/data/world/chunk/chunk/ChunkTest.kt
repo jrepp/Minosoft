@@ -22,6 +22,7 @@ import de.bixilon.minosoft.data.world.World
 import de.bixilon.minosoft.data.world.biome.WorldBiomes
 import de.bixilon.minosoft.data.world.chunk.update.AbstractWorldUpdate
 import de.bixilon.minosoft.data.world.chunk.update.WorldUpdateTestUtil.collectUpdates
+import de.bixilon.minosoft.data.world.chunk.update.block.BlockEntityDataUpdate
 import de.bixilon.minosoft.data.world.chunk.update.block.ChunkLocalBlockUpdate
 import de.bixilon.minosoft.data.world.chunk.update.block.ProposedBlockChange
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
@@ -61,6 +62,29 @@ class ChunkTest {
         chunk.apply(ProposedBlockChange(InChunkPosition(1, 2, 3), TestBlockStates.ENTITY1))
 
         assertTrue(chunk.getBlockEntity(InChunkPosition(1, 2, 3)) is TestBlockEntities.TestBlockEntity)
+    }
+
+    fun `block entity data updates the entity and fires a remesh event`() {
+        val chunk = create()
+        val position = InChunkPosition(1, 2, 3)
+        chunk.apply(ProposedBlockChange(position, TestBlockStates.ENTITY1))
+        val events = chunk.world.collectUpdates()
+        val data = mapOf<String, Any>("message" to "updated")
+
+        val entity = chunk.applyBlockEntityData(position, data)
+
+        assertTrue(entity is TestBlockEntities.TestBlockEntity)
+        assertEquals((entity as TestBlockEntities.TestBlockEntity).data, data)
+        assertEquals(events, listOf(BlockEntityDataUpdate(chunk, position)))
+    }
+
+    fun `missing block entity data does not invent an update`() {
+        val chunk = create()
+        val position = InChunkPosition(1, 2, 3)
+        val events = chunk.world.collectUpdates()
+
+        assertNull(chunk.applyBlockEntityData(position, mapOf("message" to "missing")))
+        assertTrue(events.isEmpty())
     }
 
     fun `apply multiple updates`() {
