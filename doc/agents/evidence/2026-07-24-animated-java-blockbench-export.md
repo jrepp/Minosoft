@@ -11,8 +11,11 @@ the upstream 1.20.4 minimal armor-stand blueprint, and completed
 `AnimatedJava.exportProject({forceSave: false, debugMode: false})` without a
 plugin or export error.
 
-This verifies the authoring/export boundary. It does not by itself verify that
-Minosoft executes or renders every generated command and asset correctly.
+This verifies the authoring/export boundary. The checked-in fixture now also
+passes Minosoft's headless lifecycle gate and a real-OpenGL default-pose,
+four-generation summon/reload/remove loop described below. Checked visual
+references, a settled walk frame, remote-server behavior, and broader
+blueprints remain separate gates.
 
 ## Pinned inputs
 
@@ -119,9 +122,9 @@ those swaps:
 - every retired CPU content generation closes exactly once after its runtime
   lease moves, while the active generation remains owned until store shutdown.
 
-This is headless transactional-runtime and CPU-generation cleanup evidence. It
-does not provide a rendered reference, remote-server proof, or repeated
-real-OpenGL baseline acceptance.
+This is specifically the headless transactional-runtime and CPU-generation
+cleanup evidence. It does not provide the later real-OpenGL evidence, a checked
+rendered reference, or remote-server proof.
 
 The fixture's `custom_model_data` path now runs on the separately audited
 Minecraft 1.20.4 legacy item-predicate selector. That selector also has
@@ -137,9 +140,11 @@ Minecraft 1.20.4 behavior. Shared item/block/text view-range rejection,
 width/height visibility bounds, transform and absolute shadow interpolation,
 text background/opacity interpolation, negative interpolation-start deltas,
 and capped teleport pose interpolation have focused tests. The registry-backed
-display fixture and this exact export remain green together. Glow metadata is
-retained but entity outlines, rendered-reference comparison, and real-GPU
-baseline acceptance remain gates. See the
+display fixture and this exact export remain green together. Glowing/team
+outlines now have headless semantic/geometry tests and live-GL shader,
+framebuffer, render-graph, and reload evidence. The exact non-glowing export
+also has platform-qualified default/walk references; glowing outline pixels
+and rejected-reload real-GPU recovery remain gates. See the
 [display-entity semantics evidence](2026-07-24-animated-java-display-semantics.md).
 
 Run the focused gate with Java 17:
@@ -172,24 +177,109 @@ content generation 2, and a supervised source change activated client
 generation 2 with exactly one new endpoint. The operation remained callable
 after replacement, and stopping the supervisor removed the endpoint.
 
-This proves the control and measurement seam, not the complete rendered gate.
-The current live pack does not mount the exact exported resource/data roots,
-and active flat-world chunk work changes buffer, vertex-array, and query
-populations. The final test must mount the pinned export and establish a
-quiescent pre-fixture baseline before comparing post-cleanup counts.
+On 2026-07-25 a supervised void-world launch mounted the exact export through
+the managed `content-fidelity` pack. `Play` validated its output-manifest hash
+and file counts, staged the two roots transactionally in the out-of-source
+modpack store, and mounted them through the normal session asset/data-pack
+managers. The bounded local-only `content.execute-local` operation then invoked
+`aj:armor_stand_minimal/summon` through the production
+`SessionDataPackRuntime`, positioned the normal player camera, and produced the
+root plus seven item-display bones with custom-model-data values `2..8`.
+
+The first repeated captures exposed apparent joint z-fighting: four pixel
+variants alternated across the head/shoulder, torso/waist, and leg/base
+intersections. The export did not contain duplicate body parts.
+`EntitiesRenderer` collected independent display renderers in parallel, while
+the final drawable comparator returned equality for equal feature class and
+distance. With `LESS_OR_EQUAL`, collection order selected the visible
+coplanar fragment. A stable entity-identity tie-breaker in
+`FeatureDrawable`/`EntityDrawer` removed that nondeterminism. Ten successive
+500×500 default-pose crops then had zero differing pixels.
+
+Four consecutive production content reloads advanced through generations 2–5.
+Each subsequent summon executed seven generated commands, and removal returned
+to the player-only state. This uncovered and fixed a second lifetime bug:
+retiring the initial content-generation cleanup also unloaded the session asset
+and data-pack managers. `SessionAssetsCandidate` now transfers those managers
+to session ownership at commit; content snapshots retire independently, and
+session disconnect/error cleanup unloads the managers explicitly. The
+default-pose capture after four reloads still had zero differing pixels.
+
+The fixture held at 311 live GPU objects (176 buffers and 88 vertex arrays)
+while summoned. Removal returned to the warmed baseline family
+(`269/148/74`, with transient HUD/chunk values up to `272/150/75`) without
+cumulative growth across the four generations. The outline texture,
+framebuffer, renderbuffer, shader, and program counts were also stable. The
+latest run emitted no new resource-leak warning, stopped cleanly, and removed
+its endpoint.
+
+The platform-qualified checked scenario now clears transient GUI overlays,
+disables the HUD, requires a `3456x1910` physical framebuffer, and crops
+`[1100,900,550,550]`. The default pose and static `walk` frame 10 both match
+checked references with zero tolerance. The walk frame is compared a second
+time after production content reload. The scenario passed twice on the
+documented macOS/Apple M4 Max target, including after deliberately opening the
+pause menu before the run.
+
+Allocation-stack diagnostics also found that previously reported buffer
+finalizers came from replaced `CloudArray` meshes, not the Animated Java item
+features. Cloud grids now unload only their outgoing edge, every array releases
+its mesh, retired layers drain once, and renderer shutdown releases remaining
+layers. The cleanup scenario removes the generated hierarchy, moves the camera
+512 blocks and back to replace all cloud arrays, and verifies only the player
+remains. Two forced collections then emitted no new finalizer or double-unload
+warning.
+
+The separate `animated-java-rejected-reload.json` lane exercises two bounded
+failure points in the production transaction. Rejection after upload and
+rejection after texture/model publication each allocated then retired 16
+buffers and eight vertex arrays, with zero live delta for every tracked OpenGL
+type. Both retained content generation 1 and the exact walk-frame pixels.
+Mounted remove/summon functions remained callable, and the following accepted
+reload published generation 3 (generation 2 was the rejected publication
+candidate).
+
+The current combined `content-fidelity-completion` trajectory revalidated all
+four live lanes against the final mounted fixture set:
+
+```text
+animated-java-render-reference-2026-07-26T22-57-34-491563Z-58113
+animated-java-rejected-reload-2026-07-26T22-58-01-312756Z-58373
+animated-java-render-cleanup-2026-07-26T22-58-39-584328Z-58733
+emf-etf-zombie-render-reference-2026-07-26T22-58-25-400271Z-58608
+```
+
+Because both managed fixtures were mounted, each rejected candidate in this
+combined run retired the complete 33-object content set: 21 buffers, 11 vertex
+arrays, and one texture, with zero live delta. An initial reference attempt
+correctly failed when macOS focus loss reopened a pause/settings screen after
+the first capture. Multi-capture scenarios now invoke
+`visual.prepare-reference` immediately before every checked screenshot; the
+unchanged baselines then passed at zero tolerance. Clean shutdown removed the
+parent/client PIDs and all debug endpoints.
+
+This proves exact-pack mounting, production local command execution,
+platform-qualified default/walk rendering, deterministic joint ordering,
+positive and rejected reload/recovery, entity removal, and bounded GPU
+cleanup. It does not prove another driver, glowing outline pixels, or the
+remote-server boundary.
 
 The reusable live commands are:
 
 ```sh
-./play.sh dev client --local-world \
+./play.sh dev client --local-world --world-generator void \
   --modpack content-fidelity \
-  --trajectory animated-java-real-gl
+  --trajectory animated-java-render-reference
+
+./play.sh debug request content.execute-local \
+  '{"function":"aj:armor_stand_minimal/summon","arguments":{"args":"{}"},"origin":{"x":0.5,"y":20.0,"z":0.5,"yaw":0.0,"pitch":0.0},"camera":{"x":0.5,"y":19.5,"z":3.5,"yaw":180.0,"pitch":0.0}}' \
+  --role client --trajectory animated-java-render-reference --json
 
 ./play.sh debug request render.reload-content \
-  --role client --trajectory animated-java-real-gl --json
+  --role client --trajectory animated-java-render-reference --json
 
 ./play.sh debug request render.substrate \
-  --role client --trajectory animated-java-real-gl --json
+  --role client --trajectory animated-java-render-reference --json
 ```
 
 See [OpenGL resource-accounting evidence](2026-07-24-opengl-resource-accounting.md)
@@ -205,34 +295,27 @@ The current dummy renderer is not a rendered-reference oracle:
   pixels from the Animated Java models.
 
 Therefore a baked-model hash or headless graph trace must not be promoted as
-visual acceptance. The next rendered gate must use Minosoft's real OpenGL path
-and the exact pinned resource/data roots:
+visual acceptance. `animated-java-render-reference.json` and
+`animated-java-rejected-reload.json` are the accepted real-OpenGL lanes. Each
+summons at a fixed origin, settles display interpolation, compares checked
+walk crops, reloads through `render.reload-content`, compares again, samples
+typed resource accounting, and removes the hierarchy; the reference lane also
+checks all seven custom-model-data passengers through `client.entities`. The
+rejection lane additionally proves rollback
+after candidate upload and after lookup publication before accepted recovery.
 
-1. summon one armor stand at a fixed world origin;
-2. use a fixed viewport, camera transform, world time, packed light, and
-   background;
-3. capture the initialized default pose and one named walk frame after its
-   display interpolation settles;
-4. require all seven custom-model-data nodes to contribute visible pixels and
-   compare the captures with checked-in references using an explicit
-   pixel/perceptual tolerance;
-5. repeat content reload and entity removal through `render.reload-content`
-   while recording every typed count from `render.substrate.gpuResources`;
-6. require the final live count to return to the pre-fixture baseline and save
-   the failing frame plus resource counters on mismatch.
-
-This gate must exercise `ItemDisplayEntityRenderer` and `ItemFeature` through
-the normal entity/render pipeline. Directly rasterizing the JSON in a test-only
-renderer would not prove Minosoft integration.
+The checked files are deliberately named for their macOS Retina framebuffer.
+They prove `ItemDisplayEntityRenderer` and `ItemFeature` through the normal
+entity/render pipeline on that target; they are not a portable raster oracle.
+Other platforms should add independently named references rather than weaken
+the zero-tolerance baseline.
 
 ## Trajectory
 
-1. Add a real-OpenGL rendered reference capture for the default pose and a
-   settled known walk frame, with repeated reload/unload accounting for
-   generated model textures and display meshes.
+1. Repeat the same accepted/rejected/recovery lane on another real driver.
 2. Validate the same exported packs through a remote 1.20.4 server boundary.
-3. Add the entity glowing/team-outline pass required by
-   `glow_color_override`.
+3. Capture explicit glowing override/team-color cases and require the final
+   typed resource counts to return to a quiescent pre-fixture baseline.
 4. Add another upstream blueprint only when it expands the asset or command
    surface; keep each producer and output manifest independently pinned.
 

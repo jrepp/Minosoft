@@ -86,5 +86,19 @@ claim binary linkage for upstream screen factories.
 The focused Java 17 gate covers settings staging/filtering, tabs, clipping,
 scrolling, virtual-grid geometry, map transforms, machine snapshot revisions,
 metadata UI fields, atomic adapter options, Iris define discovery/overrides,
-and owned settings cleanup. A complete root test/assemble gate and live visual
-acceptance must be recorded before calling this slice runtime-accepted.
+and owned settings cleanup.
+
+The 2026-07-25 Java 17 acceptance at committed `HEAD` passed:
+
+- the 52 focused UI/adapter tests with no failures;
+- `./gradlew test` with 1,802 root tests and 9 `debug-core` tests, all passing;
+- `./gradlew integrationTest` with 2,083 tests, no failures, and 115 declared
+  skips;
+- `./gradlew assemble`; and
+- `./gradlew :debug-core:test :play-util:installDist
+  :debug-server-fabric:remapJar`.
+
+The broad gates were repeated in an isolated detached worktree so their result
+describes committed source rather than unrelated worktree state. The
+source-native UI slice is logic/build accepted; live interactive visual
+acceptance remains required before calling it visually runtime-accepted.

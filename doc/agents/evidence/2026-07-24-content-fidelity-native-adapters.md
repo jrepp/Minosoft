@@ -216,7 +216,12 @@ unmapped.
   concurrent replace/add layers, expression data, state-driven animation
   speed/easing overrides, triggerable animation preemption/base reload, typed
   sound/particle/custom keyframe handlers, bounded event delivery, and
-  generation-owned animatable caches. Its pinned `RawAnimation`-shaped builder
+  generation-owned animatable caches. Controller definitions can declare
+  bounded protocol tracked-data inputs plus immutable bounded random-integer,
+  exact-entity-type, and nearby-player range/AABB host queries. Headless
+  managers accept explicit resolvers; retained entity renderers collect only
+  declared state, and query DTOs retain no owner callback across generations.
+  Its pinned `RawAnimation`-shaped builder
   and queue cover default/play-once/hold/loop stages, 20 Hz waits, repeat
   expansion, delta carry across finite stages, stage event delivery, and
   triggered base-animation reload. Finished raw identity is stable until an
@@ -247,6 +252,13 @@ unmapped.
   meshes and textures are baked into the content generation, their
   registration token prevents a replacement callback from driving an old
   mesh, and every pass restores renderer state.
+- Adapted mods can register one owner-scoped runtime-effect resolver per Gecko
+  content identity. This models GeckoLib's handler-defined sound/particle
+  aliases explicitly: `Play` maps an alias to a resource, `Ignore` consumes it,
+  and `PassThrough` retains direct resource-location behavior. Entity,
+  item/armor, and block-entity consumers bind the exact resolver registration
+  when their retained instance is created. Closing the owner makes that old
+  binding fail closed instead of invoking a replacement generation.
 - Retained animal and humanoid model replacement snapshots compatible named
   Gecko controller layers. A replacement preserves current clip and raw queue
   identity, elapsed and transition time, stage/wait/hold progress, trigger
@@ -392,7 +404,11 @@ Java 17 focused runs passed for:
 - ETF rules, variants, custom and bounded NBT predicates, current/below block
   identifiers and state subsets, opacity-backed vertical probes, vanilla-client
   regional difficulty, prior rule/suffix chaining, 2,048-entry LRU eviction,
-  cache closure, and material frames;
+  cache closure, and material frames. A retained native skeletal integration
+  additionally reloads independent pig/saddle materials, then proves exact
+  half/closed/open tick selection, paired blink/blink2 emissives, two selected
+  geometry passes, two emissive passes, and the four-pass topology while the
+  retired pre-reload model remains leased;
 - resource discovery and malformed all-or-nothing candidate behavior;
 - generation preparation/commit failure, reader retirement, and cleanup;
 - candidate leases acquired during atomic commit and deferred cleanup after a
@@ -471,6 +487,10 @@ Java 17 focused runs passed for:
   and 1.20.4, including version-specific CEM aliases, expression/clip
   evaluation, a generic Gecko object manager, and ETF variant/emissive
   discovery;
+- a bounded 1.20.4 living fixture that binds `leftArm` to the native zombie
+  `left_arm`, evaluates pinned EMF variable `rule_index` from an ETF
+  health-selected rule, retains command NBT/tags, and maps `NoGravity` into
+  ordinary entity data;
 - generation-leased stable texture coordinates, dead-hole reuse, trailing-layer
   compaction, permanent resource-pack slot protection, and a 32-generation
   headless reload accounting fixture; failed OpenGL bucket allocation deletes
@@ -493,19 +513,25 @@ adapted with no artifact blockers or dependency issues. The ETF inventory
 reports the new regional/block/selection context honestly while retaining
 partial status for broader block-entity and feature surfaces.
 
-No live visual or repeated GPU-reload acceptance is claimed by this evidence.
+This 2026-07-24 checkpoint did not itself claim live visual or repeated
+GPU-reload acceptance. The later
+[EMF/ETF render reference evidence](2026-07-26-emf-etf-render-reference.md)
+adds one fixed zero-tolerance living-entity visual plus upload/publication
+rollback and accepted-recovery accounting. It does not broaden the remaining
+surface implicitly.
 
 ## Remaining gates
 
 1. Extend the EMF entity/version part-alias catalog beyond Minosoft's five
    shipped skeletal rigs. Connect CEM evaluation to the non-world render paths
    represented by the new context carrier, then finish entity-specific live
-   inputs, including special limb animators. Then complete complex attachment parity,
-   non-default shadow sampler-metadata overrides and reference-render
-   acceptance, exact player-holder body-yaw dynamics, raw expression diagnostic
-   parity, fallback diagnostics, and reference captures.
+   inputs, including special limb animators. Then complete complex attachment
+   parity, non-default shadow sampler-metadata overrides, exact player-holder
+   body-yaw dynamics, raw expression diagnostic parity, fallback diagnostics,
+   and references beyond the accepted fixed zombie.
 2. Complete broader non-skeletal and block-entity feature textures, then finish
-   configuration, repeated real-GL validation, and visual reference captures.
+   configuration, repeated multi-entity real-GL validation, and independent
+   variant/emissive/blink visual references.
    The retained
    skeletal-entity base/emissive, player coat, and transactional new-texture
    reload paths are implemented but are not the whole ETF surface.
@@ -515,15 +541,13 @@ No live visual or repeated GPU-reload acceptance is claimed by this evidence.
    reference captures. Binary GeckoLib/Mojang
    compatibility remains a separate explicit project or requires exact native
    adapters per dependent mod.
-4. Build glowing/team outlines on the now-transactional framebuffer/stencil
-   substrate, add rendered-reference comparison, and assert the new typed
-   OpenGL counters return to a fixed baseline for the passing unmodified
-   Animated Java 1.10.2 export, then prove remote-server behavior.
-   Headless transactional reload/rollback and CPU generation cleanup now pass.
-   Add another upstream blueprint only to expand the command or asset surface.
-5. Exercise the generation-leased stable-slot compactor with repeated real-GL
-   baseline assertions, broader multi-version fixtures, and live visual captures
-   before any “fully supported” claim.
+4. Add glowing/team outline pixels, another driver, and remote-server behavior
+   for the passing unmodified Animated Java 1.10.2 export. Its checked positive,
+   rejected, recovery, and cleanup lanes now pass. Add another upstream
+   blueprint only to expand the command or asset surface.
+5. Exercise the generation-leased stable-slot compactor with broader
+   multi-entity real-GL baseline assertions, broader multi-version fixtures,
+   and independent visual captures before any “fully supported” claim.
 
 The accounting boundary and remaining live acceptance protocol are documented
 in [OpenGL resource-accounting evidence](2026-07-24-opengl-resource-accounting.md).

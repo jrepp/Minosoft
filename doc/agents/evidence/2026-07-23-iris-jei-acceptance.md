@@ -107,6 +107,11 @@ Visual captures were inspected from `/tmp` and were not committed. Pages 1 and
 2 rendered without the former diagonal index corruption, and the final Back
 capture showed the inventory with the Recipes control still attached.
 
+The 2026-07-26 Creative workspace supersedes the floating Creative control:
+JEI now owns a `Recipes` tab alongside `Items` and `Creatures`. Survival
+containers retain the standalone control and the recipe menu itself is
+unchanged.
+
 ## Defects found by the stricter run
 
 1. A fresh managed-server launch rejected

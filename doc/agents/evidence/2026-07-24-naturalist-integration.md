@@ -4,6 +4,11 @@
 
 Date: 2026-07-24
 
+This record captures the original adapter/server activation checkpoint. The
+[2026-07-26 registry-sync evidence](2026-07-26-naturalist-registry-sync.md)
+supersedes its route counts and remote-registry gap without rewriting the
+historical launch observations below.
+
 ## Compatibility decision
 
 `fabric-stack` version `0.8.0` pins the ported Naturalist `5.0.0-pre.4`
@@ -35,10 +40,12 @@ The adapter owns:
 - one deterministic idle/movement controller for every routed geometry;
 - current geometry and `.rp_anim.json` assets, excluding obsolete animations
   and unrouted geometry;
-- a source-path alias from Naturalist's ostrich geometry to the zebra route;
-  the upstream artifact has a zebra animation and texture but stores the matching
-  mesh as `geo/entity/ostrich.geo.json` with identifier
-  `geometry.sf_nba.ostrich`;
+- an adapter-local native bridge for Naturalist's zebra renderer. Pinned
+  bytecode shows `ZebraModel` extends Minecraft 1.20.4's horse layer and adds
+  conditional chest boxes; the artifact's `geo/entity/ostrich.geo.json` is an
+  unrelated two-legged winged mesh, not a renamed zebra. The default bridge
+  retains the adult, unsaddled, unchested horse cuboids and exposes the control
+  bone names used by the shipped zebra idle/walk timelines;
 - deterministic texture fallbacks for upstream geometry whose default texture
   path does not correspond directly to an artifact file.
 
@@ -56,10 +63,12 @@ contract is still required before this rung can advance beyond partial.
 
 Focused unit tests cover exact adapter selection, asset filtering and aliases,
 31 entity routes, 24 controller bindings, cleanup, `.rp_anim.json` discovery,
-scalar Gecko channels, source-qualified content identities, and the zebra
-geometry alias against the pinned artifact layout. The adapted Gecko route also
-passed the focused integration test through content baking and render-layer
-creation.
+scalar Gecko channels, and source-qualified content identities. The later zebra
+regression parses the generated horse-layer bridge, proves four adult leg cubes
+and no wing bones, attaches both sets of shipped animation channel names, and
+rejects the ostrich geometry from the adapter view. The adapted content route
+also passed a supervised client generation through parsing, baking, join, and
+render readiness.
 
 The Naturalist fork's `5.0.0-pre.4` build passed client and dedicated-server
 launches on Minecraft 1.20.4, including alligator and giraffe summons and
