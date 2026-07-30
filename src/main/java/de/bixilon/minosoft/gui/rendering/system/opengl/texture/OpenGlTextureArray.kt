@@ -27,6 +27,8 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.array.StaticTexture
 import de.bixilon.minosoft.gui.rendering.system.base.texture.array.TextureArrayStates
 import de.bixilon.minosoft.gui.rendering.system.base.texture.data.TextureData
 import de.bixilon.minosoft.gui.rendering.system.base.texture.loader.TextureLoader
+import de.bixilon.minosoft.gui.rendering.system.base.texture.material.LabPbrCompanionTextures
+import de.bixilon.minosoft.gui.rendering.system.base.texture.material.LabPbrCompanionTextures.MATERIAL_PAGES
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
@@ -39,6 +41,9 @@ import de.bixilon.minosoft.util.logging.LogMessageType
 import org.lwjgl.opengl.GL13.*
 import org.lwjgl.opengl.GL30.GL_TEXTURE_2D_ARRAY
 import java.nio.ByteBuffer
+import java.util.IdentityHashMap
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration
 
 class OpenGlTextureArray(
     val system: OpenGlRenderSystem,
@@ -50,10 +55,21 @@ class OpenGlTextureArray(
 
     private val resolution = Array<MutableList<Texture>>(RESOLUTIONS.size) { mutableListOf() }
     private val ownership = StaticTextureSlotOwnership<Slot>()
+    private val materialAnimations = IdentityHashMap<Texture, List<MaterialAnimation>>()
+    @Volatile
+    private var materialAnimationSnapshot: List<MaterialAnimationBinding> = emptyList()
+    private val materialAnimationAdvances = AtomicLong()
+    private val materialAnimationUploads = AtomicLong()
     private var handlesCreated = 0L
     private var handlesDeleted = 0L
 
+    fun shaderTextureSizes(): Map<Int, Vec2i> = buildMap {
+        for ((bucket, index) in indices.withIndex()) {
+            if (index >= 0) put(index, Vec2i(RESOLUTIONS[bucket], RESOLUTIONS[bucket]))
+        }
+    }
 
+    @Deprecated("use safe uniforms")
     override fun use(shader: TextureShader, name: String) {
         if (state != TextureArrayStates.UPLOADED) throw IllegalStateException("Texture array is not uploaded yet! Are you trying to load a shader in the init phase?")
         system.log { "Binding static textures to $shader" }
@@ -62,7 +78,9 @@ class OpenGlTextureArray(
         for (index in indices) {
             if (index == -1) continue
 
-            shader.native.setTexture("$name[$index]", index)
+            val uniform = "$name[$index]"
+            val native = shader.uniformTarget()
+            if (native.hasUniform(uniform)) native.setTexture(uniform, index)
         }
     }
 
@@ -82,14 +100,33 @@ class OpenGlTextureArray(
         return -1
     }
 
-    private fun glUpload(texture: Texture, textureData: TextureData = texture.data) {
+    private fun glUpload(
+        texture: Texture,
+        textureData: TextureData = texture.data,
+        pageOffset: Int = 0,
+        pageResolution: Int,
+    ) {
         val renderData = texture.renderData.cast<OpenGlTextureData>()
 
         for ((level, buffer) in textureData.collect().withIndex()) {
             if (level > this.mipmaps) break
             buffer.data.position(0)
             buffer.data.limit(buffer.data.capacity())
-            gl { glTexSubImage3D(GL_TEXTURE_2D_ARRAY, level, 0, 0, renderData.index, buffer.size.x, buffer.size.y, 1, buffer.glFormat, buffer.glType, buffer.data) }
+            gl {
+                glTexSubImage3D(
+                    GL_TEXTURE_2D_ARRAY,
+                    level,
+                    0,
+                    pageOffset * (pageResolution shr level),
+                    renderData.index,
+                    buffer.size.x,
+                    buffer.size.y,
+                    1,
+                    buffer.glFormat,
+                    buffer.glType,
+                    buffer.data,
+                )
+            }
         }
     }
 
@@ -101,25 +138,61 @@ class OpenGlTextureArray(
         assignRenderData: Boolean = true,
         releaseStaticData: Boolean = true,
         data: (Texture) -> TextureData = Texture::data,
+        materialSink: (Texture, List<MaterialAnimation>) -> Unit = ::recordMaterialAnimations,
     ): Int {
         system.log { "Uploading ${resolution}x${resolution} static textures" }
+        val materialHeight = Math.multiplyExact(resolution, MATERIAL_PAGES)
+        val maximumSize = gl { glGetInteger(GL_MAX_TEXTURE_SIZE) }
+        require(materialHeight <= maximumSize) {
+            "Static LabPBR texture page ${resolution}x$materialHeight exceeds the OpenGL maximum texture size $maximumSize."
+        }
         val handle = OpenGlTextureUtil.createTextureArray(system, active, mipmaps)
         handlesCreated++
         try {
             for (level in 0..mipmaps) {
-                gl { glTexImage3D(GL_TEXTURE_2D_ARRAY, level, GL_RGBA8, resolution shr level, resolution shr level, textures.size.coerceAtLeast(1), 0, GL_RGBA, GL_UNSIGNED_BYTE, null as ByteBuffer?) }
+                gl {
+                    glTexImage3D(
+                        GL_TEXTURE_2D_ARRAY,
+                        level,
+                        GL_RGBA8,
+                        resolution shr level,
+                        materialHeight shr level,
+                        textures.size.coerceAtLeast(1),
+                        0,
+                        GL_RGBA,
+                        GL_UNSIGNED_BYTE,
+                        null as ByteBuffer?,
+                    )
+                }
             }
 
             var textureId = 0
             for (texture in textures) {
                 if (assignRenderData) {
                     val size = texture.size
-                    val uvEnd = if (size.x == resolution && size.y == resolution) null else Vec2f(size) / resolution
+                    val uvEnd = Vec2f(
+                        size.x.toFloat() / resolution,
+                        size.y.toFloat() / Math.multiplyExact(resolution, MATERIAL_PAGES),
+                    )
                     texture.renderData = OpenGlTextureData(active, textureId, uvEnd)
                 }
                 textureId++
 
-                glUpload(texture, data(texture))
+                glUpload(texture, data(texture), pageResolution = resolution)
+                val animations = mutableListOf<MaterialAnimation>()
+                for (kind in LabPbrCompanionTextures.Kind.entries) {
+                    val companion = LabPbrCompanionTextures.load(context, texture, kind)
+                    glUpload(
+                        texture,
+                        companion.data,
+                        pageOffset = kind.pageOffset,
+                        pageResolution = resolution,
+                    )
+                    companion.animation?.let {
+                        animations += MaterialAnimation(kind, it, companion.resource?.toString())
+                    }
+                }
+                materialSink(texture, animations)
 
                 if (releaseStaticData && texture.animation == null) {
                     texture.data = TextureData.NULL
@@ -139,7 +212,9 @@ class OpenGlTextureArray(
     override fun update(texture: Texture) {
         val data = texture.renderData.cast<OpenGlTextureData>()
 
-        val handle = handles[indices.indexOf(data.array)]
+        val arrayId = indices.indexOf(data.array)
+        require(arrayId >= 0) { "Texture $texture uses unknown static sampler ${data.array}." }
+        val handle = handles[arrayId]
         assert(handle >= 0)
 
         if (system.boundTexture != handle) {
@@ -148,7 +223,37 @@ class OpenGlTextureArray(
             system.boundTexture = handle
         }
 
-        glUpload(texture)
+        glUpload(texture, pageResolution = RESOLUTIONS[arrayId])
+    }
+
+    override fun advanceMaterialAnimations(delta: Duration) {
+        for ((texture, material) in materialAnimationSnapshot) {
+            material.animation.advance(delta, texture.animation?.timelinePosition)
+            materialAnimationAdvances.incrementAndGet()
+        }
+    }
+
+    override fun uploadMaterialAnimations() {
+        for ((texture, material) in materialAnimationSnapshot) {
+            val data = texture.renderData as? OpenGlTextureData ?: continue
+            val arrayId = indices.indexOf(data.array)
+            if (arrayId < 0) continue
+            val handle = handles[arrayId]
+            if (handle < 0) continue
+            if (system.boundTexture != handle) bind(data.array, handle)
+            val pageResolution = RESOLUTIONS[arrayId]
+            val revision = material.animation.revision
+            if (material.uploadedRevision == revision) continue
+            glUpload(
+                texture,
+                material.animation.data,
+                pageOffset = material.kind.pageOffset,
+                pageResolution = pageResolution,
+            )
+            material.uploadedFrameIndex = material.animation.frameIndex
+            material.uploadedRevision = revision
+            materialAnimationUploads.incrementAndGet()
+        }
     }
 
 
@@ -185,6 +290,7 @@ class OpenGlTextureArray(
                 handles[index] = upload(active, RESOLUTIONS[index], textures)
                 total += textures.size
             }
+            synchronized(materialAnimations) { refreshMaterialAnimationSnapshotLocked() }
         } catch (error: Throwable) {
             for (index in handles.indices) {
                 val handle = handles[index]
@@ -195,6 +301,10 @@ class OpenGlTextureArray(
                     error.addSuppressed(cleanup)
                 }
                 handles[index] = -1
+            }
+            synchronized(materialAnimations) {
+                materialAnimations.clear()
+                refreshMaterialAnimationSnapshotLocked()
             }
             throw error
         }
@@ -234,6 +344,35 @@ class OpenGlTextureArray(
         active = handles.count { it >= 0 },
     )
 
+    fun materialAnimationDiagnostics(): OpenGlMaterialAnimationDiagnostics =
+        synchronized(materialAnimations) {
+            OpenGlMaterialAnimationDiagnostics(
+                textures = materialAnimations.size,
+                channels = materialAnimations.values.sumOf { it.size },
+                resources = materialAnimations.values
+                    .asSequence()
+                    .flatten()
+                    .mapNotNull(MaterialAnimation::resource)
+                    .distinct()
+                    .sorted()
+                    .toList(),
+                states = materialAnimations.values
+                    .asSequence()
+                    .flatten()
+                    .map {
+                        OpenGlMaterialAnimationStateDiagnostics(
+                            kind = it.kind.name.lowercase(),
+                            resource = it.resource,
+                            uploadedFrameIndex = it.uploadedFrameIndex,
+                        )
+                    }
+                    .sortedWith(compareBy({ it.resource.orEmpty() }, { it.kind }))
+                    .toList(),
+                advances = materialAnimationAdvances.get(),
+                uploads = materialAnimationUploads.get(),
+            )
+        }
+
     override fun unload() {
         var failure: Throwable? = null
         for (index in handles.indices) {
@@ -247,6 +386,10 @@ class OpenGlTextureArray(
                 handles[index] = -1
                 indices[index] = -1
             }
+        }
+        synchronized(materialAnimations) {
+            materialAnimations.clear()
+            refreshMaterialAnimationSnapshotLocked()
         }
         state = TextureArrayStates.UNLOADED
         failure?.let { throw it }
@@ -267,6 +410,8 @@ class OpenGlTextureArray(
         private val previousNames = linkedMapOf<ResourceLocation, Texture?>()
         private val previousBuckets = linkedMapOf<Int, MutableList<Texture>>()
         private val candidateHandles = IntArray(RESOLUTIONS.size) { -1 }
+        private val candidateMaterialAnimations =
+            IdentityHashMap<Texture, List<MaterialAnimation>>()
         private val sameSlotReplacements = linkedSetOf<Texture>()
         private val generationSlots = linkedSetOf<Slot>()
         private val reclaimableSlots = linkedSetOf<Slot>()
@@ -321,11 +466,11 @@ class OpenGlTextureArray(
                 val reused = if (inheritsPermanentSlot) null else free[arrayId].firstOrNull()
                 val layer = reused ?: resolution[arrayId].size + appended[arrayId].size
                 val bucketResolution = RESOLUTIONS[arrayId]
-                val uvEnd = if (candidate.size.x == bucketResolution && candidate.size.y == bucketResolution) {
-                    null
-                } else {
-                    Vec2f(candidate.size) / bucketResolution
-                }
+                val uvEnd = Vec2f(
+                    candidate.size.x.toFloat() / bucketResolution,
+                    candidate.size.y.toFloat() /
+                        Math.multiplyExact(bucketResolution, MATERIAL_PAGES),
+                )
                 candidate.renderData = OpenGlTextureData(indices[arrayId], layer, uvEnd)
                 if (reused == null) {
                     appended[arrayId] += candidate
@@ -363,14 +508,18 @@ class OpenGlTextureArray(
                         textures = textures,
                         assignRenderData = false,
                         releaseStaticData = false,
-                    ) { texture ->
-                        if (texture in candidates.values || texture.animation != null) {
-                            texture.data
-                        } else {
-                            val source = texture.loader.load(context).buffer
-                            texture.createData(buffer = source)
-                        }
-                    }
+                        data = { texture ->
+                            if (texture in candidates.values || texture.animation != null) {
+                                texture.data
+                            } else {
+                                val source = texture.loader.load(context).buffer
+                                texture.createData(buffer = source)
+                            }
+                        },
+                        materialSink = { texture, animations ->
+                            candidateMaterialAnimations[texture] = animations
+                        },
+                    )
                 }
                 restoreHandles(handles)
                 uploaded = true
@@ -422,6 +571,15 @@ class OpenGlTextureArray(
             }
             for (texture in sameSlotReplacements) {
                 animator.remove(texture)
+            }
+            synchronized(materialAnimations) {
+                for (textures in previousBuckets.values) {
+                    for (texture in textures) materialAnimations.remove(texture)
+                }
+                for ((texture, animations) in candidateMaterialAnimations) {
+                    if (animations.isNotEmpty()) materialAnimations[texture] = animations
+                }
+                refreshMaterialAnimationSnapshotLocked()
             }
             for (texture in candidates.values) {
                 if (texture.animation == null) texture.data = TextureData.NULL
@@ -506,6 +664,22 @@ class OpenGlTextureArray(
         }
     }
 
+    private fun recordMaterialAnimations(texture: Texture, animations: List<MaterialAnimation>) {
+        synchronized(materialAnimations) {
+            if (animations.isEmpty()) {
+                materialAnimations.remove(texture)
+            } else {
+                materialAnimations[texture] = animations
+            }
+        }
+    }
+
+    private fun refreshMaterialAnimationSnapshotLocked() {
+        materialAnimationSnapshot = materialAnimations.flatMap { (texture, animations) ->
+            animations.map { MaterialAnimationBinding(texture, it) }
+        }
+    }
+
     private fun bind(index: Int, handle: Int) {
         gl { glActiveTexture(GL_TEXTURE0 + index) }
         gl { glBindTexture(GL_TEXTURE_2D_ARRAY, handle) }
@@ -526,6 +700,20 @@ class OpenGlTextureArray(
     }
 
     private data class Slot(val array: Int, val index: Int)
+
+    private data class MaterialAnimation(
+        val kind: LabPbrCompanionTextures.Kind,
+        val animation: LabPbrCompanionTextures.Animated,
+        val resource: String?,
+    ) {
+        var uploadedFrameIndex: Int = 0
+        var uploadedRevision: Long = 0L
+    }
+
+    private data class MaterialAnimationBinding(
+        val texture: Texture,
+        val animation: MaterialAnimation,
+    )
 }
 
 data class OpenGlTextureHandleDiagnostics(
@@ -533,4 +721,19 @@ data class OpenGlTextureHandleDiagnostics(
     val deleted: Long,
     val live: Long,
     val active: Int,
+)
+
+data class OpenGlMaterialAnimationDiagnostics(
+    val textures: Int,
+    val channels: Int,
+    val resources: List<String>,
+    val states: List<OpenGlMaterialAnimationStateDiagnostics>,
+    val advances: Long,
+    val uploads: Long,
+)
+
+data class OpenGlMaterialAnimationStateDiagnostics(
+    val kind: String,
+    val resource: String?,
+    val uploadedFrameIndex: Int,
 )

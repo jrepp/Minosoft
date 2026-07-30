@@ -15,6 +15,7 @@
 package de.bixilon.minosoft.gui.rendering.system.opengl.texture
 
 import de.bixilon.kmath.vec.vec2.f.Vec2f
+import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.kutil.latch.AbstractLatch
 import de.bixilon.minosoft.gui.rendering.shader.types.TextureShader
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureStates
@@ -40,6 +41,8 @@ class OpenGlFontTextureArray(
     compressed: FontCompressions,
 ) : FontTextureArray(system.context, RESOLUTION, compressed) {
     val index = system.nextTextureIndex++
+    var shaderTextureSize = Vec2i(0, 0)
+        private set
     private var handle = -1
 
 
@@ -89,6 +92,7 @@ class OpenGlFontTextureArray(
         }
 
         Log.log(LogMessageType.RENDERING, LogLevels.VERBOSE) { "Loaded ${textures.size} font textures into a ${width}x$height array" }
+        shaderTextureSize = arraySize
         state = TextureArrayStates.UPLOADED
     }
 
@@ -96,7 +100,9 @@ class OpenGlFontTextureArray(
         if (state != TextureArrayStates.UPLOADED) throw IllegalStateException("Texture array is not uploaded yet! Are you trying to load a shader in the init phase?")
         shader.use()
 
-        shader.native.setTexture("$name[$index]", index)
+        val uniform = "$name[$index]"
+        val native = shader.uniformTarget()
+        if (native.hasUniform(uniform)) native.setTexture(uniform, index)
     }
 
 
@@ -119,6 +125,7 @@ class OpenGlFontTextureArray(
         system.resources.deleted(OpenGlResourceType.TEXTURE, handle)
         if (system.boundTexture == handle) system.boundTexture = -1
         handle = -1
+        shaderTextureSize = Vec2i(0, 0)
         state = TextureArrayStates.UNLOADED
     }
 

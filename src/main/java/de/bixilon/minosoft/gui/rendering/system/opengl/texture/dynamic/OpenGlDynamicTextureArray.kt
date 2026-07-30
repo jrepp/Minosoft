@@ -14,12 +14,14 @@
 
 package de.bixilon.minosoft.gui.rendering.system.opengl.texture.dynamic
 
+import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.kutil.cast.CastUtil.unsafeCast
 import de.bixilon.minosoft.gui.rendering.shader.types.TextureShader
 import de.bixilon.minosoft.gui.rendering.system.base.shader.ShaderUniforms
 import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicTexture
 import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicTextureArray
 import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicTextureState
+import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.TextureBuffer
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
 import de.bixilon.minosoft.gui.rendering.system.opengl.error.MemoryLeakException
@@ -53,7 +55,6 @@ class OpenGlDynamicTextureArray(
         }
     }
         private set
-    private var empty = IntArray(Math.multiplyExact(resolution, resolution))
     private var handle = -1
     private var publishedCapacity = 0
 
@@ -85,20 +86,53 @@ class OpenGlDynamicTextureArray(
             bind(handle)
         }
 
-        unsafeUpload(index, texture, resolution, empty)
+        unsafeUpload(index, texture, resolution)
         texture.state = DynamicTextureState.LOADED
     }
 
-    private fun unsafeUpload(index: Int, texture: DynamicTexture, resolution: Int, empty: IntArray) {
+    private fun unsafeUpload(index: Int, texture: DynamicTexture, resolution: Int) {
         val data = texture.data ?: throw IllegalArgumentException("No texture data?")
         for ((level, buffer) in data.collect().withIndex()) {
-            if (data.size.x != resolution || data.size.y != resolution) {
-                // clear first
-                gl { glTexSubImage3D(GL_TEXTURE_2D_ARRAY, level, 0, 0, index, resolution shr level, resolution shr level, 1, GL_RGBA, GL_UNSIGNED_BYTE, empty) }
+            val targetSize = Vec2i((resolution shr level).coerceAtLeast(1))
+            val upload = buffer.scaleTo(targetSize)
+            upload.data.position(0)
+            upload.data.limit(upload.data.capacity())
+            gl {
+                glTexSubImage3D(
+                    GL_TEXTURE_2D_ARRAY,
+                    level,
+                    0,
+                    0,
+                    index,
+                    targetSize.x,
+                    targetSize.y,
+                    1,
+                    upload.glFormat,
+                    upload.glType,
+                    upload.data,
+                )
             }
-            buffer.data.position(0)
-            buffer.data.limit(buffer.data.capacity())
-            gl { glTexSubImage3D(GL_TEXTURE_2D_ARRAY, level, 0, 0, index, buffer.size.x, buffer.size.y, 1, buffer.glFormat, buffer.glType, buffer.data) }
+        }
+    }
+
+    /**
+     * Every layer in a texture array has the same physical dimensions, while
+     * dynamic sources such as player skins and capes do not. Normalized model
+     * UVs address the complete source image, so uploading a smaller source
+     * only into the lower-left corner makes most samples read cleared black
+     * pixels after any larger dynamic texture grows the array.
+     */
+    private fun TextureBuffer.scaleTo(targetSize: Vec2i): TextureBuffer {
+        if (size == targetSize) return this
+        val source = this
+        return create(targetSize).also { target ->
+            for (y in 0 until targetSize.y) {
+                val sourceY = y * source.size.y / targetSize.y
+                for (x in 0 until targetSize.x) {
+                    val sourceX = x * source.size.x / targetSize.x
+                    target.setRGBA(x, y, source.getRGBA(sourceX, sourceY))
+                }
+            }
         }
     }
 
@@ -123,11 +157,6 @@ class OpenGlDynamicTextureArray(
         }
         system.log { "Preparing ${candidateResolution}x$candidateResolution dynamic textures" }
         val snapshot = textureSnapshot()
-        val candidateEmpty = if (candidateResolution == resolution) {
-            empty
-        } else {
-            IntArray(Math.multiplyExact(candidateResolution, candidateResolution))
-        }
         val candidate = OpenGlTextureUtil.createTextureArray(system, index, mipmaps)
         try {
             for (level in 0..mipmaps) {
@@ -151,10 +180,10 @@ class OpenGlDynamicTextureArray(
             for ((layer, textureReference) in snapshot.withIndex()) {
                 val texture = textureReference?.get() ?: continue
                 if (texture.data == null) continue
-                unsafeUpload(layer, texture, candidateResolution, candidateEmpty)
+                unsafeUpload(layer, texture, candidateResolution)
                 loaded += texture
             }
-            return Prepared(candidate, candidateResolution, candidateEmpty, snapshot.size, loaded)
+            return Prepared(candidate, candidateResolution, snapshot.size, loaded)
         } catch (error: Throwable) {
             try {
                 delete(candidate)
@@ -183,8 +212,8 @@ class OpenGlDynamicTextureArray(
         }
         handle = candidate.handle
         resolution = candidate.resolution
-        empty = candidate.empty
         publishedCapacity = candidate.capacity
+        storageGeneration++
         for (texture in candidate.loaded) {
             texture.state = DynamicTextureState.LOADED
         }
@@ -205,10 +234,11 @@ class OpenGlDynamicTextureArray(
     private fun use(shader: TextureShader, handle: Int, name: String = ShaderUniforms.TEXTURES) {
         if (handle <= 0) throw IllegalStateException("Texture array is not uploaded yet! Are you trying to load a shader in the init phase?")
         system.log { "Binding dynamic textures to $shader" }
-        val native = shader.native.unsafeCast<OpenGlNativeShader>()
         shader.use()
+        val native = shader.uniformTarget().unsafeCast<OpenGlNativeShader>()
 
-        native.setTexture("$name[$index]", index)
+        val uniform = "$name[$index]"
+        if (native.hasUniform(uniform)) native.setTexture(uniform, index)
     }
 
     override fun unload() {
@@ -255,7 +285,6 @@ class OpenGlDynamicTextureArray(
     private data class Prepared(
         val handle: Int,
         val resolution: Int,
-        val empty: IntArray,
         val capacity: Int,
         val loaded: List<DynamicTexture>,
     )

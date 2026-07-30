@@ -34,6 +34,13 @@ abstract class TextureManager {
     abstract val dynamic: DynamicTextureArray
     abstract val font: FontTextureArray
 
+    /**
+     * Physical dimensions of each sampler2DArray slot exposed through
+     * `uTextures`. A zero vector denotes an unbound slot.
+     */
+    open fun shaderTextureSizes(): List<Vec2i> =
+        List(SHADER_TEXTURE_ARRAY_SIZE) { Vec2i(0, 0) }
+
     lateinit var debugTexture: Texture
         private set
     lateinit var whiteTexture: CodeTexturePart
@@ -74,5 +81,9 @@ abstract class TextureManager {
             }
         }
         failure?.let { throw it }
+    }
+
+    companion object {
+        const val SHADER_TEXTURE_ARRAY_SIZE = 16
     }
 }

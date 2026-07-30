@@ -14,6 +14,7 @@
 
 package de.bixilon.minosoft.gui.rendering.system.opengl.texture
 
+import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.kutil.cast.CastUtil.unsafeCast
 import de.bixilon.minosoft.gui.rendering.shader.types.TextureShader
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
@@ -28,8 +29,27 @@ class OpenGlTextureManager(system: OpenGlRenderSystem) : TextureManager() {
     override val dynamic = OpenGlDynamicTextureArray(system, resolution = 64, mipmaps = config.mipmaps)
     override val font = OpenGlFontTextureArray(system, config.fontCompression)
 
+    override fun shaderTextureSizes(): List<Vec2i> {
+        val sizes = MutableList(SHADER_TEXTURE_ARRAY_SIZE) { Vec2i(0, 0) }
+        static.shaderTextureSizes().forEach { (index, size) -> sizes[index] = size }
+        sizes[dynamic.index] = Vec2i(dynamic.resolution, dynamic.resolution)
+        sizes[font.index] = font.shaderTextureSize
+        return sizes
+    }
+
+    /**
+     * Physical sampler units used by world/resource-pack textures. Iris scene
+     * programs can compact these sparse global indices without changing the
+     * packed texture identifiers retained in meshes.
+     */
+    fun staticShaderTextureIndices(): List<Int> = static.shaderTextureSizes().keys.sorted()
+
+    fun dynamicShaderTextureIndex(): Int = dynamic.index
+
+    fun fontShaderTextureIndex(): Int = font.index
+
     override fun use(shader: TextureShader, name: String) {
-        val native = shader.native.unsafeCast<OpenGlNativeShader>()
+        val native = shader.uniformTarget().unsafeCast<OpenGlNativeShader>()
         shader.use()
 
         // The shader's switch-based texture lookup keeps every sampler-array
@@ -39,13 +59,14 @@ class OpenGlTextureManager(system: OpenGlRenderSystem) : TextureManager() {
         // always-allocated dynamic array before the real arrays override their
         // assigned indices.
         for (index in 0 until SHADER_TEXTURE_ARRAY_SIZE) {
-            native.setTexture("$name[$index]", dynamic.index)
+            val uniform = "$name[$index]"
+            if (native.hasUniform(uniform)) native.setTexture(uniform, dynamic.index)
         }
 
         super.use(shader, name)
     }
 
     private companion object {
-        const val SHADER_TEXTURE_ARRAY_SIZE = 16
+        const val SHADER_TEXTURE_ARRAY_SIZE = TextureManager.SHADER_TEXTURE_ARRAY_SIZE
     }
 }

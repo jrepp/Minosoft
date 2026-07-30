@@ -24,9 +24,11 @@ import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureStates
 import de.bixilon.minosoft.gui.rendering.system.base.texture.animator.SpriteAnimator
+import de.bixilon.minosoft.gui.rendering.system.base.texture.animator.TextureAnimation
 import de.bixilon.minosoft.gui.rendering.system.base.texture.loader.TextureLoader
 import de.bixilon.minosoft.gui.rendering.system.base.texture.loader.file.PNGTextureLoader
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
+import kotlin.time.Duration
 
 abstract class StaticTextureArray(
     val context: RenderContext,
@@ -93,6 +95,19 @@ abstract class StaticTextureArray(
     protected abstract fun upload(textures: Collection<Texture>)
 
     abstract fun update(texture: Texture)
+
+    /**
+     * Advances material companions that own an animation timeline independent
+     * from the diffuse texture. Implementations may synchronize to the base
+     * sprite's [TextureAnimation] when one exists.
+     */
+    open fun advanceMaterialAnimations(delta: Duration) = Unit
+
+    /**
+     * Publishes material companion frames prepared by
+     * [advanceMaterialAnimations] on the render thread.
+     */
+    open fun uploadMaterialAnimations() = Unit
 
     abstract fun beginUpdate(): StaticTextureArrayUpdate
 

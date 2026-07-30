@@ -25,6 +25,8 @@ class TextureAnimation(
 ) {
     private val total = frames.sumOf { it.time }
     private var time = Duration.ZERO
+    var timelinePosition = Duration.ZERO
+        private set
 
     var frame: AnimationFrame = frames.first()
         private set
@@ -38,6 +40,7 @@ class TextureAnimation(
 
     fun update(delta: Duration) {
         val delta = delta % total
+        timelinePosition = (timelinePosition + delta) % total
         var left = this.time + delta
         while (left >= frame.time) {
             left -= frame.time

@@ -53,6 +53,7 @@ class SpriteAnimator(val context: RenderContext) {
         for (animation in snapshot()) {
             context.textures.static.update(animation.texture) // TODO: split from interpolation (async)?
         }
+        context.textures.static.uploadMaterialAnimations()
     }
 
     fun interpolate(animation: TextureAnimation) {
@@ -74,6 +75,7 @@ class SpriteAnimator(val context: RenderContext) {
 
             interpolate(animation)
         }
+        context.textures.static.advanceMaterialAnimations(delta)
     }
 
     fun create(texture: Texture, source: TextureBuffer, properties: AnimationProperties): TextureAnimation {
