@@ -128,7 +128,9 @@ class GLSLShaderCode(
     }
 }
 
-internal class GLSLCommentStripper {
+internal class GLSLCommentStripper(
+    private val preserveBlockComments: Boolean = false,
+) {
     private var inBlockComment = false
 
     fun strip(line: String): String {
@@ -140,7 +142,11 @@ internal class GLSLCommentStripper {
         while (index < line.length) {
             if (inBlockComment) {
                 val end = line.indexOf("*/", index)
-                if (end < 0) break
+                if (end < 0) {
+                    if (preserveBlockComments) output.append(line, index, line.length)
+                    break
+                }
+                if (preserveBlockComments) output.append(line, index, end + 2)
                 inBlockComment = false
                 index = end + 2
                 continue
@@ -168,7 +174,11 @@ internal class GLSLCommentStripper {
                 when (line[index + 1]) {
                     '/' -> break
                     '*' -> {
-                        if (output.isNotEmpty() && !output.last().isWhitespace()) output.append(' ')
+                        if (preserveBlockComments) {
+                            output.append("/*")
+                        } else if (output.isNotEmpty() && !output.last().isWhitespace()) {
+                            output.append(' ')
+                        }
                         inBlockComment = true
                         index += 2
                         continue

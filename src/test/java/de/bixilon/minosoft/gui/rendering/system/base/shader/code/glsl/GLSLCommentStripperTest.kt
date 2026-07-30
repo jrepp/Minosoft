@@ -42,4 +42,13 @@ class GLSLCommentStripperTest {
         assertEquals(comments.strip("#include \"demo/*literal*/path\""), "#include \"demo/*literal*/path\"")
         assertEquals(comments.strip("#include 'demo//literal/path'"), "#include 'demo//literal/path'")
     }
+
+    @Test
+    fun `line comments can be removed while real block comments remain available to inspection`() {
+        val comments = GLSLCommentStripper(preserveBlockComments = true)
+
+        assertEquals(comments.strip("value;//* not a block comment"), "value;")
+        assertEquals(comments.strip("/* RENDERTARGETS: 0,1"), "/* RENDERTARGETS: 0,1")
+        assertEquals(comments.strip(" * retained */ value; // trailing"), " * retained */ value; ")
+    }
 }
