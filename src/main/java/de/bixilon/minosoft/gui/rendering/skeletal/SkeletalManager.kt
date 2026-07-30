@@ -39,7 +39,7 @@ class SkeletalManager(
 
     fun upload(instance: SkeletalInstance) {
         instance.transform.pack(buffer.data)
-        buffer.upload(0, instance.model.transformCount * Mat4f.LENGTH)
+        buffer.upload(0, uploadEndIndex(instance.model.transformCount))
     }
 
     fun unload() {
@@ -48,5 +48,10 @@ class SkeletalManager(
 
     companion object {
         const val MAX_TRANSFORMS = 64
+
+        internal fun uploadEndIndex(transformCount: Int): Int {
+            require(transformCount > 0) { "A skeletal model must contain at least one transform." }
+            return Math.multiplyExact(transformCount, Mat4f.LENGTH) - 1
+        }
     }
 }
