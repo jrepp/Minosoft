@@ -63,7 +63,8 @@ class CloudArray(
         mesh.draw()
     }
 
-    fun unload() { // TODO????
+    fun unload() {
+        mesh.unload()
     }
 
     companion object {

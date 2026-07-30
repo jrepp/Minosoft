@@ -38,6 +38,8 @@ class SunScatterRenderer(
     private val mesh = SunScatterMeshBuilder(sky.context).bake()
     private var timeUpdate = true
     private var skyMatrix = Mat4f()
+    /** Debug-only presentation override; world time and weather remain unchanged. */
+    var referenceEnabledOverride: Boolean? = null
 
     private fun calculateMatrix(skyMatrix: Mat4f) = MMat4f(skyMatrix).apply {
         rotateZAssign((sun.calculateAngle() + 90.0f).rad)
@@ -72,11 +74,17 @@ class SunScatterRenderer(
     }
 
     override fun draw() {
-        if (!sky.profile.sunScatter || sky.time.phase == DayPhases.DAY || sky.time.phase == DayPhases.NIGHT || !sky.effects.sun) {
+        if (!isEnabled(
+                referenceEnabledOverride,
+                sky.profile.sunScatter,
+                sky.time.phase,
+                sky.effects.sun,
+            )
+        ) {
             return
         }
         val weather = sky.session.world.weather
-        val weatherLevel = maxOf(weather.rain, weather.thunder)
+        val weatherLevel = if (referenceEnabledOverride == true) 0.0f else maxOf(weather.rain, weather.thunder)
         if (weatherLevel >= 1.0f) {
             // maximum rain or thunder, don't render
             return
@@ -107,5 +115,19 @@ class SunScatterRenderer(
         )
         mesh.draw()
         system.resetBlending()
+    }
+
+    companion object {
+        internal fun isEnabled(
+            referenceOverride: Boolean?,
+            profileEnabled: Boolean,
+            phase: DayPhases,
+            dimensionSun: Boolean,
+        ): Boolean = referenceOverride ?: (
+            profileEnabled &&
+                phase != DayPhases.DAY &&
+                phase != DayPhases.NIGHT &&
+                dimensionSun
+            )
     }
 }

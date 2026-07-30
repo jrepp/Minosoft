@@ -56,6 +56,7 @@ class CloudRenderer(
         private set
 
     private var reset = false
+    var referenceSuppressed = false
 
 
     override fun registerLayers() {
@@ -76,6 +77,7 @@ class CloudRenderer(
     }
 
     private fun canSkip(): Boolean {
+        if (referenceSuppressed) return true
         if (!sky.effects.clouds) return true
         if (!sky.profile.clouds.enabled) return true
         if (cloudLayers.isEmpty()) return true
@@ -158,12 +160,24 @@ class CloudRenderer(
         for (unload in toUnload) {
             unload.unload()
         }
+        toUnload.clear()
         if (!sky.effects.clouds) {
             return
         }
         for (layer in cloudLayers) {
             layer.prepare()
         }
+    }
+
+    override fun unload() {
+        for (layer in cloudLayers) {
+            layer.unload()
+        }
+        cloudLayers.clear()
+        for (layer in toUnload) {
+            layer.unload()
+        }
+        toUnload.clear()
     }
 
 

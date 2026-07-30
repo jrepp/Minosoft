@@ -15,12 +15,17 @@ package de.bixilon.minosoft.gui.rendering.sky.planet.scatter
 
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 
 class SunScatterShader(
     native: NativeShader,
 ) : Shader(native) {
+    override val sceneContract = SceneShaderContract(SceneProgramFamily.SKY_BASIC, SceneVertexAbi.SUN_SCATTER, SceneStateAbi.SUN_SCATTER)
     var scatterMatrix by uniform("uScatterMatrix", Mat4f())
     var sunPosition by uniform("uSunPosition", Vec3f())
     var intensity by uniform("uIntensity", 0.0f)

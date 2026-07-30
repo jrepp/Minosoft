@@ -35,40 +35,42 @@ class CloudLayer(
     private var day = -1L
     private var randomSpeed = 0.0f
 
-    private fun push(from: Int, to: Int) {
-        arrays[to].unload()
-        arrays[to] = arrays[from]
-    }
-
     private fun fill(index: Int) {
         val offset = Vec2i((index % 3) - 1, (index / 3) - 1)
         arrays[index] = CloudArray(this, position.cloudPosition() + offset)
     }
 
     fun pushX(negative: Boolean) {
-        if (negative) {
-            push(1, 0); push(2, 1)
-            push(4, 3); push(5, 4)
-            push(7, 6); push(8, 7)
-            fill(2); fill(5); fill(8)
-        } else {
-            push(1, 2); push(0, 1)
-            push(4, 5); push(3, 4)
-            push(7, 8); push(6, 7)
-            fill(0); fill(3); fill(6)
+        for (z in 0 until 3) {
+            val row = z * 3
+            if (negative) {
+                arrays[row].unload()
+                arrays[row] = arrays[row + 1]
+                arrays[row + 1] = arrays[row + 2]
+                fill(row + 2)
+            } else {
+                arrays[row + 2].unload()
+                arrays[row + 2] = arrays[row + 1]
+                arrays[row + 1] = arrays[row]
+                fill(row)
+            }
         }
     }
 
     fun pushZ(negative: Boolean) {
         if (negative) {
-            push(3, 0); push(6, 3)
-            push(4, 1); push(7, 4)
-            push(5, 2); push(8, 5)
+            for (x in 0 until 3) {
+                arrays[x].unload()
+                arrays[x] = arrays[x + 3]
+                arrays[x + 3] = arrays[x + 6]
+            }
             fill(6); fill(7); fill(8)
         } else {
-            push(3, 6); push(0, 3)
-            push(4, 7); push(1, 4)
-            push(5, 8); push(2, 5)
+            for (x in 0 until 3) {
+                arrays[x + 6].unload()
+                arrays[x + 6] = arrays[x + 3]
+                arrays[x + 3] = arrays[x]
+            }
             fill(0); fill(1); fill(2)
         }
     }

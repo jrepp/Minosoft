@@ -19,6 +19,7 @@ import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.data.world.time.DayPhases
 import de.bixilon.minosoft.data.world.time.WorldTime
 import de.bixilon.minosoft.gui.rendering.sky.SkyRenderer
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
 import de.bixilon.minosoft.util.Backports.nextFloatPort
 import java.util.*
@@ -26,7 +27,7 @@ import kotlin.math.pow
 
 class SunRenderer(
     sky: SkyRenderer,
-) : PlanetRenderer(sky) {
+) : PlanetRenderer(sky, SceneProgramFamily.SUN) {
     override val texture = sky.context.textures.static.create(SUN)
 
     public override fun calculateAngle(): Float {

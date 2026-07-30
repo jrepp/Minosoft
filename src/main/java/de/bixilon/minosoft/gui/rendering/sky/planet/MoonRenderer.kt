@@ -21,13 +21,14 @@ import de.bixilon.minosoft.data.world.time.DayPhases
 import de.bixilon.minosoft.data.world.time.MoonPhases
 import de.bixilon.minosoft.data.world.time.WorldTime
 import de.bixilon.minosoft.gui.rendering.sky.SkyRenderer
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
 import de.bixilon.minosoft.util.Backports.nextFloatPort
 import java.util.*
 
 class MoonRenderer(
     sky: SkyRenderer,
-) : PlanetRenderer(sky) {
+) : PlanetRenderer(sky, SceneProgramFamily.MOON) {
     override val texture = sky.context.textures.static.create(MOON_PHASES)
     private var phase = MoonPhases.FULL_MOON
 

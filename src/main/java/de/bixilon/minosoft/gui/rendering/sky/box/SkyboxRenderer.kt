@@ -52,6 +52,11 @@ class SkyboxRenderer(
         private set
 
     private var texture = false
+    /**
+     * Debug-only presentation override used to exercise the production fixed
+     * skybox path without mutating the authoritative dimension.
+     */
+    var referenceTextureOverride: ResourceLocation? = null
 
     init {
         sky::matrix.observe(this) { updateMatrix = true }
@@ -122,7 +127,7 @@ class SkyboxRenderer(
     }
 
     override fun draw() {
-        val texture = sky.effects.fixedTexture
+        val texture = selectedTexture(sky.effects.fixedTexture, referenceTextureOverride)
         if (this.texture != (texture != null)) {
             this.texture = (texture != null)
             updateMatrix = true
@@ -140,5 +145,10 @@ class SkyboxRenderer(
 
     companion object {
         val DEFAULT_SKY_COLOR = "#ecff89".rgb()
+
+        internal fun selectedTexture(
+            authored: ResourceLocation?,
+            referenceOverride: ResourceLocation?,
+        ): ResourceLocation? = referenceOverride ?: authored
     }
 }

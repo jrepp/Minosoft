@@ -15,12 +15,17 @@ package de.bixilon.minosoft.gui.rendering.sky.box
 
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 
 class SkyboxColorShader(
     native: NativeShader,
 ) : Shader(native) {
+    override val sceneContract = SceneShaderContract(SceneProgramFamily.SKY_BASIC, SceneVertexAbi.SKY_POSITION, SceneStateAbi.SKY_COLOR)
     var skyViewProjectionMatrix by uniform("uSkyViewProjectionMatrix", Mat4f())
     var skyColor by uniform("uSkyColor", ChatColors.BLACK)
 }

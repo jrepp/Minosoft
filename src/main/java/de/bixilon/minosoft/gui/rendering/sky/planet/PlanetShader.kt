@@ -15,6 +15,10 @@ package de.bixilon.minosoft.gui.rendering.sky.planet
 
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec4.f.Vec4f
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.types.TextureShader
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
@@ -22,7 +26,9 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 
 class PlanetShader(
     native: NativeShader,
+    family: SceneProgramFamily,
 ) : Shader(native), TextureShader {
+    override val sceneContract = SceneShaderContract(family, SceneVertexAbi.PLANET, SceneStateAbi.PLANET)
     var matrix: Mat4f by uniform("uMatrix", Mat4f())
     var tint: Vec4f by uniform("uTintColor", Vec4f(1.0f))
     override var textures: TextureManager by textureManager()

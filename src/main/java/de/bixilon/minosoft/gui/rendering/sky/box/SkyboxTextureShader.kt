@@ -15,6 +15,10 @@ package de.bixilon.minosoft.gui.rendering.sky.box
 
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.types.TextureShader
 import de.bixilon.minosoft.gui.rendering.shader.types.TintedShader
@@ -24,6 +28,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 class SkyboxTextureShader(
     native: NativeShader,
 ) : Shader(native), TextureShader, TintedShader {
+    override val sceneContract = SceneShaderContract(SceneProgramFamily.SKY_TEXTURED, SceneVertexAbi.SKY_TEXTURE, SceneStateAbi.SKY_TEXTURE)
     override var textures: TextureManager by textureManager()
 
     var skyViewProjectionMatrix by uniform("uSkyViewProjectionMatrix", Mat4f())

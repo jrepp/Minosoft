@@ -154,6 +154,14 @@ class SkyboxColor(
         if (sky.context.camera.fog.overridesSkyColor) {
             sky.context.camera.fog.state.color?.let { return it.rgb() }
         }
+        return calculateWorldColor()
+    }
+
+    /**
+     * World sky color before camera-medium and blindness fog replaces the
+     * visible sky. Iris's `skyColor` uniform uses this world value.
+     */
+    fun calculateWorldColor(): RGBColor? {
         val properties = sky.effects
         val time = sky.time
         if (properties.fixedTexture != null) {

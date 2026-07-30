@@ -16,6 +16,10 @@ package de.bixilon.minosoft.gui.rendering.sky.clouds
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.gui.rendering.camera.fog.FogManager
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.types.FogShader
 import de.bixilon.minosoft.gui.rendering.shader.types.ViewProjectionShader
@@ -24,6 +28,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 class CloudShader(
     native: NativeShader,
 ) : Shader(native), ViewProjectionShader, FogShader {
+    override val sceneContract = SceneShaderContract(SceneProgramFamily.CLOUDS, SceneVertexAbi.CLOUD, SceneStateAbi.CLOUD)
     override var viewProjectionMatrix: Mat4f by viewProjectionMatrix()
     override var cameraPosition: Vec3f by cameraPosition()
     override var fog: FogManager by fog()

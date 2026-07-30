@@ -23,6 +23,7 @@ import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.data.world.time.WorldTime
 import de.bixilon.minosoft.gui.rendering.sky.SkyChildRenderer
 import de.bixilon.minosoft.gui.rendering.sky.SkyRenderer
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.RenderingCapabilities
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
@@ -30,9 +31,10 @@ import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
 
 abstract class PlanetRenderer(
     protected val sky: SkyRenderer,
+    family: SceneProgramFamily,
 ) : SkyChildRenderer {
     protected abstract val texture: Texture
-    protected val shader = sky.context.system.shader.create(minosoft("sky/planet")) { PlanetShader(it) }
+    protected val shader = sky.context.system.shader.create(minosoft("sky/planet")) { PlanetShader(it, family) }
     private lateinit var mesh: Mesh
     protected var day = -1L
     protected var matrix = Mat4f()
