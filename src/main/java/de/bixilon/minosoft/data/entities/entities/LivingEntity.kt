@@ -111,6 +111,13 @@ abstract class LivingEntity(session: PlaySession, entityType: EntityType, data: 
     open val isSleeping: Boolean
         get() = bedPosition != null
 
+    /**
+     * Vanilla's per-renderer white overlay input. Most living entities retain
+     * zero; specific entity implementations may derive an interpolated value
+     * from their client-tick state.
+     */
+    open fun whiteOverlayProgress(partialTick: Float): Float = 0.0f
+
 
     override val hitboxColor: RGBAColor?
         get() = when {
