@@ -18,7 +18,6 @@ import de.bixilon.kutil.concurrent.pool.ThreadPool
 import de.bixilon.kutil.concurrent.pool.io.DefaultIOPool
 import de.bixilon.kutil.concurrent.pool.runnable.ThreadPoolRunnable
 import de.bixilon.kutil.file.PathUtil.div
-import de.bixilon.kutil.time.TimeUtil.format1
 import de.bixilon.minosoft.assets.util.AssetsOptions
 import de.bixilon.minosoft.data.text.BaseComponent
 import de.bixilon.minosoft.data.text.ChatComponent
@@ -35,28 +34,24 @@ import de.bixilon.minosoft.gui.rendering.textures.TextureUtil
 import de.bixilon.minosoft.terminal.RunConfiguration
 import java.io.File
 import java.nio.file.Path
-import java.text.SimpleDateFormat
 import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
+
+data class CapturedScreenshot(
+    val buffer: TextureBuffer,
+    val size: Vec2i,
+    val frame: Long,
+    val capturedAt: Instant,
+    val suggestedFilename: String,
+)
 
 class ScreenshotTaker(
     private val context: RenderContext,
 ) {
-
-    private fun getDestinationFolder(base: Path, time: Instant): File {
-        val timestamp = DATE_FORMATTER.format1(time)
-        var filename = "$timestamp.png"
-        var i = 1
-
-        while ((base / filename).toFile().exists()) {
-            filename = "${timestamp}_${i++}.png"
-            if (i > AssetsOptions.MAX_FILE_CHECKING) {
-                throw StackOverflowError("There are already > ${AssetsOptions.MAX_FILE_CHECKING} screenshots with this date! Please try again later!")
-            }
-        }
-
-        return (base / filename).toFile()
-    }
+    val userDirectory: Path
+        get() = standardDirectory(RunConfiguration.home)
 
     private fun createMessage(file: File): ChatComponent {
         var deleted = false
@@ -92,7 +87,7 @@ class ScreenshotTaker(
 
     private fun store(buffer: TextureBuffer, base: Path, time: Instant) {
         try {
-            val file = getDestinationFolder(base, time)
+            val file = destinationFile(base, time)
             TextureUtil.dump(file, buffer, false, true)
 
             val message = createMessage(file)
@@ -102,14 +97,25 @@ class ScreenshotTaker(
         }
     }
 
+    fun capture(time: Instant = Instant.now()): CapturedScreenshot {
+        val size = context.window.size
+        val buffer = context.system.readPixels(Vec2i.EMPTY, size)
+        return CapturedScreenshot(
+            buffer = buffer,
+            size = size,
+            frame = context.frameNumber,
+            capturedAt = time,
+            suggestedFilename = filename(time),
+        )
+    }
+
     fun takeScreenshot() {
         try {
-            val size = context.window.size
-            val buffer = context.system.readPixels(Vec2i.EMPTY, size)
-
-            val path = RunConfiguration.home / "screenshots" / context.session.connection.identifier
-            val time = Instant.now()
-            DefaultIOPool += ThreadPoolRunnable(forcePool = true, priority = ThreadPool.Priorities.HIGHER) { store(buffer, path, time) }
+            val screenshot = capture()
+            val path = userDirectory
+            DefaultIOPool += ThreadPoolRunnable(forcePool = true, priority = ThreadPool.Priorities.HIGHER) {
+                store(screenshot.buffer, path, screenshot.capturedAt)
+            }
         } catch (exception: Exception) {
             exception.fail()
         }
@@ -121,6 +127,26 @@ class ScreenshotTaker(
     }
 
     companion object {
-        private val DATE_FORMATTER = SimpleDateFormat("yyyy-MM-dd_HH.mm.ss")
+        private val DATE_FORMATTER: DateTimeFormatter = DateTimeFormatter
+            .ofPattern("yyyy-MM-dd_HH.mm.ss")
+            .withZone(ZoneId.systemDefault())
+
+        internal fun standardDirectory(home: Path): Path = home / "screenshots"
+
+        internal fun filename(time: Instant): String = "${DATE_FORMATTER.format(time)}.png"
+
+        internal fun destinationFile(base: Path, time: Instant): File {
+            val timestamp = DATE_FORMATTER.format(time)
+            var filename = "$timestamp.png"
+            var index = 1
+
+            while ((base / filename).toFile().exists()) {
+                filename = "${timestamp}_${index++}.png"
+                if (index > AssetsOptions.MAX_FILE_CHECKING) {
+                    throw IllegalStateException("There are already > ${AssetsOptions.MAX_FILE_CHECKING} screenshots with this date! Please try again later!")
+                }
+            }
+            return (base / filename).toFile()
+        }
     }
 }

@@ -103,7 +103,7 @@ class RenderLoop(
         context.profiler("end") { context.window.end() }
 
 
-        if (context.state == RenderingStates.BACKGROUND && slowRendering) {
+        if (context.state == RenderingStates.BACKGROUND && (context.backgroundThrottleOverride ?: slowRendering)) {
             sleep(100.milliseconds)
         }
 

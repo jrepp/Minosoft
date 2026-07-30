@@ -40,6 +40,7 @@ import java.util.function.Supplier;
 
 public final class MinosoftDebugBridgeMod implements ModInitializer {
     private static final int MAX_BLOCKS = 32_768;
+    private static final double MAX_TELEPORT_COORDINATE = 30_000_000.0;
     private volatile DebugChannelServer channel;
     private volatile MinecraftServer minecraft;
     private volatile ServerSnapshot snapshot = ServerSnapshot.empty();
@@ -81,6 +82,7 @@ public final class MinosoftDebugBridgeMod implements ModInitializer {
         server.operations().register("fabric-server", "state.sample", (context, body) -> onServer(() -> sampleState(body)));
         server.operations().register("fabric-server", "world.blocks.sample", (context, body) -> onServer(() -> sampleBlocks(body)));
         server.operations().register("fabric-server", "world.aoi", (context, body) -> onServer(() -> sampleBlocks(body)));
+        server.operations().register("fabric-server", "world.teleport-player", (context, body) -> onServer(() -> teleportPlayer(body)));
         server.operations().register("fabric-server", "mods.debug", (context, body) -> onServer(this::mods));
     }
 
@@ -183,6 +185,105 @@ public final class MinosoftDebugBridgeMod implements ModInitializer {
             index += count;
         }
         return DebugOperationResult.json(result);
+    }
+
+    private DebugOperationResult teleportPlayer(JsonNode body) {
+        MinecraftServer server = requireServer();
+        ServerPlayerEntity player = selectPlayer(server, optionalText(body, "player"));
+        String dimension = requiredText(body, "dimension");
+        ServerWorld target = selectWorld(server, dimension);
+        JsonNode position = body.path("position");
+        if (!position.isObject()) {
+            throw new DebugOperationException("invalid_request", "position must be an object");
+        }
+        double x = finiteCoordinate(position, "x");
+        double y = finiteCoordinate(position, "y");
+        double z = finiteCoordinate(position, "z");
+        float yaw = finiteAngle(body, "yaw", player.getYaw());
+        float pitch = finiteAngle(body, "pitch", player.getPitch());
+
+        ObjectNode previous = playerPosition(player);
+        player.teleport(target, x, y, z, yaw, pitch);
+
+        ObjectNode result = DebugJson.MAPPER.createObjectNode()
+            .put("player", player.getGameProfile().getName());
+        result.set("previous", previous);
+        result.set("current", playerPosition(player));
+        return DebugOperationResult.json(result);
+    }
+
+    private static ServerPlayerEntity selectPlayer(MinecraftServer server, String selector) {
+        List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList();
+        if (selector == null) {
+            if (players.size() != 1) {
+                throw new DebugOperationException(
+                    "invalid_request",
+                    "player is required unless exactly one player is connected"
+                );
+            }
+            return players.get(0);
+        }
+        for (ServerPlayerEntity player : players) {
+            if (player.getGameProfile().getName().equals(selector) || player.getUuidAsString().equals(selector)) {
+                return player;
+            }
+        }
+        throw new DebugOperationException("not_found", "connected player was not found: " + selector);
+    }
+
+    static String requiredText(JsonNode body, String field) {
+        String value = optionalText(body, field);
+        if (value == null) {
+            throw new DebugOperationException("invalid_request", field + " must be a non-empty string");
+        }
+        return value;
+    }
+
+    private static String optionalText(JsonNode body, String field) {
+        JsonNode node = body.get(field);
+        if (node == null || node.isNull()) return null;
+        if (!node.isTextual() || node.textValue().isBlank()) {
+            throw new DebugOperationException("invalid_request", field + " must be a non-empty string");
+        }
+        return node.textValue();
+    }
+
+    static double finiteCoordinate(JsonNode body, String field) {
+        JsonNode node = body.get(field);
+        if (node == null || !node.isNumber()) {
+            throw new DebugOperationException("invalid_request", "position." + field + " must be numeric");
+        }
+        double value = node.doubleValue();
+        if (!Double.isFinite(value) || Math.abs(value) > MAX_TELEPORT_COORDINATE) {
+            throw new DebugOperationException(
+                "limit_exceeded",
+                "position." + field + " must be finite and within +/-" + (long) MAX_TELEPORT_COORDINATE
+            );
+        }
+        return value;
+    }
+
+    static float finiteAngle(JsonNode body, String field, float fallback) {
+        JsonNode node = body.get(field);
+        if (node == null || node.isNull()) return fallback;
+        if (!node.isNumber()) {
+            throw new DebugOperationException("invalid_request", field + " must be numeric");
+        }
+        float value = node.floatValue();
+        if (!Float.isFinite(value)) {
+            throw new DebugOperationException("invalid_request", field + " must be finite");
+        }
+        return value;
+    }
+
+    private static ObjectNode playerPosition(ServerPlayerEntity player) {
+        return DebugJson.MAPPER.createObjectNode()
+            .put("dimension", player.getServerWorld().getRegistryKey().getValue().toString())
+            .put("x", player.getX())
+            .put("y", player.getY())
+            .put("z", player.getZ())
+            .put("yaw", player.getYaw())
+            .put("pitch", player.getPitch());
     }
 
     private DebugOperationResult mods() {

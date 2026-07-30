@@ -11,27 +11,87 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import de.bixilon.kmath.vec.vec2.f.Vec2f
+import de.bixilon.kmath.vec.vec2.d.Vec2d
 import de.bixilon.kmath.vec.vec2.i.Vec2i
+import de.bixilon.kmath.vec.vec3.d.Vec3d
+import de.bixilon.kmath.vec.vec4.f.Vec4f
 import de.bixilon.kutil.concurrent.lock.LockUtil.acquired
+import de.bixilon.kutil.concurrent.lock.LockUtil.locked
 import de.bixilon.minosoft.config.key.KeyCodes
+import de.bixilon.minosoft.data.container.equipment.EquipmentSlots
+import de.bixilon.minosoft.data.container.stack.ItemStack
+import de.bixilon.minosoft.data.container.stack.properties.EnchantingProperty
+import de.bixilon.minosoft.data.container.stack.properties.NbtProperty
+import de.bixilon.minosoft.data.entities.EntityRotation
+import de.bixilon.minosoft.data.entities.data.EntityData
+import de.bixilon.minosoft.data.entities.block.BeaconBlockEntity
+import de.bixilon.minosoft.data.entities.block.container.storage.StorageBlockEntity
+import de.bixilon.minosoft.data.entities.block.sign.SignBlockEntity
+import de.bixilon.minosoft.data.entities.entities.LightningBolt
+import de.bixilon.minosoft.data.entities.entities.display.ItemDisplayEntity
+import de.bixilon.minosoft.data.entities.entities.item.ItemEntity
+import de.bixilon.minosoft.data.entities.entities.item.PrimedTNT
+import de.bixilon.minosoft.data.entities.entities.LivingEntity
+import de.bixilon.minosoft.data.entities.entities.monster.Creeper
+import de.bixilon.minosoft.data.registries.biomes.BiomePrecipitation
+import de.bixilon.minosoft.data.registries.blocks.state.BlockState
+import de.bixilon.minosoft.data.registries.blocks.state.BlockStateFlags
+import de.bixilon.minosoft.data.registries.blocks.MinecraftBlocks
+import de.bixilon.minosoft.data.registries.dimension.effects.minecraft.EndEffects
+import de.bixilon.minosoft.data.registries.identified.ResourceLocation
+import de.bixilon.minosoft.data.text.ChatComponent
+import de.bixilon.minosoft.data.world.border.area.BorderArea
+import de.bixilon.minosoft.data.world.border.area.StaticBorderArea
 import de.bixilon.minosoft.data.world.positions.BlockPosition
+import de.bixilon.minosoft.data.world.weather.WorldWeather
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.RenderingStates
+import de.bixilon.minosoft.gui.rendering.camera.arm.ArmRenderer
 import de.bixilon.minosoft.gui.rendering.chunk.ChunkRenderer
+import de.bixilon.minosoft.gui.rendering.chunk.border.ChunkBorderRenderer
+import de.bixilon.minosoft.gui.rendering.chunk.border.world.WorldBorderRenderer
+import de.bixilon.minosoft.gui.rendering.chunk.breaking.BlockBreakRenderer
+import de.bixilon.minosoft.gui.rendering.chunk.mesh.types.ChunkMeshTypes
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
+import de.bixilon.minosoft.gui.rendering.entities.feature.armor.VanillaArmorPoseSource
+import de.bixilon.minosoft.gui.rendering.entities.feature.skeletal.SkeletalFeature
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.ContentModelInspectable
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.LivingEntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.inspectDrawPasses
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerRenderer
+import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLevels
 import de.bixilon.minosoft.gui.rendering.events.input.CharInputEvent
 import de.bixilon.minosoft.gui.rendering.events.input.KeyInputEvent
 import de.bixilon.minosoft.gui.rendering.events.input.MouseMoveEvent
 import de.bixilon.minosoft.gui.rendering.events.input.MouseScrollEvent
+import de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay.overlays.weather.WeatherOverlay
+import de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay.overlays.FireOverlay
+import de.bixilon.minosoft.gui.rendering.gui.GUIRenderer
+import de.bixilon.minosoft.gui.rendering.models.loader.ContentReloadRejectedException
+import de.bixilon.minosoft.gui.rendering.models.loader.ContentReloadRejectionPoint
+import de.bixilon.minosoft.gui.rendering.particle.ParticleRenderer
+import de.bixilon.minosoft.gui.rendering.particle.types.render.texture.simple.cloud.SneezeParticle
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisEntityOverlay
+import de.bixilon.minosoft.gui.rendering.sky.SkyRenderer
+import de.bixilon.minosoft.gui.rendering.sky.box.SkyboxRenderer
+import de.bixilon.minosoft.gui.rendering.sky.clouds.CloudRenderer
+import de.bixilon.minosoft.gui.rendering.sky.planet.scatter.SunScatterRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.TextureBuffer
+import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlCapabilityDiagnostics
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
+import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceSnapshot
+import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureManager
 import de.bixilon.minosoft.gui.rendering.system.window.KeyChangeTypes
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainPerformanceSnapshot
+import de.bixilon.minosoft.local.LocalConnection
 import de.bixilon.minosoft.modding.loader.ModOptions
 import de.bixilon.minosoft.modding.loader.fabric.FabricModDiagnostics
 import de.bixilon.minosoft.modding.loader.fabric.FabricResourceReloadEvents
 import de.bixilon.minosoft.modding.loader.fabric.FabricResourceReloadType
+import de.bixilon.minosoft.modding.event.events.BlockBreakAnimationEvent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.network.session.play.PlaySessionStates
+import de.bixilon.minosoft.util.KUtil.startInit
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
@@ -40,6 +100,7 @@ import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.imageio.ImageIO
 
 object ClientDebugChannel : AutoCloseable {
@@ -47,6 +108,43 @@ object ClientDebugChannel : AutoCloseable {
     private const val MAX_PIXEL_SAMPLES = 4096
     private const val MAX_REGION_PIXELS = 65536
     private const val MAX_BLOCKS = 32768
+    private const val MAX_FUNCTION_ARGUMENTS = 16
+    private const val MAX_FUNCTION_ARGUMENT_BYTES = 8192
+    private const val CREEPER_OVERLAY_FUSE_TICKS = 20
+    private const val DEFAULT_WORLD_BORDER_CANARY_RADIUS = 8.0
+    private const val MIN_WORLD_BORDER_CANARY_RADIUS = 2.0
+    private const val MAX_WORLD_BORDER_CANARY_RADIUS = 64.0
+    private const val LIGHTNING_CANARY_ENTITY_ID = -2_000_000_001
+    private const val PRIMED_TNT_CANARY_ENTITY_ID = -2_000_000_003
+    private const val ITEM_CANARY_ENTITY_ID = -2_000_000_004
+    private const val DEFAULT_LIGHTNING_CANARY_DISTANCE = 4.0
+    private const val MIN_LIGHTNING_CANARY_DISTANCE = 1.0
+    private const val MAX_LIGHTNING_CANARY_DISTANCE = 16.0
+    private const val BLOCK_BREAK_CANARY_ID = -2_000_000_002
+    private const val BLOCK_BREAK_CANARY_PROGRESS = 4.0f / 9.0f
+    private const val BEACON_CANARY_HORIZONTAL_RADIUS = 6
+    private const val BEACON_CANARY_CLEAR_HEIGHT = 8
+    private const val STORAGE_BLOCK_ENTITY_CANARY_DISTANCE = 2.0
+    private val preparedArmor = mutableMapOf<Int, Map<EquipmentSlots, ItemStack?>>()
+    private var preparedBillboardText: PreparedBillboardText? = null
+    private val preparedEntityEyes = mutableMapOf<Int, PreparedEntityEyes>()
+    private val preparedLeashes = mutableMapOf<Int, PreparedLeash>()
+    private val preparedCreeperOverlays = mutableMapOf<Int, PreparedCreeperOverlay>()
+    private var preparedTranslucentHeldItem: PreparedHeldItem? = null
+    private var preparedWorldBorder: PreparedWorldBorder? = null
+    private var preparedSkyTexture: PreparedSkyTexture? = null
+    private var preparedSunScatter: PreparedSunScatter? = null
+    private var preparedFireOverlay: PreparedFireOverlay? = null
+    private var preparedWeather: PreparedWeather? = null
+    private var preparedLightning: PreparedLightning? = null
+    private var preparedPrimedTnt: PreparedPrimedTnt? = null
+    private var preparedItemEntity: PreparedItemEntity? = null
+    private var preparedBeacon: PreparedBeacon? = null
+    private var preparedStorageBlockEntity: PreparedStorageBlockEntity? = null
+    private var preparedSignText: PreparedSignText? = null
+    private var preparedBlockBreak: PreparedBlockBreak? = null
+    private var preparedTranslucentParticle: PreparedTranslucentParticle? = null
+    private var preparedChunkBorder: PreparedChunkBorder? = null
 
     @Volatile
     private var channel: DebugChannelServer? = null
@@ -64,10 +162,18 @@ object ClientDebugChannel : AutoCloseable {
         try {
             provider.register(registrar)
         } catch (error: Throwable) {
-            registrations.forEach { runCatching { it.close() } }
+            registrations.forEach { registration ->
+                try {
+                    registration.close()
+                } catch (cleanup: Throwable) {
+                    error.addSuppressed(cleanup)
+                }
+            }
             throw error
         }
+        val closed = AtomicBoolean()
         return AutoCloseable {
+            if (!closed.compareAndSet(false, true)) return@AutoCloseable
             var failure: Throwable? = null
             registrations.forEach { registration ->
                 try {
@@ -106,12 +212,89 @@ object ClientDebugChannel : AutoCloseable {
         server.operations().register("client", "state.sample") { _, body -> completed(sampleState(body)) }
         server.operations().register("client", "visual.capture") { _, _ -> onRender(::capture) }
         server.operations().register("client", "visual.sample") { _, body -> onRender { sampleVisual(it, body) } }
+        server.operations().register("client", "visual.prepare-reference") { _, body -> onRender { prepareVisualReference(it, body) } }
+        server.operations().register("client", "visual.background-throttle") { _, body ->
+            onRender { configureBackgroundThrottle(it, body) }
+        }
         server.operations().register("client", "input.inject") { _, body -> onRender { injectInput(it, body) } }
         server.operations().register("client", "world.blocks.sample") { _, body -> completed(sampleBlocks(body)) }
         server.operations().register("client", "world.aoi") { _, body -> completed(sampleBlocks(body)) }
         server.operations().register("client", "mods.debug") { _, _ -> completed(modDiagnostics()) }
         server.operations().register("client", "render.substrate") { _, _ -> onRender(::renderSubstrate) }
-        server.operations().register("client", "render.reload-content") { _, _ -> onRender(::reloadContent) }
+        server.operations().register("client", "render.terrain-telemetry") { _, body ->
+            onRender { configureTerrainTelemetry(it, body) }
+        }
+        server.operations().register("client", "render.prepare-reference-hand") { _, body ->
+            onRender { prepareReferenceHand(it, body) }
+        }
+        server.operations().register("client", "render.reload-content") { _, body -> onRender { reloadContent(it, body) } }
+        server.operations().register("client", "render.prepare-entity-flame") { _, body ->
+            onRender { prepareEntityFlame(it, body) }
+        }
+        server.operations().register("client", "render.prepare-billboard-text") { _, body ->
+            onRender { prepareBillboardText(it, body) }
+        }
+        server.operations().register("client", "render.prepare-entity-outline") { _, body ->
+            onRender { prepareEntityOutline(it, body) }
+        }
+        server.operations().register("client", "render.prepare-entity-eyes") { _, body ->
+            onRender { prepareEntityEyes(it, body) }
+        }
+        server.operations().register("client", "render.prepare-leash") { _, body ->
+            onRender { prepareLeash(it, body) }
+        }
+        server.operations().register("client", "render.prepare-vanilla-armor") { _, body ->
+            onRender { prepareVanillaArmor(it, body) }
+        }
+        server.operations().register("client", "render.prepare-creeper-overlay") { _, body ->
+            onRender { prepareCreeperOverlay(it, body) }
+        }
+        server.operations().register("client", "render.prepare-translucent-held-item") { _, body ->
+            onRender { prepareTranslucentHeldItem(it, body) }
+        }
+        server.operations().register("client", "render.prepare-world-border") { _, body ->
+            onRender { prepareWorldBorder(it, body) }
+        }
+        server.operations().register("client", "render.prepare-sky-texture") { _, body ->
+            onRender { prepareSkyTexture(it, body) }
+        }
+        server.operations().register("client", "render.prepare-sun-scatter") { _, body ->
+            onRender { prepareSunScatter(it, body) }
+        }
+        server.operations().register("client", "render.prepare-fire-overlay") { _, body ->
+            onRender { prepareFireOverlay(it, body) }
+        }
+        server.operations().register("client", "render.prepare-weather") { _, body ->
+            onRender { prepareWeather(it, body) }
+        }
+        server.operations().register("client", "render.prepare-lightning") { _, body ->
+            onRender { prepareLightning(it, body) }
+        }
+        server.operations().register("client", "render.prepare-primed-tnt") { _, body ->
+            onRender { preparePrimedTnt(it, body) }
+        }
+        server.operations().register("client", "render.prepare-item-entity") { _, body ->
+            onRender { prepareItemEntity(it, body) }
+        }
+        server.operations().register("client", "render.prepare-beacon") { _, body ->
+            onRender { prepareBeacon(it, body) }
+        }
+        server.operations().register("client", "render.prepare-storage-block-entity") { _, body ->
+            onRender { prepareStorageBlockEntity(it, body) }
+        }
+        server.operations().register("client", "render.prepare-sign-text") { _, body ->
+            onRender { prepareSignText(it, body) }
+        }
+        server.operations().register("client", "render.prepare-block-break") { _, body ->
+            onRender { prepareBlockBreak(it, body) }
+        }
+        server.operations().register("client", "render.prepare-translucent-particle") { _, body ->
+            onRender { prepareTranslucentParticle(it, body) }
+        }
+        server.operations().register("client", "render.prepare-chunk-border") { _, body ->
+            onRender { prepareChunkBorder(it, body) }
+        }
+        server.operations().register("client", "content.execute-local") { _, body -> onRender { executeLocalContent(it, body) } }
     }
 
     private fun status(): JsonNode {
@@ -157,6 +340,9 @@ object ClientDebugChannel : AutoCloseable {
             put("averageFrameNanos", context.renderStats.avgFrameTime.avg.inWholeNanoseconds)
             put("averageDrawNanos", context.renderStats.avgDrawTime.avg.inWholeNanoseconds)
             put("renderQueueDepth", context.queue.size)
+            context.renderer[ChunkRenderer]?.terrainPerformance?.snapshot()?.let {
+                putTerrainPerformance("terrain", it, includeBuckets = false)
+            }
         }
         val sessions = PlaySession.collectSessions()
         put("sessions", sessions.size)
@@ -176,6 +362,8 @@ object ClientDebugChannel : AutoCloseable {
             val position = player.physics.position
             result.putObject("player").apply {
                 put("x", position.x); put("y", position.y); put("z", position.z)
+                put("yaw", player.physics.rotation.yaw)
+                put("pitch", player.physics.rotation.pitch)
                 put("health", player.health)
                 put("gamemode", player.gamemode.name.lowercase())
                 put("sprinting", player.isSprinting)
@@ -209,12 +397,143 @@ object ClientDebugChannel : AutoCloseable {
                             val entityRenderer = entity.renderer
                             entities.addObject().apply {
                                 put("id", entity.id)
+                                put("uuid", entity.uuid?.toString())
                                 put("type", entity.type.identifier.toString())
                                 put("x", position.x); put("y", position.y); put("z", position.z)
                                 put("invisible", entity.isInvisible)
+                                put("glowing", entity.hasGlowingEffect)
+                                put("onFire", entity.isOnFire)
                                 put("renderer", entityRenderer?.javaClass?.simpleName)
                                 put("visibility", entityRenderer?.visibility?.name?.lowercase())
                                 put("features", entityRenderer?.features?.count() ?: 0)
+                                (entityRenderer as? PlayerRenderer<*>)?.let { playerRenderer ->
+                                    val playerModel = playerRenderer.model
+                                    put("playerModelRetained", playerModel != null)
+                                    put("playerModelEnabled", playerModel?.enabled == true)
+                                    playerModel?.instance?.let { instance ->
+                                        put("playerModelState", instance.state.name.lowercase())
+                                        put("playerModelVertices", instance.model.mesh.buffer.vertices)
+                                        put("playerModelTransforms", instance.model.transformCount)
+                                        putObject("playerModelTranslation").apply {
+                                            put("x", instance.matrix[0].w)
+                                            put("y", instance.matrix[1].w)
+                                            put("z", instance.matrix[2].w)
+                                        }
+                                        putObject("playerModelScale").apply {
+                                            put("x", instance.matrix[0].x)
+                                            put("y", instance.matrix[1].y)
+                                            put("z", instance.matrix[2].z)
+                                        }
+                                        val root = instance.transform.renderMatrix
+                                        putObject("playerModelRootTranslation").apply {
+                                            put("x", root[0].w)
+                                            put("y", root[1].w)
+                                            put("z", root[2].w)
+                                        }
+                                        putObject("playerModelRootScale").apply {
+                                            put("x", root[0].x)
+                                            put("y", root[1].y)
+                                            put("z", root[2].z)
+                                        }
+                                        val world = root * Vec4f(0.0f, 1.0f, 0.0f, 1.0f)
+                                        renderContextOrNull()?.let { renderContext ->
+                                            val clip = renderContext.camera.matrix.viewProjectionMatrix * world
+                                            putObject("playerModelClip").apply {
+                                                put("x", clip.x)
+                                                put("y", clip.y)
+                                                put("z", clip.z)
+                                                put("w", clip.w)
+                                            }
+                                        }
+                                    }
+                                }
+                                renderContextOrNull()?.models?.skeletal?.let { skeletal ->
+                                    skeletal.contentModel(entity.type.identifier)?.let { route ->
+                                        put("contentRoute", route.toString())
+                                        skeletal[route]?.let { routed ->
+                                            routed.contentIdentity?.let { identity ->
+                                                put("routedContentFormat", identity.format.name.lowercase())
+                                                put("routedContentSource", identity.source.toString())
+                                                put("routedContentGeometry", identity.identifier)
+                                            }
+                                            val textures = skeletal.entityTextures(entity, routed)
+                                            textures.values.singleOrNull()
+                                                ?.let { put("routedContentTexture", it.base.toString()) }
+                                            val passes = routed.inspectDrawPasses(textures)
+                                            put("routedContentBaseVertices", passes.baseVertices)
+                                            put("routedContentSelectedTexturePasses", passes.selectedTexturePasses)
+                                            put("routedContentSelectedTextureVertices", passes.selectedTextureVertices)
+                                            put("routedContentGeometryPasses", passes.geometryPasses)
+                                            put("routedContentEmissivePasses", passes.emissivePasses)
+                                            put("routedContentEmissiveVertices", passes.emissiveVertices)
+                                            put("routedContentGeckoLayerCandidates", passes.geckoLayerCandidates)
+                                            put("routedContentGeckoLayerCandidateVertices", passes.geckoLayerCandidateVertices)
+                                            put("routedContentKnownDrawPasses", passes.knownDrawPasses)
+                                        }
+                                    }
+                                }
+                                val contentInspectable = entityRenderer as? ContentModelInspectable
+                                contentInspectable?.retainedContentModel?.let { model ->
+                                    model.contentIdentity?.let { identity ->
+                                        put("contentFormat", identity.format.name.lowercase())
+                                        put("contentSource", identity.source.toString())
+                                        put("contentGeometry", identity.identifier)
+                                    }
+                                    renderContextOrNull()?.models?.skeletal?.let { skeletal ->
+                                        val textures = skeletal.entityTextures(entity, model)
+                                        textures.values.singleOrNull()
+                                            ?.let { put("contentTexture", it.base.toString()) }
+                                        val passes = model.inspectDrawPasses(textures)
+                                        put("contentBaseVertices", passes.baseVertices)
+                                        put("contentSelectedTexturePasses", passes.selectedTexturePasses)
+                                        put("contentSelectedTextureVertices", passes.selectedTextureVertices)
+                                        put("contentGeometryPasses", passes.geometryPasses)
+                                        put("contentEmissivePasses", passes.emissivePasses)
+                                        put("contentEmissiveVertices", passes.emissiveVertices)
+                                        put("contentGeckoLayerCandidates", passes.geckoLayerCandidates)
+                                        put("contentGeckoLayerCandidateVertices", passes.geckoLayerCandidateVertices)
+                                        put("contentKnownDrawPasses", passes.knownDrawPasses)
+                                    }
+                                }
+                                contentInspectable?.retainedContentControllers
+                                    ?.takeIf { it.controllerCount > 0 }
+                                    ?.let { inspection ->
+                                        put("contentControllerCount", inspection.controllerCount)
+                                        put("contentControllersTruncated", inspection.truncated)
+                                        val controllers = putArray("contentControllers")
+                                        for (controller in inspection.controllers) {
+                                            controllers.addObject().apply {
+                                                put("name", controller.name)
+                                                controller.currentClip?.let { put("currentClip", it) }
+                                                put("elapsedSeconds", controller.elapsedSeconds)
+                                                controller.remainingSeconds?.let { put("remainingSeconds", it) }
+                                                put("transitionElapsedSeconds", controller.transitionElapsedSeconds)
+                                                put("transitionDurationSeconds", controller.transitionDurationSeconds)
+                                                put("triggered", controller.triggered)
+                                                put("queued", controller.queued)
+                                                controller.queueStageIndex?.let { put("queueStageIndex", it) }
+                                                controller.queueStageCount?.let { put("queueStageCount", it) }
+                                                controller.queueCurrentAnimation?.let { put("queueCurrentAnimation", it) }
+                                                controller.queueWaitRemainingSeconds?.let {
+                                                    put("queueWaitRemainingSeconds", it)
+                                                }
+                                                controller.completedCycles?.let { put("completedCycles", it) }
+                                                put("held", controller.held)
+                                                put("rawFinished", controller.rawFinished)
+                                            }
+                                        }
+                                    }
+                                put("passengers", entity.attachment.passengers.size)
+                                if (entity.commandTags.isNotEmpty()) {
+                                    val tags = putArray("tags")
+                                    entity.commandTags.sorted().take(32).forEach(tags::add)
+                                    put("tagCount", entity.commandTags.size)
+                                }
+                                if (entity is ItemDisplayEntity) {
+                                    (entity.stack?.nbt?.nbt?.get("CustomModelData") as? Number)?.let {
+                                        put("customModelData", it.toInt())
+                                    }
+                                }
                             }
                         }
                 }
@@ -259,16 +578,20 @@ object ClientDebugChannel : AutoCloseable {
     }
 
     private fun capture(context: RenderContext): DebugOperationResult {
-        val size = context.window.size
-        validateFramebuffer(size)
-        val buffer = context.system.readPixels(Vec2i.EMPTY, size)
-        val bytes = encodePng(buffer)
+        val screenshot = context.screenshotTaker.capture()
+        validateFramebuffer(screenshot.size)
+        val bytes = encodePng(screenshot.buffer)
         val metadata = DebugJson.MAPPER.createObjectNode().apply {
-            put("width", size.x); put("height", size.y)
-            put("frame", context.frameNumber)
-            put("capturedAt", Instant.now().toString())
+            put("width", screenshot.size.x); put("height", screenshot.size.y)
+            put("frame", screenshot.frame)
+            put("capturedAt", screenshot.capturedAt.toString())
+            put("sha256", MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) })
+            put("suggestedFilename", screenshot.suggestedFilename)
+            put("userScreenshotDirectory", context.screenshotTaker.userDirectory.toString())
+            put("pixelFormat", "rgba8")
+            put("origin", "top-left")
         }
-        return DebugOperationResult.attachment(metadata, bytes, "image/png", "minosoft-${context.frameNumber}.png")
+        return DebugOperationResult.attachment(metadata, bytes, "image/png", screenshot.suggestedFilename)
     }
 
     private fun sampleVisual(context: RenderContext, body: JsonNode): DebugOperationResult {
@@ -296,8 +619,1993 @@ object ClientDebugChannel : AutoCloseable {
         }
         val region = body.path("region")
         if (region.isObject) addRegionSample(result, buffer, size, region)
+        (context.textures as? OpenGlTextureManager)?.static
+            ?.materialAnimationDiagnostics()
+            ?.let { animations ->
+                result.putArray("materialAnimationStates").also { states ->
+                    animations.states.forEach { state ->
+                        states.addObject().apply {
+                            put("kind", state.kind)
+                            put("resource", state.resource)
+                            put("uploadedFrameIndex", state.uploadedFrameIndex)
+                        }
+                    }
+                }
+            }
         return DebugOperationResult.json(result)
     }
+
+    /**
+     * Removes transient GUI state before a checked framebuffer capture. This is
+     * intentionally narrower than input injection: it cannot open a screen or
+     * mutate gameplay, and it makes a reference run independent of whether the
+     * window previously lost focus or displayed the pause menu.
+     */
+    private fun prepareVisualReference(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val hideHudNode = body["hideHud"]
+        if (hideHudNode != null && !hideHudNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "hideHud must be boolean")
+        }
+        val hideHitboxesNode = body["hideHitboxes"]
+        if (hideHitboxesNode != null && !hideHitboxesNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "hideHitboxes must be boolean")
+        }
+        val hideCloudsNode = body["hideClouds"]
+        if (hideCloudsNode != null && !hideCloudsNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "hideClouds must be boolean")
+        }
+        val hideWorldBorderNode = body["hideWorldBorder"]
+        if (hideWorldBorderNode != null && !hideWorldBorderNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "hideWorldBorder must be boolean")
+        }
+        val hideEntitiesNode = body["hideEntities"]
+        if (hideEntitiesNode != null && !hideEntitiesNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "hideEntities must be boolean")
+        }
+        val hideParticlesNode = body["hideParticles"]
+        if (hideParticlesNode != null && !hideParticlesNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "hideParticles must be boolean")
+        }
+        val hideHud = hideHudNode?.asBoolean() ?: true
+        val hideHitboxes = hideHitboxesNode?.asBoolean() ?: true
+        val hideClouds = hideCloudsNode?.asBoolean() ?: true
+        val hideWorldBorder = hideWorldBorderNode?.asBoolean() ?: false
+        val hideEntities = hideEntitiesNode?.asBoolean() ?: false
+        val hideParticles = hideParticlesNode?.asBoolean() ?: false
+        val gui = context.renderer[GUIRenderer]
+            ?: throw DebugOperationException("not_ready", "GUI renderer is not active")
+        gui.gui.clear()
+        gui.hud.enabled = !hideHud
+        if (hideHitboxes) {
+            context.renderer[EntitiesRenderer]?.features?.hitbox?.enabled = false
+        }
+        context.renderer[CloudRenderer]?.referenceSuppressed = hideClouds
+        context.renderer[WorldBorderRenderer]?.referenceSuppressed = hideWorldBorder
+        context.renderer[EntitiesRenderer]?.referenceSuppressed = hideEntities
+        context.renderer[ParticleRenderer]?.referenceSuppressed = hideParticles
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("overlaysCleared", true)
+            put("hudEnabled", gui.hud.enabled)
+            put("hitboxesEnabled", context.renderer[EntitiesRenderer]?.features?.hitbox?.enabled)
+            put("cloudsSuppressed", context.renderer[CloudRenderer]?.referenceSuppressed)
+            put("worldBorderSuppressed", context.renderer[WorldBorderRenderer]?.referenceSuppressed)
+            put("entitiesSuppressed", context.renderer[EntitiesRenderer]?.referenceSuppressed)
+            put("particlesSuppressed", context.renderer[ParticleRenderer]?.referenceSuppressed)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    /**
+     * Compare-and-set control for the non-persistent background frame limiter.
+     * This lets a bounded visual measurement remain representative while the
+     * terminal owns focus without changing the user's rendering profile.
+     */
+    private fun configureBackgroundThrottle(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val expected = body.path("expected").asText("")
+        val value = body.path("value").asText("")
+        if (expected !in setOf("default", "enabled", "disabled")) {
+            throw DebugOperationException("invalid_request", "expected must be default, enabled, or disabled")
+        }
+        if (value !in setOf("default", "enabled", "disabled")) {
+            throw DebugOperationException("invalid_request", "value must be default, enabled, or disabled")
+        }
+        val current = backgroundThrottleState(context.backgroundThrottleOverride)
+        if (current != expected) {
+            throw DebugOperationException(
+                "state_conflict",
+                "background throttle is $current, expected $expected"
+            )
+        }
+        context.backgroundThrottleOverride = when (value) {
+            "default" -> null
+            "enabled" -> true
+            else -> false
+        }
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("previous", current)
+            put("current", value)
+            put("profileSlowRendering", context.profile.performance.slowRendering)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private fun backgroundThrottleState(value: Boolean?): String = when (value) {
+        null -> "default"
+        true -> "enabled"
+        false -> "disabled"
+    }
+
+    /**
+     * Reversibly replaces only the first-person arm's sampled texture with the
+     * generated high-contrast reference skin. The player model and account
+     * skin remain untouched.
+     */
+    private fun prepareReferenceHand(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode == null || !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be a boolean")
+        }
+        val renderer = context.renderer[ArmRenderer]
+            ?: throw DebugOperationException("not_ready", "first-person arm renderer is not active")
+        val previous = renderer.referenceSkinEnabled
+        try {
+            renderer.setReferenceSkinEnabled(enabledNode.booleanValue())
+        } catch (error: IllegalStateException) {
+            throw DebugOperationException("not_ready", error.message ?: "reference skin is unavailable")
+        }
+        val ordinarySkin = renderer.ordinarySkinDiagnostics()
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("previousEnabled", previous)
+            put("enabled", renderer.referenceSkinEnabled)
+            put("texture", if (renderer.referenceSkinEnabled) "minosoft:debug/reference_hand_skin" else null)
+            put("referenceTextureShaderId", renderer.referenceSkinShaderId)
+            put("lastArmTextureShaderId", renderer.lastArmTextureShaderId)
+            put(
+                "referenceTextureBound",
+                renderer.referenceSkinShaderId != null &&
+                    renderer.lastArmTextureShaderId == renderer.referenceSkinShaderId,
+            )
+            put("armDraws", renderer.armDraws)
+            put("lastArmDrawFrame", renderer.lastArmDrawFrame)
+            ordinarySkin?.let { skin ->
+                putObject("ordinarySkin").also { output ->
+                    fun ObjectNode.putTexture(name: String, texture: de.bixilon.minosoft.gui.rendering.camera.arm.ArmSkinTextureDiagnostics?) {
+                        if (texture == null) {
+                            putNull(name)
+                            return
+                        }
+                        putObject(name).apply {
+                            put("shaderId", texture.shaderId)
+                            put("state", texture.state)
+                            put("width", texture.width)
+                            put("height", texture.height)
+                            put("visiblePixels", texture.visiblePixels)
+                            put("nonBlackVisiblePixels", texture.nonBlackVisiblePixels)
+                            put("armNonBlackVisiblePixels", texture.armNonBlackVisiblePixels)
+                        }
+                    }
+                    output.putTexture("selected", skin.selected)
+                    output.putTexture("frame", skin.frame)
+                    output.putTexture("fallback", skin.fallback)
+                }
+            }
+            put("playerSkinUnchanged", true)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    /**
+     * Toggles the synchronized fire flag on one retained client entity so a
+     * supervised render run can exercise the exact entity-flame producer even
+     * when the remote command tree is unavailable. The caller receives the
+     * previous value and can restore it with the same entity ID.
+     */
+    private fun prepareEntityFlame(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val entityIdNode = body["entityId"]
+        if (entityIdNode != null && !entityIdNode.isIntegralNumber) {
+            throw DebugOperationException("invalid_request", "entityId must be an integer")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val requestedId = entityIdNode?.asInt()
+        val session = context.session
+        val origin = session.player.physics.position
+        val entity = session.world.entities.lock.acquired {
+            session.world.entities.entities
+                .asSequence()
+                .filter { it !== session.player }
+                .filter { it.renderer?.visibility == EntityVisibilityLevels.VISIBLE }
+                .filter { requestedId == null || it.id == requestedId }
+                .minByOrNull {
+                    val position = it.physics.position
+                    val dx = position.x - origin.x
+                    val dy = position.y - origin.y
+                    val dz = position.z - origin.z
+                    dx * dx + dy * dy + dz * dz
+                }
+        } ?: throw DebugOperationException(
+            "not_ready",
+            if (requestedId == null) "no visible non-player entity is retained"
+            else "visible entity $requestedId is not retained",
+        )
+        val previous = entity.isOnFire
+        entity.isOnFire = enabled
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("entityId", entity.id)
+            put("entityType", entity.type.identifier.toString())
+            put("previous", previous)
+            put("enabled", entity.isOnFire)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    /**
+     * Publishes one bounded client-only custom name through ordinary tracked
+     * entity data. The existing EntityNameFeature, font mesh, billboard
+     * transform, graph layer, and selected Iris program remain the only draw
+     * path. Disable restores the exact prior name and visibility values.
+     */
+    private fun prepareBillboardText(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val entityIdNode = body["entityId"]
+        if (entityIdNode != null && !entityIdNode.isIntegralNumber) {
+            throw DebugOperationException("invalid_request", "entityId must be an integer")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val session = context.session
+
+        val entity = if (enabled) {
+            if (preparedBillboardText != null) {
+                throw DebugOperationException("invalid_request", "a billboard-text canary is already prepared")
+            }
+            val requestedId = entityIdNode?.asInt()
+            val origin = session.player.physics.position
+            val selected = session.world.entities.lock.acquired {
+                session.world.entities.entities
+                    .asSequence()
+                    .filter { it !== session.player }
+                    .filter { it.renderer != null }
+                    .filter { requestedId == null || it.id == requestedId }
+                    .minByOrNull {
+                        val position = it.physics.position
+                        val dx = position.x - origin.x
+                        val dy = position.y - origin.y
+                        val dz = position.z - origin.z
+                        dx * dx + dy * dy + dz * dz
+                    }
+            } ?: throw DebugOperationException(
+                "not_ready",
+                if (requestedId == null) "no non-player entity renderer is retained"
+                else "entity renderer $requestedId is not retained",
+            )
+            preparedBillboardText = PreparedBillboardText(
+                session,
+                selected,
+                selected.customName,
+                selected.isNameVisible,
+                selected.renderer?.referenceVisibilityOverride,
+            )
+            selected.renderer?.referenceVisibilityOverride = EntityVisibilityLevels.VISIBLE
+            selected.data[de.bixilon.minosoft.data.entities.entities.Entity.CUSTOM_NAME_DATA] =
+                ChatComponent.of("Iris billboard basis")
+            selected.data[de.bixilon.minosoft.data.entities.entities.Entity.CUSTOM_NAME_VISIBLE_DATA] = true
+            selected
+        } else {
+            val prepared = preparedBillboardText
+                ?: throw DebugOperationException("invalid_request", "no billboard-text canary is prepared")
+            if (prepared.session !== session) {
+                throw DebugOperationException("not_ready", "the prepared billboard-text world is no longer active")
+            }
+            prepared.entity.data[de.bixilon.minosoft.data.entities.entities.Entity.CUSTOM_NAME_DATA] =
+                prepared.previousName
+            prepared.entity.data[de.bixilon.minosoft.data.entities.entities.Entity.CUSTOM_NAME_VISIBLE_DATA] =
+                prepared.previousVisible
+            prepared.entity.renderer?.referenceVisibilityOverride = prepared.previousVisibilityOverride
+            preparedBillboardText = null
+            prepared.entity
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            put("entityId", entity.id)
+            put("entityType", entity.type.identifier.toString())
+            put("name", entity.customName?.message)
+            put("nameVisible", entity.isNameVisible)
+            put("restored", !enabled)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedBillboardText(
+        val session: PlaySession,
+        val entity: de.bixilon.minosoft.data.entities.entities.Entity,
+        val previousName: ChatComponent?,
+        val previousVisible: Boolean,
+        val previousVisibilityOverride: EntityVisibilityLevels?,
+    )
+
+    /**
+     * Toggles one retained entity's synchronized glowing flag so the complete
+     * offscreen mask/composite path can be accepted without server commands.
+     * The returned previous value supports exact restoration.
+     */
+    private fun prepareEntityOutline(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val entityIdNode = body["entityId"]
+        if (entityIdNode != null && !entityIdNode.isIntegralNumber) {
+            throw DebugOperationException("invalid_request", "entityId must be an integer")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val requestedId = entityIdNode?.asInt()
+        val session = context.session
+        val origin = session.player.physics.position
+        val entity = session.world.entities.lock.acquired {
+            session.world.entities.entities
+                .asSequence()
+                .filter { it !== session.player }
+                .filter { it.renderer?.visibility == EntityVisibilityLevels.VISIBLE }
+                .filter { requestedId == null || it.id == requestedId }
+                .minByOrNull {
+                    val position = it.physics.position
+                    val dx = position.x - origin.x
+                    val dy = position.y - origin.y
+                    val dz = position.z - origin.z
+                    dx * dx + dy * dy + dz * dz
+                }
+        } ?: throw DebugOperationException(
+            "not_ready",
+            if (requestedId == null) "no visible non-player entity is retained"
+            else "visible entity $requestedId is not retained",
+        )
+        val previous = entity.hasGlowingEffect
+        entity.hasGlowingEffect = enabled
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("entityId", entity.id)
+            put("entityType", entity.type.identifier.toString())
+            put("previous", previous)
+            put("enabled", entity.hasGlowingEffect)
+            put("clientOnly", true)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    /**
+     * Routes one retained skeletal entity's already resolved base material
+     * through its production emissive layer. This proves the exact
+     * ENTITY_EYES program without inventing debug geometry or changing the
+     * entity, its authoritative assets, or server state.
+     */
+    private fun prepareEntityEyes(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val entityIdNode = body["entityId"]
+        if (entityIdNode != null && !entityIdNode.isIntegralNumber) {
+            throw DebugOperationException("invalid_request", "entityId must be an integer")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val requestedId = entityIdNode?.asInt()
+        val session = context.session
+
+        if (enabled) {
+            val origin = session.player.physics.position
+            val candidate = session.world.entities.lock.acquired {
+                session.world.entities.entities
+                    .asSequence()
+                    .filter { it !== session.player }
+                    .mapNotNull { entity ->
+                        val renderer = entity.renderer ?: return@mapNotNull null
+                        val feature = renderer.features.asSequence()
+                            .filterIsInstance<SkeletalFeature>()
+                            .firstOrNull { it.referenceEmissiveBaseMeshCount > 0 }
+                            ?: return@mapNotNull null
+                        if (requestedId != null && entity.id != requestedId) return@mapNotNull null
+                        Triple(entity, renderer, feature)
+                    }
+                    .minWithOrNull(compareBy(
+                        { if (it.second.visibility == EntityVisibilityLevels.VISIBLE) 0 else 1 },
+                        {
+                            val position = it.first.physics.position
+                            val dx = position.x - origin.x
+                            val dy = position.y - origin.y
+                            val dz = position.z - origin.z
+                            dx * dx + dy * dy + dz * dz
+                        },
+                    ))
+            } ?: throw DebugOperationException(
+                "not_ready",
+                if (requestedId == null) "no retained skeletal entity has a base emissive canary material"
+                else "skeletal entity $requestedId has no base emissive canary material",
+            )
+            val (entity, renderer, feature) = candidate
+            val entityId = entity.id
+                ?: throw DebugOperationException("not_ready", "selected skeletal entity has no numeric ID")
+            if (preparedEntityEyes.containsKey(entityId)) {
+                throw DebugOperationException("invalid_request", "entity-eyes canary $entityId is already prepared")
+            }
+            val prepared = PreparedEntityEyes(
+                renderer = renderer,
+                feature = feature,
+                previousVisibilityOverride = renderer.referenceVisibilityOverride,
+                previousEmissiveBaseOverride = feature.referenceEmissiveBaseOverride,
+            )
+            renderer.referenceVisibilityOverride = EntityVisibilityLevels.VISIBLE
+            feature.referenceEmissiveBaseOverride = true
+            preparedEntityEyes[entityId] = prepared
+            return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+                put("entityId", entityId)
+                put("entityType", entity.type.identifier.toString())
+                put("meshCount", feature.referenceEmissiveBaseMeshCount)
+                put("previousEmissiveBaseOverride", prepared.previousEmissiveBaseOverride)
+                put("emissiveBaseOverride", feature.referenceEmissiveBaseOverride)
+                put("visibilityOverride", renderer.referenceVisibilityOverride?.name?.lowercase())
+                put("clientOnly", true)
+                put("frame", context.frameNumber)
+            })
+        }
+
+        val restoreId = requestedId ?: preparedEntityEyes.keys.singleOrNull()
+            ?: throw DebugOperationException(
+                "invalid_request",
+                "entityId is required unless exactly one entity-eyes canary is prepared",
+            )
+        val prepared = preparedEntityEyes.remove(restoreId)
+            ?: throw DebugOperationException("invalid_request", "entity-eyes canary $restoreId is not prepared")
+        var emissiveRestored = false
+        if (prepared.feature.referenceEmissiveBaseOverride) {
+            prepared.feature.referenceEmissiveBaseOverride = prepared.previousEmissiveBaseOverride
+            emissiveRestored = true
+        }
+        var visibilityRestored = false
+        if (prepared.renderer.referenceVisibilityOverride == EntityVisibilityLevels.VISIBLE) {
+            prepared.renderer.referenceVisibilityOverride = prepared.previousVisibilityOverride
+            visibilityRestored = true
+        }
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("entityId", restoreId)
+            put("meshCount", prepared.feature.referenceEmissiveBaseMeshCount)
+            put("emissiveBaseOverride", prepared.feature.referenceEmissiveBaseOverride)
+            put("emissiveRestored", emissiveRestored)
+            put("visibilityOverride", prepared.renderer.referenceVisibilityOverride?.name?.lowercase())
+            put("visibilityRestored", visibilityRestored)
+            put("clientOnly", true)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedEntityEyes(
+        val renderer: de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer<*>,
+        val feature: SkeletalFeature,
+        val previousVisibilityOverride: EntityVisibilityLevels?,
+        val previousEmissiveBaseOverride: Boolean,
+    )
+
+    /**
+     * Temporarily attaches one retained living entity to the local player.
+     * The synchronized client attachment, normal leash feature, EMF-adjusted
+     * mob anchor, light interpolation, and retained ribbon shader remain the
+     * complete draw path.
+     */
+    private fun prepareLeash(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val entityIdNode = body["entityId"]
+        if (entityIdNode != null && !entityIdNode.isIntegralNumber) {
+            throw DebugOperationException("invalid_request", "entityId must be an integer")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val requestedId = entityIdNode?.asInt()
+        val session = context.session
+
+        if (enabled) {
+            val origin = session.player.physics.position
+            val entity = session.world.entities.lock.acquired {
+                session.world.entities.entities
+                    .asSequence()
+                    .filterIsInstance<LivingEntity>()
+                    .filter { it !== session.player }
+                    .filter { it.renderer is LivingEntityRenderer<*> }
+                    .filter { requestedId == null || it.id == requestedId }
+                    .minWithOrNull(compareBy(
+                        { if (it.renderer?.visibility == EntityVisibilityLevels.VISIBLE) 0 else 1 },
+                        {
+                            val position = it.physics.position
+                            val dx = position.x - origin.x
+                            val dy = position.y - origin.y
+                            val dz = position.z - origin.z
+                            dx * dx + dy * dy + dz * dz
+                        },
+                    ))
+            } ?: throw DebugOperationException(
+                "not_ready",
+                if (requestedId == null) "no retained non-player living entity is available for a leash"
+                else "living entity $requestedId is not retained",
+            )
+            val entityId = entity.id
+                ?: throw DebugOperationException("not_ready", "selected leash entity has no numeric ID")
+            if (preparedLeashes.containsKey(entityId)) {
+                throw DebugOperationException("invalid_request", "leash canary $entityId is already prepared")
+            }
+            val renderer = entity.renderer
+                ?: throw DebugOperationException("not_ready", "selected leash entity has no renderer")
+            val prepared = PreparedLeash(
+                entity = entity,
+                renderer = renderer,
+                previousHolder = entity.attachment.leashHolder,
+                previousVisibilityOverride = renderer.referenceVisibilityOverride,
+            )
+            entity.attachment.leashHolder = session.player
+            renderer.referenceVisibilityOverride = EntityVisibilityLevels.VISIBLE
+            preparedLeashes[entityId] = prepared
+            return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+                put("entityId", entityId)
+                put("entityType", entity.type.identifier.toString())
+                put("previousHolderId", prepared.previousHolder?.id)
+                put("holderId", entity.attachment.leashHolder?.id)
+                put("visibilityOverride", renderer.referenceVisibilityOverride?.name?.lowercase())
+                put("clientOnly", true)
+                put("frame", context.frameNumber)
+            })
+        }
+
+        val restoreId = requestedId ?: preparedLeashes.keys.singleOrNull()
+            ?: throw DebugOperationException(
+                "invalid_request",
+                "entityId is required unless exactly one leash canary is prepared",
+            )
+        val prepared = preparedLeashes.remove(restoreId)
+            ?: throw DebugOperationException("invalid_request", "leash canary $restoreId is not prepared")
+        var holderRestored = false
+        if (prepared.entity.attachment.leashHolder === session.player) {
+            prepared.entity.attachment.leashHolder = prepared.previousHolder
+            holderRestored = true
+        }
+        var visibilityRestored = false
+        if (prepared.renderer.referenceVisibilityOverride == EntityVisibilityLevels.VISIBLE) {
+            prepared.renderer.referenceVisibilityOverride = prepared.previousVisibilityOverride
+            visibilityRestored = true
+        }
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("entityId", restoreId)
+            put("entityType", prepared.entity.type.identifier.toString())
+            put("holderId", prepared.entity.attachment.leashHolder?.id)
+            put("holderRestored", holderRestored)
+            put("visibilityOverride", prepared.renderer.referenceVisibilityOverride?.name?.lowercase())
+            put("visibilityRestored", visibilityRestored)
+            put("clientOnly", true)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedLeash(
+        val entity: LivingEntity,
+        val renderer: de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer<*>,
+        val previousHolder: de.bixilon.minosoft.data.entities.entities.Entity?,
+        val previousVisibilityOverride: EntityVisibilityLevels?,
+    )
+
+    /**
+     * Equips one retained humanoid with a client-only enchanted, trimmed iron
+     * armor set. This exercises the ordinary armor, trim, armor-glint, item-ID,
+     * host-pose, and shadow-caster paths without mutating server authority.
+     * Supplying the returned entity ID with enabled=false restores the exact
+     * stacks observed before preparation.
+     */
+    private fun prepareVanillaArmor(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val entityIdNode = body["entityId"]
+        if (entityIdNode != null && !entityIdNode.isIntegralNumber) {
+            throw DebugOperationException("invalid_request", "entityId must be an integer")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val requestedId = entityIdNode?.asInt()
+        val session = context.session
+        val entity = if (enabled) {
+            val origin = session.player.physics.position
+            session.world.entities.lock.acquired {
+                session.world.entities.entities
+                    .asSequence()
+                    .filterIsInstance<LivingEntity>()
+                    .filter { it !== session.player || requestedId == it.id }
+                    .filter { it.renderer?.visibility == EntityVisibilityLevels.VISIBLE }
+                    .filter {
+                        val pose = it.renderer as? VanillaArmorPoseSource
+                        pose?.vanillaArmorPose != null
+                    }
+                    .filter { requestedId == null || it.id == requestedId }
+                    .minWithOrNull(
+                        compareBy<LivingEntity>(
+                            { if (it.type.identifier.toString() == "minecraft:zombie") 0 else 1 },
+                            {
+                                val position = it.physics.position
+                                val dx = position.x - origin.x
+                                val dy = position.y - origin.y
+                                val dz = position.z - origin.z
+                                dx * dx + dy * dy + dz * dz
+                            },
+                        ),
+                    )
+            }
+        } else {
+            val restoreId = requestedId ?: preparedArmor.keys.singleOrNull()
+                ?: throw DebugOperationException(
+                    "invalid_request",
+                    "entityId is required unless exactly one armor canary is prepared",
+                )
+            session.world.entities.lock.acquired {
+                session.world.entities.entities
+                    .filterIsInstance<LivingEntity>()
+                    .singleOrNull { it.id == restoreId }
+            }
+        } ?: throw DebugOperationException(
+            "not_ready",
+            if (requestedId == null) "no retained humanoid armor pose is available"
+            else "humanoid entity $requestedId is not retained",
+        )
+        val entityId = entity.id
+            ?: throw DebugOperationException("not_ready", "retained humanoid has no network entity ID")
+
+        val previous = EquipmentSlots.ARMOR_SLOTS.associateWith(entity.equipment::get)
+        if (enabled) {
+            preparedArmor.putIfAbsent(entityId, previous)
+            val protection = session.registries.enchantment["minecraft:protection"]
+            val enchanting = protection?.let { EnchantingProperty(mapOf(it to 1)) }
+                ?: EnchantingProperty.DEFAULT
+            val trim = NbtProperty(
+                mapOf(
+                    "Trim" to mapOf(
+                        "pattern" to "minecraft:sentry",
+                        "material" to "minecraft:gold",
+                    ),
+                ),
+            )
+            val items = mapOf(
+                EquipmentSlots.FEET to "minecraft:iron_boots",
+                EquipmentSlots.LEGS to "minecraft:iron_leggings",
+                EquipmentSlots.CHEST to "minecraft:iron_chestplate",
+                EquipmentSlots.HEAD to "minecraft:iron_helmet",
+            )
+            for ((slot, identifier) in items) {
+                val item = session.registries.item[identifier]
+                    ?: throw DebugOperationException("not_ready", "item $identifier is unavailable")
+                entity.equipment[slot] = ItemStack(item, enchanting = enchanting, nbt = trim)
+            }
+        } else {
+            val stored = preparedArmor.remove(entityId)
+                ?: throw DebugOperationException("invalid_request", "entity $entityId has no prepared armor")
+            for ((slot, stack) in stored) entity.equipment[slot] = stack
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("entityId", entityId)
+            put("entityType", entity.type.identifier.toString())
+            put("renderer", entity.renderer?.javaClass?.simpleName)
+            put("enabled", enabled)
+            put("clientOnly", true)
+            (entity.renderer as? LivingEntityRenderer<*>)?.vanillaArmor?.let { feature ->
+                put("retainedArmorEntries", feature.entryCount)
+                put("retainedArmorDecorations", feature.decorationCount)
+            }
+            putObject("previous").apply {
+                previous.forEach { (slot, stack) ->
+                    put(slot.name.lowercase(), stack?.item?.identifier?.toString())
+                }
+            }
+            putObject("current").apply {
+                val textures = context.renderer[EntitiesRenderer]?.features?.armor?.textures
+                for (slot in EquipmentSlots.ARMOR_SLOTS) {
+                    val stack = entity.equipment[slot]
+                    putObject(slot.name.lowercase()).apply {
+                        put("item", stack?.item?.identifier?.toString())
+                        put("enchanted", stack?.enchanting?.enchantments?.isNotEmpty() == true)
+                        put("trimTag", stack?.nbt?.nbt?.containsKey("Trim") == true)
+                        val material = stack?.let { textures?.resolve(it, slot) }
+                        put("baseResolved", material != null)
+                        put("trimResolved", material?.trim != null)
+                        put("glintResolved", material?.enchanted == true)
+                    }
+                }
+            }
+            put("frame", context.frameNumber)
+        })
+    }
+
+    /**
+     * Holds one retained creeper at the pinned fuse counter that produces a
+     * nonzero vanilla white overlay. The override is client-only and restores
+     * the prior debug value without pausing the real client fuse accumulator.
+     */
+    private fun prepareCreeperOverlay(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val entityIdNode = body["entityId"]
+        if (entityIdNode != null && !entityIdNode.isIntegralNumber) {
+            throw DebugOperationException("invalid_request", "entityId must be an integer")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val requestedId = entityIdNode?.asInt()
+        val session = context.session
+        val origin = session.player.physics.position
+        val entity = session.world.entities.lock.acquired {
+            session.world.entities.entities
+                .asSequence()
+                .filterIsInstance<Creeper>()
+                .filter { (it.renderer?.visibility ?: EntityVisibilityLevels.OUT_OF_VIEW_DISTANCE) >= EntityVisibilityLevels.OCCLUDED }
+                .filter { requestedId == null || it.id == requestedId }
+                .minByOrNull {
+                    val position = it.physics.position
+                    val dx = position.x - origin.x
+                    val dy = position.y - origin.y
+                    val dz = position.z - origin.z
+                    dx * dx + dy * dy + dz * dz
+                }
+        } ?: throw DebugOperationException(
+            "not_ready",
+            if (requestedId == null) "no render-eligible retained creeper is available"
+            else "render-eligible creeper $requestedId is not retained",
+        )
+        val entityId = entity.id
+            ?: throw DebugOperationException("not_ready", "retained creeper has no network entity ID")
+        val previous = if (enabled) {
+            if (preparedCreeperOverlays.containsKey(entityId)) {
+                throw DebugOperationException("invalid_request", "creeper $entityId overlay is already prepared")
+            }
+            val renderer = entity.renderer
+                ?: throw DebugOperationException("not_ready", "retained creeper $entityId has no renderer")
+            val prepared = PreparedCreeperOverlay(
+                fuseTicks = entity.setWhiteOverlayFuseTicksForDebug(CREEPER_OVERLAY_FUSE_TICKS),
+                visibilityOverride = renderer.referenceVisibilityOverride,
+            )
+            renderer.referenceVisibilityOverride = EntityVisibilityLevels.VISIBLE
+            preparedCreeperOverlays[entityId] = prepared
+            prepared.fuseTicks
+        } else {
+            if (!preparedCreeperOverlays.containsKey(entityId)) {
+                throw DebugOperationException("invalid_request", "creeper $entityId has no prepared overlay")
+            }
+            val stored = preparedCreeperOverlays.remove(entityId)!!
+            entity.renderer?.referenceVisibilityOverride = stored.visibilityOverride
+            entity.setWhiteOverlayFuseTicksForDebug(stored.fuseTicks)
+        }
+        val progress = entity.whiteOverlayProgress(entity.renderInfo.partialTick)
+        val color = IrisEntityOverlay.resolve(entity)
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("entityId", entityId)
+            put("entityType", entity.type.identifier.toString())
+            put("enabled", enabled)
+            put("clientOnly", true)
+            put("visibility", entity.renderer?.visibility?.name?.lowercase())
+            put("visibilityOverride", entity.renderer?.referenceVisibilityOverride?.name?.lowercase())
+            if (previous == null) putNull("previousFuseTicks") else put("previousFuseTicks", previous)
+            put("fuseState", entity.fuseState)
+            put("whiteOverlayProgress", progress)
+            putObject("entityColor").apply {
+                put("red", color.x)
+                put("green", color.y)
+                put("blue", color.z)
+                put("alpha", color.w)
+            }
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedCreeperOverlay(
+        val fuseTicks: Int?,
+        val visibilityOverride: EntityVisibilityLevels?,
+    )
+
+    /**
+     * Equips the local player with one client-only vanilla stack for an
+     * ordinary item-model material canary. This is deliberately distinct from
+     * Gecko item layers and restores the exact prior main-hand stack without
+     * mutating the server inventory.
+     */
+    private fun prepareTranslucentHeldItem(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val itemNode = body["item"]
+        if (itemNode != null && !itemNode.isTextual) {
+            throw DebugOperationException("invalid_request", "item must be a resource identifier")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val session = context.session
+        val player = session.player
+        val slot = EquipmentSlots.MAIN_HAND
+        val previous = player.equipment[slot]
+
+        if (enabled) {
+            if (preparedTranslucentHeldItem != null) {
+                throw DebugOperationException("invalid_request", "a translucent held-item canary is already prepared")
+            }
+            val identifier = itemNode?.asText() ?: "minecraft:slime_block"
+            if (!identifier.matches(Regex("minecraft:[a-z0-9_./-]+"))) {
+                throw DebugOperationException("invalid_request", "item must be a vanilla resource identifier")
+            }
+            val item = session.registries.item[identifier]
+                ?: throw DebugOperationException("not_ready", "item $identifier is unavailable")
+            preparedTranslucentHeldItem = PreparedHeldItem(player, previous)
+            player.equipment[slot] = ItemStack(item)
+        } else {
+            val prepared = preparedTranslucentHeldItem
+                ?: throw DebugOperationException("invalid_request", "no translucent held-item canary is prepared")
+            if (prepared.player !== player) {
+                throw DebugOperationException("not_ready", "the prepared held-item player is no longer active")
+            }
+            player.equipment -= slot
+            prepared.stack?.let { player.equipment[slot] = it }
+            preparedTranslucentHeldItem = null
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            put("slot", slot.name.lowercase())
+            put("previousItem", previous?.item?.identifier?.toString())
+            put("currentItem", player.equipment[slot]?.item?.identifier?.toString())
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedHeldItem(
+        val player: LivingEntity,
+        val stack: ItemStack?,
+    )
+
+    /**
+     * Moves the client-side world border around the local player so the
+     * retained force-field producer can be exercised without changing server
+     * authority. Disable restores the exact border area object, center, and
+     * diagnostic presentation suppression state.
+     */
+    private fun prepareWorldBorder(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val radiusNode = body["radius"]
+        if (radiusNode != null && !radiusNode.isNumber) {
+            throw DebugOperationException("invalid_request", "radius must be a number")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val border = context.session.world.border
+        val renderer = context.renderer[WorldBorderRenderer]
+            ?: throw DebugOperationException("not_ready", "world-border renderer is not active")
+        val previousCenter = border.center
+        val previousArea = border.area
+
+        if (enabled) {
+            if (preparedWorldBorder != null) {
+                throw DebugOperationException("invalid_request", "a world-border canary is already prepared")
+            }
+            val radius = radiusNode?.asDouble() ?: DEFAULT_WORLD_BORDER_CANARY_RADIUS
+            if (!radius.isFinite() || radius !in MIN_WORLD_BORDER_CANARY_RADIUS..MAX_WORLD_BORDER_CANARY_RADIUS) {
+                throw DebugOperationException(
+                    "invalid_request",
+                    "radius must be finite and in $MIN_WORLD_BORDER_CANARY_RADIUS..$MAX_WORLD_BORDER_CANARY_RADIUS",
+                )
+            }
+            val position = context.session.player.physics.position
+            preparedWorldBorder = PreparedWorldBorder(previousCenter, previousArea, renderer.referenceSuppressed)
+            border.center = Vec2d(position.x, position.z)
+            border.area = StaticBorderArea(radius)
+            renderer.referenceSuppressed = false
+        } else {
+            val prepared = preparedWorldBorder
+                ?: throw DebugOperationException("invalid_request", "no world-border canary is prepared")
+            border.center = prepared.center
+            border.area = prepared.area
+            renderer.referenceSuppressed = prepared.referenceSuppressed
+            preparedWorldBorder = null
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            putObject("previousCenter").apply {
+                put("x", previousCenter.x)
+                put("z", previousCenter.y)
+            }
+            put("previousRadius", previousArea.radius)
+            putObject("currentCenter").apply {
+                put("x", border.center.x)
+                put("z", border.center.y)
+            }
+            put("currentRadius", border.area.radius)
+            put("distance", border.getDistanceTo(context.session.player.physics.position))
+            put("presentationSuppressed", renderer.referenceSuppressed)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedWorldBorder(
+        val center: Vec2d,
+        val area: BorderArea,
+        val referenceSuppressed: Boolean,
+    )
+
+    /**
+     * Selects the already loaded End sky texture through the production
+     * skybox renderer without changing world or dimension authority.
+     */
+    private fun prepareSkyTexture(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val renderer = context.renderer[SkyRenderer]
+            ?: throw DebugOperationException("not_ready", "sky renderer is unavailable")
+        val box = renderer.box
+        val previous = box.referenceTextureOverride
+
+        if (enabled) {
+            if (preparedSkyTexture != null) {
+                throw DebugOperationException("invalid_request", "a sky-texture canary is already prepared")
+            }
+            preparedSkyTexture = PreparedSkyTexture(renderer, previous)
+            box.referenceTextureOverride = EndEffects.fixedTexture
+        } else {
+            val prepared = preparedSkyTexture
+                ?: throw DebugOperationException("invalid_request", "no sky-texture canary is prepared")
+            if (prepared.renderer !== renderer) {
+                throw DebugOperationException("not_ready", "the prepared sky renderer is no longer active")
+            }
+            box.referenceTextureOverride = prepared.previousOverride
+            preparedSkyTexture = null
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            put("authoritativeDimension", context.session.world.name?.toString())
+            put("authoredTexture", renderer.effects.fixedTexture?.toString())
+            put("previousOverride", previous?.toString())
+            put("currentOverride", box.referenceTextureOverride?.toString())
+            put("effectiveTexture", SkyboxRenderer.selectedTexture(
+                renderer.effects.fixedTexture,
+                box.referenceTextureOverride,
+            )?.toString())
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedSkyTexture(
+        val renderer: SkyRenderer,
+        val previousOverride: ResourceLocation?,
+    )
+
+    /**
+     * Enables the existing sun-scatter renderer without changing the
+     * authoritative day phase or weather. The renderer still evaluates and
+     * uploads its production matrix, position, intensity, and mesh.
+     */
+    private fun prepareSunScatter(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val sky = context.renderer[SkyRenderer]
+            ?: throw DebugOperationException("not_ready", "sky renderer is unavailable")
+        val renderer = sky.sunScatter
+        val previous = renderer.referenceEnabledOverride
+
+        if (enabled) {
+            if (preparedSunScatter != null) {
+                throw DebugOperationException("invalid_request", "a sun-scatter canary is already prepared")
+            }
+            preparedSunScatter = PreparedSunScatter(renderer, previous)
+            renderer.referenceEnabledOverride = true
+        } else {
+            val prepared = preparedSunScatter
+                ?: throw DebugOperationException("invalid_request", "no sun-scatter canary is prepared")
+            if (prepared.renderer !== renderer) {
+                throw DebugOperationException("not_ready", "the prepared sun-scatter renderer is no longer active")
+            }
+            renderer.referenceEnabledOverride = prepared.previousOverride
+            preparedSunScatter = null
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            put("dayPhase", sky.time.phase.name.lowercase())
+            put("profileEnabled", sky.profile.sunScatter)
+            put("dimensionSun", sky.effects.sun)
+            putObject("weather").apply {
+                put("rain", context.session.world.weather.rain)
+                put("thunder", context.session.world.weather.thunder)
+            }
+            put("previousOverride", previous)
+            put("currentOverride", renderer.referenceEnabledOverride)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedSunScatter(
+        val renderer: SunScatterRenderer,
+        val previousOverride: Boolean?,
+    )
+
+    /**
+     * Enables the existing first-person fire overlay through its presentation
+     * gate while leaving the local player's authoritative fire state intact.
+     */
+    private fun prepareFireOverlay(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val overlay = context.framebuffer.main.overlay.get(FireOverlay::class.java)
+            ?: throw DebugOperationException("not_ready", "fire overlay is unavailable")
+        val previous = overlay.referenceRenderOverride
+
+        if (enabled) {
+            if (preparedFireOverlay != null) {
+                throw DebugOperationException("invalid_request", "a fire-overlay canary is already prepared")
+            }
+            preparedFireOverlay = PreparedFireOverlay(overlay, previous)
+            overlay.referenceRenderOverride = true
+        } else {
+            val prepared = preparedFireOverlay
+                ?: throw DebugOperationException("invalid_request", "no fire-overlay canary is prepared")
+            if (prepared.overlay !== overlay) {
+                throw DebugOperationException("not_ready", "the prepared fire overlay is no longer active")
+            }
+            overlay.referenceRenderOverride = prepared.previousOverride
+            preparedFireOverlay = null
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            put("playerOnFire", context.session.player.isOnFire)
+            put("previousOverride", previous)
+            put("currentOverride", overlay.referenceRenderOverride)
+            put("render", overlay.render)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedFireOverlay(
+        val overlay: FireOverlay,
+        val previousOverride: Boolean?,
+    )
+
+    /**
+     * Applies one full-strength client-only rain state while retaining the
+     * production biome, overlay, texture, graph phase, and weather shader path.
+     * Restore is conditional so a concurrent authoritative weather change is
+     * never overwritten.
+     */
+    private fun prepareWeather(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val session = context.session
+        val world = session.world
+        val overlay = context.framebuffer.main.overlay.get(WeatherOverlay::class.java)
+            ?: throw DebugOperationException("not_ready", "weather overlay is unavailable")
+        val applied: WorldWeather
+        val restored: Boolean
+
+        if (enabled) {
+            if (preparedWeather != null) {
+                throw DebugOperationException("invalid_request", "a weather canary is already prepared")
+            }
+            if (!world.dimension.effects.weather) {
+                throw DebugOperationException("not_ready", "the active dimension does not render weather")
+            }
+            applied = WorldWeather(rain = 1.0f, thunder = 0.0f)
+            preparedWeather = PreparedWeather(
+                session,
+                world.weather,
+                applied,
+                overlay.referencePrecipitationOverride,
+            )
+            overlay.referencePrecipitationOverride = BiomePrecipitation.RAIN
+            world.weather = applied
+            restored = false
+        } else {
+            val prepared = preparedWeather
+                ?: throw DebugOperationException("invalid_request", "no weather canary is prepared")
+            if (prepared.session !== session) {
+                throw DebugOperationException("not_ready", "the prepared weather world is no longer active")
+            }
+            applied = prepared.applied
+            val weatherMatches = world.weather == applied
+            val precipitationMatches = overlay.referencePrecipitationOverride == BiomePrecipitation.RAIN
+            restored = weatherMatches && precipitationMatches
+            if (weatherMatches) world.weather = prepared.previous
+            if (precipitationMatches) overlay.referencePrecipitationOverride = prepared.previousPrecipitationOverride
+            preparedWeather = null
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            put("sourcePrecipitation", overlay.sourcePrecipitation?.name?.lowercase())
+            put("effectivePrecipitation", overlay.effectivePrecipitation?.name?.lowercase())
+            put("precipitationOverridden", overlay.referencePrecipitationOverride != null)
+            put("dimensionWeather", world.dimension.effects.weather)
+            putObject("applied").apply {
+                put("rain", applied.rain)
+                put("thunder", applied.thunder)
+            }
+            putObject("current").apply {
+                put("rain", world.weather.rain)
+                put("thunder", world.weather.thunder)
+            }
+            put("restored", restored)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedWeather(
+        val session: PlaySession,
+        val previous: WorldWeather,
+        val applied: WorldWeather,
+        val previousPrecipitationOverride: BiomePrecipitation?,
+    )
+
+    /**
+     * Adds one bounded client-only lightning entity through the production
+     * entity manager. The normal renderer factory, retained feature, semantic
+     * entity layer, and Iris scene contract therefore remain the only draw
+     * path. Disabling removes the exact prepared instance without server
+     * mutation.
+     */
+    private fun prepareLightning(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val distanceNode = body["distance"]
+        if (distanceNode != null && !distanceNode.isNumber) {
+            throw DebugOperationException("invalid_request", "distance must be a number")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val session = context.session
+
+        val entity = if (enabled) {
+            if (preparedLightning != null) {
+                throw DebugOperationException("invalid_request", "a lightning canary is already prepared")
+            }
+            val distance = distanceNode?.asDouble() ?: DEFAULT_LIGHTNING_CANARY_DISTANCE
+            if (!distance.isFinite() || distance !in MIN_LIGHTNING_CANARY_DISTANCE..MAX_LIGHTNING_CANARY_DISTANCE) {
+                throw DebugOperationException(
+                    "invalid_request",
+                    "distance must be finite and in $MIN_LIGHTNING_CANARY_DISTANCE..$MAX_LIGHTNING_CANARY_DISTANCE",
+                )
+            }
+            if (session.world.entities[LIGHTNING_CANARY_ENTITY_ID] != null) {
+                throw DebugOperationException(
+                    "not_ready",
+                    "reserved lightning canary entity ID $LIGHTNING_CANARY_ENTITY_ID is occupied",
+                )
+            }
+            val player = session.player
+            val origin = player.physics.position
+            val yaw = Math.toRadians(player.physics.rotation.yaw.toDouble())
+            val position = Vec3d(
+                origin.x - kotlin.math.sin(yaw) * distance,
+                origin.y - 4.0,
+                origin.z + kotlin.math.cos(yaw) * distance,
+            )
+            val type = session.registries.entityType[LightningBolt.identifier]
+                ?: throw DebugOperationException("not_ready", "lightning-bolt entity type is unavailable")
+            LightningBolt(session, type, EntityData(session), position).also {
+                it.startInit()
+                session.world.entities.add(LIGHTNING_CANARY_ENTITY_ID, null, it)
+                preparedLightning = PreparedLightning(session, it)
+            }
+        } else {
+            val prepared = preparedLightning
+                ?: throw DebugOperationException("invalid_request", "no lightning canary is prepared")
+            if (prepared.session !== session) {
+                throw DebugOperationException("not_ready", "the prepared lightning world is no longer active")
+            }
+            session.world.entities.remove(prepared.entity)
+            preparedLightning = null
+            prepared.entity
+        }
+
+        val position = entity.physics.position
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            if (enabled) put("entityId", LIGHTNING_CANARY_ENTITY_ID) else putNull("entityId")
+            put("entityType", entity.type.identifier.toString())
+            putObject("position").apply {
+                put("x", position.x)
+                put("y", position.y)
+                put("z", position.z)
+            }
+            put("retained", if (enabled) session.world.entities[LIGHTNING_CANARY_ENTITY_ID] === entity else false)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedLightning(
+        val session: PlaySession,
+        val entity: LightningBolt,
+    )
+
+    /**
+     * Adds one bounded client-only primed-TNT entity through the production
+     * entity manager. Its normal renderer and FlashingBlockFeature exercise
+     * the exact block-feature flash ABI under the entity graph semantic.
+     */
+    private fun preparePrimedTnt(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val distanceNode = body["distance"]
+        if (distanceNode != null && !distanceNode.isNumber) {
+            throw DebugOperationException("invalid_request", "distance must be a number")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val session = context.session
+
+        val entity = if (enabled) {
+            if (preparedPrimedTnt != null) {
+                throw DebugOperationException("invalid_request", "a primed-TNT canary is already prepared")
+            }
+            val distance = distanceNode?.asDouble() ?: DEFAULT_LIGHTNING_CANARY_DISTANCE
+            if (!distance.isFinite() || distance !in MIN_LIGHTNING_CANARY_DISTANCE..MAX_LIGHTNING_CANARY_DISTANCE) {
+                throw DebugOperationException(
+                    "invalid_request",
+                    "distance must be finite and in $MIN_LIGHTNING_CANARY_DISTANCE..$MAX_LIGHTNING_CANARY_DISTANCE",
+                )
+            }
+            if (session.world.entities[PRIMED_TNT_CANARY_ENTITY_ID] != null) {
+                throw DebugOperationException(
+                    "not_ready",
+                    "reserved primed-TNT canary entity ID $PRIMED_TNT_CANARY_ENTITY_ID is occupied",
+                )
+            }
+            val player = session.player
+            val origin = player.physics.position
+            val yaw = Math.toRadians(player.physics.rotation.yaw.toDouble())
+            val position = Vec3d(
+                origin.x - kotlin.math.sin(yaw) * distance,
+                origin.y + 0.25,
+                origin.z + kotlin.math.cos(yaw) * distance,
+            )
+            val type = session.registries.entityType[PrimedTNT.identifier]
+                ?: throw DebugOperationException("not_ready", "primed-TNT entity type is unavailable")
+            PrimedTNT(session, type, EntityData(session), position, EntityRotation.EMPTY).also {
+                it.startInit()
+                session.world.entities.add(PRIMED_TNT_CANARY_ENTITY_ID, null, it)
+                preparedPrimedTnt = PreparedPrimedTnt(session, it)
+            }
+        } else {
+            val prepared = preparedPrimedTnt
+                ?: throw DebugOperationException("invalid_request", "no primed-TNT canary is prepared")
+            if (prepared.session !== session) {
+                throw DebugOperationException("not_ready", "the prepared primed-TNT world is no longer active")
+            }
+            session.world.entities.remove(prepared.entity)
+            preparedPrimedTnt = null
+            prepared.entity
+        }
+
+        val position = entity.physics.position
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            if (enabled) put("entityId", PRIMED_TNT_CANARY_ENTITY_ID) else putNull("entityId")
+            put("entityType", entity.type.identifier.toString())
+            put("fuseTime", entity.fuseTime)
+            putObject("position").apply {
+                put("x", position.x)
+                put("y", position.y)
+                put("z", position.z)
+            }
+            put("retained", if (enabled) session.world.entities[PRIMED_TNT_CANARY_ENTITY_ID] === entity else false)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedPrimedTnt(
+        val session: PlaySession,
+        val entity: PrimedTNT,
+    )
+
+    /**
+     * Adds one bounded client-only dropped item through the production entity
+     * manager. Its ordinary ItemFeature retains the block-feature vertex ABI
+     * while requesting the Iris entity program family.
+     */
+    private fun prepareItemEntity(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val itemNode = body["item"]
+        if (itemNode != null && !itemNode.isTextual) {
+            throw DebugOperationException("invalid_request", "item must be a resource identifier")
+        }
+        val distanceNode = body["distance"]
+        if (distanceNode != null && !distanceNode.isNumber) {
+            throw DebugOperationException("invalid_request", "distance must be a number")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val session = context.session
+
+        val entity = if (enabled) {
+            if (preparedItemEntity != null) {
+                throw DebugOperationException("invalid_request", "an item-entity canary is already prepared")
+            }
+            val identifier = itemNode?.asText() ?: "minecraft:diamond"
+            if (!identifier.matches(Regex("minecraft:[a-z0-9_./-]+"))) {
+                throw DebugOperationException("invalid_request", "item must be a vanilla resource identifier")
+            }
+            val item = session.registries.item[identifier]
+                ?: throw DebugOperationException("not_ready", "item $identifier is unavailable")
+            val distance = distanceNode?.asDouble() ?: DEFAULT_LIGHTNING_CANARY_DISTANCE
+            if (!distance.isFinite() || distance !in MIN_LIGHTNING_CANARY_DISTANCE..MAX_LIGHTNING_CANARY_DISTANCE) {
+                throw DebugOperationException(
+                    "invalid_request",
+                    "distance must be finite and in $MIN_LIGHTNING_CANARY_DISTANCE..$MAX_LIGHTNING_CANARY_DISTANCE",
+                )
+            }
+            if (session.world.entities[ITEM_CANARY_ENTITY_ID] != null) {
+                throw DebugOperationException(
+                    "not_ready",
+                    "reserved item canary entity ID $ITEM_CANARY_ENTITY_ID is occupied",
+                )
+            }
+            val player = session.player
+            val origin = player.physics.position
+            val yaw = Math.toRadians(player.physics.rotation.yaw.toDouble())
+            val position = Vec3d(
+                origin.x - kotlin.math.sin(yaw) * distance,
+                origin.y + 0.25,
+                origin.z + kotlin.math.cos(yaw) * distance,
+            )
+            val type = session.registries.entityType[ItemEntity.identifier]
+                ?: throw DebugOperationException("not_ready", "item entity type is unavailable")
+            val data = EntityData(session).apply {
+                this[ItemEntity.ITEM_DATA] = ItemStack(item)
+            }
+            ItemEntity(session, type, data, position, EntityRotation.EMPTY).also {
+                it.startInit()
+                session.world.entities.add(ITEM_CANARY_ENTITY_ID, null, it)
+                preparedItemEntity = PreparedItemEntity(session, it)
+            }
+        } else {
+            val prepared = preparedItemEntity
+                ?: throw DebugOperationException("invalid_request", "no item-entity canary is prepared")
+            if (prepared.session !== session) {
+                throw DebugOperationException("not_ready", "the prepared item-entity world is no longer active")
+            }
+            session.world.entities.remove(prepared.entity)
+            preparedItemEntity = null
+            prepared.entity
+        }
+
+        val position = entity.physics.position
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            if (enabled) put("entityId", ITEM_CANARY_ENTITY_ID) else putNull("entityId")
+            put("entityType", entity.type.identifier.toString())
+            put("item", entity.stack?.item?.identifier?.toString())
+            putObject("position").apply {
+                put("x", position.x)
+                put("y", position.y)
+                put("z", position.z)
+            }
+            put("retained", if (enabled) session.world.entities[ITEM_CANARY_ENTITY_ID] === entity else false)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedItemEntity(
+        val session: PlaySession,
+        val entity: ItemEntity,
+    )
+
+    /**
+     * Places one active beacon into an empty loaded client position through
+     * the production world mutation path. This creates the normal block
+     * entity, invalidates the chunk cache, and lets ChunkRenderer collect the
+     * retained translucent beam. Disable restores the exact prior air state.
+     */
+    private fun prepareBeacon(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val session = context.session
+        val world = session.world
+
+        val position: BlockPosition
+        val entity: BeaconBlockEntity?
+        val restored: Boolean
+        if (enabled) {
+            if (preparedBeacon != null) {
+                throw DebugOperationException("invalid_request", "a beacon canary is already prepared")
+            }
+            val origin = session.player.physics.positionInfo.position
+            val yaw = Math.toRadians(session.player.physics.rotation.yaw.toDouble())
+            val targetX = origin.x - kotlin.math.sin(yaw) * 4.0
+            val targetZ = origin.z + kotlin.math.cos(yaw) * 4.0
+            val horizontal = buildList {
+                for (x in -BEACON_CANARY_HORIZONTAL_RADIUS..BEACON_CANARY_HORIZONTAL_RADIUS) {
+                    for (z in -BEACON_CANARY_HORIZONTAL_RADIUS..BEACON_CANARY_HORIZONTAL_RADIUS) {
+                        if (x != 0 || z != 0) add(x to z)
+                    }
+                }
+            }.sortedBy { (x, z) ->
+                val dx = origin.x + x - targetX
+                val dz = origin.z + z - targetZ
+                dx * dx + dz * dz
+            }
+            position = sequence {
+                for (y in origin.y - 1..origin.y + 4) {
+                    for ((x, z) in horizontal) yield(BlockPosition(origin.x + x, y, origin.z + z))
+                }
+            }.firstOrNull { candidate ->
+                world.isValidPosition(candidate) &&
+                    candidate.y + BEACON_CANARY_CLEAR_HEIGHT <= world.dimension.maxY &&
+                    world.chunks[candidate.chunkPosition] != null &&
+                    world[candidate] == null &&
+                    world.getBlockEntity(candidate) == null &&
+                    (1..BEACON_CANARY_CLEAR_HEIGHT).all { offset ->
+                        val state = world[candidate.with(y = candidate.y + offset)]
+                        state == null || BlockStateFlags.FULL_OPAQUE !in state.flags
+                    }
+            } ?: throw DebugOperationException(
+                "not_ready",
+                "no empty loaded position with a clear beacon column is available nearby",
+            )
+            val state = session.registries.block[BeaconBlockEntity.identifier]?.states?.default
+                ?: throw DebugOperationException("not_ready", "beacon block state is unavailable")
+            world[position] = state
+            entity = world.getBlockEntity(position) as? BeaconBlockEntity
+                ?: run {
+                    world[position] = null
+                    throw DebugOperationException("not_ready", "beacon block entity was not created")
+                }
+            entity.updateNBT(mapOf("Levels" to 4))
+            preparedBeacon = PreparedBeacon(session, position, state)
+            restored = false
+        } else {
+            val prepared = preparedBeacon
+                ?: throw DebugOperationException("invalid_request", "no beacon canary is prepared")
+            if (prepared.session !== session) {
+                throw DebugOperationException("not_ready", "the prepared beacon world is no longer active")
+            }
+            position = prepared.position
+            entity = world.getBlockEntity(position) as? BeaconBlockEntity
+            restored = world[position] == prepared.state
+            if (restored) world[position] = null
+            preparedBeacon = null
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            putObject("position").apply {
+                put("x", position.x)
+                put("y", position.y)
+                put("z", position.z)
+            }
+            put("levels", entity?.levels)
+            put("blockEntity", entity?.javaClass?.name)
+            put("currentBlock", world[position]?.block?.identifier?.toString())
+            put("restored", restored)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedBeacon(
+        val session: PlaySession,
+        val position: BlockPosition,
+        val state: BlockState,
+    )
+
+    /**
+     * Places one bounded storage block entity through the production world
+     * mutation path. The retained block-entity renderer, skeletal model,
+     * opening animation, chunk collection, and Iris block-entity route remain
+     * authoritative. Disable restores the exact prior air state.
+     */
+    private fun prepareStorageBlockEntity(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val openNode = body["open"]
+        if (openNode != null && !openNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "open must be boolean")
+        }
+        val typeNode = body["type"]
+        if (typeNode != null && !typeNode.isTextual) {
+            throw DebugOperationException("invalid_request", "type must be a string")
+        }
+
+        val enabled = enabledNode?.asBoolean() ?: true
+        val open = openNode?.asBoolean() ?: true
+        val session = context.session
+        val world = session.world
+
+        val position: BlockPosition
+        val type: StorageBlockEntityCanaryType
+        val entity: StorageBlockEntity?
+        val restored: Boolean
+        if (enabled) {
+            if (preparedStorageBlockEntity != null) {
+                throw DebugOperationException(
+                    "invalid_request",
+                    "a storage block-entity canary is already prepared",
+                )
+            }
+            type = typeNode?.asText()?.let(StorageBlockEntityCanaryType::fromRequest)
+                ?: if (typeNode == null) {
+                    StorageBlockEntityCanaryType.CHEST
+                } else {
+                    throw DebugOperationException(
+                        "invalid_request",
+                        "type must be one of " +
+                            StorageBlockEntityCanaryType.entries.joinToString { it.requestName },
+                    )
+                }
+
+            val origin = session.player.physics.positionInfo.position
+            val yaw = Math.toRadians(session.player.physics.rotation.yaw.toDouble())
+            val targetX = origin.x - kotlin.math.sin(yaw) * STORAGE_BLOCK_ENTITY_CANARY_DISTANCE
+            val targetZ = origin.z + kotlin.math.cos(yaw) * STORAGE_BLOCK_ENTITY_CANARY_DISTANCE
+            val horizontal = buildList {
+                for (x in -BEACON_CANARY_HORIZONTAL_RADIUS..BEACON_CANARY_HORIZONTAL_RADIUS) {
+                    for (z in -BEACON_CANARY_HORIZONTAL_RADIUS..BEACON_CANARY_HORIZONTAL_RADIUS) {
+                        if (x != 0 || z != 0) add(x to z)
+                    }
+                }
+            }.sortedBy { (x, z) ->
+                val dx = origin.x + x - targetX
+                val dz = origin.z + z - targetZ
+                dx * dx + dz * dz
+            }
+            position = sequence {
+                for (y in origin.y - 1..origin.y + 4) {
+                    for ((x, z) in horizontal) yield(BlockPosition(origin.x + x, y, origin.z + z))
+                }
+            }.firstOrNull { candidate ->
+                world.isValidPosition(candidate) &&
+                    world.chunks[candidate.chunkPosition] != null &&
+                    world[candidate] == null &&
+                    world.getBlockEntity(candidate) == null
+            } ?: throw DebugOperationException(
+                "not_ready",
+                "no empty loaded storage block-entity position is available nearby",
+            )
+
+            val state = session.registries.block[type.block]?.states?.default
+                ?: throw DebugOperationException(
+                    "not_ready",
+                    "${type.requestName} block state is unavailable",
+                )
+            world[position] = state
+            entity = world.getBlockEntity(position) as? StorageBlockEntity
+                ?: run {
+                    world[position] = null
+                    throw DebugOperationException(
+                        "not_ready",
+                        "${type.requestName} block entity was not created",
+                    )
+                }
+            entity.setBlockActionData(1, if (open) 1 else 0)
+            preparedStorageBlockEntity = PreparedStorageBlockEntity(session, position, state, type)
+            restored = false
+        } else {
+            val prepared = preparedStorageBlockEntity
+                ?: throw DebugOperationException(
+                    "invalid_request",
+                    "no storage block-entity canary is prepared",
+                )
+            if (prepared.session !== session) {
+                throw DebugOperationException(
+                    "not_ready",
+                    "the prepared storage block-entity world is no longer active",
+                )
+            }
+            position = prepared.position
+            type = prepared.type
+            entity = world.getBlockEntity(position) as? StorageBlockEntity
+            restored = world[position] == prepared.state
+            if (restored) world[position] = null
+            preparedStorageBlockEntity = null
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            put("type", type.requestName)
+            put("open", entity?.closed == false)
+            put("viewing", entity?.viewing)
+            putObject("position").apply {
+                put("x", position.x)
+                put("y", position.y)
+                put("z", position.z)
+            }
+            put("blockEntity", entity?.javaClass?.name)
+            put("currentBlock", world[position]?.block?.identifier?.toString())
+            put("restored", restored)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedStorageBlockEntity(
+        val session: PlaySession,
+        val position: BlockPosition,
+        val state: BlockState,
+        val type: StorageBlockEntityCanaryType,
+    )
+
+    /**
+     * Places one text-bearing sign through the production block and
+     * block-entity-data paths. Sign glyphs are baked into the section's
+     * EMISSIVE_ADDITIVE terrain material, so this canary exercises the terrain
+     * provider route rather than a block-entity scene shader.
+     */
+    private fun prepareSignText(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val session = context.session
+        val world = session.world
+
+        val position: BlockPosition
+        val entity: SignBlockEntity?
+        val restored: Boolean
+        if (enabled) {
+            if (preparedSignText != null) {
+                throw DebugOperationException("invalid_request", "a sign-text canary is already prepared")
+            }
+            val origin = session.player.physics.positionInfo.position
+            val yaw = Math.toRadians(session.player.physics.rotation.yaw.toDouble())
+            val targetX = origin.x - kotlin.math.sin(yaw) * 4.0
+            val targetZ = origin.z + kotlin.math.cos(yaw) * 4.0
+            position = sequence {
+                val offsets = buildList {
+                    for (x in -BEACON_CANARY_HORIZONTAL_RADIUS..BEACON_CANARY_HORIZONTAL_RADIUS) {
+                        for (z in -BEACON_CANARY_HORIZONTAL_RADIUS..BEACON_CANARY_HORIZONTAL_RADIUS) {
+                            if (x != 0 || z != 0) add(x to z)
+                        }
+                    }
+                }.sortedBy { (x, z) ->
+                    val dx = origin.x + x - targetX
+                    val dz = origin.z + z - targetZ
+                    dx * dx + dz * dz
+                }
+                for (y in origin.y - 1..origin.y + 4) {
+                    for ((x, z) in offsets) yield(BlockPosition(origin.x + x, y, origin.z + z))
+                }
+            }.firstOrNull { candidate ->
+                world.isValidPosition(candidate) &&
+                    world.chunks[candidate.chunkPosition] != null &&
+                    world[candidate] == null &&
+                    world.getBlockEntity(candidate) == null
+            } ?: throw DebugOperationException("not_ready", "no empty loaded sign position is available nearby")
+
+            val state = session.registries.block[MinecraftBlocks.OAK_SIGN]?.states?.default
+                ?: throw DebugOperationException("not_ready", "oak sign block state is unavailable")
+            world[position] = state
+            val chunk = world.chunks[position.chunkPosition]
+                ?: run {
+                    world[position] = null
+                    throw DebugOperationException("not_ready", "prepared sign chunk was unloaded")
+                }
+            entity = chunk.applyBlockEntityData(
+                position.inChunkPosition,
+                mapOf(
+                    "is_waxed" to 1.toByte(),
+                    "front_text" to mapOf(
+                        "has_glowing_text" to 1.toByte(),
+                        "color" to "white",
+                        "messages" to listOf("\"IRIS\"", "\"SIGN\"", "\"TEXT\"", "\"ROUTE\""),
+                    ),
+                    "back_text" to mapOf(
+                        "has_glowing_text" to 1.toByte(),
+                        "color" to "white",
+                        "messages" to listOf("\"IRIS\"", "\"SIGN\"", "\"TEXT\"", "\"ROUTE\""),
+                    ),
+                ),
+            ) as? SignBlockEntity ?: run {
+                world[position] = null
+                throw DebugOperationException("not_ready", "sign block entity was not created")
+            }
+            preparedSignText = PreparedSignText(session, position, state)
+            restored = false
+        } else {
+            val prepared = preparedSignText
+                ?: throw DebugOperationException("invalid_request", "no sign-text canary is prepared")
+            if (prepared.session !== session) {
+                throw DebugOperationException("not_ready", "the prepared sign world is no longer active")
+            }
+            position = prepared.position
+            entity = world.getBlockEntity(position) as? SignBlockEntity
+            restored = world[position] == prepared.state
+            if (restored) world[position] = null
+            preparedSignText = null
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            putObject("position").apply {
+                put("x", position.x)
+                put("y", position.y)
+                put("z", position.z)
+            }
+            put("blockEntity", entity?.javaClass?.name)
+            put("frontGlowing", entity?.front?.glowing)
+            put("backGlowing", entity?.back?.glowing)
+            putArray("frontLines").also { lines ->
+                entity?.front?.text?.forEach { line ->
+                    lines.addObject().apply {
+                        put("message", line.message)
+                        put("length", line.length)
+                        put("primitives", de.bixilon.minosoft.gui.rendering.font.renderer.component.ChatComponentRenderer.calculatePrimitiveCount(line))
+                    }
+                }
+            }
+            put("blockClass", world[position]?.block?.javaClass?.name)
+            put("blockModel", world[position]?.block?.model?.javaClass?.name)
+            put("stateModel", world[position]?.model?.javaClass?.name)
+            val section = world.chunks[position.chunkPosition]?.get(position.sectionHeight)
+            put("sectionEntityMatches", section?.entities?.get(position.inSectionPosition) === entity)
+            put("sectionStateMatches", section?.blocks?.get(position.inSectionPosition) === world[position])
+            put("currentBlock", world[position]?.block?.identifier?.toString())
+            put("restored", restored)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedSignText(
+        val session: PlaySession,
+        val position: BlockPosition,
+        val state: BlockState,
+    )
+
+    /**
+     * Publishes one bounded client-only remote-break event for an existing
+     * nearby block. The normal retained overlay renderer, texture animation,
+     * world-overlay phase, and damaged-block Iris contract remain authoritative.
+     */
+    private fun prepareBlockBreak(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val session = context.session
+        val renderer = context.renderer[BlockBreakRenderer]
+            ?: throw DebugOperationException("not_ready", "block-break renderer is unavailable")
+
+        val position: BlockPosition
+        val cancelled: Boolean
+        if (enabled) {
+            if (preparedBlockBreak != null) {
+                throw DebugOperationException("invalid_request", "a block-break canary is already prepared")
+            }
+            val origin = session.player.physics.positionInfo.position
+            position = sequence {
+                for (y in origin.y - 1 downTo origin.y - 4) {
+                    for (radius in 0..BEACON_CANARY_HORIZONTAL_RADIUS) {
+                        for (x in -radius..radius) {
+                            for (z in -radius..radius) {
+                                if (maxOf(kotlin.math.abs(x), kotlin.math.abs(z)) != radius) continue
+                                yield(BlockPosition(origin.x + x, y, origin.z + z))
+                            }
+                        }
+                    }
+                }
+            }.firstOrNull { candidate ->
+                session.world.chunks[candidate.chunkPosition] != null &&
+                    session.world[candidate]?.let { it.model ?: it.block.model } != null
+            } ?: throw DebugOperationException("not_ready", "no model-bearing loaded block is available nearby")
+            cancelled = session.events.fire(
+                BlockBreakAnimationEvent(session, BLOCK_BREAK_CANARY_ID, position, BLOCK_BREAK_CANARY_PROGRESS),
+            )
+            if (cancelled) {
+                session.events.fire(BlockBreakAnimationEvent(session, BLOCK_BREAK_CANARY_ID, position, null))
+                throw DebugOperationException("not_ready", "block-break canary event was cancelled")
+            }
+            preparedBlockBreak = PreparedBlockBreak(session, position)
+        } else {
+            val prepared = preparedBlockBreak
+                ?: throw DebugOperationException("invalid_request", "no block-break canary is prepared")
+            if (prepared.session !== session) {
+                throw DebugOperationException("not_ready", "the prepared block-break world is no longer active")
+            }
+            position = prepared.position
+            cancelled = session.events.fire(BlockBreakAnimationEvent(session, BLOCK_BREAK_CANARY_ID, position, null))
+            preparedBlockBreak = null
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            put("eventId", BLOCK_BREAK_CANARY_ID)
+            putObject("position").apply {
+                put("x", position.x)
+                put("y", position.y)
+                put("z", position.z)
+            }
+            put("block", session.world[position]?.block?.identifier?.toString())
+            if (enabled) put("progress", BLOCK_BREAK_CANARY_PROGRESS) else putNull("progress")
+            put("cancelled", cancelled)
+            put("retained", renderer.hasInstance(BLOCK_BREAK_CANARY_ID))
+            put("retainedInstances", renderer.instanceCount)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedBlockBreak(
+        val session: PlaySession,
+        val position: BlockPosition,
+    )
+
+    /**
+     * Adds one long-lived stationary sneeze particle through the production
+     * particle queue. Its authored alpha selects the ordinary translucent mesh
+     * and graph pass. Disable marks only that instance dead; the normal ticker
+     * removes it from either the queue or retained list.
+     */
+    private fun prepareTranslucentParticle(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val session = context.session
+        val renderer = context.renderer[ParticleRenderer]
+            ?: throw DebugOperationException("not_ready", "particle renderer is unavailable")
+
+        val particle = if (enabled) {
+            if (preparedTranslucentParticle != null) {
+                throw DebugOperationException("invalid_request", "a translucent-particle canary is already prepared")
+            }
+            if (!renderer.enabled) {
+                throw DebugOperationException("not_ready", "particle rendering is disabled")
+            }
+            val player = session.player
+            val origin = player.physics.position
+            val yaw = Math.toRadians(player.physics.rotation.yaw.toDouble())
+            val position = Vec3d(
+                origin.x - kotlin.math.sin(yaw) * 2.0,
+                origin.y + player.eyeHeight * 0.65,
+                origin.z + kotlin.math.cos(yaw) * 2.0,
+            )
+            SneezeParticle(
+                session,
+                position,
+                de.bixilon.kmath.vec.vec3.d.MVec3d.EMPTY,
+            ).also {
+                it.movement = false
+                it.physics = false
+                it.maxAge = 400
+                renderer += it
+                preparedTranslucentParticle = PreparedTranslucentParticle(session, renderer, it)
+            }
+        } else {
+            val prepared = preparedTranslucentParticle
+                ?: throw DebugOperationException("invalid_request", "no translucent-particle canary is prepared")
+            if (prepared.session !== session || prepared.renderer !== renderer) {
+                throw DebugOperationException("not_ready", "the prepared particle renderer is no longer active")
+            }
+            prepared.particle.dead = true
+            preparedTranslucentParticle = null
+            prepared.particle
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            put("particleType", SneezeParticle.identifier.toString())
+            put("retained", renderer.hasParticle(particle))
+            put("dead", particle.dead)
+            put("maxAge", particle.maxAge)
+            put("particleCount", renderer.size)
+            put("translucentMesh", renderer.translucentMesh != null)
+            putObject("position").apply {
+                put("x", particle.position.x)
+                put("y", particle.position.y)
+                put("z", particle.position.z)
+            }
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedTranslucentParticle(
+        val session: PlaySession,
+        val renderer: ParticleRenderer,
+        val particle: SneezeParticle,
+    )
+
+    /**
+     * Enables the normal F3+G chunk-border producer without changing the
+     * user's profile. Async mesh generation, layer ordering, and the generic
+     * color shader remain authoritative.
+     */
+    private fun prepareChunkBorder(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val session = context.session
+        val renderer = context.renderer[ChunkBorderRenderer]
+            ?: throw DebugOperationException("not_ready", "chunk-border renderer is unavailable")
+        val restored: Boolean
+
+        if (enabled) {
+            if (preparedChunkBorder != null) {
+                throw DebugOperationException("invalid_request", "a chunk-border canary is already prepared")
+            }
+            preparedChunkBorder = PreparedChunkBorder(session, renderer, renderer.referenceEnabledOverride)
+            renderer.referenceEnabledOverride = true
+            restored = false
+        } else {
+            val prepared = preparedChunkBorder
+                ?: throw DebugOperationException("invalid_request", "no chunk-border canary is prepared")
+            if (prepared.session !== session || prepared.renderer !== renderer) {
+                throw DebugOperationException("not_ready", "the prepared chunk-border renderer is no longer active")
+            }
+            restored = renderer.referenceEnabledOverride == true
+            if (restored) renderer.referenceEnabledOverride = prepared.previousOverride
+            preparedChunkBorder = null
+        }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("enabled", enabled)
+            put("clientOnly", true)
+            put("profileEnabled", session.profiles.rendering.chunkBorder.enabled)
+            put("referenceEnabledOverride", renderer.referenceEnabledOverride)
+            put("effectiveEnabled", renderer.effectiveEnabled)
+            put("meshRetained", renderer.mesh != null)
+            put("nextMeshRetained", renderer.nextMesh != null)
+            put("restored", restored)
+            put("frame", context.frameNumber)
+        })
+    }
+
+    private data class PreparedChunkBorder(
+        val session: PlaySession,
+        val renderer: ChunkBorderRenderer,
+        val previousOverride: Boolean?,
+    )
 
     private fun addRegionSample(result: ObjectNode, buffer: TextureBuffer, size: Vec2i, region: JsonNode) {
         val x = region.path("x").asInt(-1)
@@ -472,6 +2780,7 @@ object ClientDebugChannel : AutoCloseable {
         val graph = context.renderer.pipeline.generation
         val shader = context.shaderPipeline.selection()
         val shaderStats = context.shaderPipeline.stats()
+        val shaderDiagnostics = context.shaderPipeline.diagnostics()
         val result = DebugJson.MAPPER.createObjectNode().apply {
             put("frame", context.frameNumber)
             put("graphGeneration", graph.number)
@@ -480,10 +2789,194 @@ object ClientDebugChannel : AutoCloseable {
             put("shaderOwner", shader.owner.value)
             put("shaderPack", shader.packName)
             put("shaderFingerprint", shader.fingerprint)
+            if (shader.programDirectory == null) {
+                putNull("shaderProgramDirectory")
+            } else {
+                put("shaderProgramDirectory", shader.programDirectory)
+            }
+            put("shaderSunPathRotation", shader.sunPathRotation)
+            putObject("shaderSmoothing").apply {
+                put("wetnessHalfLife", shader.smoothingDirectives?.wetnessHalfLife)
+                put("drynessHalfLife", shader.smoothingDirectives?.drynessHalfLife)
+                put("eyeBrightnessHalfLife", shader.smoothingDirectives?.eyeBrightnessHalfLife)
+            }
+            put("shaderParticlesOrdering", shader.particlesOrdering?.name?.lowercase())
+            put("shaderSeparateEntityDraws", shader.separateEntityDraws)
+            put("shaderSkipAllRendering", shader.skipAllRendering)
+            putObject("shaderShadowRouting").apply {
+                put("enabled", shader.shadowDirectives?.enabled)
+                put("terrain", shader.shadowDirectives?.terrain)
+                put("translucentTerrain", shader.shadowDirectives?.translucentTerrain)
+                put("entities", shader.shadowDirectives?.entities)
+                put("player", shader.shadowDirectives?.player)
+                put("blockEntities", shader.shadowDirectives?.blockEntities)
+                put("lightBlockEntities", shader.shadowDirectives?.lightBlockEntities)
+                put("distance", shader.shadowDirectives?.distance)
+                put("nearPlane", shader.shadowDirectives?.nearPlane)
+                put("farPlane", shader.shadowDirectives?.farPlane)
+                put("mapFov", shader.shadowDirectives?.mapFov)
+                put("intervalSize", shader.shadowDirectives?.intervalSize)
+                put("distanceRenderMultiplier", shader.shadowDirectives?.distanceRenderMultiplier)
+                put("entityShadowDistanceMultiplier", shader.shadowDirectives?.entityShadowDistanceMultiplier)
+                put("voxelDistance", shader.shadowDirectives?.voxelDistance)
+                put("cullingMode", shader.shadowDirectives?.cullingMode?.name?.lowercase())
+                put("voxelizationDetected", shader.shadowDirectives?.voxelizationDetected)
+                put("terrainDistanceLimit", shader.shadowDirectives?.terrainDistanceLimit)
+                put("entityDistanceLimit", shader.shadowDirectives?.entityDistanceLimit)
+            }
             putObject("shaderResources").apply {
                 put("activeLeases", shaderStats.activeLeases)
                 put("retiredAwaitingLeases", shaderStats.retiredAwaitingLeases)
                 put("closed", shaderStats.closed)
+            }
+            putObject("shaderPrograms").apply {
+                if (shaderDiagnostics.selectedProfile == null) {
+                    putNull("selectedProfile")
+                } else {
+                    put("selectedProfile", shaderDiagnostics.selectedProfile)
+                }
+                put("compiledScenePrograms", shaderDiagnostics.compiledScenePrograms)
+                put("compiledShadowScenePrograms", shaderDiagnostics.compiledShadowScenePrograms)
+                putObject("alphaTests").apply {
+                    shaderDiagnostics.programAlphaTests.toSortedMap().forEach { (program, test) ->
+                        put(program, test)
+                    }
+                }
+                putObject("blendOverrides").apply {
+                    shaderDiagnostics.programBlendOverrides.toSortedMap().forEach { (program, blend) ->
+                        put(program, blend)
+                    }
+                }
+                putObject("appliedBlendOverrides").apply {
+                    shaderDiagnostics.appliedBlendOverrides.toSortedMap().forEach { (override, count) ->
+                        put(override, count)
+                    }
+                }
+                putArray("compiledSceneRoutes").also { routes ->
+                    shaderDiagnostics.compiledSceneRoutes.sorted().forEach(routes::add)
+                }
+                putArray("compiledShadowSceneRoutes").also { routes ->
+                    shaderDiagnostics.compiledShadowSceneRoutes.sorted().forEach(routes::add)
+                }
+                put("logicalShaderBuffers", shaderDiagnostics.logicalShaderBuffers)
+                put("physicalShaderTextures", shaderDiagnostics.physicalShaderTextures)
+                putObject("customShaderTextures").apply {
+                    shaderDiagnostics.customShaderTextures.toSortedMap().forEach { (sampler, descriptor) ->
+                        put(sampler, descriptor)
+                    }
+                }
+                putObject("customShaderResources").apply {
+                    shaderDiagnostics.customShaderResources.toSortedMap().forEach { (resource, descriptor) ->
+                        put(resource, descriptor)
+                    }
+                }
+                put("textureArrayUniformUploads", shaderDiagnostics.textureArrayUniformUploads)
+                putObject("textureArraySizes").apply {
+                    shaderDiagnostics.textureArraySizes.toSortedMap().forEach { (index, size) ->
+                        put(index.toString(), size)
+                    }
+                }
+                putObject("shadowTerrainPrograms").apply {
+                    shaderDiagnostics.shadowTerrainPrograms.toSortedMap().forEach { (material, program) ->
+                        put(material, program)
+                    }
+                }
+                putObject("buffers").apply {
+                    shaderDiagnostics.shaderBuffers.toSortedMap().forEach { (buffer, descriptor) ->
+                        put(buffer, descriptor)
+                    }
+                }
+                putObject("programOutputs").apply {
+                    shaderDiagnostics.programOutputs.toSortedMap().forEach { (program, outputs) ->
+                        put(program, outputs)
+                    }
+                }
+                putObject("programStages").apply {
+                    shaderDiagnostics.programStages.toSortedMap().forEach { (program, stages) ->
+                        put(program, stages)
+                    }
+                }
+                putObject("programSamplers").apply {
+                    shaderDiagnostics.programSamplers.toSortedMap().forEach { (program, samplers) ->
+                        put(program, samplers)
+                    }
+                }
+                if (shaderDiagnostics.frameState == null) {
+                    putNull("frameState")
+                } else {
+                    put("frameState", shaderDiagnostics.frameState)
+                }
+                putObject("frameInputValues").apply {
+                    shaderDiagnostics.frameInputValues.toSortedMap().forEach { (name, value) ->
+                        put(name, value)
+                    }
+                }
+                putObject("shadowCulling").apply {
+                    shaderDiagnostics.shadowCulling.toSortedMap().forEach { (name, value) ->
+                        put(name, value)
+                    }
+                }
+                put("frameUniformUploads", shaderDiagnostics.frameUniformUploads)
+                put("drawUniformUploads", shaderDiagnostics.drawUniformUploads)
+                put("diagnosticTraceSampleRate", shaderDiagnostics.diagnosticTraceSampleRate)
+                putObject("drawStateBinds").apply {
+                    shaderDiagnostics.drawStateBinds.toSortedMap().forEach { (state, count) ->
+                        put(state, count)
+                    }
+                }
+                putObject("entityColorBinds").apply {
+                    shaderDiagnostics.entityColorBinds.toSortedMap().forEach { (color, count) ->
+                        put(color, count)
+                    }
+                }
+                putObject("renderStageBinds").apply {
+                    shaderDiagnostics.renderStageBinds.toSortedMap().forEach { (stage, count) ->
+                        put(stage, count)
+                    }
+                }
+                putObject("depthSnapshots").apply {
+                    shaderDiagnostics.depthSnapshots.toSortedMap().forEach { (snapshot, count) ->
+                        put(snapshot, count)
+                    }
+                }
+                putObject("fullscreenProgramExecutions").apply {
+                    shaderDiagnostics.fullscreenProgramExecutions.toSortedMap().forEach { (program, count) ->
+                        put(program, count)
+                    }
+                }
+                putObject("selectedTerrainBinds").apply {
+                    shaderDiagnostics.selectedTerrainBinds.toSortedMap().forEach { (program, count) -> put(program, count) }
+                }
+                putObject("selectedSceneBinds").apply {
+                    shaderDiagnostics.selectedSceneBinds.toSortedMap().forEach { (program, count) -> put(program, count) }
+                }
+                putObject("selectedSceneContracts").apply {
+                    shaderDiagnostics.selectedSceneContracts.toSortedMap().forEach { (contract, count) -> put(contract, count) }
+                }
+                putObject("submittedSceneDraws").apply {
+                    shaderDiagnostics.submittedSceneDraws.toSortedMap().forEach { (contract, count) -> put(contract, count) }
+                }
+                putObject("submittedSceneVertices").apply {
+                    shaderDiagnostics.submittedSceneVertices.toSortedMap().forEach { (contract, count) -> put(contract, count) }
+                }
+                putArray("submittedMainSceneVertexAbis").apply {
+                    shaderDiagnostics.submittedMainSceneVertexAbis.sorted().forEach { add(it) }
+                }
+                putArray("submittedMainSceneStateAbis").apply {
+                    shaderDiagnostics.submittedMainSceneStateAbis.sorted().forEach { add(it) }
+                }
+                putArray("unsubmittedCompiledSceneVertexAbis").apply {
+                    shaderDiagnostics.unsubmittedCompiledSceneVertexAbis.sorted().forEach { add(it) }
+                }
+                putArray("unsubmittedCompiledSceneStateAbis").apply {
+                    shaderDiagnostics.unsubmittedCompiledSceneStateAbis.sorted().forEach { add(it) }
+                }
+                putObject("rejectedSceneBinds").apply {
+                    shaderDiagnostics.rejectedSceneBinds.toSortedMap().forEach { (program, count) -> put(program, count) }
+                }
+                putObject("fallbackSceneBinds").apply {
+                    shaderDiagnostics.fallbackSceneBinds.toSortedMap().forEach { (program, count) -> put(program, count) }
+                }
             }
         }
         val passes = result.putArray("passes")
@@ -500,12 +2993,31 @@ object ClientDebugChannel : AutoCloseable {
         val owners = result.putArray("owners")
         graph.passes.map { it.owner.value }.distinct().sorted().forEach(owners::add)
 
-        (context.system as? OpenGlRenderSystem)?.resources?.snapshot()?.let { snapshot ->
+        (context.system as? OpenGlRenderSystem)?.let { system ->
+            val snapshot = system.resources.snapshot()
+            val capabilities = OpenGlCapabilityDiagnostics.capture()
             result.putObject("gpuResources").apply {
                 put("backend", "opengl")
                 put("created", snapshot.created)
                 put("deleted", snapshot.deleted)
                 put("live", snapshot.live)
+                putObject("capabilities").apply {
+                    put("version", capabilities.version)
+                    put("vendor", capabilities.vendor)
+                    put("renderer", capabilities.renderer)
+                    put("openGl40", capabilities.openGl40)
+                    put("openGl42", capabilities.openGl42)
+                    put("openGl43", capabilities.openGl43)
+                    put("openGl44", capabilities.openGl44)
+                    put("arbClearTexture", capabilities.arbClearTexture)
+                    put("arbDrawBuffersBlend", capabilities.arbDrawBuffersBlend)
+                    put("irisTessellation", capabilities.irisTessellation)
+                    put("irisPerBufferBlending", capabilities.irisPerBufferBlending)
+                    put("irisRenderTargetImages", capabilities.irisRenderTargetImages)
+                    put("irisCustomImages", capabilities.irisCustomImages)
+                    put("irisCompute", capabilities.irisCompute)
+                    put("irisShaderStorageBuffers", capabilities.irisShaderStorageBuffers)
+                }
                 val types = putArray("types")
                 snapshot.types.forEach { type ->
                     types.addObject().apply {
@@ -517,6 +3029,28 @@ object ClientDebugChannel : AutoCloseable {
                 }
             }
         }
+        (context.textures as? OpenGlTextureManager)?.static
+            ?.materialAnimationDiagnostics()
+            ?.let { animations ->
+                result.putObject("materialAnimations").apply {
+                    put("textures", animations.textures)
+                    put("channels", animations.channels)
+                    put("advances", animations.advances)
+                    put("uploads", animations.uploads)
+                    putArray("resources").also { resources ->
+                        animations.resources.forEach(resources::add)
+                    }
+                    putArray("states").also { states ->
+                        animations.states.forEach { state ->
+                            states.addObject().apply {
+                                put("kind", state.kind)
+                                put("resource", state.resource)
+                                put("uploadedFrameIndex", state.uploadedFrameIndex)
+                            }
+                        }
+                    }
+                }
+            }
 
         context.renderer[ChunkRenderer]?.let { chunks ->
             val terrain = chunks.terrain.selection()
@@ -541,6 +3075,36 @@ object ClientDebugChannel : AutoCloseable {
                 put("submissionTimingSamples", terrainStats.submissionTimingSamples)
                 put("medianSubmissionNanos", terrainStats.medianSubmissionNanos)
                 put("p95SubmissionNanos", terrainStats.p95SubmissionNanos)
+                putTerrainPerformance(
+                    name = "productionRuntime",
+                    snapshot = chunks.terrainPerformance.snapshot(),
+                    includeBuckets = true,
+                )
+                val visibleMeshes = chunks.visibility.meshes
+                visibleMeshes.lock.locked {
+                    putObject("visibleMeshes").apply {
+                        ChunkMeshTypes.VALUES.forEach { type ->
+                            val meshes = visibleMeshes.meshes[type.ordinal]
+                            putObject(type.name.lowercase()).apply {
+                                put("meshes", meshes.size)
+                                put("vertices", meshes.sumOf { it.buffer.vertices })
+                                putObject("states").apply {
+                                    meshes.groupingBy { it.state.name.lowercase() }
+                                        .eachCount()
+                                        .toSortedMap()
+                                        .forEach { (state, count) -> put(state, count) }
+                                }
+                                putObject("occlusion").apply {
+                                    meshes.groupingBy { it.occlusion.name.lowercase() }
+                                        .eachCount()
+                                        .toSortedMap()
+                                        .forEach { (state, count) -> put(state, count) }
+                                }
+                            }
+                        }
+                        put("blockEntities", visibleMeshes.entities.size)
+                    }
+                }
                 val submissions = putArray("currentFrameSubmissions")
                 terrainStats.currentFrameSubmissions
                     .sortedWith(compareBy({ it.first.value }, { it.second.name }))
@@ -559,19 +3123,262 @@ object ClientDebugChannel : AutoCloseable {
         return DebugOperationResult.json(result)
     }
 
-    /** Runs the production content-fidelity transaction on the render thread. */
-    private fun reloadContent(context: RenderContext): DebugOperationResult {
-        var generation: Long? = null
-        FabricResourceReloadEvents.run(
-            session = context.session,
-            type = FabricResourceReloadType.CONTENT_FIDELITY,
-            prepare = { Unit },
-            apply = { generation = context.models.skeletal.reloadContentFidelity() },
-        )
+    private fun configureTerrainTelemetry(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val renderer = context.renderer[ChunkRenderer]
+            ?: throw DebugOperationException("not_ready", "chunk renderer is not available")
+        val enabledNode = body.get("enabled")
+        if (enabledNode == null || !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be a boolean")
+        }
+        val queuedBuilds = renderer.meshingQueue.size
+        val outstandingBuilds = renderer.meshingQueue.tasks.size
+        val pendingUploads = renderer.loadingQueue.size
+        if (queuedBuilds != 0 || outstandingBuilds != 0 || pendingUploads != 0) {
+            throw DebugOperationException(
+                "not_ready",
+                "terrain telemetry can only change at an idle boundary " +
+                    "(queued=$queuedBuilds, outstanding=$outstandingBuilds, uploads=$pendingUploads)",
+            )
+        }
+        val telemetry = renderer.terrainPerformance
+        val previous = telemetry.enabled
+        telemetry.enabled = enabledNode.booleanValue()
+        telemetry.queueDepth(0)
+        telemetry.outstandingBuilds(0)
+        telemetry.pendingUploads(0)
         return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("previousEnabled", previous)
+            putTerrainPerformance("terrain", telemetry.snapshot(), includeBuckets = true)
+        })
+    }
+
+    private fun ObjectNode.putTerrainPerformance(
+        name: String,
+        snapshot: TerrainPerformanceSnapshot,
+        includeBuckets: Boolean,
+    ) {
+        putObject(name).apply {
+            put("enabled", snapshot.enabled)
+            put("configuredWorkers", snapshot.configuredWorkers)
+            put("queuedBuilds", snapshot.queuedBuilds)
+            put("outstandingBuilds", snapshot.outstandingBuilds)
+            put("activeWorkers", snapshot.activeWorkers)
+            put("observationNanos", snapshot.observationNanos)
+            put("cumulativeWorkerUtilization", snapshot.cumulativeWorkerUtilization)
+            put("pendingUploads", snapshot.pendingUploads)
+            put("queueHighWater", snapshot.queueHighWater)
+            put("activeWorkerHighWater", snapshot.activeWorkerHighWater)
+            put("pendingUploadHighWater", snapshot.pendingUploadHighWater)
+            put("currentWorkerUtilization", if (snapshot.configuredWorkers == 0) 0.0 else {
+                snapshot.activeWorkers.toDouble() / snapshot.configuredWorkers
+            })
+            put("requestedBuilds", snapshot.requestedBuilds)
+            put("startedBuilds", snapshot.startedBuilds)
+            put("successfulBuilds", snapshot.successfulBuilds)
+            put("cancelledBuilds", snapshot.cancelledBuilds)
+            put("staleBuilds", snapshot.staleBuilds)
+            put("rejectedBuilds", snapshot.rejectedBuilds)
+            put("failedBuilds", snapshot.failedBuilds)
+            put("failedUploads", snapshot.failedUploads)
+            put("outputBytes", snapshot.outputBytes)
+            put("uploadedBytes", snapshot.uploadedBytes)
+            put("visibleSections", snapshot.visibleSections)
+            putObject("phases").apply {
+                snapshot.phases.forEach { (phase, latency) ->
+                    putObject(phase.wireName).apply {
+                        put("samples", latency.samples)
+                        put("totalNanos", latency.totalNanos)
+                        put("maximumNanos", latency.maximumNanos)
+                        put("medianNanos", latency.medianNanos)
+                        put("p95Nanos", latency.p95Nanos)
+                        if (includeBuckets) {
+                            putArray("bucketUpperBoundsNanos").also { bounds ->
+                                latency.bucketUpperBoundsNanos.forEach(bounds::add)
+                            }
+                            putArray("buckets").also { buckets ->
+                                latency.buckets.forEach(buckets::add)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Runs the production content-fidelity transaction on the render thread.
+     * A named rejection checkpoint is deliberately limited to rollback
+     * acceptance and cannot mutate the mounted asset or data-pack stacks.
+     */
+    private fun reloadContent(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val rejectAt = body["rejectAt"]?.let { value ->
+            if (!value.isTextual) {
+                throw DebugOperationException("invalid_request", "rejectAt must be a string")
+            }
+            ContentReloadRejectionPoint.entries.singleOrNull { it.wireName == value.asText() }
+                ?: throw DebugOperationException(
+                    "invalid_request",
+                    "rejectAt must be one of: ${ContentReloadRejectionPoint.entries.joinToString { it.wireName }}",
+                )
+        }
+        val generationBefore = context.session.contentFidelity.generationId
+        val gpuBefore = (context.system as? OpenGlRenderSystem)?.resources?.snapshot()
+        var generation: Long? = null
+        try {
+            FabricResourceReloadEvents.run(
+                session = context.session,
+                type = FabricResourceReloadType.CONTENT_FIDELITY,
+                prepare = { Unit },
+                apply = {
+                    generation = rejectAt?.let(context.models.skeletal::reloadContentFidelityForAcceptance)
+                        ?: context.models.skeletal.reloadContentFidelity()
+                },
+            )
+        } catch (error: Throwable) {
+            if (rejectAt == null || error !is ContentReloadRejectedException || error.rejectionPoint != rejectAt) {
+                throw error
+            }
+            val generationAfter = context.session.contentFidelity.generationId
+            val gpuAfter = (context.system as? OpenGlRenderSystem)?.resources?.snapshot()
+            return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+                put("accepted", false)
+                put("expectedRejection", true)
+                put("rejectionPoint", rejectAt.wireName)
+                put("generationBefore", generationBefore)
+                put("generationAfter", generationAfter)
+                put("generationUnchanged", generationAfter == generationBefore)
+                put("frame", context.frameNumber)
+                if (gpuBefore != null && gpuAfter != null) {
+                    putGpuReloadDelta(this, gpuBefore, gpuAfter)
+                }
+            })
+        }
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("accepted", true)
+            put("generationBefore", generationBefore)
             put("generation", requireNotNull(generation))
             put("frame", context.frameNumber)
         })
+    }
+
+    private fun putGpuReloadDelta(
+        result: ObjectNode,
+        before: OpenGlResourceSnapshot,
+        after: OpenGlResourceSnapshot,
+    ) {
+        val created = after.created - before.created
+        val deleted = after.deleted - before.deleted
+        val balanced = created == deleted && before.types.indices.all { index ->
+            before.types[index].type == after.types[index].type &&
+                before.types[index].live == after.types[index].live
+        }
+        result.put("gpuBalanced", balanced)
+        result.putObject("gpuResourceDelta").apply {
+            put("created", created)
+            put("deleted", deleted)
+            put("live", after.live - before.live)
+            val types = putArray("types")
+            before.types.zip(after.types).forEach { (old, new) ->
+                types.addObject().apply {
+                    put("type", old.type.name.lowercase())
+                    put("created", new.created - old.created)
+                    put("deleted", new.deleted - old.deleted)
+                    put("live", new.live - old.live)
+                }
+            }
+        }
+    }
+
+    /**
+     * Executes a mounted function only for the source-native local connection.
+     * The explicit origin/camera pair makes rendered fixture runs repeatable
+     * without adding an unrestricted world mutation surface to remote servers.
+     */
+    private fun executeLocalContent(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val function = body["function"]?.takeIf(JsonNode::isTextual)?.asText()
+            ?: throw DebugOperationException("invalid_request", "function is required")
+        if (!function.matches(Regex("[a-z0-9_.-]+:[a-z0-9_./-]+")) || function.length > 256) {
+            throw DebugOperationException("invalid_request", "function is not a bounded resource location")
+        }
+        val arguments = linkedMapOf<String, String>()
+        val argumentsNode = body.path("arguments")
+        if (!argumentsNode.isMissingNode && !argumentsNode.isObject) {
+            throw DebugOperationException("invalid_request", "arguments must be an object")
+        }
+        if (argumentsNode.size() > MAX_FUNCTION_ARGUMENTS) {
+            throw DebugOperationException("limit_exceeded", "too many function arguments")
+        }
+        var argumentBytes = 0
+        argumentsNode.properties().forEach { (key, value) ->
+            if (!key.matches(Regex("[A-Za-z0-9_.-]+")) || key.length > 128 || !value.isTextual) {
+                throw DebugOperationException("invalid_request", "function arguments must use bounded string keys and values")
+            }
+            val text = value.asText()
+            argumentBytes += key.toByteArray().size + text.toByteArray().size
+            if (argumentBytes > MAX_FUNCTION_ARGUMENT_BYTES) {
+                throw DebugOperationException("limit_exceeded", "function arguments exceed $MAX_FUNCTION_ARGUMENT_BYTES bytes")
+            }
+            arguments[key] = text
+        }
+
+        val origin = localPose(body.path("origin"), "origin")
+        val camera = localPose(body.path("camera"), "camera")
+        val connection = context.session.connection as? LocalConnection
+            ?: throw DebugOperationException("not_ready", "content.execute-local requires an active local world")
+        val execution = try {
+            connection.executeDataPackFunction(
+                reference = function,
+                arguments = arguments,
+                origin = origin.position,
+                originRotation = origin.rotation,
+                camera = camera.position,
+                cameraRotation = camera.rotation,
+            )
+        } catch (error: IllegalStateException) {
+            throw DebugOperationException("not_ready", error.message ?: "local data-pack runtime is not ready")
+        } catch (error: IllegalArgumentException) {
+            throw DebugOperationException("invalid_request", error.message ?: "local data-pack function was rejected")
+        }
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("function", function)
+            put("executed", execution.executed)
+            put("contentGeneration", execution.generation)
+            put("dataPackTick", execution.tick)
+            put("frame", context.frameNumber)
+            set<ObjectNode>("origin", localPoseJson(origin))
+            set<ObjectNode>("camera", localPoseJson(camera))
+        })
+    }
+
+    private fun localPose(node: JsonNode, name: String): LocalPose {
+        if (!node.isObject) throw DebugOperationException("invalid_request", "$name pose is required")
+        val x = boundedCoordinate(node, "x", name)
+        val y = boundedCoordinate(node, "y", name)
+        val z = boundedCoordinate(node, "z", name)
+        val yaw = finiteDouble(node, "yaw", name).toFloat()
+        val pitch = finiteDouble(node, "pitch", name).toFloat()
+        if (pitch !in -90.0f..90.0f) throw DebugOperationException("invalid_request", "$name pitch must be within -90..90")
+        return LocalPose(Vec3d(x, y, z), EntityRotation(yaw, pitch))
+    }
+
+    private fun boundedCoordinate(node: JsonNode, field: String, name: String): Double {
+        val value = finiteDouble(node, field, name)
+        if (value !in -30_000_000.0..30_000_000.0) {
+            throw DebugOperationException("invalid_request", "$name $field exceeds the world coordinate boundary")
+        }
+        return value
+    }
+
+    private fun finiteDouble(node: JsonNode, field: String, name: String): Double {
+        val value = node[field]?.takeIf(JsonNode::isNumber)?.doubleValue()
+            ?: throw DebugOperationException("invalid_request", "$name $field must be numeric")
+        if (!value.isFinite()) throw DebugOperationException("invalid_request", "$name $field must be finite")
+        return value
+    }
+
+    private fun localPoseJson(pose: LocalPose) = DebugJson.MAPPER.createObjectNode().apply {
+        put("x", pose.position.x); put("y", pose.position.y); put("z", pose.position.z)
+        put("yaw", pose.rotation.yaw); put("pitch", pose.rotation.pitch)
     }
 
     private fun onRender(work: (RenderContext) -> DebugOperationResult): CompletableFuture<DebugOperationResult> {
@@ -603,6 +3410,11 @@ object ClientDebugChannel : AutoCloseable {
             throw DebugOperationException("limit_exceeded", "framebuffer dimensions are invalid or too large")
         }
     }
+
+    private data class LocalPose(
+        val position: Vec3d,
+        val rotation: EntityRotation,
+    )
 
     private fun validatePixel(x: Int, y: Int, size: Vec2i) {
         if (x !in 0 until size.x || y !in 0 until size.y) throw DebugOperationException("invalid_request", "pixel is outside framebuffer")

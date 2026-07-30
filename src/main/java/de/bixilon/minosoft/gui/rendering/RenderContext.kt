@@ -83,6 +83,14 @@ class RenderContext(
     var frameNumber: Long = 0
         internal set
 
+    /**
+     * A non-persistent diagnostic override for the unfocused-window frame
+     * limiter. null follows the rendering profile; false keeps measurement
+     * bursts at their normal render cadence while the debug caller owns it.
+     */
+    @Volatile
+    var backgroundThrottleOverride: Boolean? = null
+
     init {
         profile.experimental::fps.observe(this, true) { renderStats = if (it) ExperimentalRenderStats() else RenderStats() }
     }
