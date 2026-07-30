@@ -27,7 +27,7 @@ class RGB8Buffer(
     override val bits get() = 8
     override val bytes get() = 3
     override val components get() = 3
-    override val alpha get() = true
+    override val alpha get() = false
 
     constructor(size: Vec2i, array: ByteArray) : this(size, ByteBuffer.wrap(array))
     constructor(size: Vec2i) : this(size, ByteBuffer.allocateDirect(size.x * size.y * 3))

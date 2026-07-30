@@ -18,10 +18,14 @@ import de.bixilon.minosoft.data.text.formatting.color.RGBAColor.Companion.rgba
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor.Companion.rgb
 import org.testng.Assert.assertEquals
+import org.testng.Assert.assertFalse
 import org.testng.annotations.Test
 
 @Test(groups = ["textures"])
 class RGB8BufferTest {
+    fun `rgb buffer reports that it has no alpha channel`() {
+        assertFalse(RGB8Buffer(Vec2i(1, 1)).alpha)
+    }
 
     fun `set rgb and check buffer at 0,0`() {
         val source = RGB8Buffer(Vec2i(12, 13))
