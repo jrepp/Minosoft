@@ -41,7 +41,9 @@ data class SkeletalFace(
 
         val texture = context.textures[material] ?: throw IllegalStateException("Texture not found!")
 
-        val uv = this.uv ?: CuboidUtil.cubeUV(element.uv!!, element.from, element.to, direction)
+        val uv = this.uv ?: element.boxUvSize?.let {
+            CuboidUtil.cubeUV(element.uv!!, it, direction)
+        } ?: CuboidUtil.cubeUV(element.uv!!, element.from, element.to, direction)
 
         val uvData = FaceUV(
             texture.texture.transformUV(Vec2f(uv.start.x, uv.end.y) / texture.properties.resolution),

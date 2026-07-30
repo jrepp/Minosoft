@@ -57,10 +57,12 @@ class TransformInstance(
         hidden = false
         this.matrix.apply {
             clearAssign()
-            translateAssign(nPivot)
+            // Mat4 uses column vectors and post-multiplies transforms. A
+            // rotation about a model-space joint is T(pivot) R T(-pivot).
+            translateAssign(pivot)
             rotateRadAssign(baseRotation)
             scaleAssign(baseScale)
-            translateAssign(pivot)
+            translateAssign(nPivot)
         }
 
         for (child in array) {
@@ -85,6 +87,24 @@ class TransformInstance(
 
         for (child in this.array) {
             child.pack(buffer)
+        }
+    }
+
+    /**
+     * Copies an already-evaluated pose by transform name into a compatible
+     * retained mesh. Destination IDs remain authoritative, allowing armor and
+     * other layer meshes to share a host pose without relying on transform
+     * declaration order.
+     */
+    fun copyRenderedPoseFrom(source: TransformInstance) {
+        matrix.set(source.matrix.unsafe)
+        renderMatrix.set(source.renderMatrix.unsafe)
+        visible = source.visible
+        hidden = source.hidden
+        for ((name, child) in children) {
+            val sourceChild = source.children[name]
+                ?: throw IllegalArgumentException("Pose source is missing transform $name.")
+            child.copyRenderedPoseFrom(sourceChild)
         }
     }
 

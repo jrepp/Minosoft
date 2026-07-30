@@ -16,6 +16,7 @@ package de.bixilon.minosoft.assets.model.skeletal.gecko.runtime
 import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationEvent
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationEventType
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
@@ -29,6 +30,7 @@ data class GeckoLibRuntimeEventContext(
     val position: Vec3d,
     val entityId: Int? = null,
     val entityUuid: UUID? = null,
+    val contentIdentity: SkeletalContentIdentity? = null,
 )
 
 fun interface GeckoLibRuntimeEventListener {
@@ -100,14 +102,18 @@ interface GeckoLibEventPlaybackTarget {
  * resolve actual sounds, particles, and custom instruction callbacks.
  */
 object GeckoLibEventPlayback {
-    fun dispatch(context: GeckoLibRuntimeEventContext, target: GeckoLibEventPlaybackTarget): Boolean {
+    fun dispatch(
+        context: GeckoLibRuntimeEventContext,
+        target: GeckoLibEventPlaybackTarget,
+        effectBinding: GeckoLibRuntimeEffectRegistry.Binding? = null,
+    ): Boolean {
         when (context.event.type) {
             SkeletalAnimationEventType.SOUND -> {
-                val identifier = effect(context, target) ?: return false
+                val identifier = effect(context, target, effectBinding) ?: return false
                 target.playSound(context, identifier)
             }
             SkeletalAnimationEventType.PARTICLE -> {
-                val identifier = effect(context, target) ?: return false
+                val identifier = effect(context, target, effectBinding) ?: return false
                 target.spawnParticle(context, identifier)
             }
             SkeletalAnimationEventType.CUSTOM_INSTRUCTION -> target.customInstruction(context)
@@ -118,7 +124,13 @@ object GeckoLibEventPlayback {
     private fun effect(
         context: GeckoLibRuntimeEventContext,
         target: GeckoLibEventPlaybackTarget,
+        effectBinding: GeckoLibRuntimeEffectRegistry.Binding?,
     ): ResourceLocation? {
+        when (val resolution = effectBinding?.resolve(context)) {
+            is GeckoLibRuntimeEffectResolution.Play -> return resolution.effect
+            GeckoLibRuntimeEffectResolution.Ignore -> return null
+            GeckoLibRuntimeEffectResolution.PassThrough, null -> Unit
+        }
         val value = context.event.payload.trim()
         if (!EFFECT.matches(value)) {
             target.rejected(context, "Invalid or missing effect resource location '${context.event.payload}'.")

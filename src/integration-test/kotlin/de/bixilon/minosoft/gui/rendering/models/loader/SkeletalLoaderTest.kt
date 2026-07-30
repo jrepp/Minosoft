@@ -22,6 +22,7 @@ import de.bixilon.kutil.reflection.ReflectionUtil.getFieldOrNull
 import de.bixilon.kutil.stream.InputStreamUtil.readAll
 import de.bixilon.minosoft.assets.MemoryAssetsManager
 import de.bixilon.minosoft.assets.model.generation.ContentFidelityLoader
+import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureBlinkState
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentParsers
 import de.bixilon.minosoft.assets.model.skeletal.cem.CEM_PARSER_REGISTRATION
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
@@ -30,6 +31,9 @@ import de.bixilon.minosoft.assets.model.skeletal.gecko.GECKO_PARSER_REGISTRATION
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibArmorModelRegistry
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibBlockEntityModelRegistry
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibEntityModelRegistry
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibEntityTextureDefinition
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibEntityTextureRegistry
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibEntityTextureSelector
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibItemModelRegistry
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibModelTarget
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLayerBlend
@@ -39,11 +43,14 @@ import de.bixilon.minosoft.assets.session.SessionDataPackManager
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
+import de.bixilon.minosoft.data.entities.EntityTestUtil.createEntity
+import de.bixilon.minosoft.data.entities.entities.animal.Pig
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.framebuffer.FramebufferManager
 import de.bixilon.minosoft.gui.rendering.framebuffer.world.MainWorldTarget
 import de.bixilon.minosoft.gui.rendering.models.loader.SkeletalLoader.Companion.sModel
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalTransform
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.inspectDrawPasses
 import de.bixilon.minosoft.gui.rendering.skeletal.model.SkeletalModel
 import de.bixilon.minosoft.gui.rendering.system.dummy.DummyRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTexture
@@ -52,6 +59,7 @@ import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTextureLoader
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererManager
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil
 import de.bixilon.minosoft.test.ITUtil.allocate
+import de.bixilon.minosoft.util.KUtil.startInit
 import org.testng.Assert.assertEquals
 import org.testng.Assert.assertNotSame
 import org.testng.Assert.assertNotNull
@@ -129,8 +137,12 @@ class SkeletalLoaderTest {
                 "/skins/7af7c07d1ded61b1d3312685b32e4568ffdda762ec8d808895cc329a93d606e0.png",
             ),
         ).readAll()
+        val baseTexture = ResourceLocation.of("test:textures/entity/clockwork_zombie/base.png")
+        val variantTexture = ResourceLocation.of("test:textures/entity/clockwork_zombie/variant.png")
         val layerTexture = ResourceLocation.of("test:textures/entity/zombie_glow.png")
         assets.push(ResourceLocation.of("test:textures/__content/geometry.zombie.png"), textureBytes)
+        assets.push(baseTexture, textureBytes)
+        assets.push(variantTexture, textureBytes)
         assets.push(layerTexture, textureBytes)
         session.assets.add(assets)
         val identity = SkeletalContentIdentity(source, SkeletalContentFormat.GECKOLIB, "geometry.zombie")
@@ -139,6 +151,17 @@ class SkeletalLoaderTest {
         val blockRoute = GeckoLibBlockEntityModelRegistry.register("loader-test", entity, identity)
         val itemRoute = GeckoLibItemModelRegistry.register("loader-test", entity, identity)
         val armorRoute = GeckoLibArmorModelRegistry.register("loader-test", entity, identity)
+        val textureResolver = GeckoLibEntityTextureRegistry.register(
+            "loader-test",
+            identity,
+            GeckoLibEntityTextureDefinition(
+                baseTexture,
+                setOf(baseTexture, variantTexture),
+                GeckoLibEntityTextureSelector { state ->
+                    if (state.int(19) == 2) variantTexture else baseTexture
+                },
+            ),
+        )
         val renderLayer = GeckoLibRenderLayerRegistry.register(
             "loader-test",
             identity,
@@ -181,6 +204,28 @@ class SkeletalLoaderTest {
             val baked = requireNotNull(
                 loader.skeletal[ResourceLocation.of("minosoft:content/test/geo/zombie.geo.json/geometry.zombie.smodel")],
             )
+            assertTrue(baked.preview.quads.isNotEmpty())
+            assertSame(loader.skeletal.previewModel(entity), baked)
+            assertTrue(loader.skeletal.previewTextures(entity, baked).isNotEmpty())
+            assertEquals(baked.entityTextureBase, baseTexture)
+            assertNotNull(baked.geckoEntityTextureRegistrationId)
+            assertEquals(
+                baked.entityTextureLayers.getValue(baseTexture).meshes.keys,
+                setOf(baseTexture, variantTexture),
+            )
+            val selectedEntity = requireNotNull(createEntity(session, Pig))
+            selectedEntity.data[19] = 2
+            assertEquals(
+                loader.skeletal.entityTextures(selectedEntity, baked).getValue(baseTexture).base,
+                variantTexture,
+            )
+            val passes = baked.inspectDrawPasses(loader.skeletal.entityTextures(selectedEntity, baked))
+            assertEquals(passes.baseVertices, 0)
+            assertEquals(passes.selectedTexturePasses, 1)
+            assertTrue(passes.selectedTextureVertices > 0)
+            assertEquals(passes.geometryPasses, 1)
+            assertEquals(passes.emissivePasses, 0)
+            assertEquals(passes.geckoLayerCandidates, 1)
             assertEquals(baked.geckoRenderLayers.getValue("glow").blend, GeckoLibRenderLayerBlend.ADDITIVE)
             assertEquals(baked.geckoRenderLayers.getValue("glow").fullBright, true)
 
@@ -191,6 +236,7 @@ class SkeletalLoaderTest {
             loader.skeletal.unload()
         } finally {
             renderLayer.close()
+            textureResolver.close()
             armorRoute.close()
             itemRoute.close()
             blockRoute.close()
@@ -206,7 +252,7 @@ class SkeletalLoaderTest {
         loader.bake(SimpleLatch(0))
         val baked = loader[dummyModel]!!
 
-
+        assertTrue(baked.preview.quads.isNotEmpty())
         assertEquals(baked.transform.children, mapOf("body" to BakedSkeletalTransform(1, Vec3f(0.0f, 0.5f, 0.0f), mapOf("head" to BakedSkeletalTransform(2, Vec3f(0.0f, 1.0f, 0.0f), emptyMap())))))
     }
 
@@ -259,7 +305,24 @@ class SkeletalLoaderTest {
             assertCemAbsolutePartRead(retained)
 
             assets.push(source, cem(6))
-            assertEquals(modelLoader.skeletal.reloadContentFidelity(), 2L)
+            assertThrows(ContentReloadRejectedException::class.java) {
+                modelLoader.skeletal.reloadContentFidelityForAcceptance(ContentReloadRejectionPoint.AFTER_UPLOAD)
+            }
+            assertEquals(session.contentFidelity.generationId, 1L)
+            assertSame(modelLoader.skeletal[modelName], first)
+            assertEquals(staticTextures.liveUpdateResources, 0)
+            assertEquals(staticTextures.rolledBackUpdates, 1)
+
+            assertThrows(ContentReloadRejectedException::class.java) {
+                modelLoader.skeletal.reloadContentFidelityForAcceptance(ContentReloadRejectionPoint.AFTER_PUBLICATION)
+            }
+            assertEquals(session.contentFidelity.generationId, 1L)
+            assertSame(modelLoader.skeletal[modelName], first)
+            assertEquals(modelLoader.skeletal.contentModel(entity), modelName)
+            assertEquals(staticTextures.liveUpdateResources, 0)
+            assertEquals(staticTextures.rolledBackUpdates, 2)
+
+            assertEquals(modelLoader.skeletal.reloadContentFidelity(), 3L)
             val second = modelLoader.skeletal[modelName]!!
             assertNotSame(second, first)
             assertEquals(modelLoader.skeletal.contentModel(entity), modelName)
@@ -275,7 +338,7 @@ class SkeletalLoaderTest {
             assertThrows(IllegalArgumentException::class.java) {
                 modelLoader.skeletal.reloadContentFidelity()
             }
-            assertEquals(session.contentFidelity.generationId, 2L)
+            assertEquals(session.contentFidelity.generationId, 3L)
             assertSame(modelLoader.skeletal[modelName], second)
 
             assets.push(
@@ -284,7 +347,7 @@ class SkeletalLoaderTest {
                     "/skins/7af7c07d1ded61b1d3312685b32e4568ffdda762ec8d808895cc329a93d606e0.png",
                 )!!.readAll(),
             )
-            assertEquals(modelLoader.skeletal.reloadContentFidelity(), 3L)
+            assertEquals(modelLoader.skeletal.reloadContentFidelity(), 4L)
             val third = modelLoader.skeletal[modelName]!!
             assertNotSame(third, second)
             assertNotNull(context.textures.static[newTexture])
@@ -422,6 +485,7 @@ class SkeletalLoaderTest {
             modelLoader.skeletal.upload()
 
             val baked = modelLoader.skeletal[saddledModel]!!
+            assertTrue(baked.preview.quads.isNotEmpty())
             assertEquals(baked.entityTextureBase, null)
             assertEquals(baked.entityTextureLayers.keys, setOf(pig, saddle))
             assertEquals(baked.entityTextureLayers.getValue(pig).meshes.keys, setOf(pig, pigEmissive))
@@ -431,12 +495,47 @@ class SkeletalLoaderTest {
             val retained = baked.createInstance(context)
             retained.load()
             val pigBlink = ResourceLocation.of("minecraft:textures/entity/pig/pig_blink.png")
-            assets.push(pigBlink, png)
+            val pigBlinkEmissive = ResourceLocation.of("minecraft:textures/entity/pig/pig_blink_e.png")
+            val pigBlink2 = ResourceLocation.of("minecraft:textures/entity/pig/pig_blink2.png")
+            val pigBlink2Emissive = ResourceLocation.of("minecraft:textures/entity/pig/pig_blink2_e.png")
+            listOf(pigBlink, pigBlinkEmissive, pigBlink2, pigBlink2Emissive).forEach { assets.push(it, png) }
             assertEquals(modelLoader.skeletal.reloadContentFidelity(), 2L)
             val reloaded = modelLoader.skeletal[saddledModel]!!
             assertNotSame(reloaded, baked)
-            assertEquals(reloaded.entityTextureLayers.getValue(pig).meshes.keys, setOf(pig, pigEmissive, pigBlink))
+            assertEquals(
+                reloaded.entityTextureLayers.getValue(pig).meshes.keys,
+                setOf(pig, pigEmissive, pigBlink, pigBlinkEmissive, pigBlink2, pigBlink2Emissive),
+            )
             assertEquals(reloaded.entityTextureLayers.getValue(saddle).meshes.keys, setOf(saddle, saddleEmissive))
+
+            val entity = requireNotNull(createEntity(session, Pig))
+            entity.startInit()
+            val half = modelLoader.skeletal.entityTextures(entity, reloaded, tick = 0L)
+            assertEquals(half.getValue(pig).blinkState, EntityTextureBlinkState.HALF)
+            assertEquals(half.getValue(pig).base, pigBlink2)
+            assertEquals(half.getValue(pig).emissive, pigBlink2Emissive)
+            assertEquals(half.getValue(saddle).base, saddle)
+            assertEquals(half.getValue(saddle).emissive, saddleEmissive)
+            reloaded.inspectDrawPasses(half).let { passes ->
+                assertEquals(passes.baseVertices, 0)
+                assertEquals(passes.selectedTexturePasses, 2)
+                assertTrue(passes.selectedTextureVertices > 0)
+                assertEquals(passes.emissivePasses, 2)
+                assertTrue(passes.emissiveVertices > 0)
+                assertEquals(passes.geometryPasses, 2)
+                assertEquals(passes.knownDrawPasses, 4)
+            }
+
+            val closed = modelLoader.skeletal.entityTextures(entity, reloaded, tick = 1L)
+            assertEquals(closed.getValue(pig).blinkState, EntityTextureBlinkState.CLOSED)
+            assertEquals(closed.getValue(pig).base, pigBlink)
+            assertEquals(closed.getValue(pig).emissive, pigBlinkEmissive)
+
+            val open = modelLoader.skeletal.entityTextures(entity, reloaded, tick = 3L)
+            assertEquals(open.getValue(pig).blinkState, EntityTextureBlinkState.OPEN)
+            assertEquals(open.getValue(pig).base, pig)
+            assertEquals(open.getValue(pig).emissive, pigEmissive)
+
             assertThrows(IllegalStateException::class.java) { baked.createInstance(context) }
             retained.unload()
             modelLoader.skeletal.unload()

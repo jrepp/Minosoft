@@ -39,7 +39,11 @@ object CuboidUtil {
     }
 
     fun cubeUV(offset: Vec2i, from: Vec3f, to: Vec3f, direction: Directions): FaceUV {
-        val cube = MVec3f(to - from)
+        return cubeUV(offset, to - from, direction)
+    }
+
+    fun cubeUV(offset: Vec2i, size: Vec3f, direction: Directions): FaceUV {
+        val cube = MVec3f(size)
 
         val uv = MVec2f(offset)
         val size = when (direction.axis) {

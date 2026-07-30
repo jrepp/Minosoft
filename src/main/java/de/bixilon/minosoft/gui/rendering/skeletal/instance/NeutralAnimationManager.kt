@@ -15,6 +15,7 @@ package de.bixilon.minosoft.gui.rendering.skeletal.instance
 
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationEvent
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
 import de.bixilon.minosoft.assets.model.skeletal.expression.SkeletalExpressionContext
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibEasingRegistry
 import de.bixilon.minosoft.assets.model.skeletal.runtime.SkeletalAnimationController
@@ -51,7 +52,7 @@ class NeutralAnimationManager(private val instance: SkeletalInstance) {
             expressionContext,
             collect,
             easingResolver = GeckoLibEasingRegistry,
-        ).apply(transforms)
+        ).apply(transforms, instance.model.contentIdentity?.format)
     }
 
     fun dispatchEvents() {
@@ -74,30 +75,46 @@ class NeutralAnimationManager(private val instance: SkeletalInstance) {
     private data class PendingEvent(val animation: String, val event: SkeletalAnimationEvent)
 }
 
-internal fun SkeletalPose.apply(transforms: Map<String, TransformInstance>) {
+internal fun SkeletalPose.apply(
+    transforms: Map<String, TransformInstance>,
+    format: SkeletalContentFormat? = null,
+) {
     for ((bone, pose) in bones) {
-        val transform = transforms[bone] ?: continue
+        val transform = transforms[bone] ?: transforms[bone.normalizedBoneName()] ?: continue
+        val rotation = if (format == SkeletalContentFormat.GECKOLIB) -pose.rotation.rad else pose.rotation.rad
         transform.recordTranslationPixels(pose.translation)
-        transform.recordRotation(pose.rotation.rad)
+        transform.recordRotation(rotation)
         transform.recordScale(pose.scale)
         transform.matrix.apply {
             translateAssign(pose.translation / BLOCK_SIZE)
-            translateAssign(transform.nPivot)
-            rotateRadAssign(pose.rotation.rad)
-            scaleAssign(pose.scale)
             translateAssign(transform.pivot)
+            rotateRadAssign(rotation)
+            scaleAssign(pose.scale)
+            translateAssign(transform.nPivot)
         }
     }
 }
 
 internal fun TransformInstance.index(): Map<String, TransformInstance> {
     val result = linkedMapOf<String, TransformInstance>()
+    val normalized = linkedMapOf<String, TransformInstance?>()
     fun collect(transform: TransformInstance) {
         for ((name, child) in transform.children) {
             result.putIfAbsent(name, child)
+            val normalizedName = name.normalizedBoneName()
+            normalized[normalizedName] = when {
+                normalizedName !in normalized -> child
+                normalized[normalizedName] === child -> child
+                else -> null
+            }
             collect(child)
         }
     }
     collect(this)
+    for ((name, transform) in normalized) {
+        if (transform != null) result.putIfAbsent(name, transform)
+    }
     return result
 }
+
+private fun String.normalizedBoneName(): String = lowercase().filter(Char::isLetterOrDigit)

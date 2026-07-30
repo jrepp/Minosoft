@@ -12,6 +12,8 @@ package de.bixilon.minosoft.assets.model.skeletal.gecko.runtime
 import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationEvent
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationEventType
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -19,6 +21,7 @@ import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class GeckoLibRuntimeEventsTest {
@@ -46,6 +49,55 @@ class GeckoLibRuntimeEventsTest {
         assertFalse(GeckoLibEventPlayback.dispatch(invalid, target))
         assertEquals(1, target.rejections.size)
         assertEquals(emptyList(), target.particles)
+    }
+
+    @Test
+    fun `runtime effect aliases are generation bound and fail closed after owner removal`() {
+        val identity = SkeletalContentIdentity(
+            ResourceLocation.of("test:geo/entity.geo.json"),
+            SkeletalContentFormat.GECKOLIB,
+            "geometry.test",
+        )
+        val target = RecordingTarget()
+        val firstRegistration = GeckoLibRuntimeEffectRegistry.register("first", identity) {
+            when (it.event.payload) {
+                "step" -> GeckoLibRuntimeEffectResolution.Play(ResourceLocation.of("test:first_step"))
+                else -> GeckoLibRuntimeEffectResolution.PassThrough
+            }
+        }
+        val firstBinding = assertNotNull(GeckoLibRuntimeEffectRegistry.bind(identity))
+        val sound = context(SkeletalAnimationEventType.SOUND, "step").copy(contentIdentity = identity)
+        val particle = context(SkeletalAnimationEventType.PARTICLE, "test:dust").copy(contentIdentity = identity)
+        try {
+            assertTrue(GeckoLibEventPlayback.dispatch(sound, target, firstBinding))
+            assertTrue(GeckoLibEventPlayback.dispatch(particle, target, firstBinding))
+            assertEquals(listOf(ResourceLocation.of("test:first_step")), target.sounds)
+            assertEquals(listOf(ResourceLocation.of("test:dust")), target.particles)
+        } finally {
+            firstRegistration.close()
+        }
+
+        assertFalse(GeckoLibEventPlayback.dispatch(sound, target, firstBinding))
+        assertEquals(listOf(ResourceLocation.of("test:first_step")), target.sounds)
+
+        val replacement = GeckoLibRuntimeEffectRegistry.register("replacement", identity) {
+            GeckoLibRuntimeEffectResolution.Play(ResourceLocation.of("test:replacement_step"))
+        }
+        try {
+            val replacementBinding = assertNotNull(GeckoLibRuntimeEffectRegistry.bind(identity))
+            assertFalse(GeckoLibEventPlayback.dispatch(sound, target, firstBinding))
+            assertTrue(GeckoLibEventPlayback.dispatch(sound, target, replacementBinding))
+            assertEquals(
+                listOf(
+                    ResourceLocation.of("test:first_step"),
+                    ResourceLocation.of("test:replacement_step"),
+                ),
+                target.sounds,
+            )
+        } finally {
+            replacement.close()
+        }
+        assertEquals(emptyMap(), GeckoLibRuntimeEffectRegistry.owners())
     }
 
     @Test

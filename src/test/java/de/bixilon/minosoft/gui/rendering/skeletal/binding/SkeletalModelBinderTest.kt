@@ -24,6 +24,7 @@ import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.skeletal.model.SkeletalModel
 import de.bixilon.minosoft.gui.rendering.skeletal.model.elements.SkeletalElement
 import de.bixilon.minosoft.gui.rendering.skeletal.model.transforms.SkeletalTransform
+import de.bixilon.minosoft.gui.rendering.models.block.element.face.FaceUV
 import kotlin.math.PI
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -31,6 +32,87 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class SkeletalModelBinderTest {
+
+    @Test
+    fun `Gecko box UV size is floored before geometry inflation`() {
+        val content = SkeletalContent(
+            source = ResourceLocation.of("test:geo/inflated.geo.json"),
+            format = SkeletalContentFormat.GECKOLIB,
+            formatVersion = "1.12.0",
+            identifier = "geometry.inflated",
+            textureSize = Vec2i(64, 64),
+            roots = listOf(
+                SkeletalBone(
+                    name = "root",
+                    cubes = listOf(
+                        SkeletalCube(
+                            origin = Vec3f.EMPTY,
+                            size = Vec3f(4.75f, 3.5f, 6.9f),
+                            inflate = Vec3f(0.01f),
+                            uv = SkeletalUv.Box(Vec2f.EMPTY),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val cube = assertNotNull(
+            SkeletalModelBinder.bind(content).model.elements["root"]?.children?.get("cube_0"),
+        )
+
+        assertEquals(Vec3f(-0.01f), cube.from)
+        assertEquals(Vec3f(4.75f, 3.5f, 6.9f) + Vec3f(0.01f), cube.to)
+        assertEquals(Vec3f(4.0f, 3.0f, 6.0f), cube.boxUvSize)
+    }
+
+    @Test
+    fun `Gecko hinged planes overlap their parent boundary without changing UV size`() {
+        val tail = SkeletalCube(
+            origin = Vec3f(0.0f, 2.0f, 4.5f),
+            size = Vec3f(0.0f, 6.0f, 7.0f),
+            pivot = Vec3f(0.0f, 6.0f, 4.5f),
+            inflate = Vec3f(0.01f),
+            uv = SkeletalUv.Box(Vec2f(0.0f, 16.0f)),
+        )
+
+        val (from, to) = SkeletalModelBinder.cubeBounds(SkeletalContentFormat.GECKOLIB, tail)
+
+        assertEquals(-0.01f, from.x, 0.0001f)
+        assertEquals(0.01f, to.x, 0.0001f)
+        assertEquals(4.44f, from.z, 0.0001f)
+        assertEquals(11.51f, to.z, 0.0001f)
+    }
+
+    @Test
+    fun `Gecko box UV maps authored front to north and honors mirror`() {
+        val offset = Vec2i(0, 0)
+        val size = Vec3f(4.0f, 4.0f, 5.0f)
+
+        assertEquals(
+            FaceUV(Vec2f(5.0f, 5.0f), Vec2f(9.0f, 9.0f)),
+            SkeletalModelBinder.geckoBoxUv(offset, size, Directions.NORTH, mirror = false),
+        )
+        assertEquals(
+            FaceUV(Vec2f(18.0f, 5.0f), Vec2f(14.0f, 9.0f)),
+            SkeletalModelBinder.geckoBoxUv(offset, size, Directions.SOUTH, mirror = true),
+        )
+    }
+
+    @Test
+    fun `Gecko plane within a quarter pixel snaps onto its hinge`() {
+        val wing = SkeletalCube(
+            origin = Vec3f(1.5f, 6.25f, -1.0f),
+            size = Vec3f(9.0f, 0.0f, 6.0f),
+            pivot = Vec3f(1.5f, 6.0f, 0.0f),
+            uv = SkeletalUv.Box(Vec2f.EMPTY),
+        )
+
+        val (from, to) = SkeletalModelBinder.cubeBounds(SkeletalContentFormat.GECKOLIB, wing)
+
+        assertEquals(6.0f, from.y, 0.0001f)
+        assertEquals(6.0f, to.y, 0.0001f)
+        assertEquals(1.45f, from.x, 0.0001f)
+    }
 
     @Test
     fun `binds hierarchy transforms box UV and per-face UV without OpenGL`() {
@@ -76,7 +158,7 @@ class SkeletalModelBinderTest {
         assertEquals("test:textures/entity/bird.png", binding.model.textures.getValue(binding.defaultMaterial).source.toString())
         assertTrue(root.children.containsKey("cube_0"))
         assertEquals(90, wingCube.faces.getValue(Directions.NORTH).rotation)
-        assertEquals((PI / 2.0).toFloat(), binding.model.transforms.getValue("root").rotation.y, 0.0001f)
+        assertEquals((-PI / 2.0).toFloat(), binding.model.transforms.getValue("root").rotation.y, 0.0001f)
         assertEquals(binding.expressions, binding.model.expressions)
         assertEquals("query.turn", binding.model.expressions.single().expression)
         assertEquals(

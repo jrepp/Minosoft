@@ -15,6 +15,9 @@ package de.bixilon.minosoft.gui.rendering.skeletal.mesh
 
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.kutil.primitive.IntUtil.toHex
+import de.bixilon.minosoft.gui.rendering.models.block.element.FaceVertexData
+import de.bixilon.minosoft.gui.rendering.util.mesh.uv.array.UnpackedUVArray
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class SkeletalMeshUtilTest {
@@ -99,4 +102,70 @@ class SkeletalMeshUtilTest {
         assertEquals(encoded, 0x777)
         assertEquals(decodeNormal(encoded), normal)
     }
+
+    @Test
+    fun `face uv midpoint is independent of vertex order`() {
+        val midpoint = SkeletalMeshUtil.faceUvMidpoint(
+            UnpackedUVArray(
+                floatArrayOf(
+                    0.75f, 0.25f,
+                    0.25f, 0.75f,
+                    0.25f, 0.25f,
+                    0.75f, 0.75f,
+                ),
+            ),
+        )
+
+        assertEquals(0.5f, midpoint.x)
+        assertEquals(0.5f, midpoint.y)
+    }
+
+    @Test
+    fun `face tangent follows increasing u and retains positive handedness`() {
+        val tangent = SkeletalMeshUtil.faceTangent(
+            positions = unitQuad(),
+            uv = UnpackedUVArray(
+                floatArrayOf(
+                    0.0f, 0.0f,
+                    1.0f, 0.0f,
+                    1.0f, 1.0f,
+                    0.0f, 1.0f,
+                ),
+            ),
+            normal = Vec3f(0.0f, 0.0f, 1.0f),
+        )
+
+        assertEquals(1.0f, tangent.x, 1.0e-6f)
+        assertEquals(0.0f, tangent.y, 1.0e-6f)
+        assertEquals(0.0f, tangent.z, 1.0e-6f)
+        assertEquals(1.0f, tangent.w, 1.0e-6f)
+    }
+
+    @Test
+    fun `face tangent retains mirrored uv handedness`() {
+        val tangent = SkeletalMeshUtil.faceTangent(
+            positions = unitQuad(),
+            uv = UnpackedUVArray(
+                floatArrayOf(
+                    1.0f, 0.0f,
+                    0.0f, 0.0f,
+                    0.0f, 1.0f,
+                    1.0f, 1.0f,
+                ),
+            ),
+            normal = Vec3f(0.0f, 0.0f, 1.0f),
+        )
+
+        assertEquals(-1.0f, tangent.x, 1.0e-6f)
+        assertEquals(0.0f, tangent.y, 1.0e-6f)
+        assertEquals(0.0f, tangent.z, 1.0e-6f)
+        assertEquals(-1.0f, tangent.w, 1.0e-6f)
+    }
+
+    private fun unitQuad(): FaceVertexData = floatArrayOf(
+        0.0f, 0.0f, 0.0f,
+        1.0f, 0.0f, 0.0f,
+        1.0f, 1.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+    )
 }

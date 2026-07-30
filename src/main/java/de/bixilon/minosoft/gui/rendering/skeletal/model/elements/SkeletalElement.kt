@@ -30,6 +30,11 @@ data class SkeletalElement(
     val inflate: Float = 0.0f,
     val texture: ResourceLocation? = null,
     val uv: Vec2i? = null,
+    /**
+     * Source cube dimensions used by box-UV layout. Geometry bounds may be
+     * inflated independently and must not stretch or shift the texture atlas.
+     */
+    val boxUvSize: Vec3f? = null,
     val transform: String? = null,
     @field:JsonDeserialize(using = SkeletalFaceDeserializer::class) val faces: Map<Directions, SkeletalFace>,
     val children: Map<String, SkeletalElement> = emptyMap(),

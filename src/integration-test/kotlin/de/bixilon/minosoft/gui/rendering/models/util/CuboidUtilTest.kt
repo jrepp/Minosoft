@@ -52,6 +52,19 @@ class CuboidUtilTest {
         assertEquals(CuboidUtil.cubeUV(offset, from, to, Directions.WEST), uv(0, 1, 1, 5))
     }
 
+    @Test
+    fun `source box UV size is independent from inflated geometry bounds`() {
+        val sourceSize = Vec3f(4, 3, 6)
+        val offset = Vec2i(0, 0)
+
+        assertEquals(CuboidUtil.cubeUV(offset, sourceSize, Directions.DOWN), uv(10, 6, 14, 0))
+        assertEquals(CuboidUtil.cubeUV(offset, sourceSize, Directions.UP), uv(6, 0, 10, 6))
+        assertEquals(CuboidUtil.cubeUV(offset, sourceSize, Directions.NORTH), uv(16, 6, 20, 9))
+        assertEquals(CuboidUtil.cubeUV(offset, sourceSize, Directions.SOUTH), uv(6, 6, 10, 9))
+        assertEquals(CuboidUtil.cubeUV(offset, sourceSize, Directions.EAST), uv(10, 6, 16, 9))
+        assertEquals(CuboidUtil.cubeUV(offset, sourceSize, Directions.WEST), uv(0, 6, 6, 9))
+    }
+
     fun `pig head`() {
         val from = Vec3f(-4, 8, 6)
         val to = Vec3f(4, 16, 14)

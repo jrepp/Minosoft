@@ -16,6 +16,7 @@
 #define FOG
 
 out lowp vec4 foutColor;
+uniform lowp vec4 entityColor;
 
 #include "minosoft:tint"
 #include "minosoft:texture"
@@ -29,4 +30,5 @@ void main() {
     applyTint();
     foutColor.rgb = max(foutColor.rgb, vec3(playerLightContribution(finFragmentPosition)));
     applyTexel();
+    foutColor.rgb = mix(foutColor.rgb, entityColor.rgb, entityColor.a);
 }

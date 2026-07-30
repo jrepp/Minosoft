@@ -15,6 +15,7 @@ package de.bixilon.minosoft.gui.rendering.skeletal.mesh
 
 import de.bixilon.kmath.vec.vec2.f.Vec2f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.kmath.vec.vec4.f.Vec4f
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.models.block.element.FaceVertexData
 import de.bixilon.minosoft.gui.rendering.system.base.MeshUtil.buffer
@@ -25,24 +26,62 @@ import de.bixilon.minosoft.gui.rendering.util.mesh.uv.array.UnpackedUVArray
 
 class SkeletalMesh(context: RenderContext, estimate: Int = 12) : AbstractSkeletalMeshBuilder(context, SkeletalMeshStruct, estimate) {
 
-    inline fun addVertex(x: Float, y: Float, z: Float, u: Float, v: Float, transformNormal: Float, texture: ShaderTexture) = data.add(
-        x, y, z,
-        u, v,
-        transformNormal,
-        texture.shaderId.buffer()
-    )
+    inline fun addVertex(
+        x: Float,
+        y: Float,
+        z: Float,
+        u: Float,
+        v: Float,
+        transformNormal: Float,
+        texture: ShaderTexture,
+        midUv: Vec2f,
+        tangent: Vec4f,
+    ) {
+        data.add(
+            x, y, z,
+            u, v,
+            transformNormal,
+            texture.shaderId.buffer(),
+            midUv.x, midUv.y,
+        )
+        data.add(tangent.x, tangent.y, tangent.z, tangent.w)
+    }
 
-    private fun addVertex(position: FaceVertexData, positionOffset: Int, uv: UnpackedUVArray, uvOffset: Int, transformNormal: Float, texture: ShaderTexture) = addVertex(
+    private fun addVertex(
+        position: FaceVertexData,
+        positionOffset: Int,
+        uv: UnpackedUVArray,
+        uvOffset: Int,
+        transformNormal: Float,
+        texture: ShaderTexture,
+        midUv: Vec2f,
+        tangent: Vec4f,
+    ) = addVertex(
         position[positionOffset + 0], position[positionOffset + 1], position[positionOffset + 2],
         uv.raw[uvOffset + 0], uv.raw[uvOffset + 1],
         transformNormal,
         texture,
+        midUv,
+        tangent,
     )
 
     override fun addQuad(positions: FaceVertexData, uv: UnpackedUVArray, transform: Int, normal: Vec3f, texture: ShaderTexture, path: String) {
         val transformNormal = ((transform shl 12) or SkeletalMeshUtil.encodeNormal(normal)).buffer()
+        val midUv = SkeletalMeshUtil.faceUvMidpoint(uv)
+        val tangent = SkeletalMeshUtil.faceTangent(positions, uv, normal)
 
-        iterate { addVertex(positions, it * Vec3f.LENGTH, uv, it * Vec2f.LENGTH, transformNormal, texture) }
+        iterate {
+            addVertex(
+                positions,
+                it * Vec3f.LENGTH,
+                uv,
+                it * Vec2f.LENGTH,
+                transformNormal,
+                texture,
+                midUv,
+                tangent,
+            )
+        }
         addIndexQuad()
     }
 
@@ -52,6 +91,8 @@ class SkeletalMesh(context: RenderContext, estimate: Int = 12) : AbstractSkeleta
         val uv: Vec2f,
         val transformNormal: Int,
         val texture: ShaderTexture,
+        val midUv: Vec2f,
+        val tangent: Vec4f,
     ) {
         companion object : MeshStruct(SkeletalMeshStruct::class)
     }

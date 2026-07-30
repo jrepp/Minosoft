@@ -15,9 +15,12 @@ import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibAnimationState
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibControllerBindingRegistry
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibControllerSet
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibControllerSetInspection
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibControllerSetSnapshot
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibHostStateInput
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLayerDefinition
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLayerRegistry
+import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import kotlin.time.Duration
 
 data class GeckoLibAnimationManagerSnapshot(
@@ -36,9 +39,26 @@ class GeckoLibAnimationManager(private val instance: SkeletalInstance) {
     private val transforms = instance.transform.index()
     private val pendingEvents = mutableListOf<PendingEvent>()
     private var state = GeckoLibAnimationState(0.0f)
+    @Volatile
+    private var controllerInspection = controllers?.inspect() ?: GeckoLibControllerSetInspection.EMPTY
     var eventConsumer: ((String, SkeletalAnimationEvent) -> Unit)? = null
 
     val active get() = binding?.active == true && controllers != null
+    val trackedDataInputs get() = controllers?.trackedDataInputs.orEmpty()
+    val hostStateInputs get() = controllers?.hostStateInputs.orEmpty()
+    val inspection get() = if (active) controllerInspection else GeckoLibControllerSetInspection.EMPTY
+
+    fun resolveTrackedData(reader: (Int) -> Any?): Map<String, Double> =
+        controllers?.resolveTrackedData(reader).orEmpty()
+
+    fun resolveHostState(reader: (GeckoLibHostStateInput) -> Double?): Map<String, Double> =
+        controllers?.resolveHostState(reader).orEmpty()
+
+    fun triggerEvent(event: ResourceLocation): Int {
+        val controllers = controllers ?: return 0
+        if (!active) return 0
+        return binding?.invoke { controllers.triggerEvent(event) } ?: 0
+    }
 
     init {
         controllers?.eventConsumer = collect@{ animation, event ->
@@ -66,7 +86,8 @@ class GeckoLibAnimationManager(private val instance: SkeletalInstance) {
             pendingEvents.clear()
             return
         }
-        pose.apply(transforms)
+        controllerInspection = controllers.inspect()
+        pose.apply(transforms, SkeletalContentFormat.GECKOLIB)
     }
 
     fun updateState(state: GeckoLibAnimationState) {
@@ -83,7 +104,9 @@ class GeckoLibAnimationManager(private val instance: SkeletalInstance) {
     fun restore(snapshot: GeckoLibAnimationManagerSnapshot): Boolean {
         if (!active || instance.model.contentIdentity != snapshot.identity) return false
         val controllers = controllers ?: return false
-        return controllers.restore(snapshot.controllers) > 0
+        val restored = controllers.restore(snapshot.controllers) > 0
+        controllerInspection = controllers.inspect()
+        return restored
     }
 
     fun renderLayer(name: String): GeckoLibRenderLayerDefinition? {
@@ -117,6 +140,7 @@ class GeckoLibAnimationManager(private val instance: SkeletalInstance) {
         pendingEvents.clear()
         eventConsumer = null
         controllers?.eventConsumer = null
+        controllerInspection = GeckoLibControllerSetInspection.EMPTY
     }
 
     private data class PendingEvent(

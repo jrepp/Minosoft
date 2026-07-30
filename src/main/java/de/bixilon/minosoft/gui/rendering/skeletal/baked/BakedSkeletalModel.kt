@@ -26,6 +26,8 @@ import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLay
 import de.bixilon.minosoft.assets.model.generation.ContentFidelitySnapshot
 import de.bixilon.minosoft.assets.model.generation.ContentGenerationLease
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
+import de.bixilon.minosoft.gui.rendering.skeletal.preview.SkeletalPreview
+import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTexture
 
 data class BakedSkeletalModel(
     val mesh: Mesh,
@@ -36,10 +38,12 @@ data class BakedSkeletalModel(
     val materialMeshes: Map<ResourceLocation, Mesh> = emptyMap(),
     val entityTextureBase: ResourceLocation? = null,
     val entityTextureLayers: Map<ResourceLocation, BakedEntityTextureLayer> = emptyMap(),
+    val geckoEntityTextureRegistrationId: Long? = null,
     val expressions: List<SkeletalExpressionBinding> = emptyList(),
     val expressionAliases: Map<String, String> = emptyMap(),
     val contentIdentity: SkeletalContentIdentity? = null,
     val geckoRenderLayers: Map<String, BakedGeckoLibRenderLayer> = emptyMap(),
+    val preview: SkeletalPreview = SkeletalPreview.EMPTY,
     var contentLease: ContentGenerationLease<ContentFidelitySnapshot>? = null,
 ) {
     private var state = SkeletalModelStates.PREPARING
@@ -168,6 +172,7 @@ data class BakedSkeletalModel(
 data class BakedEntityTextureLayer(
     val materials: Set<ResourceLocation>,
     val meshes: Map<ResourceLocation, Mesh>,
+    val previewTextures: Map<ResourceLocation, ShaderTexture> = emptyMap(),
 )
 
 data class BakedGeckoLibRenderLayer(

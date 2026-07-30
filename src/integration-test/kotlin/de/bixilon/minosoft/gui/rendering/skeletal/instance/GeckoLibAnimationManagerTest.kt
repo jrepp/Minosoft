@@ -93,6 +93,11 @@ class GeckoLibAnimationManagerTest {
 
             assertTrue(instance.geckoAnimation.active)
             instance.geckoAnimation.draw(50.milliseconds, GeckoLibAnimationState(0.05f))
+            val inspection = instance.geckoAnimation.inspection
+            assertEquals(inspection.controllerCount, 1)
+            assertEquals(inspection.controllers.single().name, "main")
+            assertEquals(inspection.controllers.single().currentClip, "move")
+            assertEquals(inspection.controllers.single().elapsedSeconds, 0.05f)
             val position = instance.transform.children.getValue("root").matrix.unsafe * Vec3f.EMPTY
             assertEquals(position.x, 0.5f, 0.0001f)
             assertEquals(received, emptyList<Pair<String, SkeletalAnimationEvent>>())
@@ -107,6 +112,7 @@ class GeckoLibAnimationManagerTest {
                 transform = model.transform.instance(),
             )
             assertTrue(replacement.geckoAnimation.restore(snapshot))
+            assertEquals(replacement.geckoAnimation.inspection.controllers.single().elapsedSeconds, 0.05f)
             assertEquals(
                 replacement.geckoAnimation.controllers
                     ?.snapshot()
@@ -119,6 +125,7 @@ class GeckoLibAnimationManagerTest {
 
             registration.close()
             assertFalse(instance.geckoAnimation.active)
+            assertEquals(instance.geckoAnimation.inspection.controllerCount, 0)
             instance.geckoAnimation.draw(50.milliseconds, GeckoLibAnimationState(0.1f))
             assertFalse(
                 SkeletalInstance(

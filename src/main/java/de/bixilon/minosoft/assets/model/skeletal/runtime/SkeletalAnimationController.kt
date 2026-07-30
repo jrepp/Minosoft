@@ -48,6 +48,8 @@ class SkeletalAnimationController(
     var current: String? = null
         private set
     val elapsedSeconds get() = elapsed
+    val transitionElapsedSeconds get() = transitionElapsed
+    val transitionDurationSeconds get() = transitionDuration
     val finished: Boolean
         get() {
             val clip = currentClip() ?: return true
@@ -75,13 +77,14 @@ class SkeletalAnimationController(
         transitionSeconds: Float = 0.0f,
         restart: Boolean = false,
         loopOverride: SkeletalAnimationLoop? = null,
+        transitionSourcePose: SkeletalPose? = null,
     ) {
         require(name in clips) { "Unknown skeletal animation: $name" }
         require(transitionSeconds.isFinite() && transitionSeconds >= 0.0f) {
             "Animation transition must be finite and non-negative."
         }
         if (!restart && current == name && this.loopOverride == loopOverride) return
-        previousPose = pose()
+        previousPose = transitionSourcePose ?: pose()
         current = name
         this.loopOverride = loopOverride
         elapsed = 0.0f
@@ -90,8 +93,8 @@ class SkeletalAnimationController(
         eventTimelineStarted = false
     }
 
-    fun stop() {
-        previousPose = pose()
+    fun stop(transitionSourcePose: SkeletalPose? = null) {
+        previousPose = transitionSourcePose ?: pose()
         current = null
         loopOverride = null
         elapsed = 0.0f

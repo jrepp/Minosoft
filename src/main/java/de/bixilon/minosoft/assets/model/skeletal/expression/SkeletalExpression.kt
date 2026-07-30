@@ -18,6 +18,7 @@ import kotlin.math.*
 class SkeletalExpressionContext(
     private val variables: Map<String, Double> = emptyMap(),
     private val variableResolver: (String) -> Double? = { null },
+    private val functionResolver: (String, List<Double>) -> Double? = { _, _ -> null },
     private val rawFunctionResolver: (String, List<String>) -> Double? = { _, _ -> null },
     val random: () -> Double = { 0.0 },
 ) {
@@ -33,6 +34,9 @@ class SkeletalExpressionContext(
 
     internal fun resolveRawFunction(name: String, arguments: List<String>) =
         rawFunctionResolver(name, arguments)
+
+    internal fun resolveFunction(name: String, arguments: List<Double>) =
+        functionResolver(name, arguments)
 }
 
 class SkeletalExpressionException(message: String) : IllegalArgumentException(message)
@@ -146,6 +150,8 @@ class SkeletalExpression private constructor(
         override fun evaluate(context: SkeletalExpressionContext, budget: Budget): Double {
             budget.consume()
             val name = name.lowercase()
+            val function = name.removePrefix(MOLANG_MATH_PREFIX)
+            val molangMath = function != name
             if (name == "if" || name == "ifb") {
                 requireArguments(name, arguments.size, minimum = 3)
                 if (arguments.size % 2 == 0) {
@@ -182,27 +188,29 @@ class SkeletalExpression private constructor(
             }
 
             val values = arguments.map { it.evaluate(context, budget) }
-            return when (name) {
+            return when (function) {
                 "abs" -> unary(name, values, ::abs)
-                "acos" -> unary(name, values, ::acos)
-                "asin" -> unary(name, values, ::asin)
-                "atan" -> unary(name, values, ::atan)
+                "acos" -> unary(name, values) { if (molangMath) Math.toDegrees(acos(it)) else acos(it) }
+                "asin" -> unary(name, values) { if (molangMath) Math.toDegrees(asin(it)) else asin(it) }
+                "atan" -> unary(name, values) { if (molangMath) Math.toDegrees(atan(it)) else atan(it) }
                 "ceil" -> unary(name, values, ::ceil)
-                "cos" -> unary(name, values, ::cos)
+                "cos" -> unary(name, values) { cos(if (molangMath) Math.toRadians(it) else it) }
                 "exp" -> unary(name, values, ::exp)
                 "floor" -> unary(name, values, ::floor)
                 "frac" -> unary(name, values) { it - floor(it) }
                 "log" -> unary(name, values, ::ln)
                 "round" -> unary(name, values) { round(it) }
                 "signum", "sign" -> unary(name, values, ::sign)
-                "sin" -> unary(name, values, ::sin)
+                "sin" -> unary(name, values) { sin(if (molangMath) Math.toRadians(it) else it) }
                 "sqrt" -> unary(name, values, ::sqrt)
-                "tan" -> unary(name, values, ::tan)
+                "tan" -> unary(name, values) { tan(if (molangMath) Math.toRadians(it) else it) }
                 "todeg" -> unary(name, values) { Math.toDegrees(it) }
                 "torad" -> unary(name, values) { Math.toRadians(it) }
                 "wrapdeg" -> unary(name, values, ::wrapDegrees)
                 "wraprad" -> unary(name, values) { Math.toRadians(wrapDegrees(Math.toDegrees(it))) }
-                "atan2" -> binary(name, values, ::atan2)
+                "atan2" -> binary(name, values) { left, right ->
+                    atan2(left, right).let { if (molangMath) Math.toDegrees(it) else it }
+                }
                 "degdiff" -> binary(name, values) { left, right -> abs(wrapDegrees(right - left)) }
                 "raddiff" -> binary(name, values) { left, right ->
                     Math.toRadians(abs(wrapDegrees(Math.toDegrees(right) - Math.toDegrees(left))))
@@ -266,7 +274,8 @@ class SkeletalExpression private constructor(
                     ((values.firstOrNull()?.let(::seededRandom) ?: context.random()) >= 0.5).number()
                 }
                 in EASING_NAMES -> easing(name, values)
-                else -> throw SkeletalExpressionException("Unknown expression function: $name")
+                else -> context.resolveFunction(name, values)
+                    ?: throw SkeletalExpressionException("Unknown expression function: $name")
             }
         }
 
@@ -317,6 +326,8 @@ class SkeletalExpression private constructor(
         }
 
         private companion object {
+            const val MOLANG_MATH_PREFIX = "math."
+
             val EASING_NAMES = setOf(
                 "easeinout", "easein", "easeout",
                 "cubiceaseinout", "cubiceasein", "cubiceaseout",

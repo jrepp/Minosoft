@@ -17,6 +17,8 @@
 
 out lowp vec4 foutColor;
 
+uniform lowp vec4 uOutlineColor;
+uniform lowp vec4 entityColor;
 
 #include "minosoft:tint"
 #include "minosoft:texture"
@@ -28,4 +30,8 @@ void main() {
     applyDefaults();
     applyTint();
     applyTexel();
+    foutColor.rgb = mix(foutColor.rgb, entityColor.rgb, entityColor.a);
+    if (uOutlineColor.a > 0.0f) {
+        foutColor = uOutlineColor;
+    }
 }

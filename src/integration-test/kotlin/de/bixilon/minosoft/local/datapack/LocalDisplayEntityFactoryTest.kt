@@ -16,23 +16,166 @@ import de.bixilon.minosoft.assets.datapack.DataPackFunctionLibrary
 import de.bixilon.minosoft.assets.datapack.DataPackFunctionRuntime
 import de.bixilon.minosoft.assets.datapack.LocalDataPackCommandAuthority
 import de.bixilon.minosoft.assets.datapack.SnbtParser
+import de.bixilon.minosoft.assets.directory.DirectoryAssetsManager
 import de.bixilon.minosoft.data.entities.entities.InteractionEntity
 import de.bixilon.minosoft.data.entities.entities.display.ItemDisplayContext
 import de.bixilon.minosoft.data.entities.entities.display.ItemDisplayEntity
 import de.bixilon.minosoft.data.entities.entities.display.TextDisplayEntity
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.RenderingOptions
+import de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineColor
+import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
+import de.bixilon.minosoft.modding.loader.fabric.FabricRemoteEntityDefinition
+import de.bixilon.minosoft.modding.loader.fabric.FabricRemoteRegistrySync
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil.createSession
 import de.bixilon.minosoft.protocol.packets.s2c.play.entity.passenger.EntityAttachS2CP
 import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayInByteBuffer
 import de.bixilon.minosoft.test.IT
 import org.testng.Assert.assertEquals
 import org.testng.Assert.assertSame
+import org.testng.Assert.assertNull
+import org.testng.Assert.assertThrows
 import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
 import java.nio.ByteBuffer
+import java.nio.file.Paths
 
 class LocalDisplayEntityFactoryTest {
+
+    @Test
+    fun `runs the pinned Naturalist controller summon and removal fixture`() {
+        val previous = RenderingOptions.disabled
+        RenderingOptions.disabled = true
+        val fixture = Paths.get(
+            requireNotNull(
+                javaClass.classLoader.getResource("content_fidelity/naturalist-controller-render/fixture.json"),
+            ).toURI(),
+        ).parent
+        val data = DirectoryAssetsManager(fixture.resolve("datapacks"), prefix = "data")
+        val rattlesnake = ResourceLocation.of("naturalist:rattlesnake")
+        val registration = FabricRemoteRegistrySync.register(
+            "naturalist-controller-fixture",
+            listOf(FabricRemoteEntityDefinition(rattlesnake, 0.6f, 0.7f)),
+        )
+        try {
+            IT.VERSION
+            data.load()
+            val session = createSession(version = "1.20.4")
+            val origin = Vec3d(0.5, 20.0, 0.5)
+            val factory = LocalDisplayEntityFactory(session)
+            val entities = LocalDataPackEntityAccess(session, factory) { origin }
+            val runtime = DataPackFunctionRuntime(
+                DataPackFunctionLibrary.load(data),
+                LocalDataPackCommandAuthority(
+                    origin = { origin },
+                    spawn = { type, nbt, position -> factory.summon(type, nbt, position) },
+                    entities = entities,
+                ),
+            )
+
+            runtime.load()
+            assertEquals(runtime.execute("minosoft_acceptance:naturalist_snake/summon"), 1)
+            val entity = session.world.entities.single { it.type.identifier == rattlesnake }
+            assertTrue("minosoft.acceptance.naturalist_snake" in entity.commandTags)
+            assertEquals(entity.hasGravity, false)
+            assertEquals(runtime.execute("minosoft_acceptance:naturalist_snake/remove"), 1)
+            assertTrue(session.world.entities.none { it.type.identifier == rattlesnake })
+            assertEquals(runtime.execute("minosoft_acceptance:naturalist_snake/summon_named"), 1)
+            val named = session.world.entities.single { it.type.identifier == rattlesnake }
+            assertEquals(named.customName?.message, "Iris Rattlesnake")
+            assertTrue(named.isNameVisible)
+            assertEquals(runtime.execute("minosoft_acceptance:naturalist_snake/remove"), 1)
+        } finally {
+            registration.close()
+            if (data.loaded) data.unload()
+            RenderingOptions.disabled = previous
+        }
+    }
+
+    @Test
+    fun `summons only owner-declared dependent mod entity definitions`() {
+        val previous = RenderingOptions.disabled
+        RenderingOptions.disabled = true
+        val identifier = ResourceLocation.of("test:dependent_living")
+        val registration = FabricRemoteRegistrySync.register(
+            "local-dependent-fixture",
+            listOf(FabricRemoteEntityDefinition(identifier, 0.6f, 0.7f)),
+        )
+        try {
+            IT.VERSION
+            val session = createSession(version = "1.20.4")
+            val entity = LocalDisplayEntityFactory(session).summon(
+                identifier,
+                mapOf(
+                    "Tags" to listOf("test.local.dependent"),
+                    "NoGravity" to true,
+                    "Fire" to 100,
+                ),
+                Vec3d(0.5, 20.0, 0.5),
+            )
+
+            assertEquals(entity.type.identifier, identifier)
+            assertEquals(entity.hasGravity, false)
+            assertTrue(entity.isOnFire)
+            assertTrue("test.local.dependent" in entity.commandTags)
+            assertSame(session.registries.entityType[identifier], entity.type)
+        } finally {
+            registration.close()
+            RenderingOptions.disabled = previous
+        }
+
+        val session = createSession(version = "1.20.4")
+        assertThrows(IllegalArgumentException::class.java) {
+            LocalDisplayEntityFactory(session).summon(identifier, emptyMap(), Vec3d.EMPTY)
+        }
+    }
+
+    @Test
+    fun `summons the bounded living content fidelity fixture`() {
+        val previous = RenderingOptions.disabled
+        RenderingOptions.disabled = true
+        try {
+            IT.VERSION
+            val session = createSession(version = "1.20.4")
+            val entity = LocalDisplayEntityFactory(session).summon(
+                ResourceLocation.of("minecraft:zombie"),
+                mapOf(
+                    "Tags" to listOf("minosoft.acceptance.emf_etf"),
+                    "Health" to 20.0f,
+                    "NoGravity" to true,
+                ),
+                Vec3d(0.5, 20.0, 0.5),
+            )
+
+            assertEquals(entity.type.identifier, ResourceLocation.of("minecraft:zombie"))
+            assertEquals(entity.commandNbt["Health"], 20.0f)
+            assertEquals(entity.hasGravity, false)
+            assertTrue("minosoft.acceptance.emf_etf" in entity.commandTags)
+        } finally {
+            RenderingOptions.disabled = previous
+        }
+    }
+
+    @Test
+    fun `display glow override selects color but does not enable outlines`() {
+        val previous = RenderingOptions.disabled
+        RenderingOptions.disabled = true
+        try {
+            IT.VERSION
+            val session = createSession(version = "1.20.4")
+            val display = LocalDisplayEntityFactory(session).summon(
+                ResourceLocation.of("minecraft:item_display"),
+                mapOf("glow_color_override" to 0x3366CC),
+                Vec3d.EMPTY,
+            ) as ItemDisplayEntity
+
+            assertNull(EntityOutlineColor.resolve(display))
+            display.data[de.bixilon.minosoft.data.entities.entities.Entity.FLAGS_DATA] = 0x40
+            assertEquals(EntityOutlineColor.resolve(display), RGBAColor(0x33, 0x66, 0xCC))
+        } finally {
+            RenderingOptions.disabled = previous
+        }
+    }
 
     @Test
     fun `legacy attach packet keeps vehicle and leash modes distinct`() {
@@ -99,7 +242,7 @@ class LocalDisplayEntityFactoryTest {
             IT.VERSION // initialize the integration-test version/registry catalog
             val session = createSession(version = "1.20.4")
             val nbt = SnbtParser.compound(
-                """{Tags:["aj.global.root","demo.rig.root"],billboard:"center",brightness:{sky:15,block:7},view_range:2f,width:4f,height:3f,shadow_radius:2f,shadow_strength:0.75f,teleport_duration:4,glow_color_override:16711935,transformation:{translation:[1f,2f,3f],left_rotation:[0f,0f,0f,1f],scale:[2f,2f,2f],right_rotation:[0f,0f,0f,1f]},item:{id:"minecraft:carrot_on_a_stick",Count:1b,tag:{CustomModelData:42}},item_display:"head",Passengers:[{id:"minecraft:text_display",Tags:["demo.rig.label"],text:'{"text":"Hello"}',line_width:80,shadow:1b,alignment:"left"}]}""",
+                """{Tags:["aj.global.root","demo.rig.root"],Glowing:1b,billboard:"center",brightness:{sky:15,block:7},view_range:2f,width:4f,height:3f,shadow_radius:2f,shadow_strength:0.75f,teleport_duration:4,glow_color_override:16711935,transformation:{translation:[1f,2f,3f],left_rotation:[0f,0f,0f,1f],scale:[2f,2f,2f],right_rotation:[0f,0f,0f,1f]},item:{id:"minecraft:carrot_on_a_stick",Count:1b,tag:{CustomModelData:42}},item_display:"head",Passengers:[{id:"minecraft:text_display",Tags:["demo.rig.label"],text:'{"text":"Hello"}',line_width:80,shadow:1b,alignment:"left"}]}""",
             )
 
             val factory = LocalDisplayEntityFactory(session)
@@ -136,6 +279,7 @@ class LocalDisplayEntityFactoryTest {
             assertEquals(0.75f, root.shadowStrength)
             assertEquals(4, root.positionRotationInterpolationDurationTicks)
             assertEquals(0xFF00FF, root.glowColorOverride)
+            assertTrue(root.hasGlowingEffect)
             val passenger = root.attachment.passengers.single() as TextDisplayEntity
             assertSame(root, passenger.attachment.vehicle)
             assertTrue(passenger.shadow)

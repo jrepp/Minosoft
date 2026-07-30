@@ -26,6 +26,7 @@ import de.bixilon.minosoft.data.entities.entities.display.TextDisplayEntity
 import de.bixilon.minosoft.data.registries.blocks.properties.BlockProperty
 import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
+import de.bixilon.minosoft.modding.loader.fabric.FabricRemoteRegistrySync
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.util.KUtil.startInit
 import java.util.Collections
@@ -47,7 +48,7 @@ class LocalDisplayEntityFactory(private val session: PlaySession) {
         position: Vec3d,
         rotation: EntityRotation = EntityRotation.EMPTY,
     ): Entity {
-        require(type.namespace == "minecraft" && type.path in LOCAL_ENTITY_TYPES) {
+        require(isSupported(type)) {
             "Unsupported local datapack entity type $type."
         }
         require(owned.size < MAX_OWNED_ENTITIES) {
@@ -103,6 +104,7 @@ class LocalDisplayEntityFactory(private val session: PlaySession) {
         val uuid = nbt.uuid() ?: UUID.randomUUID()
         require(session.world.entities[uuid] == null) { "Duplicate local datapack entity UUID $uuid." }
         val entityType = session.registries.entityType[type]
+            ?: FabricRemoteRegistrySync.materializeLocal(session, type)
             ?: throw IllegalArgumentException("Unknown local entity type $type for ${session.version}")
         val data = EntityData(session)
         applyKnownData(type, data, nbt)
@@ -121,7 +123,7 @@ class LocalDisplayEntityFactory(private val session: PlaySession) {
             val passengerData = passenger.stringMap()
             val passengerType = passengerData["id"]?.toString()?.let(ResourceLocation::of)
                 ?: throw IllegalArgumentException("Display passenger is missing an entity id.")
-            require(passengerType.namespace == "minecraft" && passengerType.path in LOCAL_ENTITY_TYPES) {
+            require(isSupported(passengerType)) {
                 "Unsupported local datapack passenger type $passengerType."
             }
             createAndAdd(passengerType, passengerData, effectivePosition, effectiveRotation, entity, depth + 1, created)
@@ -151,6 +153,8 @@ class LocalDisplayEntityFactory(private val session: PlaySession) {
     }
 
     private fun applyKnownData(type: ResourceLocation, data: EntityData, nbt: Map<String, Any>) {
+        applyEntityFlags(data, nbt)
+
         if (type.path in DISPLAY_TYPES) {
             data[DisplayEntity.INTERPOLATION_START] = nbt.number("start_interpolation")?.toInt()
             data[DisplayEntity.INTERPOLATION_DURATION] = nbt.number("interpolation_duration")?.toInt()
@@ -181,6 +185,29 @@ class LocalDisplayEntityFactory(private val session: PlaySession) {
                 data[de.bixilon.minosoft.data.entities.entities.InteractionEntity.HEIGHT] = nbt.number("height")?.finiteFloat("height")
                 data[de.bixilon.minosoft.data.entities.entities.InteractionEntity.RESPONSE] = nbt.boolean("response")
             }
+        }
+    }
+
+    private fun applyEntityFlags(data: EntityData, nbt: Map<String, Any>) {
+        var flags = data.get(Entity.FLAGS_DATA, 0x00)
+        if ("Fire" in nbt) {
+            flags = flags.withFlag(0x01, (nbt.number("Fire")?.toInt() ?: 0) > 0)
+        }
+        if ("Invisible" in nbt) {
+            flags = flags.withFlag(0x20, nbt.boolean("Invisible"))
+        }
+        if ("Glowing" in nbt) {
+            flags = flags.withFlag(0x40, nbt.boolean("Glowing"))
+        }
+        data[Entity.FLAGS_DATA] = flags
+        if ("NoGravity" in nbt) {
+            data[Entity.NO_GRAVITY_DATA] = nbt.boolean("NoGravity")
+        }
+        if ("CustomName" in nbt) {
+            data[Entity.CUSTOM_NAME_DATA] = nbt["CustomName"]
+        }
+        if ("CustomNameVisible" in nbt) {
+            data[Entity.CUSTOM_NAME_VISIBLE_DATA] = nbt.boolean("CustomNameVisible")
         }
     }
 
@@ -306,6 +333,7 @@ class LocalDisplayEntityFactory(private val session: PlaySession) {
     }
 
     private fun Map<String, Any>.number(key: String) = this[key] as? Number
+    private fun Int.withFlag(mask: Int, enabled: Boolean) = if (enabled) this or mask else this and mask.inv()
     private fun Map<String, Any>.boolean(key: String) = when (val value = this[key]) {
         is Boolean -> value
         is Number -> value.toInt() != 0
@@ -333,6 +361,10 @@ class LocalDisplayEntityFactory(private val session: PlaySession) {
         is List<*> -> mapTo(mutableListOf()) { requireNotNull(it).deepMutable() }
         else -> this
     }
+
+    private fun isSupported(type: ResourceLocation): Boolean =
+        type.namespace == "minecraft" && type.path in LOCAL_ENTITY_TYPES ||
+            FabricRemoteRegistrySync.supportsLocal(type)
 
     private fun decompose(matrix: List<Float>): MatrixTransform {
         require(matrix.size == 16) { "Display transformation matrix must contain 16 values." }
@@ -399,6 +431,11 @@ class LocalDisplayEntityFactory(private val session: PlaySession) {
         const val MAX_ENTITIES_PER_SUMMON = 1024
         const val MAX_OWNED_ENTITIES = 16_384
         val DISPLAY_TYPES = setOf("item_display", "block_display", "text_display")
-        val LOCAL_ENTITY_TYPES = DISPLAY_TYPES + setOf("interaction", "marker")
+        /**
+         * Non-display entries are deliberately explicit. Zombie is the first
+         * bounded living fixture used to render CEM plus ETF through the local
+         * acceptance world; this is not an unrestricted summon registry.
+         */
+        val LOCAL_ENTITY_TYPES = DISPLAY_TYPES + setOf("interaction", "marker", "zombie")
     }
 }

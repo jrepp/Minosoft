@@ -67,6 +67,17 @@ class SkeletalExpressionTest {
     }
 
     @Test
+    fun `Molang math namespace uses degree based trigonometry without changing EMF functions`() {
+        val context = SkeletalExpressionContext()
+
+        assertEquals(0.0, SkeletalExpression.compile("Math.cos(90)").evaluate(context), absoluteTolerance = 1.0E-12)
+        assertEquals(1.0, SkeletalExpression.compile("math.sin(90)").evaluate(context), absoluteTolerance = 1.0E-12)
+        assertEquals(90.0, SkeletalExpression.compile("math.acos(0)").evaluate(context), absoluteTolerance = 1.0E-12)
+        assertEquals(2.0, SkeletalExpression.compile("math.clamp(3, 0, 2)").evaluate(context))
+        assertEquals(kotlin.math.cos(90.0), SkeletalExpression.compile("cos(90)").evaluate(context))
+    }
+
+    @Test
     fun `EMF keyframe and catch methods preserve lazy branches`() {
         val context = SkeletalExpressionContext()
 

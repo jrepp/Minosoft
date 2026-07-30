@@ -160,6 +160,14 @@ class AnimatedJavaExportFixtureTest {
                 }.toSet(),
                 setOf(2, 3, 4, 5, 6, 7, 8),
             )
+            val colorOverrides = root.attachment.passengers
+                .filterIsInstance<ItemDisplayEntity>()
+                .filter { it.glowColorOverride >= 0 }
+            assertTrue(colorOverrides.isNotEmpty())
+            assertTrue(colorOverrides.none { it.hasGlowingEffect })
+            assertTrue(colorOverrides.all {
+                de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineColor.resolve(it) == null
+            })
 
             runtime.executeAs("aj:armor_stand_minimal/animations/walk/play", root)
             runtime.tick()

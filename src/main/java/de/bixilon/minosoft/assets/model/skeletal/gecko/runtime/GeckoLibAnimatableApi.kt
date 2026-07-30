@@ -53,6 +53,18 @@ class GeckoLibAnimatableManager internal constructor(
 
     val firstTick get() = lastUpdateTimeSeconds == null
     val active get() = !closed && (binding?.active != false)
+    @get:Synchronized
+    val trackedDataInputs
+        get(): List<GeckoLibTrackedDataInput> {
+            check(!closed) { "GeckoLib animatable manager is closed." }
+            return controllers.trackedDataInputs
+        }
+    @get:Synchronized
+    val hostStateInputs
+        get(): List<GeckoLibHostStateInput> {
+            check(!closed) { "GeckoLib animatable manager is closed." }
+            return controllers.hostStateInputs
+        }
 
     constructor(
         clips: Map<String, de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationClip>,
@@ -85,6 +97,12 @@ class GeckoLibAnimatableManager internal constructor(
     }
 
     @Synchronized
+    fun triggerEvent(event: ResourceLocation): Int {
+        check(!closed) { "GeckoLib animatable manager is closed." }
+        return invokeCallbacks { controllers.triggerEvent(event) } ?: 0
+    }
+
+    @Synchronized
     fun play(
         controller: String,
         animation: GeckoLibRawAnimation,
@@ -101,6 +119,18 @@ class GeckoLibAnimatableManager internal constructor(
     fun current(controller: String): String? {
         check(!closed) { "GeckoLib animatable manager is closed." }
         return controllers.current(controller)
+    }
+
+    @Synchronized
+    fun resolveTrackedData(reader: (Int) -> Any?): Map<String, Double> {
+        check(!closed) { "GeckoLib animatable manager is closed." }
+        return controllers.resolveTrackedData(reader)
+    }
+
+    @Synchronized
+    fun resolveHostState(reader: (GeckoLibHostStateInput) -> Double?): Map<String, Double> {
+        check(!closed) { "GeckoLib animatable manager is closed." }
+        return controllers.resolveHostState(reader)
     }
 
     @Synchronized

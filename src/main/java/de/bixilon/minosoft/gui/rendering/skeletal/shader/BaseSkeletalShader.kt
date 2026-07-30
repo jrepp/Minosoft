@@ -15,7 +15,12 @@ package de.bixilon.minosoft.gui.rendering.skeletal.shader
 
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.kmath.vec.vec4.f.Vec4f
 import de.bixilon.minosoft.gui.rendering.camera.fog.FogManager
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.types.FogShader
 import de.bixilon.minosoft.gui.rendering.shader.types.TextureShader
@@ -29,12 +34,14 @@ abstract class BaseSkeletalShader(
     native: NativeShader,
     buffer: FloatUniformBuffer,
 ) : Shader(native), TextureShader, ViewProjectionShader, FogShader {
+    override val sceneContract = SceneShaderContract(SceneProgramFamily.ENTITY, SceneVertexAbi.SKELETAL, SceneStateAbi.SKELETAL_TINTED)
     override var textures: TextureManager by textureManager()
     override var viewProjectionMatrix: Mat4f by viewProjectionMatrix()
     override var cameraPosition: Vec3f by cameraPosition()
     override var fog: FogManager by fog()
 
     var skeletalBuffer by uniform("uSkeletalBuffer", buffer)
+    var entityColor by uniform("entityColor", Vec4f.EMPTY)
 
 
     init {

@@ -21,9 +21,12 @@ import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalTransform
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.SkeletalBakeContext
 import de.bixilon.minosoft.gui.rendering.skeletal.mesh.AbstractSkeletalMeshBuilder
+import de.bixilon.minosoft.gui.rendering.skeletal.mesh.SkeletalQuadConsumer
 import de.bixilon.minosoft.gui.rendering.skeletal.model.animations.SkeletalAnimation
 import de.bixilon.minosoft.gui.rendering.skeletal.model.elements.SkeletalElement
 import de.bixilon.minosoft.gui.rendering.skeletal.model.textures.*
+import de.bixilon.minosoft.gui.rendering.skeletal.preview.SkeletalPreview
+import de.bixilon.minosoft.gui.rendering.skeletal.preview.SkeletalPreviewCollector
 import de.bixilon.minosoft.gui.rendering.skeletal.model.transforms.SkeletalTransform
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationClip
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
@@ -99,7 +102,7 @@ data class SkeletalModel(
     }
 
     private fun buildElements(
-        consumer: AbstractSkeletalMeshBuilder,
+        consumer: SkeletalQuadConsumer,
         textures: SkeletalInstanceTextureMap,
         transform: BakedSkeletalTransform,
         includedMaterials: Set<ResourceLocation>?,
@@ -123,6 +126,7 @@ data class SkeletalModel(
         mesh: AbstractSkeletalMeshBuilder,
         includedMaterials: Set<ResourceLocation>? = null,
         excludedMaterials: Set<ResourceLocation> = emptySet(),
+        buildPreview: Boolean = true,
     ): BakedSkeletalModel {
         require(includedMaterials == null || includedMaterials.intersect(excludedMaterials).isEmpty()) {
             "Included and excluded skeletal materials must not overlap."
@@ -130,6 +134,20 @@ data class SkeletalModel(
         val textures = buildTextures(override)
         val (transform, count) = buildTransforms()
         buildElements(mesh, textures, transform, includedMaterials, excludedMaterials)
+        val preview = if (buildPreview) {
+            SkeletalPreviewCollector(
+                transform,
+                textures,
+                neutralAnimations,
+                contentIdentity?.format,
+            ).also {
+                // Preview geometry is complete even when this particular GPU mesh
+                // excludes independently selectable ETF/Gecko materials.
+                buildElements(it, textures, transform, includedMaterials = null, excludedMaterials = emptySet())
+            }.build()
+        } else {
+            SkeletalPreview.EMPTY
+        }
 
         return BakedSkeletalModel(
             mesh.bake(),
@@ -140,6 +158,7 @@ data class SkeletalModel(
             expressions = expressions,
             expressionAliases = expressionAliases,
             contentIdentity = contentIdentity,
+            preview = preview,
         )
     }
 }

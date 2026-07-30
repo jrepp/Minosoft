@@ -14,10 +14,12 @@
 package de.bixilon.minosoft.gui.rendering.skeletal.shader
 
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
+import de.bixilon.minosoft.data.text.formatting.color.Colors
 import de.bixilon.minosoft.gui.rendering.shader.types.TintedShader
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.uniform.FloatUniformBuffer
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 
 class SkeletalShader(native: NativeShader, buffer: FloatUniformBuffer) : BaseSkeletalShader(native, buffer), TintedShader {
     override var tint by uniform("uTintColor", ChatColors.WHITE.rgb())
+    var outlineColor by uniform("uOutlineColor", Colors.TRANSPARENT)
 }

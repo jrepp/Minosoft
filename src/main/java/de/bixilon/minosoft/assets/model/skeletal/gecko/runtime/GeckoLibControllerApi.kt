@@ -18,6 +18,8 @@ import de.bixilon.minosoft.assets.model.skeletal.runtime.SkeletalAnimationContro
 import de.bixilon.minosoft.assets.model.skeletal.runtime.SkeletalAnimationControllerSnapshot
 import de.bixilon.minosoft.assets.model.skeletal.runtime.SkeletalBonePose
 import de.bixilon.minosoft.assets.model.skeletal.runtime.SkeletalPose
+import de.bixilon.minosoft.data.entities.EntityAnimations
+import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 
 data class GeckoLibAnimationState(
     val ageSeconds: Float,
@@ -45,6 +47,97 @@ data class GeckoLibAnimationState(
     private companion object {
         const val MAX_STATE_VALUES = 4_096
     }
+}
+
+/**
+ * Declares one protocol-level tracked-data value required by an adapted
+ * controller predicate. Renderers read only declared indices rather than
+ * scanning the complete metadata range every frame.
+ */
+data class GeckoLibTrackedDataInput(
+    val name: String,
+    val index: Int,
+    val defaultValue: Double = 0.0,
+) {
+    init {
+        require(name.isNotBlank() && name.length <= MAX_NAME_LENGTH) {
+            "GeckoLib tracked-data input names must contain 1..$MAX_NAME_LENGTH characters."
+        }
+        require(index in 0..MAX_TRACKED_DATA_INDEX) {
+            "GeckoLib tracked-data index must be between 0 and $MAX_TRACKED_DATA_INDEX."
+        }
+        require(defaultValue.isFinite()) {
+            "GeckoLib tracked-data default values must be finite."
+        }
+    }
+
+    private companion object {
+        const val MAX_NAME_LENGTH = 256
+        const val MAX_TRACKED_DATA_INDEX = 254
+    }
+}
+
+sealed interface GeckoLibHostStateQuery {
+    data class RandomInteger(val bound: Int) : GeckoLibHostStateQuery {
+        init {
+            require(bound in 1..MAX_RANDOM_BOUND) {
+                "GeckoLib host random bound must be within 1..$MAX_RANDOM_BOUND."
+            }
+        }
+    }
+
+    data class EntityType(val identifier: ResourceLocation) : GeckoLibHostStateQuery
+
+    data class NearbyPlayer(
+        val range: Double,
+        val horizontalExpansion: Double = range,
+        val verticalExpansion: Double = range,
+    ) : GeckoLibHostStateQuery {
+        init {
+            require(
+                range.isFinite() && range in 0.0..MAX_QUERY_DISTANCE &&
+                    horizontalExpansion.isFinite() && horizontalExpansion in 0.0..MAX_QUERY_DISTANCE &&
+                    verticalExpansion.isFinite() && verticalExpansion in 0.0..MAX_QUERY_DISTANCE
+            ) {
+                "GeckoLib nearby-player distances must be finite and within 0..$MAX_QUERY_DISTANCE."
+            }
+        }
+    }
+
+    private companion object {
+        const val MAX_RANDOM_BOUND = 1_000_000
+        const val MAX_QUERY_DISTANCE = 1_024.0
+    }
+}
+
+/**
+ * Declares one bounded value that must be resolved from the host object or
+ * world before a dependent-mod controller predicate runs. The query is an
+ * immutable DTO rather than an owner callback, so retained generations cannot
+ * invoke replacement adapter code while resolving render state.
+ */
+data class GeckoLibHostStateInput(
+    val name: String,
+    val query: GeckoLibHostStateQuery,
+    val defaultValue: Double = 0.0,
+) {
+    init {
+        require(name.isNotBlank() && name.length <= MAX_NAME_LENGTH) {
+            "GeckoLib host-state input names must contain 1..$MAX_NAME_LENGTH characters."
+        }
+        require(defaultValue.isFinite()) {
+            "GeckoLib host-state default values must be finite."
+        }
+    }
+
+    private companion object {
+        const val MAX_NAME_LENGTH = 256
+    }
+}
+
+object GeckoLibHostEvents {
+    fun entityAnimation(animation: EntityAnimations) =
+        ResourceLocation("minecraft", "entity_animation/${animation.name.lowercase()}")
 }
 
 sealed interface GeckoLibControllerDecision {
@@ -119,6 +212,9 @@ data class GeckoLibControllerDefinition(
     val triggerableAnimations: Map<String, String> = emptyMap(),
     val triggerableRawAnimations: Map<String, GeckoLibRawAnimation> = emptyMap(),
     val receiveTriggeredAnimations: Boolean = false,
+    val trackedDataInputs: List<GeckoLibTrackedDataInput> = emptyList(),
+    val hostStateInputs: List<GeckoLibHostStateInput> = emptyList(),
+    val eventTriggers: Map<ResourceLocation, String> = emptyMap(),
 ) {
     init {
         require(name.isNotBlank()) { "GeckoLib controller name must not be blank." }
@@ -137,11 +233,39 @@ data class GeckoLibControllerDefinition(
         require(triggerableAnimations.keys.intersect(triggerableRawAnimations.keys).isEmpty()) {
             "GeckoLib clip and raw-animation triggers must use distinct names."
         }
+        require(trackedDataInputs.size <= MAX_TRACKED_DATA_INPUTS) {
+            "GeckoLib controller exceeds the $MAX_TRACKED_DATA_INPUTS tracked-data input limit."
+        }
+        require(trackedDataInputs.map(GeckoLibTrackedDataInput::name).distinct().size == trackedDataInputs.size) {
+            "GeckoLib tracked-data input names must be unique per controller."
+        }
+        require(hostStateInputs.size <= MAX_HOST_STATE_INPUTS) {
+            "GeckoLib controller exceeds the $MAX_HOST_STATE_INPUTS host-state input limit."
+        }
+        require(hostStateInputs.map(GeckoLibHostStateInput::name).distinct().size == hostStateInputs.size) {
+            "GeckoLib host-state input names must be unique per controller."
+        }
+        require(
+            trackedDataInputs.map(GeckoLibTrackedDataInput::name).toSet()
+                .intersect(hostStateInputs.map(GeckoLibHostStateInput::name).toSet())
+                .isEmpty()
+        ) {
+            "GeckoLib tracked-data and host-state inputs must use distinct names."
+        }
+        require(eventTriggers.size <= MAX_EVENT_TRIGGERS) {
+            "GeckoLib controller exceeds the $MAX_EVENT_TRIGGERS host-event trigger limit."
+        }
+        require(eventTriggers.values.all { it in triggerableAnimations || it in triggerableRawAnimations }) {
+            "GeckoLib host events must reference a trigger declared by the same controller."
+        }
     }
 
     private companion object {
         const val MAX_NAME_LENGTH = 256
         const val MAX_TRIGGERABLE_ANIMATIONS = 4_096
+        const val MAX_TRACKED_DATA_INPUTS = 255
+        const val MAX_HOST_STATE_INPUTS = 255
+        const val MAX_EVENT_TRIGGERS = 4_096
     }
 }
 
@@ -191,6 +315,41 @@ data class GeckoLibControllerSetSnapshot(
 )
 
 /**
+ * Bounded immutable diagnostics for one retained controller layer.
+ *
+ * This deliberately excludes poses, callbacks, and live controller objects so
+ * debug consumers cannot retain an adapter generation or race render updates.
+ */
+data class GeckoLibControllerInspection(
+    val name: String,
+    val currentClip: String?,
+    val elapsedSeconds: Float,
+    val remainingSeconds: Float?,
+    val transitionElapsedSeconds: Float,
+    val transitionDurationSeconds: Float,
+    val triggered: Boolean,
+    val queued: Boolean,
+    val queueStageIndex: Int?,
+    val queueStageCount: Int?,
+    val queueCurrentAnimation: String?,
+    val queueWaitRemainingSeconds: Float?,
+    val completedCycles: Int?,
+    val held: Boolean,
+    val rawFinished: Boolean,
+)
+
+data class GeckoLibControllerSetInspection(
+    val controllerCount: Int,
+    val controllers: List<GeckoLibControllerInspection>,
+) {
+    val truncated get() = controllers.size < controllerCount
+
+    companion object {
+        val EMPTY = GeckoLibControllerSetInspection(0, emptyList())
+    }
+}
+
+/**
  * Source-native controller facade for mods adapted to Minosoft.
  *
  * This API intentionally uses only stable Minosoft DTOs. It does not pretend
@@ -203,6 +362,9 @@ class GeckoLibControllerSet(
     definitions: List<GeckoLibControllerDefinition>,
 ) {
     var eventConsumer: ((String, SkeletalAnimationEvent) -> Unit)? = null
+
+    val trackedDataInputs: List<GeckoLibTrackedDataInput> = mergeTrackedDataInputs(definitions)
+    val hostStateInputs: List<GeckoLibHostStateInput> = mergeHostStateInputs(definitions)
 
     private val layers = definitions.also {
         require(it.size <= MAX_CONTROLLERS) {
@@ -227,6 +389,33 @@ class GeckoLibControllerSet(
         require(definitions.map { it.name }.distinct().size == definitions.size) {
             "GeckoLib controller names must be unique."
         }
+        require(
+            trackedDataInputs.map(GeckoLibTrackedDataInput::name).toSet()
+                .intersect(hostStateInputs.map(GeckoLibHostStateInput::name).toSet())
+                .isEmpty()
+        ) {
+            "GeckoLib tracked-data and host-state inputs must use distinct names across controllers."
+        }
+    }
+
+    fun resolveTrackedData(reader: (Int) -> Any?): Map<String, Double> {
+        if (trackedDataInputs.isEmpty()) return emptyMap()
+        return trackedDataInputs.associate { input ->
+            val value = when (val raw = reader(input.index)) {
+                is Boolean -> if (raw) 1.0 else 0.0
+                is Number -> raw.toDouble().takeIf(Double::isFinite)
+                else -> null
+            } ?: input.defaultValue
+            input.name to value
+        }
+    }
+
+    fun resolveHostState(reader: (GeckoLibHostStateInput) -> Double?): Map<String, Double> {
+        if (hostStateInputs.isEmpty()) return emptyMap()
+        return hostStateInputs.associate { input ->
+            val value = reader(input)?.takeIf(Double::isFinite) ?: input.defaultValue
+            input.name to value
+        }
     }
 
     fun update(
@@ -246,7 +435,7 @@ class GeckoLibControllerSet(
                     GeckoLibControllerDecision.Stop -> {
                         layer.queue = null
                         layer.triggered = null
-                        layer.controller.stop()
+                        layer.controller.stop(layer.lastPose)
                         layer.rawFinished = layer.currentRaw != null
                     }
                     is GeckoLibControllerDecision.Play -> {
@@ -257,6 +446,7 @@ class GeckoLibControllerSet(
                             decision.clip,
                             decision.transitionSeconds ?: layer.definition.transitionSeconds,
                             decision.restart,
+                            transitionSourcePose = layer.lastPose,
                         )
                         layer.queue = null
                         layer.triggered = null
@@ -318,6 +508,15 @@ class GeckoLibControllerSet(
         return trigger(layer, animation)
     }
 
+    fun triggerEvent(event: ResourceLocation): Int {
+        var triggered = 0
+        for (layer in layers) {
+            val animation = layer.definition.eventTriggers[event] ?: continue
+            if (trigger(layer, animation)) triggered++
+        }
+        return triggered
+    }
+
     fun isPlayingTriggeredAnimation(controller: String): Boolean {
         val layer = layers.firstOrNull { it.definition.name == controller }
             ?: throw IllegalArgumentException("Unknown GeckoLib controller '$controller'.")
@@ -373,6 +572,44 @@ class GeckoLibControllerSet(
     }
 
     val controllerNames: List<String> get() = layers.map { it.definition.name }
+
+    /**
+     * Copies a small read-only controller view for diagnostics and acceptance.
+     * The returned DTO never changes when the live controller advances.
+     */
+    fun inspect(maxControllers: Int = MAX_CONTROLLER_INSPECTIONS): GeckoLibControllerSetInspection {
+        require(maxControllers in 0..MAX_CONTROLLER_INSPECTIONS) {
+            "GeckoLib controller inspection limit must be within 0..$MAX_CONTROLLER_INSPECTIONS."
+        }
+        return GeckoLibControllerSetInspection(
+            controllerCount = layers.size,
+            controllers = layers.take(maxControllers).map { layer ->
+                val queue = layer.queue
+                GeckoLibControllerInspection(
+                    name = layer.definition.name,
+                    currentClip = layer.controller.current,
+                    elapsedSeconds = layer.controller.elapsedSeconds,
+                    remainingSeconds = layer.controller.remainingSeconds,
+                    transitionElapsedSeconds = layer.controller.transitionElapsedSeconds,
+                    transitionDurationSeconds = layer.controller.transitionDurationSeconds,
+                    triggered = layer.triggered != null,
+                    queued = queue != null,
+                    queueStageIndex = queue?.stageIndex,
+                    queueStageCount = queue?.stages?.size,
+                    queueCurrentAnimation = queue?.stages
+                        ?.getOrNull(queue.stageIndex)
+                        ?.takeUnless(GeckoLibRawAnimationStage::isWait)
+                        ?.animation,
+                    queueWaitRemainingSeconds = queue
+                        ?.takeIf { it.stages.getOrNull(it.stageIndex)?.isWait == true }
+                        ?.waitRemainingSeconds,
+                    completedCycles = queue?.completedCycles,
+                    held = queue?.held == true,
+                    rawFinished = layer.rawFinished,
+                )
+            },
+        )
+    }
 
     fun snapshot() = GeckoLibControllerSetSnapshot(
         layers.associate { layer ->
@@ -597,6 +834,7 @@ class GeckoLibControllerSet(
             transitionSeconds = queue.transitionSeconds,
             restart = true,
             loopOverride = loopOverride(stage),
+            transitionSourcePose = layer.lastPose,
         )
     }
 
@@ -615,12 +853,17 @@ class GeckoLibControllerSet(
                 is ResumeAnimation.Clip -> {
                     layer.currentRaw = null
                     layer.rawFinished = false
-                    layer.controller.play(resume.animation, layer.definition.transitionSeconds, restart = true)
+                    layer.controller.play(
+                        resume.animation,
+                        layer.definition.transitionSeconds,
+                        restart = true,
+                        transitionSourcePose = layer.lastPose,
+                    )
                 }
-                null -> layer.controller.stop()
+                null -> layer.controller.stop(layer.lastPose)
             }
         } else {
-            layer.controller.stop()
+            layer.controller.stop(layer.lastPose)
         }
     }
 
@@ -720,8 +963,45 @@ class GeckoLibControllerSet(
         const val MAX_ANIMATION_SPEED = 1_024.0
         const val MAX_EASING_NAME_LENGTH = 256
         const val MAX_STAGE_ADVANCES_PER_UPDATE = 16_384
+        const val MAX_CONTROLLER_INSPECTIONS = 64
         const val TICKS_PER_SECOND = 20.0f
     }
+}
+
+private fun mergeTrackedDataInputs(
+    definitions: List<GeckoLibControllerDefinition>,
+): List<GeckoLibTrackedDataInput> {
+    val inputs = linkedMapOf<String, GeckoLibTrackedDataInput>()
+    for (definition in definitions) {
+        for (input in definition.trackedDataInputs) {
+            val previous = inputs.putIfAbsent(input.name, input)
+            require(previous == null || previous == input) {
+                "Conflicting GeckoLib tracked-data input '${input.name}' across controllers."
+            }
+        }
+    }
+    require(inputs.size <= 255) {
+        "GeckoLib controller set exceeds the 255 tracked-data input limit."
+    }
+    return inputs.values.toList()
+}
+
+private fun mergeHostStateInputs(
+    definitions: List<GeckoLibControllerDefinition>,
+): List<GeckoLibHostStateInput> {
+    val inputs = linkedMapOf<String, GeckoLibHostStateInput>()
+    for (definition in definitions) {
+        for (input in definition.hostStateInputs) {
+            val previous = inputs.putIfAbsent(input.name, input)
+            require(previous == null || previous == input) {
+                "Conflicting GeckoLib host-state input '${input.name}' across controllers."
+            }
+        }
+    }
+    require(inputs.size <= 255) {
+        "GeckoLib controller set exceeds the 255 host-state input limit."
+    }
+    return inputs.values.toList()
 }
 
 private fun validateRaw(

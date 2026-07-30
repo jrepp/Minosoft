@@ -91,6 +91,7 @@ class CemExpressionEvaluator(
                 variableResolver = { name ->
                     resolve(name, binding.owner, transforms, render, partValues, input)
                 },
+                functionResolver = input::resolveFunction,
                 rawFunctionResolver = input::resolveRawFunction,
                 random = input.random,
             )

@@ -11,6 +11,7 @@ package de.bixilon.minosoft.assets.model.skeletal.gecko.runtime
 
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.assets.model.skeletal.*
+import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -20,6 +21,134 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class GeckoLibControllerApiTest {
+
+    @Test
+    fun `host events trigger only explicitly mapped controller animations`() {
+        val attack = clip("attack", SkeletalAnimationTarget.ROTATION, Vec3f(4.0f, 0.0f, 0.0f))
+        val event = GeckoLibHostEvents.entityAnimation(de.bixilon.minosoft.data.entities.EntityAnimations.SWING_MAIN_ARM)
+        val controllers = GeckoLibControllerSet(
+            mapOf("attack" to attack),
+            listOf(
+                GeckoLibControllerDefinition(
+                    name = "attack",
+                    triggerableAnimations = mapOf("attack" to "attack"),
+                    eventTriggers = mapOf(event to "attack"),
+                ),
+            ),
+        )
+
+        assertEquals(1, controllers.triggerEvent(event))
+        controllers.update(0.05f, GeckoLibAnimationState(0.05f))
+        assertEquals("attack", controllers.current("attack"))
+        assertEquals(0, controllers.triggerEvent(ResourceLocation.of("test:unmapped")))
+        assertFailsWith<IllegalArgumentException> {
+            GeckoLibControllerDefinition(
+                name = "invalid",
+                eventTriggers = mapOf(event to "missing"),
+            )
+        }
+    }
+
+    @Test
+    fun `dependent controllers resolve only declared tracked data inputs`() {
+        val inputs = listOf(
+            GeckoLibTrackedDataInput("test.climbing", 17),
+            GeckoLibTrackedDataInput("test.sleeping", 19, defaultValue = 1.0),
+        )
+        val controllers = GeckoLibControllerSet(
+            mapOf("idle" to clip("idle", SkeletalAnimationTarget.SCALE, Vec3f(1.0f))),
+            listOf(GeckoLibControllerDefinition("main", "idle", trackedDataInputs = inputs)),
+        )
+
+        assertEquals(inputs, controllers.trackedDataInputs)
+        assertEquals(
+            mapOf("test.climbing" to 3.0, "test.sleeping" to 1.0),
+            controllers.resolveTrackedData { index -> if (index == 17) 3.toByte() else null },
+        )
+        assertFailsWith<IllegalArgumentException> {
+            GeckoLibControllerSet(
+                mapOf("idle" to clip("idle", SkeletalAnimationTarget.SCALE, Vec3f(1.0f))),
+                listOf(
+                    GeckoLibControllerDefinition(
+                        "first",
+                        "idle",
+                        trackedDataInputs = listOf(GeckoLibTrackedDataInput("same", 17)),
+                    ),
+                    GeckoLibControllerDefinition(
+                        "second",
+                        "idle",
+                        trackedDataInputs = listOf(GeckoLibTrackedDataInput("same", 18)),
+                    ),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `dependent controllers resolve only declared bounded host state inputs`() {
+        val inputs = listOf(
+            GeckoLibHostStateInput("test.roll", GeckoLibHostStateQuery.RandomInteger(1_000)),
+            GeckoLibHostStateInput(
+                "test.nearby",
+                GeckoLibHostStateQuery.NearbyPlayer(4.0, horizontalExpansion = 4.0, verticalExpansion = 2.0),
+            ),
+            GeckoLibHostStateInput(
+                "test.type",
+                GeckoLibHostStateQuery.EntityType(ResourceLocation.of("test:entity")),
+                defaultValue = 1.0,
+            ),
+        )
+        val controllers = GeckoLibControllerSet(
+            mapOf("idle" to clip("idle", SkeletalAnimationTarget.SCALE, Vec3f(1.0f))),
+            listOf(GeckoLibControllerDefinition("main", "idle", hostStateInputs = inputs)),
+        )
+
+        assertEquals(inputs, controllers.hostStateInputs)
+        assertEquals(
+            mapOf("test.roll" to 41.0, "test.nearby" to 0.0, "test.type" to 1.0),
+            controllers.resolveHostState { input ->
+                when (input.name) {
+                    "test.roll" -> 41.0
+                    "test.nearby" -> Double.NaN
+                    else -> null
+                }
+            },
+        )
+        assertFailsWith<IllegalArgumentException> {
+            GeckoLibHostStateQuery.RandomInteger(0)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            GeckoLibControllerSet(
+                mapOf("idle" to clip("idle", SkeletalAnimationTarget.SCALE, Vec3f(1.0f))),
+                listOf(
+                    GeckoLibControllerDefinition(
+                        "first",
+                        "idle",
+                        hostStateInputs = listOf(
+                            GeckoLibHostStateInput("same", GeckoLibHostStateQuery.RandomInteger(2)),
+                        ),
+                    ),
+                    GeckoLibControllerDefinition(
+                        "second",
+                        "idle",
+                        hostStateInputs = listOf(
+                            GeckoLibHostStateInput("same", GeckoLibHostStateQuery.RandomInteger(3)),
+                        ),
+                    ),
+                ),
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            GeckoLibControllerDefinition(
+                "mixed",
+                "idle",
+                trackedDataInputs = listOf(GeckoLibTrackedDataInput("same", 1)),
+                hostStateInputs = listOf(
+                    GeckoLibHostStateInput("same", GeckoLibHostStateQuery.RandomInteger(2)),
+                ),
+            )
+        }
+    }
 
     @Test
     fun `dependent mod predicates drive concurrent replace and additive layers`() {
@@ -54,6 +183,109 @@ class GeckoLibControllerApiTest {
         assertEquals("walk", controllers.current("locomotion"))
         assertEquals(10.0f, pose.bones.getValue("root").translation.x)
         assertEquals(2.0f, pose.bones.getValue("root").rotation.y)
+    }
+
+    @Test
+    fun `controller inspection is bounded immutable and queue aware`() {
+        val clips = mapOf(
+            "idle" to clip("idle", SkeletalAnimationTarget.TRANSLATION, Vec3f.EMPTY),
+            "attack" to clip(
+                "attack",
+                SkeletalAnimationTarget.ROTATION,
+                Vec3f(4.0f, 0.0f, 0.0f),
+            ).copy(loop = SkeletalAnimationLoop.ONCE),
+        )
+        val controllers = GeckoLibControllerSet(
+            clips,
+            buildList {
+                add(GeckoLibControllerDefinition("primary", initialClip = "idle"))
+                add(
+                    GeckoLibControllerDefinition(
+                        "attackController",
+                        triggerableRawAnimations = mapOf(
+                            "attack" to GeckoLibRawAnimation.begin().thenPlay("attack"),
+                        ),
+                    ),
+                )
+                repeat(63) { add(GeckoLibControllerDefinition("auxiliary-$it")) }
+            },
+        )
+
+        assertTrue(controllers.trigger("attackController", "attack"))
+        val before = controllers.inspect()
+        assertEquals(65, before.controllerCount)
+        assertEquals(64, before.controllers.size)
+        assertTrue(before.truncated)
+        assertEquals("idle", before.controllers[0].currentClip)
+        assertEquals(
+            GeckoLibControllerInspection(
+                name = "attackController",
+                currentClip = "attack",
+                elapsedSeconds = 0.0f,
+                remainingSeconds = 1.0f,
+                transitionElapsedSeconds = 0.0f,
+                transitionDurationSeconds = 0.0f,
+                triggered = true,
+                queued = true,
+                queueStageIndex = 0,
+                queueStageCount = 1,
+                queueCurrentAnimation = "attack",
+                queueWaitRemainingSeconds = null,
+                completedCycles = 0,
+                held = false,
+                rawFinished = false,
+            ),
+            before.controllers[1],
+        )
+
+        controllers.update(0.25f, GeckoLibAnimationState(0.25f))
+        val after = controllers.inspect()
+        assertEquals(0.0f, before.controllers[1].elapsedSeconds)
+        assertEquals(0.25f, after.controllers[1].elapsedSeconds)
+        assertEquals(0.75f, after.controllers[1].remainingSeconds)
+        assertFailsWith<IllegalArgumentException> { controllers.inspect(65) }
+    }
+
+    @Test
+    fun `Molang expressions retain their state context across controller transitions`() {
+        fun expressionClip(name: String, expression: String) = SkeletalAnimationClip(
+            name = name,
+            lengthSeconds = 1.0f,
+            loop = SkeletalAnimationLoop.LOOP,
+            channels = mapOf(
+                "root" to listOf(
+                    SkeletalAnimationChannel(
+                        SkeletalAnimationTarget.TRANSLATION,
+                        listOf(
+                            SkeletalAnimationKeyframe(
+                                0.0f,
+                                SkeletalVectorValue.Expression(listOf(expression, "0", "0")),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val controllers = GeckoLibControllerSet(
+            clips = mapOf(
+                "idle" to expressionClip("idle", "Math.cos(query.anim_time * 360)"),
+                "move" to expressionClip("move", "Math.sin(query.anim_time * 360)"),
+            ),
+            definitions = listOf(
+                GeckoLibControllerDefinition(
+                    name = "main",
+                    initialClip = "idle",
+                    predicate = GeckoLibAnimationPredicate { _, current ->
+                        if (current == "move") GeckoLibControllerDecision.Keep
+                        else GeckoLibControllerDecision.Play("move")
+                    },
+                ),
+            ),
+        )
+
+        val pose = controllers.update(0.05f, GeckoLibAnimationState(ageSeconds = 0.25f))
+
+        assertEquals(1.0f, pose.bones.getValue("root").translation.x)
     }
 
     @Test

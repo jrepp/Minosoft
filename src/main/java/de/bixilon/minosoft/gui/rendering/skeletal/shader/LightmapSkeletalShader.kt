@@ -14,12 +14,21 @@
 package de.bixilon.minosoft.gui.rendering.skeletal.shader
 
 import de.bixilon.minosoft.gui.rendering.light.LightmapBuffer
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.types.LightShader
 import de.bixilon.minosoft.gui.rendering.shader.types.PlayerLightShader
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.uniform.FloatUniformBuffer
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 
 class LightmapSkeletalShader(native: NativeShader, buffer: FloatUniformBuffer) : BaseSkeletalShader(native, buffer), LightShader, PlayerLightShader {
+    override val sceneContract = SceneShaderContract(
+        SceneProgramFamily.ENTITY,
+        SceneVertexAbi.SKELETAL,
+        SceneStateAbi.SKELETAL_LIGHTMAP,
+    )
     var light by uniform("uLight", 0xFF, NativeShader::setUInt) // TODO: LightLevel
     override val lightmap: LightmapBuffer by lightmap()
     override var playerLightPosition by playerLightPosition()

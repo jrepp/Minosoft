@@ -9,8 +9,11 @@
 
 package de.bixilon.minosoft.assets.model.skeletal.gecko.runtime
 
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationClip
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationLoop
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
+import de.bixilon.minosoft.data.entities.EntityAnimations
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -103,6 +106,41 @@ class GeckoLibControllerBindingRegistryTest {
     }
 
     @Test
+    fun `host event triggers stop with their controller owner`() {
+        val attack = SkeletalAnimationClip(
+            name = "attack",
+            lengthSeconds = 0.25f,
+            loop = SkeletalAnimationLoop.ONCE,
+            channels = emptyMap(),
+        )
+        val event = GeckoLibHostEvents.entityAnimation(EntityAnimations.SWING_MAIN_ARM)
+        val registration = GeckoLibControllerBindingRegistry.register("test-owner", identity) {
+            listOf(
+                GeckoLibControllerDefinition(
+                    name = "attack",
+                    triggerableAnimations = mapOf("attack" to attack.name),
+                    eventTriggers = mapOf(event to "attack"),
+                ),
+            )
+        }
+        val manager = requireNotNull(
+            GeckoLibControllerBindingRegistry.createManager(identity, mapOf(attack.name to attack)),
+        )
+        try {
+            assertEquals(1, manager.triggerEvent(event))
+            assertEquals(attack.name, manager.current("attack"))
+
+            registration.close()
+
+            assertFalse(manager.active)
+            assertEquals(0, manager.triggerEvent(event))
+        } finally {
+            manager.close()
+            registration.close()
+        }
+    }
+
+    @Test
     fun `entity routes are owner scoped and close restores fallback lookup`() {
         val entity = ResourceLocation.of("test:clockwork_bird")
         val registration = GeckoLibEntityModelRegistry.register("route-owner", entity, identity)
@@ -179,6 +217,63 @@ class GeckoLibControllerBindingRegistryTest {
         GeckoLibRenderLayerRegistry.register("replacement-owner", identity, listOf(layer)).use {
             val replacement = requireNotNull(GeckoLibRenderLayerRegistry.bind(identity))
             assertTrue(replacement.registrationId != firstRegistrationId)
+        }
+    }
+
+    @Test
+    fun `entity texture selection is bounded to the baked registration generation`() {
+        val fallback = ResourceLocation.of("test:textures/entity/base.png")
+        val variant = ResourceLocation.of("test:textures/entity/variant.png")
+        val undeclared = ResourceLocation.of("test:textures/entity/undeclared.png")
+        val declared = linkedSetOf(fallback, variant)
+        val registration = GeckoLibEntityTextureRegistry.register(
+            "texture-owner",
+            identity,
+            GeckoLibEntityTextureDefinition(
+                fallback,
+                declared,
+                GeckoLibEntityTextureSelector { state ->
+                    when {
+                        state.int(20) == 1 -> undeclared
+                        state.int(19) == 2 -> variant
+                        else -> fallback
+                    }
+                },
+            ),
+        )
+        declared += undeclared
+        val snapshot = requireNotNull(GeckoLibEntityTextureRegistry.snapshot(identity))
+        assertEquals(setOf(fallback, variant), snapshot.textures)
+        val state = GeckoLibEntityTextureState(
+            ResourceLocation.of("test:animal"),
+            null,
+            baby = false,
+            aggressive = false,
+        ) { index -> if (index == 19) 2 else null }
+        assertEquals(
+            variant,
+            GeckoLibEntityTextureRegistry.select(identity, snapshot.registrationId, state),
+        )
+        val invalidState = GeckoLibEntityTextureState(
+            ResourceLocation.of("test:animal"),
+            null,
+            baby = false,
+            aggressive = false,
+        ) { index -> if (index == 20) 1 else null }
+        assertEquals(
+            fallback,
+            GeckoLibEntityTextureRegistry.select(identity, snapshot.registrationId, invalidState),
+        )
+        registration.close()
+        assertNull(GeckoLibEntityTextureRegistry.select(identity, snapshot.registrationId, state))
+
+        GeckoLibEntityTextureRegistry.register(
+            "replacement-owner",
+            identity,
+            GeckoLibEntityTextureDefinition(fallback, setOf(fallback)),
+        ).use {
+            assertNull(GeckoLibEntityTextureRegistry.select(identity, snapshot.registrationId, state))
+            assertEquals("replacement-owner", GeckoLibEntityTextureRegistry.owners()[identity])
         }
     }
 }
