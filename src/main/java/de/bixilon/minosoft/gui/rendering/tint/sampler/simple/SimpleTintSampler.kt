@@ -55,7 +55,7 @@ class SimpleTintSampler(radius: Int = 5) : RadiusColorSampler(radius) {
             sampleFluid(chunk, position, BlockPosition(offset, 0, -offset), weight, provider)
             sampleFluid(chunk, position, BlockPosition(offset, 0, offset), weight, provider)
 
-            offset += radius / 5
+            offset += maxOf(1, radius / 5)
         }
     }
 
@@ -82,7 +82,7 @@ class SimpleTintSampler(radius: Int = 5) : RadiusColorSampler(radius) {
             sampleBlock(chunk, state, position, BlockPosition(offset, 0, -offset), weight, provider)
             sampleBlock(chunk, state, position, BlockPosition(offset, 0, offset), weight, provider)
 
-            offset += radius / 5
+            offset += maxOf(1, radius / 5)
         }
     }
 
@@ -108,7 +108,7 @@ class SimpleTintSampler(radius: Int = 5) : RadiusColorSampler(radius) {
             sampleCustom(chunk, position, BlockPosition(offset, 0, -offset), weight, sampler)
             sampleCustom(chunk, position, BlockPosition(offset, 0, offset), weight, sampler)
 
-            offset += radius / 5
+            offset += maxOf(1, radius / 5)
         }
     }
 }
