@@ -36,7 +36,8 @@ launcher_jar="$project_dir/util/play/build/install/play-util/lib/play-util.jar"
 needs_build=false
 if [[ ! -f "$launcher_jar" ]]; then
     needs_build=true
-elif [[ -n "$(find "$project_dir/util/play/Play.java" "$project_dir/util/play/build.gradle.kts" "$project_dir/debug-core/src" "$project_dir/debug-core/build.gradle.kts" -type f -newer "$launcher_jar" -print -quit)" ]]; then
+elif [[ -n "$(find "$project_dir/util/play" "$project_dir/debug-core/src" "$project_dir/debug-core/build.gradle.kts" \
+    -path "$project_dir/util/play/build" -prune -o -type f -newer "$launcher_jar" -print -quit)" ]]; then
     needs_build=true
 fi
 

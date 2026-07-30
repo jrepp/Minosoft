@@ -21,12 +21,19 @@ repositories {
 
 dependencies {
     implementation(project(":debug-core"))
+    testImplementation(platform("org.junit:junit-bom:5.14.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 sourceSets {
     main {
         java.setSrcDirs(listOf("."))
         java.include("Play.java")
+        java.include("MotionNoiseAnalyzer.java")
+    }
+    test {
+        java.setSrcDirs(listOf("src/test/java"))
     }
 }
 
@@ -36,4 +43,8 @@ application {
 
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(17))
+}
+
+tasks.test {
+    useJUnitPlatform()
 }

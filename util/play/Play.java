@@ -93,6 +93,7 @@ public final class Play {
     private static final long MAX_SCREENSHOT_PIXELS = 16_777_216L;
     private static final long MAX_SCREENSHOT_FILE_BYTES = 64L * 1024 * 1024;
     private static final long MAX_MODPACK_ARTIFACT_BYTES = 1024L * 1024 * 1024;
+    private static final int[] ARGB_CHANNEL_SHIFTS = {24, 16, 8, 0};
 
     private final Map<String, String> environment = System.getenv();
     private final Path project;
@@ -122,9 +123,11 @@ public final class Play {
     private final Path canarySourceDirectory;
     private final Path canaryBuildJar;
     private String modpackName;
+    private final String serverModpackName;
     private String trajectory;
     private boolean canaryEnabled;
     private boolean localWorld;
+    private boolean debugGpuMemoryLeaks;
     private boolean jsonOutput;
     private long worldSeed;
     private String worldGenerator;
@@ -162,6 +165,7 @@ public final class Play {
         serverLog = serverDirectory.resolve("server-console.log");
         eventLog = runDirectory.resolve("play-events.jsonl");
         modpackName = environment.getOrDefault("MINOSOFT_MODPACK", "");
+        serverModpackName = environment.getOrDefault("MINOSOFT_SERVER_MODPACK", "fabric-stack");
         trajectory = environment.getOrDefault("MINOSOFT_TRAJECTORY", "default");
         modpacksDirectory = resolveProjectPath(env("MINOSOFT_MODPACKS_DIR", project.resolve("modpacks").toString()));
         modpackStore = resolveProjectPath(env("MINOSOFT_MODPACK_STORE", defaultModpackStore().toString()));
@@ -173,6 +177,7 @@ public final class Play {
         canaryBuildJar = project.resolve("build/dev-mods/hot-reload-canary.jar");
         canaryEnabled = environment.getOrDefault("MINOSOFT_CANARY", "false").equalsIgnoreCase("true");
         localWorld = environment.getOrDefault("MINOSOFT_LOCAL_WORLD", "false").equalsIgnoreCase("true");
+        debugGpuMemoryLeaks = environment.getOrDefault("MINOSOFT_DEBUG_GPU_MEMORY_LEAKS", "false").equalsIgnoreCase("true");
         worldSeed = parseLong(environment.getOrDefault("MINOSOFT_WORLD_SEED", "6072333650475958863"), "MINOSOFT_WORLD_SEED");
         worldGenerator = normalizeWorldGenerator(environment.getOrDefault("MINOSOFT_WORLD_GENERATOR", ""));
     }
@@ -297,6 +302,11 @@ public final class Play {
             debugCompare(discovery, selection, arguments);
             return;
         }
+        if (command.equals("visual") && !arguments.isEmpty() && arguments.get(0).equals("motion-noise")) {
+            arguments.remove(0);
+            debugMotionNoise(discovery, selection, arguments);
+            return;
+        }
 
         DebugEndpointRole defaultRole = Set.of("visual", "input", "state", "mods").contains(command) ? DebugEndpointRole.CLIENT : null;
         DebugEndpointDescriptor endpoint = selectDebugEndpoint(discovery, selection, defaultRole);
@@ -320,7 +330,7 @@ public final class Play {
                     printDebugJson(client.request("mods.debug"), selection.json);
                 }
                 case "blocks", "aoi" -> debugBlocks(client, command.equals("blocks") ? "world.blocks.sample" : "world.aoi", arguments, selection.json);
-                case "visual" -> debugVisual(client, arguments, selection.json);
+                case "visual" -> debugVisual(client, arguments, endpoint.getTrajectory(), selection.json);
                 case "input" -> debugInput(client, arguments, selection.json);
                 case "request" -> {
                     require(!arguments.isEmpty(), "Usage: ./play.sh debug request OPERATION [JSON_BODY]");
@@ -573,19 +583,26 @@ public final class Play {
         return endpoints.get(0);
     }
 
-    private void debugVisual(DebugClient client, List<String> arguments, boolean json) throws Exception {
-        require(!arguments.isEmpty(), "Usage: ./play.sh debug visual capture OUTPUT | sample [--point X,Y] [--region X,Y,W,H]");
+    private void debugVisual(DebugClient client, List<String> arguments, String endpointTrajectory, boolean json) throws Exception {
+        require(!arguments.isEmpty(), "Usage: ./play.sh debug visual capture [OUTPUT] | sample [--point X,Y] [--region X,Y,W,H] | motion-noise [OPTIONS]");
         String action = arguments.remove(0);
         if (action.equals("capture")) {
-            require(arguments.size() == 1, "Usage: ./play.sh debug visual capture OUTPUT");
-            Path output = resolveProjectPath(arguments.remove(0));
+            require(arguments.size() <= 1, "Usage: ./play.sh debug visual capture [OUTPUT]");
             DebugResponse response = client.requestWithAttachment("visual.capture", DebugJson.MAPPER.createObjectNode(), 10_000);
             require(response.hasAttachment(), "visual.capture returned no image attachment.");
+            require(response.attachment().length <= MAX_SCREENSHOT_FILE_BYTES, "visual.capture exceeded the screenshot byte limit.");
+            String actualHash = HexFormat.of().formatHex(digest("sha256").digest(response.attachment()));
+            String expectedHash = response.result().path("sha256").asText("");
+            require(expectedHash.isBlank() || expectedHash.equals(actualHash), "visual.capture attachment hash did not match its metadata.");
+            Path output = arguments.isEmpty()
+                ? defaultAgentScreenshotPath(response, endpointTrajectory)
+                : resolveProjectPath(arguments.remove(0));
             if (output.getParent() != null) Files.createDirectories(output.getParent());
             Files.write(output, response.attachment());
             ObjectNode result = response.result().deepCopy();
             result.put("output", output.toString());
             result.put("bytes", response.attachment().length);
+            result.put("verifiedSha256", actualHash);
             printDebugJson(result, json);
             return;
         }
@@ -605,6 +622,462 @@ public final class Play {
             } else throw failure("Unknown debug visual sample option: " + option);
         }
         printDebugJson(client.request("visual.sample", body, 10_000), json);
+    }
+
+    private void debugMotionNoise(DebugDiscovery discovery, DebugSelection selection, List<String> arguments) throws Exception {
+        require(selection.role == null, "motion-noise requires both client and server endpoints; omit --role.");
+        require(selection.endpointId == null, "motion-noise requires both client and server endpoints; select them with --trajectory.");
+        MotionNoiseOptions options = parseMotionNoiseOptions(arguments, selection.trajectory);
+        DebugEndpointDescriptor clientEndpoint = selectDebugEndpoint(discovery, selection.copy(DebugEndpointRole.CLIENT), DebugEndpointRole.CLIENT);
+        DebugEndpointDescriptor serverEndpoint = selectDebugEndpoint(discovery, selection.copy(DebugEndpointRole.SERVER), DebugEndpointRole.SERVER);
+        Files.createDirectories(options.output);
+
+        ObjectNode report = DebugJson.MAPPER.createObjectNode();
+        report.put("schemaVersion", 1);
+        report.put("startedAt", Instant.now().toString());
+        report.put("trajectory", selection.trajectory);
+        report.set("clientEndpoint", endpointJson(clientEndpoint));
+        report.set("serverEndpoint", endpointJson(serverEndpoint));
+        report.put("output", options.output.toString());
+        report.put("protocol", "same-pose-yaw-return-with-equal-frame-stationary-control");
+        ObjectNode configuration = report.putObject("configuration");
+        configuration.put("yawDelta", options.yawDelta);
+        configuration.put("samples", options.samples);
+        configuration.put("settleFrames", options.settleFrames);
+        configuration.put("awayFrames", options.awayFrames);
+        configuration.put("pixelThreshold", options.pixelThreshold);
+        configuration.put("flatGradientThreshold", options.flatGradientThreshold);
+        ArrayNode configuredRecovery = configuration.putArray("recoveryFrames");
+        for (int frame : options.recoveryFrames) configuredRecovery.add(frame);
+        if (options.region != null) configuration.set("region", motionRegionJson(options.region));
+
+        double[][] motionLuma = new double[options.samples][options.recoveryFrames.length];
+        double[][] controlLuma = new double[options.samples][options.recoveryFrames.length];
+        double[][] motionFlat = new double[options.samples][options.recoveryFrames.length];
+        double[][] controlFlat = new double[options.samples][options.recoveryFrames.length];
+        ArrayNode samples = report.putArray("samples");
+        MotionPose initialPose = null;
+        MotionPose lastCommandedPose = null;
+        boolean poseConflict = false;
+        boolean backgroundThrottleOwned = false;
+        int completedSamples = 0;
+
+        try (DebugClient client = DebugClient.connect(DebugPaths.system(), clientEndpoint);
+             DebugClient server = DebugClient.connect(DebugPaths.system(), serverEndpoint)) {
+            ObjectNode disableThrottle = DebugJson.MAPPER.createObjectNode()
+                .put("expected", "default")
+                .put("value", "disabled");
+            try {
+                report.set("backgroundThrottleBegin", client.request("visual.background-throttle", disableThrottle, 5_000));
+                backgroundThrottleOwned = true;
+            } catch (DebugClientException conflict) {
+                report.put("backgroundThrottleWarning", conflict.getMessage());
+            }
+            JsonNode initialStatus = client.request("core.status", DebugJson.MAPPER.createObjectNode(), 5_000);
+            report.set("initialStatus", initialStatus);
+            initialPose = sampleClientPose(client);
+            report.set("initialPose", motionPoseJson(initialPose));
+            MotionPose awayPose = initialPose.withYaw(initialPose.yaw + options.yawDelta);
+
+            for (int sampleIndex = 0; sampleIndex < options.samples; sampleIndex++) {
+                waitFrames(client, options.settleFrames, 15_000);
+                MotionFrame motionBase = captureMotionFrame(client);
+
+                teleport(server, awayPose);
+                lastCommandedPose = awayPose;
+                waitForPose(client, awayPose, 10_000);
+                waitFrames(client, options.awayFrames, 10_000);
+
+                teleport(server, initialPose);
+                lastCommandedPose = initialPose;
+                waitForPose(client, initialPose, 10_000);
+
+                MotionFrame[] motionFrames = new MotionFrame[options.recoveryFrames.length];
+                long returnFrame = currentFrame(client);
+                for (int checkpoint = 0; checkpoint < options.recoveryFrames.length; checkpoint++) {
+                    waitUntilFrame(client, returnFrame + options.recoveryFrames[checkpoint], 15_000);
+                    motionFrames[checkpoint] = captureMotionFrame(client);
+                }
+
+                waitFrames(client, options.settleFrames, 15_000);
+                MotionFrame controlBase = captureMotionFrame(client);
+                MotionFrame[] controlFrames = new MotionFrame[options.recoveryFrames.length];
+                long[] actualDeltas = new long[options.recoveryFrames.length];
+                for (int checkpoint = 0; checkpoint < options.recoveryFrames.length; checkpoint++) {
+                    actualDeltas[checkpoint] = Math.max(0L, motionFrames[checkpoint].frame - motionBase.frame);
+                    waitUntilFrame(client, controlBase.frame + actualDeltas[checkpoint], 15_000);
+                    controlFrames[checkpoint] = captureMotionFrame(client);
+                }
+
+                ObjectNode sample = samples.addObject();
+                sample.put("index", sampleIndex);
+                sample.put("motionBaseFrame", motionBase.frame);
+                sample.put("returnFrame", returnFrame);
+                sample.put("controlBaseFrame", controlBase.frame);
+                ArrayNode checkpoints = sample.putArray("checkpoints");
+                for (int checkpoint = 0; checkpoint < options.recoveryFrames.length; checkpoint++) {
+                    MotionNoiseAnalyzer.Metrics motion = MotionNoiseAnalyzer.compare(
+                        motionBase.image,
+                        motionFrames[checkpoint].image,
+                        options.region,
+                        options.pixelThreshold,
+                        options.flatGradientThreshold
+                    );
+                    MotionNoiseAnalyzer.Metrics control = MotionNoiseAnalyzer.compare(
+                        controlBase.image,
+                        controlFrames[checkpoint].image,
+                        options.region,
+                        options.pixelThreshold,
+                        options.flatGradientThreshold
+                    );
+                    motionLuma[sampleIndex][checkpoint] = motion.meanAbsoluteLumaError();
+                    controlLuma[sampleIndex][checkpoint] = control.meanAbsoluteLumaError();
+                    motionFlat[sampleIndex][checkpoint] = motion.flatChangedRatio();
+                    controlFlat[sampleIndex][checkpoint] = control.flatChangedRatio();
+
+                    ObjectNode measurement = checkpoints.addObject();
+                    measurement.put("requestedRecoveryFrames", options.recoveryFrames[checkpoint]);
+                    measurement.put("actualRecoveryFrames", Math.max(0L, motionFrames[checkpoint].frame - returnFrame));
+                    measurement.put("actualMotionFrameDelta", actualDeltas[checkpoint]);
+                    measurement.put("motionFrame", motionFrames[checkpoint].frame);
+                    measurement.put("controlFrame", controlFrames[checkpoint].frame);
+                    measurement.set("motion", motionMetricsJson(motion));
+                    measurement.set("control", motionMetricsJson(control));
+                    ObjectNode excess = measurement.putObject("motionExcess");
+                    excess.put("meanAbsoluteLumaError", motion.meanAbsoluteLumaError() - control.meanAbsoluteLumaError());
+                    excess.put("flatChangedRatio", motion.flatChangedRatio() - control.flatChangedRatio());
+                    excess.put("lumaRatio", safeMetricRatio(motion.meanAbsoluteLumaError(), control.meanAbsoluteLumaError()));
+                    excess.put("flatChangedRatioRatio", safeMetricRatio(motion.flatChangedRatio(), control.flatChangedRatio()));
+                }
+
+                if (sampleIndex == 0) {
+                    ArrayNode artifacts = sample.putArray("artifacts");
+                    writeMotionArtifact(options.output, "sample-0-motion-base.png", motionBase.image, options.region, artifacts);
+                    writeMotionArtifact(options.output, "sample-0-control-base.png", controlBase.image, options.region, artifacts);
+                    for (int checkpoint = 0; checkpoint < options.recoveryFrames.length; checkpoint++) {
+                        String suffix = Integer.toString(options.recoveryFrames[checkpoint]);
+                        writeMotionArtifact(options.output, "sample-0-motion-" + suffix + ".png", motionFrames[checkpoint].image, options.region, artifacts);
+                        writeMotionArtifact(options.output, "sample-0-control-" + suffix + ".png", controlFrames[checkpoint].image, options.region, artifacts);
+                    }
+                }
+                completedSamples++;
+            }
+
+            JsonNode finalStatus = client.request("core.status", DebugJson.MAPPER.createObjectNode(), 5_000);
+            report.set("finalStatus", finalStatus);
+            ObjectNode validity = report.putObject("measurementValidity");
+            double minimumFps = Math.min(initialStatus.path("fps").asDouble(0.0), finalStatus.path("fps").asDouble(0.0));
+            long maximumMedianFrameNanos = Math.max(
+                initialStatus.path("medianFrameNanos").asLong(Long.MAX_VALUE),
+                finalStatus.path("medianFrameNanos").asLong(Long.MAX_VALUE)
+            );
+            boolean representativeFrameRate = minimumFps >= 20.0 && maximumMedianFrameNanos <= 50_000_000L;
+            validity.put("representativeFrameRate", representativeFrameRate);
+            validity.put("minimumObservedFps", minimumFps);
+            validity.put("maximumMedianFrameNanos", maximumMedianFrameNanos);
+            if (!representativeFrameRate) {
+                validity.put("warning", "Client frame rate was below 20 FPS or median frame time exceeded 50 ms; repeat with the client focused before using this as a camera-motion acceptance result.");
+            }
+        } catch (Exception error) {
+            report.put("error", error.getMessage() == null ? error.getClass().getName() : error.getMessage());
+            throw error;
+        } finally {
+            if (initialPose != null && lastCommandedPose != null && !samePose(lastCommandedPose, initialPose)) {
+                try {
+                    DebugEndpointDescriptor liveClientEndpoint = selectDebugEndpoint(discovery, selection.copy(DebugEndpointRole.CLIENT), DebugEndpointRole.CLIENT);
+                    DebugEndpointDescriptor liveServerEndpoint = selectDebugEndpoint(discovery, selection.copy(DebugEndpointRole.SERVER), DebugEndpointRole.SERVER);
+                    try (DebugClient client = DebugClient.connect(DebugPaths.system(), liveClientEndpoint);
+                         DebugClient server = DebugClient.connect(DebugPaths.system(), liveServerEndpoint)) {
+                        MotionPose current = sampleClientPose(client);
+                        if (samePose(current, lastCommandedPose)) {
+                            teleport(server, initialPose);
+                            waitForPose(client, initialPose, 10_000);
+                        } else {
+                            poseConflict = true;
+                        }
+                    }
+                } catch (Exception restoreError) {
+                    report.put("restoreError", restoreError.getMessage() == null ? restoreError.getClass().getName() : restoreError.getMessage());
+                }
+            }
+            if (backgroundThrottleOwned) {
+                try {
+                    DebugEndpointDescriptor liveClientEndpoint = selectDebugEndpoint(discovery, selection.copy(DebugEndpointRole.CLIENT), DebugEndpointRole.CLIENT);
+                    try (DebugClient client = DebugClient.connect(DebugPaths.system(), liveClientEndpoint)) {
+                        ObjectNode restoreThrottle = DebugJson.MAPPER.createObjectNode()
+                            .put("expected", "disabled")
+                            .put("value", "default");
+                        report.set("backgroundThrottleEnd", client.request("visual.background-throttle", restoreThrottle, 5_000));
+                    }
+                } catch (Exception restoreError) {
+                    report.put("backgroundThrottleRestoreError", restoreError.getMessage() == null ? restoreError.getClass().getName() : restoreError.getMessage());
+                }
+            }
+            report.put("poseConflict", poseConflict);
+            report.put("completedSamples", completedSamples);
+            report.put("finishedAt", Instant.now().toString());
+            addMotionSummary(report, options, completedSamples, motionLuma, controlLuma, motionFlat, controlFlat);
+            Path reportPath = options.output.resolve("report.json");
+            DebugJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
+            report.put("report", reportPath.toString());
+        }
+        printDebugJson(report, selection.json);
+    }
+
+    private MotionNoiseOptions parseMotionNoiseOptions(List<String> arguments, String trajectory) {
+        double yawDelta = 5.0;
+        int samples = 2;
+        int settleFrames = 32;
+        int awayFrames = 4;
+        int pixelThreshold = 8;
+        int flatGradientThreshold = 12;
+        int[] recoveryFrames = new int[]{0, 4, 16, 32};
+        MotionNoiseAnalyzer.Region region = null;
+        Path output = runDirectory.resolve("motion-noise").resolve(safeFileName(trajectory)).resolve(Instant.now().toString().replace(':', '-'));
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            require(!arguments.isEmpty(), option + " requires a value.");
+            String value = arguments.remove(0);
+            switch (option) {
+                case "--yaw-delta" -> yawDelta = parseFiniteDouble(value, option);
+                case "--samples" -> samples = parseBoundedInt(value, option, 1, 8);
+                case "--settle-frames" -> settleFrames = parseBoundedInt(value, option, 0, 240);
+                case "--away-frames" -> awayFrames = parseBoundedInt(value, option, 0, 240);
+                case "--pixel-threshold" -> pixelThreshold = parseBoundedInt(value, option, 0, 255);
+                case "--flat-gradient-threshold" -> flatGradientThreshold = parseBoundedInt(value, option, 0, 255);
+                case "--recovery-frames" -> recoveryFrames = parseRecoveryFrames(value);
+                case "--region" -> {
+                    int[] parsed = parseInts(value, 4, option);
+                    region = new MotionNoiseAnalyzer.Region(parsed[0], parsed[1], parsed[2], parsed[3]);
+                }
+                case "--output" -> output = resolveProjectPath(value);
+                default -> throw failure("Unknown motion-noise option: " + option);
+            }
+        }
+        require(yawDelta >= 0.1 && yawDelta <= 45.0, "--yaw-delta must be between 0.1 and 45 degrees.");
+        return new MotionNoiseOptions(yawDelta, samples, settleFrames, awayFrames, pixelThreshold, flatGradientThreshold, recoveryFrames, region, output);
+    }
+
+    private static int[] parseRecoveryFrames(String value) {
+        String[] parts = value.split(",", -1);
+        require(parts.length >= 1 && parts.length <= 8, "--recovery-frames accepts one to eight comma-separated values.");
+        TreeSet<Integer> frames = new TreeSet<>();
+        for (String part : parts) frames.add(parseBoundedInt(part, "--recovery-frames", 0, 240));
+        int[] result = new int[frames.size()];
+        int index = 0;
+        for (int frame : frames) result[index++] = frame;
+        return result;
+    }
+
+    private static int parseBoundedInt(String value, String label, int minimum, int maximum) {
+        try {
+            int parsed = Integer.parseInt(value);
+            require(parsed >= minimum && parsed <= maximum, label + " must be between " + minimum + " and " + maximum + ".");
+            return parsed;
+        } catch (NumberFormatException error) {
+            throw failure(label + " requires an integer.");
+        }
+    }
+
+    private static double parseFiniteDouble(String value, String label) {
+        try {
+            double parsed = Double.parseDouble(value);
+            require(Double.isFinite(parsed), label + " requires a finite number.");
+            return parsed;
+        } catch (NumberFormatException error) {
+            throw failure(label + " requires a number.");
+        }
+    }
+
+    private static MotionPose sampleClientPose(DebugClient client) throws IOException {
+        JsonNode state = client.request("state.sample", DebugJson.MAPPER.createObjectNode().put("view", "client.player"), 5_000);
+        JsonNode player = state.path("player");
+        JsonNode world = state.path("worldState");
+        require(player.isObject() && world.isObject(), "Client did not return a playing player pose.");
+        String dimension = world.path("dimension").asText("");
+        require(!dimension.isBlank(), "Client player pose has no dimension.");
+        return new MotionPose(
+            dimension,
+            player.path("x").asDouble(),
+            player.path("y").asDouble(),
+            player.path("z").asDouble(),
+            player.path("yaw").asDouble(),
+            player.path("pitch").asDouble()
+        );
+    }
+
+    private static void teleport(DebugClient server, MotionPose pose) throws IOException {
+        ObjectNode body = DebugJson.MAPPER.createObjectNode();
+        body.put("dimension", pose.dimension);
+        body.putObject("position").put("x", pose.x).put("y", pose.y).put("z", pose.z);
+        body.put("yaw", pose.yaw).put("pitch", pose.pitch);
+        server.request("world.teleport-player", body, 5_000);
+    }
+
+    private static void waitForPose(DebugClient client, MotionPose expected, long timeoutMillis) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        MotionPose current;
+        do {
+            current = sampleClientPose(client);
+            if (samePose(current, expected)) return;
+            Thread.sleep(20L);
+        } while (System.nanoTime() < deadline);
+        throw failure("Timed out waiting for the client camera pose; another session may have moved it.");
+    }
+
+    private static boolean samePose(MotionPose first, MotionPose second) {
+        return first.dimension.equals(second.dimension) &&
+            Math.abs(first.x - second.x) <= 0.01 &&
+            Math.abs(first.y - second.y) <= 0.01 &&
+            Math.abs(first.z - second.z) <= 0.01 &&
+            angleDistance(first.yaw, second.yaw) <= 0.05 &&
+            Math.abs(first.pitch - second.pitch) <= 0.05;
+    }
+
+    private static double angleDistance(double first, double second) {
+        double delta = (first - second) % 360.0;
+        if (delta > 180.0) delta -= 360.0;
+        if (delta < -180.0) delta += 360.0;
+        return Math.abs(delta);
+    }
+
+    private static long currentFrame(DebugClient client) throws IOException {
+        return client.request("core.status", DebugJson.MAPPER.createObjectNode(), 5_000).path("frame").asLong(-1L);
+    }
+
+    private static void waitFrames(DebugClient client, long frames, long timeoutMillis) throws Exception {
+        long current = currentFrame(client);
+        require(current >= 0L, "Client status did not expose a render frame.");
+        waitUntilFrame(client, current + frames, timeoutMillis);
+    }
+
+    private static void waitUntilFrame(DebugClient client, long targetFrame, long timeoutMillis) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        long current;
+        do {
+            current = currentFrame(client);
+            if (current >= targetFrame) return;
+            Thread.sleep(5L);
+        } while (System.nanoTime() < deadline);
+        throw failure("Timed out waiting for render frame " + targetFrame + " (last frame " + current + ").");
+    }
+
+    private static MotionFrame captureMotionFrame(DebugClient client) throws IOException {
+        DebugResponse response = client.requestWithAttachment("visual.capture", DebugJson.MAPPER.createObjectNode(), 15_000);
+        require(response.hasAttachment(), "visual.capture returned no image attachment.");
+        require(response.attachment().length <= MAX_SCREENSHOT_FILE_BYTES, "visual.capture exceeded the screenshot byte limit.");
+        BufferedImage image = ImageIO.read(new ByteArrayInputStream(response.attachment()));
+        require(image != null, "visual.capture did not return a decodable PNG.");
+        require((long) image.getWidth() * image.getHeight() <= MAX_SCREENSHOT_PIXELS, "visual.capture exceeded the screenshot pixel limit.");
+        return new MotionFrame(response.result().path("frame").asLong(-1L), image);
+    }
+
+    private static ObjectNode motionMetricsJson(MotionNoiseAnalyzer.Metrics metrics) {
+        return DebugJson.MAPPER.createObjectNode()
+            .put("pixels", metrics.pixels())
+            .put("changedPixels", metrics.changedPixels())
+            .put("changedRatio", metrics.changedRatio())
+            .put("meanAbsoluteRgbError", metrics.meanAbsoluteRgbError())
+            .put("meanAbsoluteLumaError", metrics.meanAbsoluteLumaError())
+            .put("rootMeanSquareLumaError", metrics.rootMeanSquareLumaError())
+            .put("p95LumaError", metrics.p95LumaError())
+            .put("flatPixels", metrics.flatPixels())
+            .put("flatChangedPixels", metrics.flatChangedPixels())
+            .put("flatChangedRatio", metrics.flatChangedRatio())
+            .put("flatMeanAbsoluteLumaError", metrics.flatMeanAbsoluteLumaError());
+    }
+
+    private static ObjectNode motionPoseJson(MotionPose pose) {
+        return DebugJson.MAPPER.createObjectNode()
+            .put("dimension", pose.dimension)
+            .put("x", pose.x).put("y", pose.y).put("z", pose.z)
+            .put("yaw", pose.yaw).put("pitch", pose.pitch);
+    }
+
+    private static ObjectNode motionRegionJson(MotionNoiseAnalyzer.Region region) {
+        return DebugJson.MAPPER.createObjectNode()
+            .put("x", region.x()).put("y", region.y()).put("width", region.width()).put("height", region.height());
+    }
+
+    private static double safeMetricRatio(double numerator, double denominator) {
+        if (denominator == 0.0) return numerator == 0.0 ? 1.0 : Double.POSITIVE_INFINITY;
+        return numerator / denominator;
+    }
+
+    private static void writeMotionArtifact(
+        Path directory,
+        String name,
+        BufferedImage image,
+        MotionNoiseAnalyzer.Region region,
+        ArrayNode artifacts
+    ) throws IOException {
+        BufferedImage output = image;
+        if (region != null) {
+            require(
+                region.x() >= 0 && region.y() >= 0 && region.width() > 0 && region.height() > 0 &&
+                    (long) region.x() + region.width() <= image.getWidth() &&
+                    (long) region.y() + region.height() <= image.getHeight(),
+                "Motion-noise region exceeds captured image dimensions."
+            );
+            output = image.getSubimage(region.x(), region.y(), region.width(), region.height());
+        }
+        Path path = directory.resolve(name);
+        require(ImageIO.write(output, "png", path.toFile()), "No PNG writer is available.");
+        artifacts.add(path.toString());
+    }
+
+    private static void addMotionSummary(
+        ObjectNode report,
+        MotionNoiseOptions options,
+        int completedSamples,
+        double[][] motionLuma,
+        double[][] controlLuma,
+        double[][] motionFlat,
+        double[][] controlFlat
+    ) {
+        ArrayNode summary = report.putArray("summary");
+        if (completedSamples == 0) return;
+        for (int checkpoint = 0; checkpoint < options.recoveryFrames.length; checkpoint++) {
+            double meanMotionLuma = columnMean(motionLuma, completedSamples, checkpoint);
+            double meanControlLuma = columnMean(controlLuma, completedSamples, checkpoint);
+            double meanMotionFlat = columnMean(motionFlat, completedSamples, checkpoint);
+            double meanControlFlat = columnMean(controlFlat, completedSamples, checkpoint);
+            summary.addObject()
+                .put("requestedRecoveryFrames", options.recoveryFrames[checkpoint])
+                .put("motionMeanAbsoluteLumaError", meanMotionLuma)
+                .put("controlMeanAbsoluteLumaError", meanControlLuma)
+                .put("excessMeanAbsoluteLumaError", meanMotionLuma - meanControlLuma)
+                .put("lumaRatio", safeMetricRatio(meanMotionLuma, meanControlLuma))
+                .put("motionFlatChangedRatio", meanMotionFlat)
+                .put("controlFlatChangedRatio", meanControlFlat)
+                .put("excessFlatChangedRatio", meanMotionFlat - meanControlFlat)
+                .put("flatChangedRatioRatio", safeMetricRatio(meanMotionFlat, meanControlFlat));
+        }
+    }
+
+    private static double columnMean(double[][] values, int rows, int column) {
+        double sum = 0.0;
+        for (int row = 0; row < rows; row++) sum += values[row][column];
+        return sum / rows;
+    }
+
+    private Path defaultAgentScreenshotPath(DebugResponse response, String endpointTrajectory) {
+        Path directory = runDirectory.resolve("agent-screenshots").resolve(safeFileName(endpointTrajectory));
+        String attachmentName = response.attachmentName();
+        if (attachmentName == null || attachmentName.isBlank()) {
+            attachmentName = "minosoft-" + response.result().path("frame").asLong() + ".png";
+        }
+        String filename = safeFileName(Path.of(attachmentName).getFileName().toString());
+        if (filename.isBlank()) filename = "minosoft-capture.png";
+        if (!filename.toLowerCase(Locale.ROOT).endsWith(".png")) filename += ".png";
+
+        Path output = directory.resolve(filename);
+        String stem = filename.substring(0, filename.length() - 4);
+        for (int index = 1; Files.exists(output); index++) {
+            require(index <= 10_000, "Too many agent screenshots have the same filename in " + directory + ".");
+            output = directory.resolve(stem + "_" + index + ".png");
+        }
+        return output;
     }
 
     private void debugInput(DebugClient client, List<String> arguments, boolean json) throws IOException {
@@ -790,7 +1263,14 @@ public final class Play {
 
     private void runScreenshot(List<String> rawArguments) throws Exception {
         List<String> arguments = new ArrayList<>(rawArguments);
-        require(!arguments.isEmpty() && arguments.remove(0).equals("compare"),
+        require(!arguments.isEmpty(),
+            "Usage: ./play.sh screenshot compare BASELINE ACTUAL [THRESHOLDS] | crop INPUT OUTPUT --region X,Y,W,H [--json]");
+        String action = arguments.remove(0);
+        if (action.equals("crop")) {
+            runScreenshotCrop(arguments);
+            return;
+        }
+        require(action.equals("compare"),
             "Usage: ./play.sh screenshot compare BASELINE ACTUAL [--pixel-threshold N] [--max-changed-ratio N] [--max-mean-error N] [--json]");
         require(arguments.size() >= 2, "screenshot compare requires BASELINE and ACTUAL PNG files.");
         Path baseline = resolveProjectPath(arguments.remove(0));
@@ -835,6 +1315,35 @@ public final class Play {
         require(passed, "Screenshot regression comparison failed.");
     }
 
+    private void runScreenshotCrop(List<String> arguments) throws Exception {
+        require(arguments.size() >= 2, "screenshot crop requires INPUT and OUTPUT PNG files.");
+        Path input = resolveProjectPath(arguments.remove(0));
+        Path output = resolveProjectPath(arguments.remove(0));
+        ScreenshotRegion region = null;
+        boolean json = false;
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            if (option.equals("--region")) {
+                require(!arguments.isEmpty(), "--region requires X,Y,W,H.");
+                region = parseScreenshotRegion(arguments.remove(0));
+            } else if (option.startsWith("--region=")) {
+                region = parseScreenshotRegion(option.substring("--region=".length()));
+            } else if (option.equals("--json")) {
+                json = true;
+            } else {
+                throw failure("Unknown screenshot crop option: " + option);
+            }
+        }
+        require(region != null, "screenshot crop requires --region X,Y,W,H.");
+        ScreenshotCrop crop = cropScreenshot(input, output, region);
+        ObjectNode result = DebugJson.MAPPER.createObjectNode();
+        result.put("input", input.toString()).put("output", output.toString());
+        result.put("sourceWidth", crop.sourceWidth).put("sourceHeight", crop.sourceHeight);
+        result.put("x", region.x).put("y", region.y);
+        result.put("width", region.width).put("height", region.height);
+        printDebugJson(result, json);
+    }
+
     private void executeScenarioStep(JsonNode step, Path scenarioFile, Path artifacts, String caseName, int index,
                                      boolean updateScreenshots, ObjectNode report) throws Exception {
         require(step.isObject(), "Scenario step " + (index + 1) + " must be an object.");
@@ -871,6 +1380,24 @@ public final class Play {
                         DebugResponse response = client.requestWithAttachment("visual.capture", DebugJson.MAPPER.createObjectNode(), 10_000);
                         require(response.hasAttachment(), "visual.capture returned no PNG.");
                         Files.write(actual, response.attachment());
+                    }
+                    JsonNode regionNode = step.path("region");
+                    if (!regionNode.isMissingNode()) {
+                        ScreenshotRegion region = parseScreenshotRegion(regionNode);
+                        ScreenshotCrop crop = cropScreenshot(actual, actual, region);
+                        if (step.has("sourceWidth")) {
+                            require(crop.sourceWidth == step.path("sourceWidth").asInt(),
+                                "Screenshot source width differs: expected " + step.path("sourceWidth").asInt()
+                                    + ", got " + crop.sourceWidth);
+                        }
+                        if (step.has("sourceHeight")) {
+                            require(crop.sourceHeight == step.path("sourceHeight").asInt(),
+                                "Screenshot source height differs: expected " + step.path("sourceHeight").asInt()
+                                    + ", got " + crop.sourceHeight);
+                        }
+                        report.putArray("region")
+                            .add(region.x).add(region.y).add(region.width).add(region.height);
+                        report.put("sourceWidth", crop.sourceWidth).put("sourceHeight", crop.sourceHeight);
                     }
                     if (updateScreenshots) {
                         Files.createDirectories(baseline.getParent());
@@ -970,7 +1497,7 @@ public final class Play {
                 int left = expected.getRGB(x, y);
                 int right = observed.getRGB(x, y);
                 boolean pixelChanged = false;
-                for (int shift : new int[] {24, 16, 8, 0}) {
+                for (int shift : ARGB_CHANNEL_SHIFTS) {
                     int error = Math.abs(((left >>> shift) & 0xFF) - ((right >>> shift) & 0xFF));
                     totalError += error;
                     maxError = Math.max(maxError, error);
@@ -982,6 +1509,73 @@ public final class Play {
         return new ScreenshotComparison(expected.getWidth(), expected.getHeight(), changed,
             pixels == 0 ? 0.0 : (double) changed / pixels,
             pixels == 0 ? 0.0 : (double) totalError / (pixels * 4L), maxError);
+    }
+
+    private static ScreenshotRegion parseScreenshotRegion(String value) {
+        String[] fields = value.split(",", -1);
+        require(fields.length == 4, "Screenshot region must be X,Y,W,H.");
+        try {
+            return validatedScreenshotRegion(
+                Integer.parseInt(fields[0]),
+                Integer.parseInt(fields[1]),
+                Integer.parseInt(fields[2]),
+                Integer.parseInt(fields[3])
+            );
+        } catch (NumberFormatException error) {
+            throw failure("Screenshot region must contain integers: " + value);
+        }
+    }
+
+    private static ScreenshotRegion parseScreenshotRegion(JsonNode value) {
+        require(value.isArray() && value.size() == 4, "Screenshot region must be [x,y,width,height].");
+        for (JsonNode field : value) {
+            require(field.isIntegralNumber() && field.canConvertToInt(),
+                "Screenshot region fields must be integers.");
+        }
+        return validatedScreenshotRegion(
+            value.get(0).asInt(),
+            value.get(1).asInt(),
+            value.get(2).asInt(),
+            value.get(3).asInt()
+        );
+    }
+
+    private static ScreenshotRegion validatedScreenshotRegion(int x, int y, int width, int height) {
+        require(x >= 0 && y >= 0, "Screenshot region origin must be nonnegative.");
+        require(width > 0 && height > 0, "Screenshot region dimensions must be positive.");
+        require((long) width * height <= MAX_SCREENSHOT_PIXELS,
+            "Screenshot region exceeds the " + MAX_SCREENSHOT_PIXELS + " pixel limit.");
+        return new ScreenshotRegion(x, y, width, height);
+    }
+
+    private static ScreenshotCrop cropScreenshot(Path input, Path output, ScreenshotRegion region) throws IOException {
+        BufferedImage source = readBoundedImage(input);
+        require((long) region.x + region.width <= source.getWidth()
+                && (long) region.y + region.height <= source.getHeight(),
+            "Screenshot region " + region.x + "," + region.y + "," + region.width + "," + region.height
+                + " exceeds source dimensions " + source.getWidth() + "x" + source.getHeight() + ".");
+        BufferedImage cropped = new BufferedImage(region.width, region.height, BufferedImage.TYPE_INT_ARGB);
+        var graphics = cropped.createGraphics();
+        try {
+            graphics.drawImage(
+                source,
+                0,
+                0,
+                region.width,
+                region.height,
+                region.x,
+                region.y,
+                region.x + region.width,
+                region.y + region.height,
+                null
+            );
+        } finally {
+            graphics.dispose();
+        }
+        Path parent = output.toAbsolutePath().normalize().getParent();
+        if (parent != null) Files.createDirectories(parent);
+        require(ImageIO.write(cropped, "png", output.toFile()), "Could not encode cropped screenshot: " + output);
+        return new ScreenshotCrop(source.getWidth(), source.getHeight());
     }
 
     private static BufferedImage readBoundedImage(Path path) throws IOException {
@@ -1675,6 +2269,8 @@ public final class Play {
                 canaryEnabled = true;
             } else if (option.equals("--local-world")) {
                 localWorld = true;
+            } else if (option.equals("--debug-gpu-memory-leaks")) {
+                debugGpuMemoryLeaks = true;
             } else if (option.equals("--world-seed")) {
                 require(!arguments.isEmpty(), "--world-seed requires a signed integer.");
                 worldSeed = parseLong(arguments.remove(0), "--world-seed");
@@ -1797,8 +2393,8 @@ public final class Play {
         runInherited(List.of(project.resolve(isWindows() ? "gradlew.bat" : "gradlew").toString(), "--quiet", ":debug-server-fabric:remapJar"), project);
         Path bridge = project.resolve("debug-server-fabric/build/libs/minosoft-debug-bridge-fabric-1.20.4-0.1.0.jar");
         require(Files.isRegularFile(bridge), "Fabric debug bridge build did not produce " + bridge + ".");
-        PreparedPack support = prepareModpack("fabric-stack", "server-debug");
-        Path supportPack = modpacksDirectory.resolve("fabric-stack");
+        PreparedPack support = prepareModpack(serverModpackName, "server-debug");
+        Path supportPack = modpacksDirectory.resolve(serverModpackName);
         List<Path> serverSupport = new ArrayList<>();
         try (var metadata = Files.list(supportPack.resolve("mods"))) {
             for (Path metadataFile : metadata.filter(path -> path.getFileName().toString().endsWith(".pw.toml")).sorted().collect(Collectors.toList())) {
@@ -1807,7 +2403,7 @@ public final class Play {
             }
         }
         require(serverSupport.stream().anyMatch(path -> path.getFileName().toString().startsWith("fabric-api-")),
-            "The pinned Fabric support pack contains no server-side Fabric API artifact.");
+            "The selected Fabric server support pack contains no server-side Fabric API artifact.");
 
         Files.createDirectories(serverModsDirectory);
         if (Files.isRegularFile(serverManagedModsFile)) {
@@ -1905,6 +2501,7 @@ public final class Play {
         if (account != null && !account.isBlank()) command.add("--account=" + account);
         command.add("--mod-trajectory=" + trajectory);
         command.add("--hot-reload-generation=" + clientGeneration);
+        if (debugGpuMemoryLeaks) command.add("--debug-gpu-memory-leaks");
         if (pack != null) {
             command.add("--fabric-pack=" + pack.view);
             command.add("--home=" + pack.instance.resolve("home"));
@@ -1916,13 +2513,29 @@ public final class Play {
     }
 
     private Process launchSupervisedClient(PreparedPack pack, PreparedCanary canary) throws Exception {
-        if (pack != null) materializeResourcePackProfile(pack);
+        if (pack != null) materializeAssetProfile(pack);
         if (localWorld) {
             System.out.printf("Starting Minosoft with regenerated %s local world seed %d (log: %s)...%n", selectedWorldGenerator(), worldSeed, clientLog);
         } else {
             System.out.printf("Starting Minosoft and connecting to %s (log: %s)...%n", serverAddress, clientLog);
         }
-        Process process = loggedChild(clientCommand(pack, canary), project, clientLog);
+        Map<String, String> childEnvironment = new HashMap<>();
+        if (
+            pack != null &&
+            pack.shaderPack != null &&
+            environment.getOrDefault("MINOSOFT_SHADER_PACK", "").isBlank()
+        ) {
+            childEnvironment.put("MINOSOFT_SHADER_PACK", pack.shaderPack.toString());
+        }
+        if (
+            pack != null &&
+            pack.shaderOptions != null &&
+            !pack.shaderOptions.isBlank() &&
+            environment.getOrDefault("MINOSOFT_SHADER_OPTIONS", "").isBlank()
+        ) {
+            childEnvironment.put("MINOSOFT_SHADER_OPTIONS", pack.shaderOptions);
+        }
+        Process process = loggedChild(clientCommand(pack, canary), project, clientLog, childEnvironment);
         Files.writeString(clientPidFile, process.pid() + System.lineSeparator(), StandardCharsets.UTF_8);
         Thread.sleep(2_000);
         if (!process.isAlive()) {
@@ -1940,7 +2553,7 @@ public final class Play {
         return process;
     }
 
-    private void materializeResourcePackProfile(PreparedPack pack) throws Exception {
+    private void materializeAssetProfile(PreparedPack pack) throws Exception {
         Path profile = pack.instance.resolve("profiles/minosoft/resources/Default.json");
         ObjectNode root;
         if (Files.isRegularFile(profile)) {
@@ -1964,7 +2577,7 @@ public final class Play {
         if (existingPacks != null && existingPacks.isArray()) {
             for (JsonNode existing : existingPacks) {
                 String path = existing.path("path").asText("");
-                if (path.isBlank() || !Path.of(path).toAbsolutePath().normalize().startsWith(modpackStore.resolve("packs"))) {
+                if (path.isBlank() || !isLauncherManagedPack(path)) {
                     preserved.add(existing.deepCopy());
                 }
             }
@@ -1976,7 +2589,30 @@ public final class Play {
             entry.put("type", "ZIP");
             entry.put("path", resourcePack.toAbsolutePath().normalize().toString());
         }
+        for (PreparedContentFixture fixture : pack.contentFixtures) {
+            ObjectNode entry = configured.addObject();
+            entry.put("type", "DIRECTORY");
+            entry.put("path", fixture.resources.toAbsolutePath().normalize().toString());
+        }
         configured.addAll(preserved);
+
+        ArrayNode preservedData = DebugJson.MAPPER.createArrayNode();
+        JsonNode existingDataPacks = assets.get("data_packs");
+        if (existingDataPacks != null && existingDataPacks.isArray()) {
+            for (JsonNode existing : existingDataPacks) {
+                String path = existing.path("path").asText("");
+                if (path.isBlank() || !isLauncherManagedPack(path)) {
+                    preservedData.add(existing.deepCopy());
+                }
+            }
+        }
+        ArrayNode configuredData = assets.putArray("data_packs");
+        for (PreparedContentFixture fixture : pack.contentFixtures) {
+            ObjectNode entry = configuredData.addObject();
+            entry.put("type", "DIRECTORY");
+            entry.put("path", fixture.dataPacks.toAbsolutePath().normalize().toString());
+        }
+        configuredData.addAll(preservedData);
 
         Files.createDirectories(profile.getParent());
         Path candidate = profile.resolveSibling("." + profile.getFileName() + ".resourcepacks." + ProcessHandle.current().pid());
@@ -1986,7 +2622,19 @@ public final class Play {
         } catch (AtomicMoveNotSupportedException error) {
             Files.move(candidate, profile, StandardCopyOption.REPLACE_EXISTING);
         }
-        System.out.println("Configured " + pack.resourcePacks.size() + " managed resource pack(s) in " + profile + ".");
+        System.out.println(
+            "Configured " + (pack.resourcePacks.size() + pack.contentFixtures.size())
+                + " managed resource pack(s) and " + pack.contentFixtures.size()
+                + " managed data pack(s) in " + profile + "."
+        );
+    }
+
+    private boolean isLauncherManagedPack(String value) {
+        try {
+            return Path.of(value).toAbsolutePath().normalize().startsWith(modpackStore.toAbsolutePath().normalize());
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     private void stopClient() throws Exception {
@@ -2478,8 +3126,10 @@ public final class Play {
         Files.createDirectories(modpackStore.resolve("artifacts"));
         Files.createDirectories(packView.resolve("mods"));
         Files.createDirectories(packView.resolve("resourcepacks"));
+        Files.createDirectories(packView.resolve("shaderpacks"));
         Files.createDirectories(packView.resolve("metadata/mods"));
         Files.createDirectories(packView.resolve("metadata/resourcepacks"));
+        Files.createDirectories(packView.resolve("metadata/shaderpacks"));
         Files.createDirectories(instance.resolve("home"));
         Files.createDirectories(instance.resolve("profiles"));
         Files.createDirectories(assets);
@@ -2540,12 +3190,228 @@ public final class Play {
                 resourcePacks.add(stageArtifact(resolved, packView.resolve("resourcepacks")));
             }
         }
+        List<Path> shaderPacks = new ArrayList<>();
+        String shaderOptions = null;
+        Path shaderPacksDirectory = packDirectory.resolve("shaderpacks");
+        if (Files.isDirectory(shaderPacksDirectory)) {
+            List<Path> metadataFiles;
+            try (var files = Files.list(shaderPacksDirectory)) {
+                metadataFiles = files.filter(path -> path.getFileName().toString().endsWith(".pw.toml")).sorted().collect(Collectors.toList());
+            }
+            require(metadataFiles.size() <= 1, "Pack '" + packName + "' declares more than one default shader pack.");
+            for (Path metadataFile : metadataFiles) {
+                String relativeMetadata = packDirectory.relativize(metadataFile).toString().replace('\\', '/');
+                require(indexedPaths.contains(relativeMetadata), "Pack '" + packName + "' index does not include " + relativeMetadata + ".");
+                ResolvedArtifact resolved = resolveArtifact(metadataFile, "shader pack", Set.of("client", "both"));
+                if (resolved == null) continue;
+                require(resolved.filename.toLowerCase(Locale.ROOT).endsWith(".zip"), "Shader pack artifact must be a ZIP: " + resolved.filename);
+                try (ZipFile zip = new ZipFile(resolved.artifact.toFile())) {
+                    require(
+                        zip.stream().anyMatch(entry -> !entry.isDirectory() && entry.getName().replace('\\', '/').contains("shaders/")),
+                        resolved.name + " does not contain a shaders/ tree."
+                    );
+                }
+                copy(metadataFile, packView.resolve("metadata/shaderpacks").resolve(metadataFile.getFileName()));
+                shaderPacks.add(stageArtifact(resolved, packView.resolve("shaderpacks")));
+                shaderOptions = tomlValue(metadataFile, "shader-options");
+                if (shaderOptions != null) {
+                    require(
+                        shaderOptions.matches("[A-Za-z_][A-Za-z0-9_]*=[^;=\\r\\n]+(?:;[A-Za-z_][A-Za-z0-9_]*=[^;=\\r\\n]+)*"),
+                        "Invalid shader-options in " + metadataFile
+                    );
+                }
+            }
+        }
+        List<PreparedContentFixture> contentFixtures = prepareContentFixtures(
+            packDirectory,
+            indexedPaths,
+            instance,
+            packMinecraft,
+            packView.resolve("metadata")
+        );
 
         System.out.printf("Prepared Fabric pack %s (Minecraft %s, Fabric %s).%n", packName, packMinecraft, fabricVersion);
         System.out.println("  immutable view: " + packView);
         System.out.println("  trajectory:     " + instance);
-        System.out.println("  resource packs: " + resourcePacks.size());
-        return new PreparedPack(packView, instance, assets, resourcePacks);
+        System.out.println("  resource packs: " + (resourcePacks.size() + contentFixtures.size()));
+        System.out.println("  shader pack:    " + (shaderPacks.isEmpty() ? "none" : shaderPacks.get(0)));
+        System.out.println("  data packs:     " + contentFixtures.size());
+        System.out.println("  content fixtures: " + contentFixtures.size());
+        return new PreparedPack(
+            packView,
+            instance,
+            assets,
+            resourcePacks,
+            shaderPacks.isEmpty() ? null : shaderPacks.get(0),
+            shaderOptions,
+            contentFixtures
+        );
+    }
+
+    private List<PreparedContentFixture> prepareContentFixtures(
+        Path packDirectory,
+        Set<String> indexedPaths,
+        Path instance,
+        String packMinecraft,
+        Path metadataDirectory
+    ) throws Exception {
+        Path definitions = packDirectory.resolve("fixtures.tsv");
+        if (!Files.exists(definitions)) return List.of();
+        require(Files.isRegularFile(definitions), "Content fixture definition is not a regular file: " + definitions);
+        require(indexedPaths.contains("fixtures.tsv"), "Pack index does not include fixtures.tsv.");
+        require(Files.size(definitions) <= 64 * 1024, "Content fixture definition exceeds 64 KiB: " + definitions);
+        copy(definitions, metadataDirectory.resolve("fixtures.tsv"));
+
+        List<String> lines = Files.readAllLines(definitions, StandardCharsets.UTF_8);
+        require(!lines.isEmpty(), "Content fixture definition is empty: " + definitions);
+        require(lines.get(0).equals("id\tsource\tmanifest_sha256\tresource_files\tdata_files"),
+            "Content fixture definition has an unsupported header: " + definitions);
+        require(lines.size() <= 65, "Content fixture definition exceeds 64 entries: " + definitions);
+
+        Set<String> ids = new HashSet<>();
+        List<PreparedContentFixture> prepared = new ArrayList<>();
+        for (int lineNumber = 1; lineNumber < lines.size(); lineNumber++) {
+            String line = lines.get(lineNumber);
+            if (line.isBlank() || line.startsWith("#")) continue;
+            String[] fields = line.split("\\t", -1);
+            require(fields.length == 5, "Invalid content fixture line " + (lineNumber + 1) + " in " + definitions);
+            String id = fields[0];
+            validateName("content fixture", id);
+            require(ids.add(id), "Duplicate content fixture id '" + id + "'.");
+            Path relative = safeRelativePath(fields[1], "Content fixture '" + id + "' has an unsafe source path.");
+            Path source = project.resolve(relative).normalize();
+            require(source.startsWith(project), "Content fixture '" + id + "' escapes the project.");
+            Path descriptor = source.resolve("fixture.json");
+            Path resources = source.resolve("resources");
+            Path dataPacks = source.resolve("datapacks");
+            require(Files.isRegularFile(descriptor), "Content fixture '" + id + "' has no fixture.json.");
+            require(Files.isRegularFile(resources.resolve("pack.mcmeta")), "Content fixture '" + id + "' has no resource pack metadata.");
+            require(Files.isRegularFile(dataPacks.resolve("pack.mcmeta")), "Content fixture '" + id + "' has no data pack metadata.");
+
+            JsonNode fixture = DebugJson.MAPPER.readTree(descriptor.toFile());
+            require(fixture.isObject(), "Content fixture '" + id + "' descriptor is not an object.");
+            require(packMinecraft.equals(fixture.path("minecraft").asText()),
+                "Content fixture '" + id + "' targets Minecraft " + fixture.path("minecraft").asText() + ", pack targets " + packMinecraft + ".");
+            String expectedManifest = normalizedHash("sha256", fields[2]);
+            require(expectedManifest.equals(fixture.path("output").path("manifest_sha256").asText()),
+                "Content fixture '" + id + "' definition and descriptor manifest disagree.");
+            int expectedResources = parsePositiveInt(fields[3], "resource_files for content fixture '" + id + "'");
+            int expectedData = parsePositiveInt(fields[4], "data_files for content fixture '" + id + "'");
+            require(expectedResources == fixture.path("output").path("resource_files").asInt(-1),
+                "Content fixture '" + id + "' resource count disagrees with fixture.json.");
+            require(expectedData == fixture.path("output").path("data_files").asInt(-1),
+                "Content fixture '" + id + "' data count disagrees with fixture.json.");
+
+            FixtureManifest actual = contentFixtureManifest(source);
+            require(expectedManifest.equals(actual.hash),
+                "Content fixture '" + id + "' manifest mismatch: expected " + expectedManifest + ", got " + actual.hash + ".");
+            require(expectedResources == actual.resourceFiles,
+                "Content fixture '" + id + "' resource count mismatch: expected " + expectedResources + ", got " + actual.resourceFiles + ".");
+            require(expectedData == actual.dataFiles,
+                "Content fixture '" + id + "' data count mismatch: expected " + expectedData + ", got " + actual.dataFiles + ".");
+
+            Path staged = instance.resolve("content-fixtures").resolve(id).resolve(expectedManifest);
+            stageContentFixture(source, staged, expectedManifest);
+            prepared.add(new PreparedContentFixture(
+                id,
+                expectedManifest,
+                staged.resolve("resources"),
+                staged.resolve("datapacks")
+            ));
+        }
+        return List.copyOf(prepared);
+    }
+
+    private FixtureManifest contentFixtureManifest(Path root) throws Exception {
+        List<Path> files;
+        try (var paths = Files.walk(root)) {
+            files = paths
+                .filter(Files::isRegularFile)
+                .filter(path -> {
+                    String relative = root.relativize(path).toString().replace('\\', '/');
+                    return relative.startsWith("resources/") || relative.startsWith("datapacks/");
+                })
+                .sorted(Comparator.comparing(path -> root.relativize(path).toString().replace('\\', '/')))
+                .collect(Collectors.toList());
+        }
+        MessageDigest manifest = MessageDigest.getInstance("SHA-256");
+        int resourceFiles = 0;
+        int dataFiles = 0;
+        for (Path file : files) {
+            String relative = root.relativize(file).toString().replace('\\', '/');
+            if (relative.startsWith("resources/")) resourceFiles++;
+            if (relative.startsWith("datapacks/")) dataFiles++;
+            String digest = hash("sha256", file);
+            manifest.update((digest + "  " + relative + "\n").getBytes(StandardCharsets.UTF_8));
+        }
+        return new FixtureManifest(HexFormat.of().formatHex(manifest.digest()), resourceFiles, dataFiles);
+    }
+
+    private void stageContentFixture(Path source, Path target, String expectedManifest) throws Exception {
+        if (Files.isDirectory(target)) {
+            FixtureManifest staged = contentFixtureManifest(target);
+            require(expectedManifest.equals(staged.hash), "Staged content fixture failed verification: " + target);
+            return;
+        }
+        Files.createDirectories(target.getParent());
+        Path candidate = target.resolveSibling("." + target.getFileName() + ".candidate." + ProcessHandle.current().pid());
+        deleteTree(candidate);
+        try {
+            copyTree(source, candidate);
+            FixtureManifest staged = contentFixtureManifest(candidate);
+            require(expectedManifest.equals(staged.hash), "Candidate content fixture failed verification: " + candidate);
+            try {
+                Files.move(candidate, target, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException error) {
+                Files.move(candidate, target);
+            } catch (FileAlreadyExistsException ignored) {
+                deleteTree(candidate);
+                FixtureManifest existing = contentFixtureManifest(target);
+                require(expectedManifest.equals(existing.hash), "Concurrent staged content fixture failed verification: " + target);
+            }
+        } catch (Throwable error) {
+            try {
+                deleteTree(candidate);
+            } catch (Throwable cleanup) {
+                error.addSuppressed(cleanup);
+            }
+            throw error;
+        }
+    }
+
+    private void copyTree(Path source, Path target) throws IOException {
+        try (var paths = Files.walk(source)) {
+            for (Path path : paths.collect(Collectors.toList())) {
+                require(!Files.isSymbolicLink(path), "Content fixtures must not contain symbolic links: " + path);
+                Path destination = target.resolve(source.relativize(path).toString());
+                if (Files.isDirectory(path)) {
+                    Files.createDirectories(destination);
+                } else {
+                    require(Files.isRegularFile(path), "Unsupported content fixture entry: " + path);
+                    Files.createDirectories(destination.getParent());
+                    Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+    }
+
+    private void deleteTree(Path root) throws IOException {
+        if (!Files.exists(root)) return;
+        try (var paths = Files.walk(root)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).collect(Collectors.toList())) {
+                Files.deleteIfExists(path);
+            }
+        }
+    }
+
+    private int parsePositiveInt(String value, String label) {
+        try {
+            int parsed = Integer.parseInt(value);
+            require(parsed > 0, label + " must be positive.");
+            return parsed;
+        } catch (NumberFormatException error) {
+            throw failure(label + " must be an integer: " + value);
+        }
     }
 
     private ResolvedArtifact resolveArtifact(Path metadataFile, String kind, Set<String> acceptedSides) throws Exception {
@@ -2677,6 +3543,12 @@ public final class Play {
         Path resourcePacks = packDirectory.resolve("resourcepacks");
         if (Files.isDirectory(resourcePacks)) {
             try (var entries = Files.list(resourcePacks)) {
+                entries.filter(path -> path.getFileName().toString().endsWith(".pw.toml")).sorted().forEach(files::add);
+            }
+        }
+        Path shaderPacks = packDirectory.resolve("shaderpacks");
+        if (Files.isDirectory(shaderPacks)) {
+            try (var entries = Files.list(shaderPacks)) {
                 entries.filter(path -> path.getFileName().toString().endsWith(".pw.toml")).sorted().forEach(files::add);
             }
         }
@@ -2812,8 +3684,18 @@ public final class Play {
     }
 
     private Process loggedChild(List<String> command, Path directory, Path log) throws IOException {
+        return loggedChild(command, directory, log, Map.of());
+    }
+
+    private Process loggedChild(
+        List<String> command,
+        Path directory,
+        Path log,
+        Map<String, String> environmentOverrides
+    ) throws IOException {
         Files.createDirectories(log.getParent());
         ProcessBuilder builder = processBuilder(command, directory);
+        builder.environment().putAll(environmentOverrides);
         builder.redirectErrorStream(true);
         builder.redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile()));
         builder.redirectInput(ProcessBuilder.Redirect.from(Path.of(isWindows() ? "NUL" : "/dev/null").toFile()));
@@ -2959,7 +3841,7 @@ public final class Play {
               debug endpoints List live, discoverable client/server debug endpoints
               debug status    Sample selected endpoint status
               debug state     Sample a named client state view
-              debug visual    Capture a PNG or sample framebuffer pixels/regions
+              debug visual    Capture/sample pixels or measure same-pose camera-motion noise
               debug input     Inject normalized key, text, mouse, or scroll input
               debug blocks    Sample a bounded block cuboid without loading chunks
               debug compare   Normalize and compare client/server block samples
@@ -2968,7 +3850,7 @@ public final class Play {
               scenario run     Execute JSON acceptance steps and emit report.json plus junit.xml
               worldgen inspect Measure datapacks, biomes, terrain shape, and a canonical terrain hash
               worldgen compare Require deterministic terrain equality for same-seed A/B worlds
-              screenshot       Compare two PNGs with bounded pixel/error thresholds
+              screenshot       Crop reference regions or compare PNGs with bounded thresholds
 
             Lifecycle predicates:
               server.port-open, server.debug-ready, server.game-ready
@@ -2983,6 +3865,8 @@ public final class Play {
               --trajectory NAME Isolate mutable state for a branch/experiment (default: default)
               --canary          Build, publish, load, and watch the native hot-reload canary mod
               --local-world     Use the source-native authoritative local world (client target only)
+              --debug-gpu-memory-leaks
+                                Retain OpenGL buffer allocation stacks for leak diagnosis
               --world-generator Select flat, debug, void, or tech_reborn (default: flat; tech-reborn pack: tech_reborn)
               --world-seed N    Seed for deterministic local world regeneration
 
@@ -2991,10 +3875,12 @@ public final class Play {
               MINECRAFT_SERVER_MEMORY, MINECRAFT_VERSION, MINECRAFT_SERVER_FLAVOR
               MINECRAFT_EULA_ACCEPTED
               MINOSOFT_ACCOUNT, MINOSOFT_JAVA_HOME, MINOSOFT_MODPACK
+              MINOSOFT_SERVER_MODPACK (defaults to fabric-stack)
               MINOSOFT_TRAJECTORY, MINOSOFT_MODPACKS_DIR, MINOSOFT_MODPACK_STORE
               MINOSOFT_MODPACK_CACHE (optional portable, read-only download source)
               MINOSOFT_CANARY=true (equivalent to --canary)
               MINOSOFT_LOCAL_WORLD=true, MINOSOFT_WORLD_GENERATOR, MINOSOFT_WORLD_SEED
+              MINOSOFT_DEBUG_GPU_MEMORY_LEAKS=true
               MINOSOFT_HOT_RELOAD_PATHS (platform-separated external source/staging roots)
 
             Logs:
@@ -3140,14 +4026,85 @@ public final class Play {
         private final Path instance;
         private final Path assets;
         private final List<Path> resourcePacks;
+        private final Path shaderPack;
+        private final String shaderOptions;
+        private final List<PreparedContentFixture> contentFixtures;
 
-        private PreparedPack(Path view, Path instance, Path assets, List<Path> resourcePacks) {
+        private PreparedPack(
+            Path view,
+            Path instance,
+            Path assets,
+            List<Path> resourcePacks,
+            Path shaderPack,
+            String shaderOptions,
+            List<PreparedContentFixture> contentFixtures
+        ) {
             this.view = view;
             this.instance = instance;
             this.assets = assets;
             this.resourcePacks = List.copyOf(resourcePacks);
+            this.shaderPack = shaderPack;
+            this.shaderOptions = shaderOptions;
+            this.contentFixtures = List.copyOf(contentFixtures);
         }
     }
+
+    private static final class PreparedContentFixture {
+        private final String id;
+        private final String manifest;
+        private final Path resources;
+        private final Path dataPacks;
+
+        private PreparedContentFixture(String id, String manifest, Path resources, Path dataPacks) {
+            this.id = id;
+            this.manifest = manifest;
+            this.resources = resources;
+            this.dataPacks = dataPacks;
+        }
+    }
+
+    private static final class FixtureManifest {
+        private final String hash;
+        private final int resourceFiles;
+        private final int dataFiles;
+
+        private FixtureManifest(String hash, int resourceFiles, int dataFiles) {
+            this.hash = hash;
+            this.resourceFiles = resourceFiles;
+            this.dataFiles = dataFiles;
+        }
+    }
+
+    private record ScreenshotRegion(int x, int y, int width, int height) {}
+
+    private record ScreenshotCrop(int sourceWidth, int sourceHeight) {}
+
+    private record MotionPose(
+        String dimension,
+        double x,
+        double y,
+        double z,
+        double yaw,
+        double pitch
+    ) {
+        private MotionPose withYaw(double nextYaw) {
+            return new MotionPose(dimension, x, y, z, nextYaw, pitch);
+        }
+    }
+
+    private record MotionFrame(long frame, BufferedImage image) {}
+
+    private record MotionNoiseOptions(
+        double yawDelta,
+        int samples,
+        int settleFrames,
+        int awayFrames,
+        int pixelThreshold,
+        int flatGradientThreshold,
+        int[] recoveryFrames,
+        MotionNoiseAnalyzer.Region region,
+        Path output
+    ) {}
 
     private static final class PreparedCanary {
         private final Path artifact;

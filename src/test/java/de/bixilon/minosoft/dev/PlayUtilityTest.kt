@@ -17,6 +17,7 @@ import de.bixilon.minosoft.util.json.Jackson
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
+import javax.imageio.ImageIO
 import java.util.concurrent.TimeUnit
 import java.util.jar.JarEntry
 import java.util.jar.JarFile
@@ -103,6 +104,8 @@ class PlayUtilityTest {
         assertTrue(output.contains("client.render-ready"), output)
         assertTrue(output.contains("on-failure"), output)
         assertTrue(output.contains("MINOSOFT_MODPACK_CACHE"), output)
+        assertTrue(output.contains("--debug-gpu-memory-leaks"), output)
+        assertTrue(output.contains("MINOSOFT_DEBUG_GPU_MEMORY_LEAKS=true"), output)
     }
 
     @Test
@@ -136,7 +139,37 @@ class PlayUtilityTest {
             """{"schemaVersion":1,"id":"fixture_pack","version":"1.0.0","depends":{"minecraft":"1.20.4","fixture_mod":"=1.0.0"}}""",
         )
         Files.writeString(pack.resolve("ladder.tsv"), "00\tfixture\tPortable cache fixture\tready\tHash-pinned local artifact\n")
-        val indexed = listOf("fabric.mod.json", "ladder.tsv", "mods/fixture.pw.toml")
+        val contentFixture = project.resolve("build/test-content-fixtures/play-utility/fixture")
+        val resources = contentFixture.resolve("resources")
+        val dataPacks = contentFixture.resolve("datapacks")
+        resources.resolve("assets/demo").createDirectories()
+        dataPacks.resolve("data/demo/functions").createDirectories()
+        Files.writeString(resources.resolve("pack.mcmeta"), """{"pack":{"pack_format":22,"description":"fixture"}}""")
+        Files.writeString(resources.resolve("assets/demo/value.txt"), "fixture-resource")
+        Files.writeString(dataPacks.resolve("pack.mcmeta"), """{"pack":{"pack_format":26,"description":"fixture"}}""")
+        Files.writeString(dataPacks.resolve("data/demo/functions/load.mcfunction"), "say fixture")
+        val fixtureManifest = contentManifest(contentFixture)
+        Files.writeString(
+            contentFixture.resolve("fixture.json"),
+            """
+                {
+                  "minecraft": "1.20.4",
+                  "output": {
+                    "resource_files": 2,
+                    "data_files": 2,
+                    "manifest_sha256": "$fixtureManifest"
+                  }
+                }
+            """.trimIndent(),
+        )
+        Files.writeString(
+            pack.resolve("fixtures.tsv"),
+            """
+                id	source	manifest_sha256	resource_files	data_files
+                demo	${project.relativize(contentFixture).toString().replace('\\', '/')}	$fixtureManifest	2	2
+            """.trimIndent() + "\n",
+        )
+        val indexed = listOf("fabric.mod.json", "fixtures.tsv", "ladder.tsv", "mods/fixture.pw.toml")
         val index = buildString {
             appendLine("hash-format = \"sha256\"")
             for (relative in indexed) {
@@ -182,10 +215,34 @@ class PlayUtilityTest {
             artifactHash,
             hash("SHA-512", store.resolve("artifacts/sha512/$artifactHash/fixture-mod.jar")),
         )
+        assertTrue(prepared.contains("content fixtures: 1"), prepared)
+        val staged = store.resolve("trajectories/default/fixture/content-fixtures/demo/$fixtureManifest")
+        assertEquals(fixtureManifest, contentManifest(staged))
+        assertTrue(Files.isRegularFile(staged.resolve("resources/assets/demo/value.txt")))
+        assertTrue(Files.isRegularFile(staged.resolve("datapacks/data/demo/functions/load.mcfunction")))
     }
 
     private fun hash(algorithm: String, path: Path): String =
         MessageDigest.getInstance(algorithm).digest(Files.readAllBytes(path)).joinToString("") { "%02x".format(it) }
+
+    private fun contentManifest(root: Path): String {
+        val files = Files.walk(root).use { paths ->
+            paths
+                .filter(Files::isRegularFile)
+                .filter {
+                    val relative = root.relativize(it).toString().replace('\\', '/')
+                    relative.startsWith("resources/") || relative.startsWith("datapacks/")
+                }
+                .sorted(compareBy { root.relativize(it).toString().replace('\\', '/') })
+                .toList()
+        }
+        val manifest = MessageDigest.getInstance("SHA-256")
+        for (file in files) {
+            val relative = root.relativize(file).toString().replace('\\', '/')
+            manifest.update("${hash("SHA-256", file)}  $relative\n".encodeToByteArray())
+        }
+        return manifest.digest().joinToString("") { "%02x".format(it) }
+    }
 
     @Test
     fun `screenshot regression accepts an identical png`() {
@@ -195,5 +252,31 @@ class PlayUtilityTest {
         assertTrue(output.path("passed").asBoolean(), output.toString())
         assertEquals(0, output.path("changedPixels").asInt())
         assertEquals(0.0, output.path("meanAbsoluteError").asDouble())
+    }
+
+    @Test
+    fun `screenshot crop writes a bounded reference region`() {
+        val image = project.resolve("src/main/resources/assets/minosoft/textures/debug.png")
+        val output = createTempDirectory("play-screenshot-crop").resolve("crop.png")
+        val result = Jackson.MAPPER.readTree(
+            runPlay(
+                "screenshot",
+                "crop",
+                image.toString(),
+                output.toString(),
+                "--region",
+                "4,5,6,7",
+                "--json",
+            ),
+        )
+
+        assertEquals(16, result.path("sourceWidth").asInt())
+        assertEquals(16, result.path("sourceHeight").asInt())
+        assertEquals(6, result.path("width").asInt())
+        assertEquals(7, result.path("height").asInt())
+        ImageIO.read(output.toFile()).also {
+            assertEquals(6, it.width)
+            assertEquals(7, it.height)
+        }
     }
 }
