@@ -44,9 +44,16 @@ class RGBA8Buffer(
     }
 
     fun fill(x: Int, y: Int, sizeX: Int, sizeY: Int, red: Int, green: Int, blue: Int, alpha: Int) {
-        for (y in y..y + sizeY) {
-            for (x in x..x + sizeX) {
-                setRGBA(x, y, red, green, blue, alpha)
+        require(x >= 0 && y >= 0) { "Fill origin must not be negative: ($x,$y)" }
+        require(sizeX >= 0 && sizeY >= 0) { "Fill size must not be negative: ($sizeX,$sizeY)" }
+        val endX = Math.addExact(x, sizeX)
+        val endY = Math.addExact(y, sizeY)
+        require(endX <= size.x && endY <= size.y) {
+            "Fill region ($x,$y ${sizeX}x$sizeY) exceeds buffer size: $size"
+        }
+        for (targetY in y until endY) {
+            for (targetX in x until endX) {
+                setRGBA(targetX, targetY, red, green, blue, alpha)
             }
         }
     }
@@ -63,7 +70,14 @@ class RGBA8Buffer(
     override fun setRGB(x: Int, y: Int, value: RGBColor) = setRGBA(x, y, value.red, value.green, value.blue, 0xFF)
     override fun setRGBA(x: Int, y: Int, value: RGBAColor) = setRGBA(x, y, value.red, value.green, value.blue, value.alpha)
 
-    override fun copy() = RGBA8Buffer(size, ByteBuffer.allocateDirect(data.limit()).apply { put(data) })
+    override fun copy(): RGBA8Buffer {
+        val source = data.duplicate().apply { clear() }
+        val copy = ByteBuffer.allocateDirect(source.remaining()).apply {
+            put(source)
+            flip()
+        }
+        return RGBA8Buffer(size, copy)
+    }
 
     override fun create(size: Vec2i) = RGBA8Buffer(size)
 
@@ -87,7 +101,9 @@ class RGBA8Buffer(
     override fun getA(x: Int, y: Int) = this[offset(x, y) + 3]
 
     private fun offset(x: Int, y: Int): Int {
-        if (x >= size.x || y >= size.y) throw IllegalArgumentException("Can not access pixel at ($x,$y), exceeds size: $size")
+        if (x !in 0 until size.x || y !in 0 until size.y) {
+            throw IllegalArgumentException("Can not access pixel at ($x,$y), exceeds size: $size")
+        }
         return ((size.x * y) + x) * bytes
     }
 

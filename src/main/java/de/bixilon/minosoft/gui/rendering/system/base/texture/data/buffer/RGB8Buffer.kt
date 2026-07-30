@@ -47,7 +47,14 @@ class RGB8Buffer(
     override fun setRGB(x: Int, y: Int, value: RGBColor) = setRGB(x, y, value.red, value.green, value.blue)
     override fun setRGBA(x: Int, y: Int, value: RGBAColor) = setRGB(x, y, value.red, value.green, value.blue)
 
-    override fun copy() = RGB8Buffer(size, ByteBuffer.allocateDirect(data.limit()).apply { put(data) })
+    override fun copy(): RGB8Buffer {
+        val source = data.duplicate().apply { clear() }
+        val copy = ByteBuffer.allocateDirect(source.remaining()).apply {
+            put(source)
+            flip()
+        }
+        return RGB8Buffer(size, copy)
+    }
 
     override fun create(size: Vec2i) = RGB8Buffer(size)
 
@@ -73,7 +80,9 @@ class RGB8Buffer(
 
 
     private fun offset(x: Int, y: Int): Int {
-        if (x >= size.x || y >= size.y) throw IllegalArgumentException("Can not access pixel at ($x,$y), exceeds size: $size")
+        if (x !in 0 until size.x || y !in 0 until size.y) {
+            throw IllegalArgumentException("Can not access pixel at ($x,$y), exceeds size: $size")
+        }
         return ((size.x * y) + x) * bytes
     }
 

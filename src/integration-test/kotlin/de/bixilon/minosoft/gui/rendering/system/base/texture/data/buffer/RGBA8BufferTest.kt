@@ -19,6 +19,7 @@ import de.bixilon.minosoft.data.text.formatting.color.RGBColor
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor.Companion.rgb
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureTransparencies
 import org.testng.Assert.assertEquals
+import org.testng.Assert.assertThrows
 import org.testng.annotations.Test
 
 @Test(groups = ["textures"])
@@ -106,6 +107,41 @@ class RGBA8BufferTest {
 
         assertEquals(destination.getRGBA(3, 3), 0x11223344.rgba())
         assertEquals(destination.getRGBA(5, 5), 0x11223344.rgba())
+    }
+
+    fun `fill region uses width and height without touching adjacent pixels`() {
+        val source = RGBA8Buffer(Vec2i(4, 4))
+
+        source.fill(1, 1, 2, 2, 0x11, 0x22, 0x33, 0x44)
+
+        assertEquals(source.getRGBA(1, 1), 0x11223344.rgba())
+        assertEquals(source.getRGBA(2, 2), 0x11223344.rgba())
+        assertEquals(source.getRGBA(3, 2), 0x00000000.rgba())
+        assertEquals(source.getRGBA(2, 3), 0x00000000.rgba())
+    }
+
+    fun `fill region validates its complete bounds before writing`() {
+        val source = RGBA8Buffer(Vec2i(4, 4))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            source.fill(3, 3, 2, 1, 0x11, 0x22, 0x33, 0x44)
+        }
+
+        assertEquals(source.getRGBA(3, 3), 0x00000000.rgba())
+    }
+
+    fun `copy preserves pixels without consuming the source buffer`() {
+        val source = RGBA8Buffer(Vec2i(2, 1))
+        source.setRGBA(0, 0, 0x11, 0x22, 0x33, 0x44)
+        source.setRGBA(1, 0, 0x55, 0x66, 0x77, 0x88)
+        source.data.position(4)
+
+        val copy = source.copy()
+
+        assertEquals(source.data.position(), 4)
+        assertEquals(copy.data.position(), 0)
+        assertEquals(copy.getRGBA(0, 0), 0x11223344.rgba())
+        assertEquals(copy.getRGBA(1, 0), 0x55667788.rgba())
     }
 
     fun `check transparency level opaque`() {

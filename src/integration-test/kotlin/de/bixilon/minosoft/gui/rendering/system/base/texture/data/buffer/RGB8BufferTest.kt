@@ -104,6 +104,20 @@ class RGB8BufferTest {
         assertEquals(destination.getRGBA(5, 5), 0x112233FF.rgba())
     }
 
+    fun `copy preserves pixels without consuming the source buffer`() {
+        val source = RGB8Buffer(Vec2i(2, 1))
+        source.setRGB(0, 0, 0x11, 0x22, 0x33)
+        source.setRGB(1, 0, 0x55, 0x66, 0x77)
+        source.data.position(3)
+
+        val copy = source.copy()
+
+        assertEquals(source.data.position(), 3)
+        assertEquals(copy.data.position(), 0)
+        assertEquals(copy.getRGB(0, 0), 0x112233.rgb())
+        assertEquals(copy.getRGB(1, 0), 0x556677.rgb())
+    }
+
     fun `interpolate 0`() {
         val a = RGB8Buffer(Vec2i(2, 2))
         a.setRGB(0, 0, RGBColor(255, 0, 0))
