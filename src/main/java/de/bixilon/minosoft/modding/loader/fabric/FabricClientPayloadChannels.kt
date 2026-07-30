@@ -71,6 +71,6 @@ object FabricClientPayloadChannels {
         require(payload.size <= MAX_PAYLOAD_BYTES) {
             "Fabric payload for $channel is ${payload.size} bytes; maximum is $MAX_PAYLOAD_BYTES."
         }
-        session.channels.play.send(channel, payload.copyOf())
+        session.channels.play.sendRaw(channel, payload.copyOf())
     }
 }

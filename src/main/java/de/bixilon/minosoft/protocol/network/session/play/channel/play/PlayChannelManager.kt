@@ -49,10 +49,24 @@ class PlayChannelManager(
     }
 
     fun send(channel: ResourceLocation, data: ByteArray) {
+        send(channel, data, rawData = false)
+    }
+
+    /**
+     * Modern custom-payload packets encode the channel followed by the
+     * uninterpreted remaining packet bytes; there is no nested byte-array
+     * length. Keep this explicit because legacy channel users still rely on
+     * [send]'s historical length-prefixed behavior.
+     */
+    fun sendRaw(channel: ResourceLocation, data: ByteArray) {
+        send(channel, data, rawData = true)
+    }
+
+    private fun send(channel: ResourceLocation, data: ByteArray, rawData: Boolean) {
         // TODO: Play == ready? what if offline? should not crash
         if (session.connection.nullCast<NetworkConnection>()?.state != ProtocolStates.PLAY) {
             throw IllegalStateException("Not in play!")
         }
-        session.connection.send(ChannelC2SP(channel, data))
+        session.connection.send(ChannelC2SP(channel, data, rawData))
     }
 }

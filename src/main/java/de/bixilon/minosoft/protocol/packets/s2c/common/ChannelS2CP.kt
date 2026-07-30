@@ -12,8 +12,11 @@
  */
 package de.bixilon.minosoft.protocol.packets.s2c.common
 
+import de.bixilon.minosoft.modding.loader.fabric.FabricRemoteRegistrySync
+import de.bixilon.minosoft.protocol.network.NetworkConnection
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.packets.s2c.PlayS2CPacket
+import de.bixilon.minosoft.protocol.protocol.ProtocolStates
 import de.bixilon.minosoft.protocol.protocol.ProtocolVersions
 import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayInByteBuffer
 import de.bixilon.minosoft.util.logging.Log
@@ -35,6 +38,8 @@ class ChannelS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
     val data = buffer.readRemaining()
 
     override fun handle(session: PlaySession) {
+        val configuration = (session.connection as? NetworkConnection)?.state == ProtocolStates.CONFIGURATION
+        if (configuration && FabricRemoteRegistrySync.handleConfiguration(session, channel, data)) return
         session.channels.play.handle(channel, data)
     }
 

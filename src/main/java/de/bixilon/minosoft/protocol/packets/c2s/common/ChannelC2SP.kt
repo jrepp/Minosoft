@@ -25,6 +25,7 @@ import de.bixilon.minosoft.util.logging.LogMessageType
 class ChannelC2SP(
     val channel: ResourceLocation,
     val data: ByteArray,
+    val rawData: Boolean = false,
 ) : PlayC2SPacket {
 
     constructor(channel: ResourceLocation, buffer: OutByteBuffer) : this(channel, buffer.toArray())
@@ -40,7 +41,7 @@ class ChannelC2SP(
         } else if (buffer.versionId < ProtocolVersions.V_14W31A) {
             buffer.writeVarInt(data.size)
         }
-        if (buffer.versionId < ProtocolVersions.V_1_8_9) { // TODO: guessed
+        if (rawData || buffer.versionId < ProtocolVersions.V_1_8_9) { // TODO: guessed
             buffer.writeBareByteArray(data)
         } else {
             buffer.writeByteArray(data)
