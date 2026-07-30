@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -81,13 +82,27 @@ class BakedModel(
                     }
                 }
 
-                var aoRaw = AmbientOcclusionUtil.EMPTY
-
-                if (face.ambientOcclusion && ao != null && face.properties != null) {
-                    aoRaw = ao.apply(direction, position.inSectionPosition)
+                val smooth = props.smoothLight?.calculate(
+                    position,
+                    direction,
+                    face.positions,
+                    face.light(light),
+                    face.ambientOcclusion && ao != null && face.properties != null,
+                )
+                if (smooth == null) {
+                    var aoRaw = AmbientOcclusionUtil.EMPTY
+                    if (face.ambientOcclusion && ao != null && face.properties != null) {
+                        aoRaw = ao.apply(direction, position.inSectionPosition)
+                    }
+                    face.render(offset, mesh, tints, light, aoRaw)
+                } else {
+                    val vertexTints = if (face.tintIndex >= 0) {
+                        props.tintCache?.block(state, position, face.positions, face.tintIndex, face.baseTint(tints))
+                    } else {
+                        null
+                    }
+                    face.render(offset, mesh, tints, smooth, vertexTints)
                 }
-
-                face.render(offset, mesh, tints, light, aoRaw)
 
                 rendered = true
             }

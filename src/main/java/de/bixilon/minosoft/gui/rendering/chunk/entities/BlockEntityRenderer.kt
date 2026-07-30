@@ -19,11 +19,27 @@ import de.bixilon.minosoft.gui.rendering.renderer.drawable.Drawable
 
 interface BlockEntityRenderer : Drawable {
     val entity: BlockEntity
+    val hasTranslucentPass: Boolean get() = false
+    val castsTranslucentShadow: Boolean get() = false
 
     fun load()
     fun unload()
 
     fun drop()
+
+    fun drawTranslucent() = Unit
+
+    /**
+     * Completes every shadow-casting block-entity layer before Iris snapshots
+     * the opaque/entity shadow depth. Most renderers have only their base draw.
+     * Renderers whose retained model splits translucent/additive layers may
+     * opt those layers into this same block-entity submission. Beacon beams
+     * deliberately do not opt in, matching pinned Iris's shadow cancellation.
+     */
+    fun drawShadow() {
+        draw()
+        if (castsTranslucentShadow) drawTranslucent()
+    }
 
     fun update(light: LightLevel) = Unit
 }

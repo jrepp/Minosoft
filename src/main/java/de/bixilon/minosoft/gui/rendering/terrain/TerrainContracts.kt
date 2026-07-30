@@ -123,13 +123,18 @@ interface TerrainBackend : AutoCloseable {
 
 object BuiltInTerrainVertexLayout {
     val VALUE = VertexLayoutDeclaration(
-        id = RenderResourceId("minosoft:terrain/built-in"),
-        strideBytes = 24,
+        id = RenderResourceId("minosoft:terrain/iris-material"),
+        strideBytes = 84,
         attributes = listOf(
             VertexAttribute(VertexSemantic.POSITION, VertexAttributeFormat.FLOAT3, 0),
             VertexAttribute(VertexSemantic.TEXTURE_COORDINATE, VertexAttributeFormat.UINT, 12),
             VertexAttribute(VertexSemantic.TEXTURE_LAYER, VertexAttributeFormat.UINT, 16),
             VertexAttribute(VertexSemantic.PACKED_LIGHT_COLOR, VertexAttributeFormat.UINT, 20),
+            VertexAttribute(VertexSemantic.BLOCK_ID, VertexAttributeFormat.FLOAT2, 24),
+            VertexAttribute(VertexSemantic.MID_TEXTURE_COORDINATE, VertexAttributeFormat.FLOAT2, 32),
+            VertexAttribute(VertexSemantic.TANGENT, VertexAttributeFormat.FLOAT4, 40),
+            VertexAttribute(VertexSemantic.NORMAL, VertexAttributeFormat.FLOAT3, 56),
+            VertexAttribute(VertexSemantic.MID_BLOCK, VertexAttributeFormat.FLOAT4, 68),
         ),
     )
 }

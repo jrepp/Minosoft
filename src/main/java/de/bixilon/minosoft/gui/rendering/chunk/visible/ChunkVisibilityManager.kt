@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -24,6 +25,11 @@ import de.bixilon.minosoft.data.world.positions.InSectionPosition
 import de.bixilon.minosoft.data.world.positions.SectionPosition
 import de.bixilon.minosoft.gui.rendering.camera.frustum.FrustumResults
 import de.bixilon.minosoft.gui.rendering.chunk.ChunkRenderer
+import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshes
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainDirectionalVisibility
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainProductionPhase
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainVisibilityNode
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainVisibilityTraversal
 import kotlin.math.abs
 
 class ChunkVisibilityManager(
@@ -72,16 +78,66 @@ class ChunkVisibilityManager(
     fun contains(position: SectionPosition, min: InSectionPosition, max: InSectionPosition) = visibility.isSectionVisible(position, min, max, true)
 
     private fun collectVisibleMeshes(force: Boolean) {
-        this.meshes = VisibleMeshes(this, eyePosition, this.meshes)
+        val telemetry = renderer.terrainPerformance
+        val started = telemetry.begin(TerrainProductionPhase.VISIBILITY)
+        try {
+            while (true) {
+                val snapshot = renderer.loaded.visibilitySnapshot()
+                val meshes = VisibleMeshes(this, eyePosition, this.meshes)
 
-        renderer.loaded.forEachVisible { meshes, result ->
-            if (force) {
-                meshes.resetOcclusion()
+                val nodes = snapshot.candidates.associate { (loaded, _) ->
+                    loaded.position to TerrainVisibilityNode(loaded.position, loaded.connectivity)
+                }.toMutableMap()
+                if (nodes.isNotEmpty()) {
+                    val xRange = minOf(sectionPosition.x, nodes.keys.minOf { it.x })..
+                        maxOf(sectionPosition.x, nodes.keys.maxOf { it.x })
+                    val yRange = minOf(sectionPosition.y, nodes.keys.minOf { it.y })..
+                        maxOf(sectionPosition.y, nodes.keys.maxOf { it.y })
+                    val zRange = minOf(sectionPosition.z, nodes.keys.minOf { it.z })..
+                        maxOf(sectionPosition.z, nodes.keys.maxOf { it.z })
+
+                    // Empty/unbuilt sections are passable, not missing graph vertices.
+                    // Treating them as absent would incorrectly hide everything beyond
+                    // the first air gap. Unknown geometry is ALL as the conservative
+                    // fallback until its measured connectivity publishes.
+                    for (y in yRange) {
+                        for (z in zRange) {
+                            for (x in xRange) {
+                                val position = SectionPosition(x, y, z)
+                                nodes.putIfAbsent(
+                                    position,
+                                    TerrainVisibilityNode(position, TerrainDirectionalVisibility.ALL),
+                                )
+                            }
+                        }
+                    }
+                }
+                val visible = TerrainVisibilityTraversal.traverse(sectionPosition, nodes).toHashSet()
+
+                var visibleSections = 0
+                for ((loaded, result) in snapshot.candidates) {
+                    if (loaded.position !in visible) continue
+                    if (force) {
+                        loaded.resetOcclusion()
+                    }
+                    meshes.unsafeAdd(loaded, result)
+                    visibleSections++
+                }
+
+                if (!renderer.loaded.publishVisibility(snapshot, meshes)) {
+                    continue
+                }
+                meshes.sort()
+                telemetry.visible(visibleSections)
+                return
             }
-            this.meshes.unsafeAdd(meshes, result)
+        } finally {
+            telemetry.finish(TerrainProductionPhase.VISIBILITY, started)
         }
+    }
 
-        meshes.sort()
+    internal fun publish(meshes: VisibleMeshes) {
+        this.meshes = meshes
     }
 
     private fun onVisibilityChange() {

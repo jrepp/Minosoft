@@ -28,18 +28,23 @@ import de.bixilon.minosoft.gui.rendering.chunk.mesh.types.ChunkMeshTypes
 import de.bixilon.minosoft.gui.rendering.models.block.element.FaceVertexData
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureTransparencies
 import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTexture
+import de.bixilon.minosoft.gui.rendering.terrain.IrisTerrainMaterial
+import de.bixilon.minosoft.gui.rendering.terrain.IrisTerrainMaterialResolver
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainDirectionalVisibility
 import de.bixilon.minosoft.gui.rendering.util.mesh.uv.array.PackedUVArray
 
 class ChunkMeshesBuilder(
     context: RenderContext,
     val section: ChunkSection,
     val details: IntInlineSet,
+    private val materialResolver: IrisTerrainMaterialResolver = IrisTerrainMaterialResolver.EMPTY,
 ) : BlockVertexConsumer { // TODO: Don't inherit
     var opaque = ChunkMeshBuilder(context, section.blocks.count.opaqueCount())
     var cutout = ChunkMeshBuilder(context, section.blocks.count.translucentCount())
     var translucent = ChunkMeshBuilder(context, section.blocks.count.translucentCount())
     var text = ChunkMeshBuilder(context, if (ChunkMeshDetails.TEXT in details && section.entities.count > 0) 128 else 0)
     var entities: ArrayList<BlockEntityRenderer> = ArrayList(if (ChunkMeshDetails.ENTITIES in details) section.entities.count else 0)
+    private var material: IrisTerrainMaterial? = null
 
     // used for frustum culling
     var minPosition = InSectionPosition(ChunkSize.SECTION_MAX_X, ChunkSize.SECTION_MAX_Y, ChunkSize.SECTION_MAX_Z)
@@ -68,8 +73,32 @@ class ChunkMeshesBuilder(
         }
     }
 
+    fun material(
+        state: de.bixilon.minosoft.data.registries.blocks.state.BlockState,
+        centerX: Float,
+        centerY: Float,
+        centerZ: Float,
+        fluid: Boolean = false,
+    ) {
+        val resolved = materialResolver.resolve(state, centerX, centerY, centerZ, fluid)
+        material = resolved
+        opaque.material = resolved
+        cutout.material = resolved
+        translucent.material = resolved
+        text.material = resolved
+    }
 
-    fun build(position: SectionPosition): ChunkMeshes? {
+
+    fun build(
+        position: SectionPosition,
+        modelRevision: Long = 0L,
+        connectivity: TerrainDirectionalVisibility = TerrainDirectionalVisibility.ALL,
+    ): ChunkMeshes? {
+        val outputBytes = listOf(opaque, cutout, translucent, text).fold(0L) { total, builder ->
+            val vertexBytes = Math.multiplyExact(builder._data?.size?.toLong() ?: 0L, Float.SIZE_BYTES.toLong())
+            val indexBytes = Math.multiplyExact(builder._index?.size?.toLong() ?: 0L, Int.SIZE_BYTES.toLong())
+            Math.addExact(total, Math.addExact(vertexBytes, indexBytes))
+        }
         val meshes = ChunkMeshTypeMap()
 
         meshes[ChunkMeshTypes.OPAQUE] = opaque
@@ -83,7 +112,19 @@ class ChunkMeshesBuilder(
             return null
         }
 
-        return ChunkMeshes(section, position, minPosition, maxPosition, details, meshes, entities)
+        return ChunkMeshes(
+            section,
+            position,
+            minPosition,
+            maxPosition,
+            details,
+            materialResolver.generation,
+            modelRevision,
+            connectivity,
+            outputBytes,
+            meshes,
+            entities,
+        )
     }
 
     fun drop() {
@@ -98,11 +139,24 @@ class ChunkMeshesBuilder(
         mesh.addQuad(offset, positions, uv, texture, light, tint, ao)
     }
 
+    override fun addQuad(
+        offset: Vec3f,
+        positions: FaceVertexData,
+        uv: PackedUVArray,
+        texture: ShaderTexture,
+        light: IntArray,
+        tint: IntArray,
+        flipDiagonal: Boolean,
+    ) {
+        val mesh = this[texture.transparency]
+        mesh.addQuad(offset, positions, uv, texture, light, tint, flipDiagonal)
+    }
+
     operator fun get(transparency: TextureTransparencies) = when {
         transparency == TextureTransparencies.TRANSLUCENT -> translucent
         transparency == TextureTransparencies.TRANSPARENT -> cutout
         else -> opaque
-    }
+    }.also { it.material = material }
 
     companion object {
 

@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -20,6 +21,7 @@ import de.bixilon.kutil.concurrent.pool.DefaultThreadPool
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.data.world.positions.SectionPosition
 import de.bixilon.minosoft.gui.rendering.chunk.ChunkRenderer
+import java.util.concurrent.atomic.AtomicInteger
 
 class MesherTaskManager(
     val renderer: ChunkRenderer,
@@ -27,15 +29,20 @@ class MesherTaskManager(
 ) {
     private val tasks: MutableSet<MeshPrepareTask> = HashSet(max)
     private val lock = ReentrantRWLock()
+    private val taskCount = AtomicInteger()
 
-    val size get() = tasks.size
+    val size get() = taskCount.get()
 
-    operator fun plusAssign(task: MeshPrepareTask) = lock.locked { tasks += task }
-    operator fun minusAssign(task: MeshPrepareTask) = lock.locked { tasks -= task }
+    operator fun plusAssign(task: MeshPrepareTask) = lock.locked {
+        if (tasks.add(task)) taskCount.incrementAndGet()
+    }
+    operator fun minusAssign(task: MeshPrepareTask) = lock.locked {
+        if (tasks.remove(task)) taskCount.decrementAndGet()
+    }
 
     fun interrupt(requeue: Boolean) = lock.acquired {
         for (task in tasks) {
-            task.interrupt()
+            task.cancel()
             if (requeue) {
                 renderer.invalidate(task.section)
             }
@@ -46,7 +53,7 @@ class MesherTaskManager(
         for (task in tasks) {
             if (!predicate.invoke(task.position)) continue
 
-            task.interrupt()
+            task.cancel()
             if (requeue) {
                 renderer.invalidate(task.section)
             }

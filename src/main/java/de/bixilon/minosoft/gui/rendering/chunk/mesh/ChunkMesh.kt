@@ -13,17 +13,18 @@
 
 package de.bixilon.minosoft.gui.rendering.chunk.mesh
 
-import de.bixilon.minosoft.gui.rendering.RenderConstants.GPU_OCCLUSION_CULLING
+import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.vertex.VertexBuffer
 import de.bixilon.minosoft.gui.rendering.system.base.query.RenderQuery
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
 
 class ChunkMesh(
     buffer: VertexBuffer,
-    val query: RenderQuery,
+    val query: RenderQuery? = null,
 ) : Mesh(buffer), Comparable<ChunkMesh> {
     var distance: Int = 0
     var occlusion = OcclusionStates.MAYBE
+    var cameraDelta: BlockPosition = BlockPosition.EMPTY
 
     override fun compareTo(other: ChunkMesh): Int {
         if (distance < other.distance) return -1
@@ -33,21 +34,30 @@ class ChunkMesh(
 
     override fun load() {
         super.load()
-        query.init()
+        query?.init()
     }
 
     override fun draw() {
         if (occlusion == OcclusionStates.INVISIBLE) return
 
-        val query = if (GPU_OCCLUSION_CULLING) occlusion == OcclusionStates.MAYBE else false
+        val query = query != null && occlusion == OcclusionStates.MAYBE
 
-        if (query) this.query.begin()
+        if (query) this.query?.begin()
         super.draw()
-        if (query) this.query.end()
+        if (query) this.query?.end()
+    }
+
+    /**
+     * Shadow visibility is independent of the main camera's occlusion query.
+     * The caller has already applied the shader pack's auxiliary-view bounds.
+     */
+    fun drawShadow() {
+        super.draw()
     }
 
     fun updateOcclusion() {
         if (occlusion != OcclusionStates.MAYBE) return
+        val query = query ?: return
         if (query.recordings == 0) return
 
         query.collect()
@@ -56,7 +66,7 @@ class ChunkMesh(
 
     override fun unload() {
         super.unload()
-        query.destroy()
+        query?.destroy()
     }
 
     enum class OcclusionStates {

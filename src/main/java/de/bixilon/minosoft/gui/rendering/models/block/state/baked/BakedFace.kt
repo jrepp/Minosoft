@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -21,6 +22,7 @@ import de.bixilon.minosoft.data.world.chunk.light.types.LightLevel
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.BlockVertexConsumer
 import de.bixilon.minosoft.gui.rendering.chunk.mesher.SolidSectionMesher.Companion.SELF_LIGHT_INDEX
 import de.bixilon.minosoft.gui.rendering.light.ao.AmbientOcclusionUtil
+import de.bixilon.minosoft.gui.rendering.light.terrain.TerrainQuadLight
 import de.bixilon.minosoft.gui.rendering.models.block.element.FaceVertexData
 import de.bixilon.minosoft.gui.rendering.models.block.state.baked.Shades.Companion.shade
 import de.bixilon.minosoft.gui.rendering.models.block.state.baked.cull.side.FaceProperties
@@ -70,11 +72,29 @@ class BakedFace(
         return TintUtil.calculateTint(tint, shade)
     }
 
+    fun baseTint(tints: RGBArray?): RGBColor = tints.getOr0(tintIndex)
+
+    fun light(light: ByteArray?): Int = light?.get(lightIndex)?.toInt()?.and(0xFF) ?: LightLevel.MAX_LEVEL
+
     fun render(offset: Vec3f, consumer: BlockVertexConsumer, tints: RGBArray?, light: ByteArray?, ao: IntArray?) {
         val tint = color(tints.getOr0(tintIndex))
-        val light = light?.get(lightIndex)?.toInt() ?: LightLevel.MAX_LEVEL
+        val light = light(light)
 
         consumer.addQuad(offset, this.positions, packedUV, texture, light, tint, ao ?: AmbientOcclusionUtil.EMPTY)
+    }
+
+    fun render(
+        offset: Vec3f,
+        consumer: BlockVertexConsumer,
+        tints: RGBArray?,
+        smooth: TerrainQuadLight,
+        vertexTints: Array<RGBColor>?,
+    ) {
+        val fallback = baseTint(tints)
+        val colors = IntArray(4) {
+            (color(vertexTints?.get(it) ?: fallback) * smooth.brightness[it]).rgb
+        }
+        consumer.addQuad(offset, positions, packedUV, texture, smooth.light, colors, smooth.flipDiagonal)
     }
 
 

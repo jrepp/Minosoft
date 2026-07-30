@@ -24,7 +24,7 @@ class LightC(profile: RenderingProfile) {
      * In original minecraft this setting is called brightness
      * Must be non-negative and may not exceed 1
      */
-    var gamma by FloatDelegate(profile, 0.0f, arrayOf(0.0f..1.0f))
+    var gamma by FloatDelegate(profile, DEFAULT_GAMMA, arrayOf(0.0f..1.0f))
 
     /**
      * Makes everything bright
@@ -41,4 +41,8 @@ class LightC(profile: RenderingProfile) {
      * Ambient occlusion effect (corners are darker)
      */
     var ambientOcclusion by BooleanDelegate(profile, true)
+
+    companion object {
+        const val DEFAULT_GAMMA = 0.5f
+    }
 }

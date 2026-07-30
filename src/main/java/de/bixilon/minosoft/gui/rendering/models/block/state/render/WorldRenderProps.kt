@@ -20,6 +20,8 @@ import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.BlockVertexConsumer
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.details.ChunkMeshDetails
 import de.bixilon.minosoft.gui.rendering.light.ao.AmbientOcclusion
+import de.bixilon.minosoft.gui.rendering.light.terrain.SmoothTerrainLighting
+import de.bixilon.minosoft.gui.rendering.tint.sampler.TerrainTintCache
 import java.util.*
 
 class WorldRenderProps(
@@ -30,4 +32,6 @@ class WorldRenderProps(
     val light: ByteArray,
     val details: IntInlineSet,
     val ao: AmbientOcclusion?,
+    val smoothLight: SmoothTerrainLighting? = null,
+    val tintCache: TerrainTintCache? = null,
 )

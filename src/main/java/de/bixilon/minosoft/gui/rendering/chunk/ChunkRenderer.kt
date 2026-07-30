@@ -49,6 +49,8 @@ import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisShaderPackPlanner
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisDrawState
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.layer.OpaqueLayer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
@@ -59,6 +61,7 @@ import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
 import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendRegistry
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainPerformanceTelemetry
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
@@ -71,6 +74,7 @@ class ChunkRenderer(
     private val shader = context.system.shader.create(minosoft("chunk")) { ChunkShader(it) }
     private val textShader = context.system.shader.create(minosoft("chunk")) { ChunkShader(it) }
     val world = session.world
+    val terrainPerformance = TerrainPerformanceTelemetry()
     val visibility = ChunkVisibilityManager(this)
 
     val culledQueue = CulledQueue(this)
@@ -104,12 +108,26 @@ class ChunkRenderer(
         registerMeshLayer(TranslucentLayer, TerrainMaterialClass.TRANSLUCENT, ChunkMeshTypes.TRANSLUCENT)
         registerMeshLayer(TextLayer, TerrainMaterialClass.EMISSIVE_ADDITIVE, ChunkMeshTypes.TEXT)
         layers.registerSemantic(
-            BlockEntitiesLayer,
-            shader,
+            OpaqueBlockEntitiesLayer,
+            null,
             this::drawBlockEntities,
             semantic = PipelineSemantic.BLOCK_ENTITIES,
-            passId = RenderPassId("minosoft:scene/block-entities"),
+            passId = RenderPassId("minosoft:scene/block-entities-opaque"),
             skip = { visibility.meshes.entities.isEmpty() },
+            auxiliaryRenderers = mapOf(
+                IrisShaderPackPlanner.SHADOW_VIEW to {
+                    drawBlockEntities(shadow = true)
+                    Unit
+                },
+            ),
+        )
+        layers.registerSemantic(
+            TranslucentBlockEntitiesLayer,
+            null,
+            this::drawTranslucentBlockEntities,
+            semantic = PipelineSemantic.BLOCK_ENTITIES_TRANSLUCENT,
+            passId = RenderPassId("minosoft:scene/block-entities-translucent"),
+            skip = { visibility.meshes.entities.none(BlockEntityRenderer::hasTranslucentPass) },
         )
     }
 
@@ -147,6 +165,9 @@ class ChunkRenderer(
 
         val profile = session.profiles.rendering
         profile.light::ambientOcclusion.observe(this) { invalidate(world) }
+        profile.biome.blending::enabled.observe(this) { invalidate(world) }
+        profile.biome.blending::radius.observe(this) { invalidate(world) }
+        profile.biome.blending::algorithm.observe(this) { invalidate(world) }
         profile.performance::limitChunkTransferTime.observe(this) { this.limitChunkTransferTime = it }
     }
 
@@ -206,6 +227,7 @@ class ChunkRenderer(
     }
 
     fun invalidate(section: ChunkSection) {
+        section.terrainRevision.incrementAndGet()
         val position = SectionPosition.of(section)
         if (context.state == RenderingStates.PAUSED || context.state == RenderingStates.STOPPED || context.state == RenderingStates.QUITTING) return
         if (section.blocks.isEmpty || !section.chunk.neighbours.complete) {
@@ -245,6 +267,7 @@ class ChunkRenderer(
     }
 
     internal fun finishTerrainPreparationCore() {
+        context.profiler("meshingPublish") { meshingQueue.publishCompleted() }
         context.profiler("unloading") { unloadingQueue.work() }
         context.profiler("loading") { loadingQueue.work() }
     }
@@ -275,11 +298,90 @@ class ChunkRenderer(
         context.shaderPipeline.withPipeline { pipeline ->
             pipeline.bindTerrain(view, material, activeShader)
             val meshes = visibility.meshes
-            meshes.lock.locked { meshes.meshes[type.ordinal].forEach(ChunkMesh::draw) }
+            val shadow = if (view == IrisShaderPackPlanner.SHADOW_VIEW) {
+                context.shaderPipeline.plan()?.shadowDirectives
+            } else {
+                null
+            }
+            if (shadow != null) {
+                val culling = context.shaderPipeline.shadowCulling()
+                val camera = context.session.camera.entity.physics.positionInfo.eyePosition
+                loaded.forEachLoaded { section ->
+                    val allowed = culling?.allowsTerrainSection(
+                        section.position.x,
+                        section.position.y,
+                        section.position.z,
+                    ) ?: run {
+                        val delta = camera - section.center
+                        shadow.allowsTerrainSection(delta.x, delta.y, delta.z)
+                    }
+                    if (allowed) {
+                        section.meshes[type]?.drawShadow()
+                    }
+                }
+            } else {
+                meshes.lock.locked {
+                    meshes.meshes[type.ordinal].forEach { mesh ->
+                        mesh.draw()
+                    }
+                }
+            }
         }
     }
 
-    private fun drawBlockEntities() = visibility.meshes.apply { lock.locked { entities.forEach(BlockEntityRenderer::draw) } }
+    private fun drawBlockEntities(shadow: Boolean = false) {
+        val directives = if (shadow) context.shaderPipeline.plan()?.shadowDirectives else null
+        val culling = if (shadow) context.shaderPipeline.shadowCulling() else null
+        val camera = context.session.camera.entity.renderInfo.eyePosition
+        fun draw(renderer: BlockEntityRenderer) {
+            if (directives != null) {
+                val entity = renderer.entity
+                val position = entity.position
+                if (
+                    !directives.allowsBlockEntity(entity.state.luminance) ||
+                    !(culling?.allowsBlockEntityBounds(position.x, position.y, position.z)
+                        ?: directives.allowsBlockEntityBounds(
+                            camera.x,
+                            camera.y,
+                            camera.z,
+                            position.x,
+                            position.y,
+                            position.z,
+                        ))
+                ) {
+                    return
+                }
+            }
+            context.shaderPipeline.withDrawState(IrisDrawState(blockEntity = renderer.entity.state)) {
+                if (shadow) renderer.drawShadow() else renderer.draw()
+            }
+        }
+        if (shadow) {
+            loaded.forEachLoaded { section ->
+                if (
+                    culling == null ||
+                    culling.allowsTerrainSection(section.position.x, section.position.y, section.position.z)
+                ) {
+                    section.entities?.forEach(::draw)
+                }
+            }
+        } else {
+            val visible = visibility.meshes
+            visible.lock.locked { visible.entities.forEach(::draw) }
+        }
+    }
+    private fun drawTranslucentBlockEntities() = visibility.meshes.apply {
+        lock.locked {
+            entities.forEach { renderer ->
+                if (renderer.hasTranslucentPass) {
+                    context.shaderPipeline.withDrawState(
+                        IrisDrawState(blockEntity = renderer.entity.state),
+                        renderer::drawTranslucent,
+                    )
+                }
+            }
+        }
+    }
 
     override fun unload() {
         terrain.close()
@@ -287,8 +389,8 @@ class ChunkRenderer(
 
     internal fun closeTerrainCore() {
         culledQueue.clear()
-        meshingQueue.clear()
         meshingQueue.tasks.interrupt(false)
+        meshingQueue.close()
         loadingQueue.clear()
     }
 
@@ -297,9 +399,17 @@ class ChunkRenderer(
         override val priority: Int get() = 1500
     }
 
-    private object BlockEntitiesLayer : RenderLayer {
+    private object OpaqueBlockEntitiesLayer : RenderLayer {
         override val settings = RenderSettings(depth = DepthFunctions.LESS_OR_EQUAL) // TODO: blending?
         override val priority: Int get() = 500
+    }
+
+    private object TranslucentBlockEntitiesLayer : RenderLayer {
+        override val settings = TranslucentLayer.settings.copy(
+            faceCulling = false,
+            depth = DepthFunctions.LESS_OR_EQUAL,
+        )
+        override val priority: Int get() = TranslucentLayer.priority - 2
     }
 
     companion object : RendererBuilder<ChunkRenderer> {

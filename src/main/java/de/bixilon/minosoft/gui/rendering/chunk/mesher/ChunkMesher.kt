@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -23,13 +24,14 @@ import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshesBuilder
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.cache.ChunkMeshCache
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.details.ChunkMeshDetails
 import de.bixilon.minosoft.gui.rendering.chunk.mesher.fluid.FluidSectionMesher
+import de.bixilon.minosoft.gui.rendering.terrain.IrisTerrainMaterialResolver
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainCancellationToken
 
 class ChunkMesher(
     private val renderer: ChunkRenderer,
 ) {
     private val profile = renderer.context.session.profiles.block.lod
-    private val solid = SolidSectionMesher(renderer.context)
-    private val fluid = FluidSectionMesher(renderer.context)
 
     var details = IntInlineSet()
         private set
@@ -59,36 +61,63 @@ class ChunkMesher(
         renderer.invalidate(renderer.world)
     }
 
-    fun mesh(cache: ChunkMeshCache, section: ChunkSection): ChunkMeshes? {
-        if (section.blocks.isEmpty) return null
+    fun createWorkerContext() = WorkerContext()
 
-        val neighbours = section.chunk.neighbours
-        val sectionNeighbours = section.neighbours
-        if (!neighbours.complete) return null // TODO: Requeue the chunk? (But on a neighbour update the chunk gets queued again?)
+    inner class WorkerContext : AutoCloseable {
+        private val solid = SolidSectionMesher(renderer.context)
+        private val fluid = FluidSectionMesher(renderer.context)
 
-        cache.unmark()
+        fun mesh(
+            cache: ChunkMeshCache,
+            section: ChunkSection,
+            snapshot: TerrainBuildSnapshot,
+            cancellation: TerrainCancellationToken,
+        ): ChunkMeshes? {
+            if (cancellation.isCancelled || section.blocks.isEmpty) return null
 
-        val position = SectionPosition.of(section)
+            val neighbours = section.chunk.neighbours
+            val sectionNeighbours = section.neighbours
+            if (!neighbours.complete) return null // TODO: Requeue the chunk? (But on a neighbour update the chunk gets queued again?)
 
-        // TODO: This disables LOD completely
-        // val details = ChunkMeshDetails.of(position, renderer.visibility.sectionPosition) + this.details
-        val details = ChunkMeshDetails.ALL
+            cache.unmark()
+
+            val position = SectionPosition.of(section)
+
+            // TODO: This disables LOD completely
+            // val details = ChunkMeshDetails.of(position, renderer.visibility.sectionPosition) + this@ChunkMesher.details
+            val details = ChunkMeshDetails.ALL
 
 
-        // TODO: put sizes of previous mesh (cache estimate)
-        val mesh = ChunkMeshesBuilder(renderer.context, section, details)
-        try {
-            solid.mesh(section, cache, neighbours, sectionNeighbours, mesh)
+            // TODO: put sizes of previous mesh (cache estimate)
+            val mesh = ChunkMeshesBuilder(
+                renderer.context,
+                section,
+                details,
+                IrisTerrainMaterialResolver.capture(renderer.context),
+            )
+            try {
+                solid.mesh(section, cache, neighbours, sectionNeighbours, mesh, cancellation)
+                if (cancellation.isCancelled) {
+                    mesh.drop()
+                    return null
+                }
 
-            if (section.blocks.fluidCount > 0) {
-                fluid.mesh(section, mesh)
+                if (section.blocks.fluidCount > 0) {
+                    fluid.mesh(section, mesh, cancellation)
+                }
+                if (cancellation.isCancelled) {
+                    mesh.drop()
+                    return null
+                }
+                cache.cleanup()
+            } catch (error: Throwable) {
+                mesh.drop()
+                throw error
             }
-            cache.cleanup()
-        } catch (error: Throwable) {
-            mesh.drop()
-            throw error
+
+            return mesh.build(position, snapshot.modelRevision, snapshot.connectivity())
         }
 
-        return mesh.build(position)
+        override fun close() = Unit
     }
 }

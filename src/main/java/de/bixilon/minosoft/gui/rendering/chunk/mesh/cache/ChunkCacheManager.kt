@@ -33,10 +33,22 @@ class ChunkCacheManager(
         this.caches.clear()
     }
 
-    operator fun set(position: SectionPosition, cache: ChunkMeshCache) = lock.locked {
-        val previous = this.caches.getOrPut(position.chunkPosition) { Int2ObjectOpenHashMap() }.put(position.y, cache) ?: return@locked
+    operator fun set(position: SectionPosition, cache: ChunkMeshCache) {
+        publish(position, cache)
+    }
 
-        renderer.unloadingQueue += previous
+    fun publish(position: SectionPosition, cache: ChunkMeshCache?) {
+        val previous = lock.locked {
+            val sections = this.caches[position.chunkPosition]
+            if (cache == null) {
+                val previous = sections?.remove(position.y)
+                if (sections?.isEmpty() == true) this.caches -= position.chunkPosition
+                return@locked previous
+            }
+            this.caches.getOrPut(position.chunkPosition) { Int2ObjectOpenHashMap() }
+                .put(position.y, cache)
+        }
+        if (previous != null) renderer.unloadingQueue += previous
     }
 
     private fun remove(position: SectionPosition): ChunkMeshCache? = lock.locked {

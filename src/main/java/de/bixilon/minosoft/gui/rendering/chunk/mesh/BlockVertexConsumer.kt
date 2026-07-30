@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -23,5 +24,16 @@ import de.bixilon.minosoft.gui.rendering.util.mesh.uv.array.PackedUVArray
 interface BlockVertexConsumer : VertexConsumer {
 
     fun addQuad(offset: Vec3f, positions: FaceVertexData, uv: PackedUVArray, texture: ShaderTexture, light: Int, tint: RGBColor, ao: IntArray)
-}
 
+    fun addQuad(
+        offset: Vec3f,
+        positions: FaceVertexData,
+        uv: PackedUVArray,
+        texture: ShaderTexture,
+        light: IntArray,
+        tint: IntArray,
+        flipDiagonal: Boolean,
+    ) {
+        addQuad(offset, positions, uv, texture, light[0], RGBColor(tint[0]), IntArray(4))
+    }
+}

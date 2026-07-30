@@ -20,7 +20,9 @@ import de.bixilon.minosoft.data.world.positions.InSectionPosition
 import de.bixilon.minosoft.data.world.positions.SectionPosition
 import de.bixilon.minosoft.gui.rendering.camera.frustum.FrustumResults
 import de.bixilon.minosoft.gui.rendering.chunk.entities.BlockEntityRenderer
+import de.bixilon.minosoft.gui.rendering.chunk.mesh.cache.ChunkMeshCache
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.types.ChunkMeshTypeMap
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainDirectionalVisibility
 
 class ChunkMeshes(
     val section: ChunkSection,
@@ -29,10 +31,16 @@ class ChunkMeshes(
     val max: InSectionPosition,
 
     val details: IntInlineSet,
+    val materialGeneration: String?,
+    val modelRevision: Long,
+    val connectivity: TerrainDirectionalVisibility,
+    val outputBytes: Long,
 
     val meshes: ChunkMeshTypeMap,
     val entities: Array<BlockEntityRenderer>?,
 ) {
+    var candidateCache: ChunkMeshCache? = null
+
     val center = BlockPosition.of(position, InSectionPosition(8, 8, 8))
 
     var delta = BlockPosition()
@@ -69,6 +77,7 @@ class ChunkMeshes(
 
 
         meshes.forEach { type, mesh ->
+            mesh.cameraDelta = delta
             mesh.distance = distance * if (type.inverseDistance) -1 else 1
             if (occlusion) mesh.occlusion = ChunkMesh.OcclusionStates.MAYBE
         }

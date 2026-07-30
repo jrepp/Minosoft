@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -32,6 +33,7 @@ import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.RenderingStates
 import de.bixilon.minosoft.gui.rendering.camera.Camera
+import de.bixilon.minosoft.gui.rendering.camera.frustum.FrustumResults
 import de.bixilon.minosoft.gui.rendering.camera.occlusion.OcclusionGraph
 import de.bixilon.minosoft.gui.rendering.camera.occlusion.SectionPositionSet
 import de.bixilon.minosoft.gui.rendering.camera.occlusion.WorldOcclusionManager
@@ -41,9 +43,26 @@ import de.bixilon.minosoft.gui.rendering.chunk.queue.loading.MeshLoadingQueue
 import de.bixilon.minosoft.gui.rendering.chunk.queue.loading.MeshUnloadingQueue
 import de.bixilon.minosoft.gui.rendering.chunk.queue.meshing.ChunkMeshingQueue
 import de.bixilon.minosoft.gui.rendering.chunk.queue.meshing.MeshQueueItem
+import de.bixilon.minosoft.gui.rendering.chunk.visible.VisibleMeshes
+import de.bixilon.minosoft.gui.rendering.framebuffer.FramebufferShader
+import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
+import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
+import de.bixilon.minosoft.gui.rendering.graph.resource.RenderResourcePlan
+import de.bixilon.minosoft.gui.rendering.graph.resource.VertexSemantic
 import de.bixilon.minosoft.gui.rendering.light.RenderLight
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
+import de.bixilon.minosoft.gui.rendering.shader.Shader
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderPipelinePlan
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderPipelineRegistry
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderProgramPhase
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderProgramSource
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.WorldShaderPipeline
 import de.bixilon.minosoft.gui.rendering.system.dummy.DummyRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTextureManager
+import de.bixilon.minosoft.gui.rendering.terrain.BuiltInTerrainVertexLayout
+import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendDescriptor
+import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainProductionPhase
 import de.bixilon.minosoft.gui.rendering.tint.TintManager
 import de.bixilon.minosoft.modding.event.master.EventMaster
 import de.bixilon.minosoft.physics.entities.living.player.PlayerPhysics
@@ -144,9 +163,22 @@ class ChunkRendererTest {
         context::camera.forceSet(Camera(context))
         context::state.forceSet(DataObserver(RenderingStates.RUNNING))
         context::tints.forceSet(TintManager(session))
+        context::shaderPipeline.forceSet(ShaderPipelineRegistry())
 
 
         return ChunkRenderer(session, context)
+    }
+
+    fun `block entity phases let each renderer bind its exact scene shader`() {
+        val renderer = create()
+        renderer.registerLayers()
+
+        val blockEntityLayers = renderer.layers.elements.filter {
+            it.semantic == PipelineSemantic.BLOCK_ENTITIES ||
+                it.semantic == PipelineSemantic.BLOCK_ENTITIES_TRANSLUCENT
+        }
+        assert(blockEntityLayers.size == 2)
+        assert(blockEntityLayers.all { it.shader == null })
     }
 
     fun `directly add to out of view distance`() {
@@ -192,6 +224,34 @@ class ChunkRendererTest {
         assert(!renderer.isMeshing(section))
         for (i in 0 until 100) {
             sleep(10.milliseconds)
+            renderer.meshingQueue.publishCompleted()
+            if (renderer.isLoading(section)) break
+        }
+        assert(renderer.isLoading(section))
+        val telemetry = renderer.terrainPerformance.snapshot()
+        assert(telemetry.requestedBuilds >= 1L)
+        assert(telemetry.startedBuilds == 1L)
+        assert(telemetry.successfulBuilds == 1L)
+        assert(telemetry.outputBytes > 0L)
+        assert(telemetry.phases.getValue(TerrainProductionPhase.QUEUE_WAIT).samples == 1L)
+        assert(telemetry.phases.getValue(TerrainProductionPhase.SNAPSHOT_CAPTURE).samples == 1L)
+        assert(telemetry.phases.getValue(TerrainProductionPhase.MESH_BUILD).samples == 1L)
+        assert(telemetry.phases.getValue(TerrainProductionPhase.WORKER_BUSY).samples == 1L)
+    }
+
+    fun `queued invalidation coalesces to latest terrain revision`() {
+        val renderer = create()
+        val chunk = renderer.create(ChunkPosition(2, 2), true, true)
+        val section = chunk.sections.create(1)!!.apply { this.blocks[1, 2, 3] = TestBlockStates.MODEL1 }
+
+        renderer.invalidate(section)
+        renderer.invalidate(section)
+
+        renderer.meshingQueue.work()
+        assert(!renderer.isMeshing(section))
+        for (i in 0 until 100) {
+            sleep(10.milliseconds)
+            renderer.meshingQueue.publishCompleted()
             if (renderer.isLoading(section)) break
         }
         assert(renderer.isLoading(section))
@@ -207,11 +267,107 @@ class ChunkRendererTest {
         renderer.meshingQueue.work()
         for (i in 0 until 100) {
             sleep(10.milliseconds)
+            renderer.meshingQueue.publishCompleted()
             if (renderer.isLoading(section)) break
         }
         renderer.loadingQueue.work()
         assert(!renderer.isLoading(section))
         assert(renderer.isLoaded(section))
+        val telemetry = renderer.terrainPerformance.snapshot()
+        assert(telemetry.pendingUploads == 0)
+        assert(telemetry.uploadedBytes == telemetry.outputBytes)
+        assert(telemetry.phases.getValue(TerrainProductionPhase.UPLOAD).samples == 1L)
+    }
+
+    fun `mesh publication rejects a stale snapshot without a visibility gap`() {
+        val renderer = create()
+        val chunk = renderer.create(ChunkPosition(2, 2), true, true)
+        val section = chunk.sections.create(1)!!.apply { this.blocks[1, 2, 3] = TestBlockStates.MODEL1 }
+
+        renderer.invalidate(section)
+        renderer.meshingQueue.work()
+        for (i in 0 until 100) {
+            sleep(10.milliseconds)
+            renderer.meshingQueue.publishCompleted()
+            if (renderer.isLoading(section)) break
+        }
+        renderer.loadingQueue.work()
+
+        val stale = renderer.loaded.visibilitySnapshot()
+        val mesh = stale.candidates.single { (candidate, _) -> candidate.section === section }.first
+        val loadedMeshes = HashSet<Any>()
+        mesh.meshes.forEach { _, chunkMesh -> loadedMeshes += chunkMesh }
+        assert(renderer.visibility.meshes.meshes.any { meshList -> meshList.any { it in loadedMeshes } })
+
+        val staleVisible = VisibleMeshes(renderer.visibility)
+        staleVisible.unsafeAdd(mesh, FrustumResults.FULLY_INSIDE)
+
+        renderer.loaded -= mesh.position
+
+        assert(!renderer.loaded.publishVisibility(stale, staleVisible))
+        assert(renderer.visibility.meshes.meshes.all { meshList -> meshList.none { it in loadedMeshes } })
+
+        val current = renderer.loaded.visibilitySnapshot()
+        assert(renderer.loaded.publishVisibility(current, VisibleMeshes(renderer.visibility)))
+    }
+
+    fun `loading queue rejects a mesh from the retired shader material generation`() {
+        val renderer = create()
+        val chunk = renderer.create(ChunkPosition(2, 2), true, true)
+        val section = chunk.sections.create(1)!!.apply { this.blocks[1, 2, 3] = TestBlockStates.MODEL1 }
+
+        renderer.invalidate(section)
+        renderer.meshingQueue.work()
+        for (i in 0 until 100) {
+            sleep(10.milliseconds)
+            renderer.meshingQueue.publishCompleted()
+            if (renderer.isLoading(section)) break
+        }
+        assert(renderer.isLoading(section))
+
+        val owner = RenderOwnerId("minosoft:test-shader")
+        val plan = ShaderPipelinePlan(
+            owner = owner,
+            packName = "retired-mesh-test",
+            fingerprint = "1".repeat(64),
+            views = setOf(RenderViewId.MAIN),
+            resources = RenderResourcePlan(emptyList(), emptyList()),
+            programs = listOf(
+                ShaderProgramSource(
+                    name = "terrain",
+                    phase = ShaderProgramPhase.TERRAIN,
+                    vertex = "void main() {}",
+                    fragment = "void main() {}",
+                    uniforms = emptySet(),
+                    samplers = emptySet(),
+                ),
+            ),
+            requiredTerrainSemantics = setOf(VertexSemantic.BLOCK_ID),
+        )
+        val terrain = TerrainBackendDescriptor(
+            owner = RenderOwnerId("minosoft:test-terrain"),
+            implementation = "test",
+            materials = TerrainMaterialClass.entries.toSet(),
+            vertexLayout = BuiltInTerrainVertexLayout.VALUE,
+            supportsAuxiliaryViews = true,
+        )
+        val registration = renderer.context.shaderPipeline.replace(terrain) {
+            object : WorldShaderPipeline {
+                override val owner = owner
+                override val plan = plan
+                override fun bindTerrain(view: RenderViewId, material: TerrainMaterialClass, fallback: Shader) = Unit
+                override fun composite(fallback: FramebufferShader): FramebufferShader = fallback
+                override fun close() = Unit
+            }
+        }
+
+        renderer.loadingQueue.work()
+
+        assert(!renderer.isLoading(section))
+        assert(!renderer.isLoaded(section))
+        assert(renderer.isMeshing(section))
+        assert(renderer.terrainPerformance.snapshot().staleBuilds == 1L)
+        registration.close()
     }
 
     // TODO: all the short paths, interrupting, visible meshes, level of detail

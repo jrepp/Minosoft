@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -43,8 +44,11 @@ import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshesBuilder
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.cache.ChunkMeshCache
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.details.ChunkMeshDetails
 import de.bixilon.minosoft.gui.rendering.light.ao.AmbientOcclusion
+import de.bixilon.minosoft.gui.rendering.light.terrain.SmoothTerrainLighting
 import de.bixilon.minosoft.gui.rendering.models.block.state.render.WorldRenderProps
 import de.bixilon.minosoft.gui.rendering.tint.sampler.SingleTintSampler
+import de.bixilon.minosoft.gui.rendering.tint.sampler.TerrainTintCache
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainCancellationToken
 import java.util.*
 
 class SolidSectionMesher(
@@ -70,7 +74,7 @@ class SolidSectionMesher(
             && (if (position.x < ChunkSize.SECTION_MAX_X) blocks.fullOpaque[position.plusX().index] else (neighbours[Directions.O_EAST]?.blocks?.fullOpaque?.get(position.with(x = 0).index) == true))
     }
 
-    fun mesh(section: ChunkSection, cache: ChunkMeshCache, neighbourChunks: ChunkNeighbours, neighbours: Array<ChunkSection?>, mesh: ChunkMeshesBuilder) {
+    fun mesh(section: ChunkSection, cache: ChunkMeshCache, neighbourChunks: ChunkNeighbours, neighbours: Array<ChunkSection?>, mesh: ChunkMeshesBuilder, cancellation: TerrainCancellationToken = TerrainCancellationToken()) {
         val details = mesh.details
         val random = if (profile.antiMoirePattern && ChunkMeshDetails.ANTI_MOIRE_PATTERN in details) Random(0L) else null
 
@@ -94,15 +98,19 @@ class SolidSectionMesher(
         val floatOffset = MVec3f()
 
         val ao = if (ambientOcclusion && ChunkMeshDetails.AMBIENT_OCCLUSION in details) AmbientOcclusion(section) else null
+        val smoothLight = if (ambientOcclusion && ChunkMeshDetails.AMBIENT_OCCLUSION in details) SmoothTerrainLighting(chunk) else null
+        val tintCache = if (ChunkMeshDetails.BIOME_SAMPLING in details) TerrainTintCache(chunk, sampler) else null
 
-        val props = WorldRenderProps(floatOffset.unsafe, mesh, random, neighbourBlocks, light, details, ao) // TODO: really use unsafe?
+        val props = WorldRenderProps(floatOffset.unsafe, mesh, random, neighbourBlocks, light, details, ao, smoothLight, tintCache) // TODO: really use unsafe?
 
         val min = blocks.minPosition
         val max = blocks.maxPosition
 
         for (y in min.y..max.y) {
+            if (cancellation.isCancelled) return
             for (x in min.x..max.x) {
                 for (z in min.z..max.z) {
+                    if (cancellation.isCancelled) return
                     val inSection = InSectionPosition(x, y, z)
                     val state = blocks[inSection] ?: continue
                     if (state.block is FluidBlock) continue // fluids are rendered in a different renderer
@@ -121,6 +129,12 @@ class SolidSectionMesher(
                     floatOffset.x = (position.x - cameraOffset.x).toFloat()
                     floatOffset.y = (position.y - cameraOffset.y).toFloat()
                     floatOffset.z = (position.z - cameraOffset.z).toFloat()
+                    mesh.material(
+                        state,
+                        floatOffset.x + 0.5f,
+                        floatOffset.y + 0.5f,
+                        floatOffset.z + 0.5f,
+                    )
 
 
                     if (ChunkMeshDetails.SIDE_DOWN in details) setDown(inSection, isLowestSection, neighbourBlocks, neighbours, light, section, chunk)
@@ -169,7 +183,6 @@ class SolidSectionMesher(
                     if (rendered) {
                         mesh.addBlock(x, y, z)
                     }
-                    if (Thread.interrupted()) throw InterruptedException()
                 }
             }
         }

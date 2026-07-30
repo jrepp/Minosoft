@@ -80,7 +80,7 @@ class VisibleMeshes(
         visibility.invalidate(VisibilityGraphInvalidReason.MESH_UPDATE)
     }
 
-    fun clear() {
+    fun clear() = lock.locked {
         this.meshes.forEach { it.clear() }
         entities.clear()
 

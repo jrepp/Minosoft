@@ -21,6 +21,7 @@ import de.bixilon.minosoft.data.world.positions.SectionPosition
 class MeshQueueItem(
     val section: ChunkSection,
     val cause: ChunkMeshingCause,
+    val queuedAtNanos: Long = 0L,
 ) {
     val position = SectionPosition.of(section)
     val center = BlockPosition.of(position) + (ChunkSize.SECTION_LENGTH / 2)
