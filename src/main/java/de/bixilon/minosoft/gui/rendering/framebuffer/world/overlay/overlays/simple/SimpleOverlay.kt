@@ -19,9 +19,12 @@ import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay.Overlay
 import de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay.OverlayManager.Companion.OVERLAY_Z
+import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTexture
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
 import de.bixilon.minosoft.gui.rendering.util.mesh.integrated.SimpleTextureMeshBuilder
+
+internal fun physicalOverlayUv(texture: ShaderTexture, uv: Vec2f): Vec2f = texture.transformUV(uv)
 
 abstract class SimpleOverlay(
     protected val context: RenderContext,
@@ -39,11 +42,13 @@ abstract class SimpleOverlay(
         val mesh = SimpleTextureMeshBuilder(context)
 
         val color = color
+        val physicalUvStart = physicalOverlayUv(texture, uvStart)
+        val physicalUvEnd = physicalOverlayUv(texture, uvEnd)
 
-        mesh.addVertex(-1.0f, -1.0f, OVERLAY_Z, texture, Vec2f(uvStart.x, uvEnd.y), color)
-        mesh.addVertex(-1.0f, +1.0f, OVERLAY_Z, texture, Vec2f(uvStart.x, uvStart.y), color)
-        mesh.addVertex(+1.0f, +1.0f, OVERLAY_Z, texture, Vec2f(uvEnd.x, uvStart.y), color)
-        mesh.addVertex(+1.0f, -1.0f, OVERLAY_Z, texture, Vec2f(uvEnd.x, uvEnd.y), color)
+        mesh.addVertex(-1.0f, -1.0f, OVERLAY_Z, texture, Vec2f(physicalUvStart.x, physicalUvEnd.y), color)
+        mesh.addVertex(-1.0f, +1.0f, OVERLAY_Z, texture, Vec2f(physicalUvStart.x, physicalUvStart.y), color)
+        mesh.addVertex(+1.0f, +1.0f, OVERLAY_Z, texture, Vec2f(physicalUvEnd.x, physicalUvStart.y), color)
+        mesh.addVertex(+1.0f, -1.0f, OVERLAY_Z, texture, Vec2f(physicalUvEnd.x, physicalUvEnd.y), color)
         mesh.addIndexQuad()
 
         return mesh.bake()

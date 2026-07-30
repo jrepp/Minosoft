@@ -65,6 +65,9 @@ class MatrixHandler(
         private set
     var viewProjectionMatrix = projectionMatrix * viewMatrix
         private set
+    val nearPlane get() = NEAR_PLANE
+    var farPlane = 5.0f
+        private set
 
     private var dynamicFOV = FloatAverage(3.ticks.duration, 1.0f)
 
@@ -100,7 +103,8 @@ class MatrixHandler(
                 sqrt((viewDistance * MAX_VERTICAL_VIEW_DISTANCE * ChunkSize.SECTION_LENGTH * viewDistance).toFloat())
             }
         }
-        projectionMatrix = CameraUtil.perspective(fov.rad, screenDimensions.x / screenDimensions.y, NEAR_PLANE, maxOf(far, 5.0f))
+        farPlane = maxOf(far, 5.0f)
+        projectionMatrix = CameraUtil.perspective(fov.rad, screenDimensions.x / screenDimensions.y, NEAR_PLANE, farPlane)
     }
 
     fun init() {

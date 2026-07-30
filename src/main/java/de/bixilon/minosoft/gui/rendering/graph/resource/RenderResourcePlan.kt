@@ -33,11 +33,15 @@ data class RenderResourceId(
 
 sealed interface RenderTargetSize {
     data class Relative(
-        val scale: Float,
+        val widthScale: Float,
+        val heightScale: Float = widthScale,
     ) : RenderTargetSize {
         init {
-            require(scale.isFinite() && scale > 0.0f && scale <= MAX_SCALE) {
-                "Render target scale must be finite and in (0, $MAX_SCALE]: $scale"
+            require(widthScale.isFinite() && widthScale > 0.0f && widthScale <= MAX_SCALE) {
+                "Render target width scale must be finite and in (0, $MAX_SCALE]: $widthScale"
+            }
+            require(heightScale.isFinite() && heightScale > 0.0f && heightScale <= MAX_SCALE) {
+                "Render target height scale must be finite and in (0, $MAX_SCALE]: $heightScale"
             }
         }
 
@@ -57,10 +61,57 @@ sealed interface RenderTargetSize {
 }
 
 enum class RenderColorFormat {
+    R8,
+    RG8,
+    RGB8,
     RGBA8,
+    R8_SNORM,
+    RG8_SNORM,
+    RGB8_SNORM,
+    RGBA8_SNORM,
+    R16,
+    RG16,
+    RGB16,
+    RGBA16,
+    R16_SNORM,
+    RG16_SNORM,
+    RGB16_SNORM,
+    RGBA16_SNORM,
+    R16F,
     RGBA16F,
     RG16F,
+    RGB16F,
     R32F,
+    RG32F,
+    RGB32F,
+    RGBA32F,
+    R8I,
+    RG8I,
+    RGB8I,
+    RGBA8I,
+    R8UI,
+    RG8UI,
+    RGB8UI,
+    RGBA8UI,
+    R16I,
+    RG16I,
+    RGB16I,
+    RGBA16I,
+    R16UI,
+    RG16UI,
+    RGB16UI,
+    RGBA16UI,
+    R32I,
+    RG32I,
+    RGB32I,
+    RGBA32I,
+    R32UI,
+    RG32UI,
+    RGB32UI,
+    RGBA32UI,
+    RGB10_A2,
+    R11F_G11F_B10F,
+    RGB9_E5,
 }
 
 enum class RenderDepthFormat {
@@ -120,6 +171,7 @@ enum class VertexSemantic {
     MATERIAL_ID,
     BLOCK_ID,
     MID_TEXTURE_COORDINATE,
+    MID_BLOCK,
 }
 
 enum class VertexAttributeFormat(

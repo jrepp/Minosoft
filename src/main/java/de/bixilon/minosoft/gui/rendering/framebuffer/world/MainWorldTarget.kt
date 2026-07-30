@@ -38,7 +38,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.tex
 class MainWorldTarget(
     override val context: RenderContext,
 ) : IntegratedFramebuffer {
-    private val overlay = OverlayManager(context)
+    val overlay = OverlayManager(context)
     val `fun` = FunEffectManager(context)
     private val defaultShader = context.system.shader.create(minosoft("framebuffer/world")) { FramebufferShader(it) }
     val descriptor = RenderTargetDescriptor(
@@ -85,6 +85,5 @@ class MainWorldTarget(
                 super.draw(pipeline.composite(defaultShader))
             }
         }
-        overlay.draw()
     }
 }

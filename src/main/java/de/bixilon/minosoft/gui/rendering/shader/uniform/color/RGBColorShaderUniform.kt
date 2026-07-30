@@ -27,10 +27,7 @@ class RGBColorShaderUniform(
 ) : ShaderUniform(native, name) {
     private var value = default
 
-    override fun upload() {
-        super.upload()
-        shader.native.setRGBColor(name, value)
-    }
+    override fun uploadTo(target: NativeShader) = target.setRGBColor(name, value)
 
     operator fun getValue(thisRef: Any, property: KProperty<*>): RGBColor {
         return value

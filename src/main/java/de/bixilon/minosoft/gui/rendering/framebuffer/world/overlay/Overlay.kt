@@ -14,9 +14,11 @@
 package de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay
 
 import de.bixilon.minosoft.gui.rendering.renderer.drawable.Drawable
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 
 interface Overlay : Drawable {
     val render: Boolean
+    val semantic: PipelineSemantic get() = PipelineSemantic.WORLD_OVERLAY
 
     fun init() {}
     fun postInit() {}

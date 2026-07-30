@@ -37,6 +37,18 @@ object CameraUtil {
         return mat.unsafe
     }
 
+    fun orthographic(left: Float, right: Float, bottom: Float, top: Float, near: Float, far: Float): Mat4f {
+        require(right > left && top > bottom && far > near) { "Invalid orthographic projection bounds" }
+        val mat = MMat4f(1.0f)
+        mat[0, 0] = 2.0f / (right - left)
+        mat[1, 1] = 2.0f / (top - bottom)
+        mat[2, 2] = -2.0f / (far - near)
+        mat[0, 3] = -(right + left) / (right - left)
+        mat[1, 3] = -(top + bottom) / (top - bottom)
+        mat[2, 3] = -(far + near) / (far - near)
+        return mat.unsafe
+    }
+
     fun lookAt(eye: Vec3f, center: Vec3f, up: Vec3f): Mat4f {
         val f = (center - eye).normalize()
         val s = (f cross up).normalize()

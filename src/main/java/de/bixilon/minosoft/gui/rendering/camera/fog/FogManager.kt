@@ -27,6 +27,8 @@ import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.shader.AbstractShader
+import de.bixilon.minosoft.gui.rendering.shader.Shader
+import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 import de.bixilon.minosoft.gui.rendering.shader.types.FogShader
 import de.bixilon.minosoft.gui.rendering.sky.SkyRenderer
 import de.bixilon.minosoft.gui.rendering.tint.sampler.gaussian.GaussianTintSampler
@@ -156,13 +158,29 @@ class FogManager(
     }
 
     fun use(shader: AbstractShader) {
+        shader.use()
+        val host = shader as? Shader
+        val target = host?.native?.context?.shaderPipeline?.uniformTarget(host) ?: shader.native
+        uploadTo(target)
+    }
+
+    /**
+     * Uploads the retained fog snapshot to an already selected native program.
+     *
+     * Provider scene synchronization must not reactivate the host shader:
+     * its uniform locations belong to a different linked program.
+     */
+    fun uploadTo(native: NativeShader) {
         val start = state.start * state.start
         val end = state.end * state.end
         val distance = end - start
         val color = state.color
         val flags = state.flags()
 
-        shader.update(start, distance, color, flags)
+        if (native.hasUniform("uFogStart")) native["uFogStart"] = start
+        if (native.hasUniform("uFogDistance")) native["uFogDistance"] = distance
+        if (native.hasUniform("uFogColor")) color?.let { native["uFogColor"] = it }
+        if (native.hasUniform("uFogFlags")) native.setUInt("uFogFlags", flags)
     }
 
     private fun AbstractShader.update(start: Float, distance: Float, color: RGBAColor?, flags: Int) {

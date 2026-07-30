@@ -119,8 +119,11 @@ class RendererManager(
     }
 
     override fun draw() {
-        context.profiler("prepare") { prepare() }
-        context.profiler("draw") { pipeline.draw() }
+        context.profiler("draw") {
+            pipeline.draw {
+                context.profiler("prepare") { prepare() }
+            }
+        }
     }
 
     override fun iterator(): Iterator<Renderer> {

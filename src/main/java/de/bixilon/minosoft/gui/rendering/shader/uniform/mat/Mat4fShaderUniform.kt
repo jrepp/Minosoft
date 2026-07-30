@@ -27,10 +27,7 @@ class Mat4fShaderUniform(
 ) : ShaderUniform(native, name) {
     private var value = default
 
-    override fun upload() {
-        super.upload()
-        shader.native.setMat4f(name, value)
-    }
+    override fun uploadTo(target: NativeShader) = target.setMat4f(name, value)
 
     operator fun getValue(thisRef: Any, property: KProperty<*>): Mat4f {
         return value

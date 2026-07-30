@@ -18,6 +18,7 @@ import de.bixilon.kutil.reflection.ReflectionUtil.realName
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
 import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
+import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
 
@@ -29,6 +30,7 @@ class PipelineElement(
     val semantic: PipelineSemantic = PipelineSemantic.AUTO,
     val owner: (() -> RenderOwnerId)? = null,
     val passId: RenderPassId? = null,
+    val auxiliaryRenderers: Map<RenderViewId, () -> Unit> = emptyMap(),
 ) : Comparable<PipelineElement> {
 
     fun draw(context: RenderContext) {
@@ -39,6 +41,17 @@ class PipelineElement(
     fun isEnabled(): Boolean = skip?.invoke() != true
 
     fun drawEnabled(context: RenderContext) {
+        draw(context, renderer)
+    }
+
+    fun supports(view: RenderViewId): Boolean = view in auxiliaryRenderers
+
+    fun draw(view: RenderViewId, context: RenderContext) {
+        val renderer = auxiliaryRenderers[view] ?: return
+        draw(context, renderer)
+    }
+
+    private fun draw(context: RenderContext, renderer: () -> Unit) {
         context.system.set(layer.settings)
         shader?.use()
         context.profiler(renderer::class.java.realName) { renderer.invoke() }
@@ -56,9 +69,16 @@ enum class PipelineSemantic {
     TERRAIN_CUTOUT,
     TERRAIN_TRANSLUCENT,
     TERRAIN_EMISSIVE,
+    DISTANT_TERRAIN,
+    DISTANT_WATER,
     ENTITIES,
+    ENTITIES_TRANSLUCENT,
     BLOCK_ENTITIES,
+    BLOCK_ENTITIES_TRANSLUCENT,
     PARTICLES,
+    PARTICLES_OPAQUE,
+    PARTICLES_TRANSLUCENT,
     WEATHER,
+    HAND,
     WORLD_OVERLAY,
 }

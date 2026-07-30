@@ -32,6 +32,13 @@ import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 interface AbstractShader {
     val native: NativeShader
 
+    /**
+     * Native program receiving an upload after [use]. Scene pipelines may
+     * select a compatible program distinct from the host fallback.
+     */
+    fun uniformTarget(): NativeShader = native
+    fun acceptsUniform(name: String): Boolean = true
+
     fun <T : ShaderUniform> uniform(uniform: T): T
     fun <T> uniform(name: String, default: T, type: ShaderSetter<T>) = uniform(AnyShaderUniform(this, default, name, type))
 

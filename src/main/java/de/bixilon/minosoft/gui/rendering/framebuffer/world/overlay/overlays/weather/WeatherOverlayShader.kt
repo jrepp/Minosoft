@@ -13,6 +13,10 @@
 
 package de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay.overlays.weather
 
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.types.TextureShader
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
@@ -21,6 +25,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 class WeatherOverlayShader(
     native: NativeShader,
 ) : Shader(native), TextureShader {
+    override val sceneContract = SceneShaderContract(SceneProgramFamily.WEATHER, SceneVertexAbi.WEATHER, SceneStateAbi.WEATHER)
     override var textures: TextureManager by textureManager()
 
     var intensity by uniform("uIntensity", 0.0f)

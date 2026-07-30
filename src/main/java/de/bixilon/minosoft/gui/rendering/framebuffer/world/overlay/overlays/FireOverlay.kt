@@ -35,8 +35,11 @@ class FireOverlay(
     private val shader = context.shaders.genericTexture2dShader
     private var texture: Texture = context.textures.static.create(if (context.session.version.flattened) TEXTURE else LEGACY_TEXTURE)
     private val lava = context.session.registries.fluid[LavaFluid]
+    /** Debug-only presentation override; authoritative player fire remains untouched. */
+    var referenceRenderOverride: Boolean? = null
     override val render: Boolean
         get() {
+            referenceRenderOverride?.let { return it }
             if (!config.enabled) {
                 return false
             }

@@ -45,7 +45,7 @@ abstract class OpenGlUniformBuffer(
         if (this.state != GpuBufferStates.INITIALIZED) throw IllegalStateException("Not uploaded (buffer=$this, state=$state)")
         shader.use()
 
-        shader.native[bufferName] = this
+        shader.uniformTarget()[bufferName] = this
         gl { glBindBufferBase(glType, bindingIndex, id) }
     }
 

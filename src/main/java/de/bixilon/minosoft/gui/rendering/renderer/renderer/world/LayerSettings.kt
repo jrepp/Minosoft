@@ -17,6 +17,7 @@ import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.Pipeli
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
 import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
+import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
 
@@ -39,8 +40,18 @@ class LayerSettings {
         semantic: PipelineSemantic,
         owner: (() -> RenderOwnerId)? = null,
         passId: RenderPassId,
+        auxiliaryRenderers: Map<RenderViewId, () -> Unit> = emptyMap(),
         skip: (() -> Boolean)? = null,
     ) {
-        elements += PipelineElement(layer, shader, renderer, skip, semantic, owner, passId)
+        elements += PipelineElement(
+            layer,
+            shader,
+            renderer,
+            skip,
+            semantic,
+            owner,
+            passId,
+            auxiliaryRenderers,
+        )
     }
 }

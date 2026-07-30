@@ -16,11 +16,14 @@ package de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay.overlays.DefaultOverlays
 import de.bixilon.minosoft.gui.rendering.renderer.drawable.Drawable
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 
 class OverlayManager(
     private val context: RenderContext,
 ) : Drawable {
     private val overlays: MutableList<Overlay> = mutableListOf()
+
+    fun <T : Overlay> get(type: Class<T>): T? = overlays.firstOrNull(type::isInstance)?.let(type::cast)
 
     fun init() {
         for (factory in DefaultOverlays.OVERLAYS) {
@@ -38,8 +41,9 @@ class OverlayManager(
         }
     }
 
-    override fun draw() {
+    fun draw(semantic: PipelineSemantic) {
         for (overlay in overlays) {
+            if (overlay.semantic != semantic) continue
             overlay.update()
             if (!overlay.render) {
                 continue
@@ -48,6 +52,8 @@ class OverlayManager(
             overlay.draw()
         }
     }
+
+    override fun draw() = draw(PipelineSemantic.WORLD_OVERLAY)
 
     companion object {
         const val OVERLAY_Z = -0.1f

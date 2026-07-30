@@ -28,10 +28,7 @@ class AnyShaderUniform<T>(
 ) : ShaderUniform(native, name), ReadWriteProperty<Any, T> {
     private var value = default
 
-    override fun upload() {
-        super.upload()
-        setter.set(shader.native, name, value)
-    }
+    override fun uploadTo(target: NativeShader) = setter.set(target, name, value)
 
     override fun getValue(thisRef: Any, property: KProperty<*>): T {
         return value

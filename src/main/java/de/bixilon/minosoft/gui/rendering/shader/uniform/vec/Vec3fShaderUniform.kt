@@ -26,10 +26,7 @@ class Vec3fShaderUniform(
 ) : ShaderUniform(native, name) {
     private var value = default
 
-    override fun upload() {
-        super.upload()
-        shader.native.setVec3f(name, value)
-    }
+    override fun uploadTo(target: NativeShader) = target.setVec3f(name, value)
 
     operator fun getValue(thisRef: Any, property: KProperty<*>): Vec3f {
         return value

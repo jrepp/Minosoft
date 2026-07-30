@@ -21,6 +21,7 @@ import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay.Overlay
 import de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay.OverlayFactory
 import de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay.OverlayManager.Companion.OVERLAY_Z
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
@@ -29,19 +30,22 @@ import de.bixilon.minosoft.util.KUtil.toResourceLocation
 import java.util.*
 
 class WeatherOverlay(private val context: RenderContext) : Overlay {
+    override val semantic = PipelineSemantic.WEATHER
     private val world = context.session.world
     private val config = context.session.profiles.rendering.overlay.weather
     private val rain = context.textures.static.create(RAIN)
     private val snow = context.textures.static.create(SNOW)
-    private val precipitation get() = context.session.player.physics.positionInfo.biome?.precipitation
+    val sourcePrecipitation get() = context.session.player.physics.positionInfo.biome?.precipitation
+    var referencePrecipitationOverride: BiomePrecipitation? = null
+    val effectivePrecipitation get() = referencePrecipitationOverride ?: sourcePrecipitation
     override val render: Boolean
-        get() = world.dimension.effects.weather && world.weather.raining && when (precipitation) { // ToDo: Check if exposed to the sky
+        get() = world.dimension.effects.weather && world.weather.raining && when (effectivePrecipitation) { // ToDo: Check if exposed to the sky
             null -> false
             BiomePrecipitation.RAIN -> config.rain
             BiomePrecipitation.SNOW -> config.snow
         }
     private val texture: Texture?
-        get() = when (precipitation) {
+        get() = when (effectivePrecipitation) {
             null -> null
             BiomePrecipitation.RAIN -> rain
             BiomePrecipitation.SNOW -> snow

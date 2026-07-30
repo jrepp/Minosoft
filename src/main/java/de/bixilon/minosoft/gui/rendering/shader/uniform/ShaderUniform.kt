@@ -14,14 +14,27 @@
 package de.bixilon.minosoft.gui.rendering.shader.uniform
 
 import de.bixilon.minosoft.gui.rendering.shader.AbstractShader
-import de.bixilon.minosoft.gui.rendering.shader.Shader
+import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 
 abstract class ShaderUniform(
     protected val shader: AbstractShader,
     val name: String,
 ) {
 
-    open fun upload() {
+    fun upload() {
         shader.use()
+        // Shader-pack scene selection happens in use(). A preceding draw may
+        // have left a binding for another host shader, so checking acceptance
+        // before activation can route this upload to an incompatible selected
+        // program (notably a shadow variant that optimized the uniform out).
+        if (!shader.acceptsUniform(name)) return
+        val target = shader.uniformTarget()
+        // Source-level scene contracts describe which values a variant may
+        // consume. The linked driver program remains authoritative: constant
+        // folding can legally remove one of those uniforms.
+        if (!target.hasUniform(name)) return
+        uploadTo(target)
     }
+
+    abstract fun uploadTo(target: NativeShader)
 }

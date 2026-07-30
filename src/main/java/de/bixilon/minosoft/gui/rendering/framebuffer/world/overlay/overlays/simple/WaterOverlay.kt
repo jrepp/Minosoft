@@ -22,11 +22,19 @@ import de.bixilon.minosoft.gui.rendering.framebuffer.world.overlay.OverlayFactor
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
 
+internal fun shouldRenderWaterOverlay(spectator: Boolean, eyeInWater: Boolean, shaderAllowsOverlay: Boolean): Boolean {
+    return !spectator && eyeInWater && shaderAllowsOverlay
+}
+
 class WaterOverlay(context: RenderContext) : SimpleOverlay(context) {
     private val player = context.session.player
     override val texture: Texture = context.textures.static.create(TEXTURE)
     override val render: Boolean
-        get() = player.gamemode != Gamemodes.SPECTATOR && player.physics.submersion.eye is WaterFluid
+        get() = shouldRenderWaterOverlay(
+            spectator = player.gamemode == Gamemodes.SPECTATOR,
+            eyeInWater = player.physics.submersion.eye is WaterFluid,
+            shaderAllowsOverlay = context.shaderPipeline.plan()?.underwaterOverlay ?: true,
+        )
     override var color: RGBAColor = super.color
 
     override fun draw() {

@@ -17,6 +17,7 @@ import de.bixilon.minosoft.config.DebugOptions.EMPTY_BUFFERS
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.GpuBufferStates
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.vertex.PrimitiveTypes
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.vertex.VertexBuffer
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderPipelineRegistry
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
 import de.bixilon.minosoft.gui.rendering.system.opengl.buffer.FloatOpenGlBuffer
@@ -25,9 +26,10 @@ import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
 import org.lwjgl.opengl.GL30.*
+import org.lwjgl.opengl.GL40.GL_PATCHES
 
 class OpenGlVertexBuffer(
-    system: OpenGlRenderSystem,
+    private val system: OpenGlRenderSystem,
     override val primitive: PrimitiveTypes,
     override val struct: MeshStruct,
     val data: FloatOpenGlBuffer,
@@ -78,14 +80,17 @@ class OpenGlVertexBuffer(
 
     override fun draw() {
         check(state == GpuBufferStates.INITIALIZED) { "Vertex buffer is not uploaded: $state" }
+        val drawMode = drawMode(primitive, vertices, system.shader.activePatchVertices)
+        val pipeline: ShaderPipelineRegistry? = system.context.shaderPipeline
+        pipeline?.recordDraw(vertices)
 
         vao.bind()
 
         if (index == null) {
-            gl { glDrawArrays(primitive.gl, 0, vertices) }
+            gl { glDrawArrays(drawMode, 0, vertices) }
         } else {
             index.bind()
-            gl { glDrawElements(primitive.gl, vertices, GL_UNSIGNED_INT, 0) }
+            gl { glDrawElements(drawMode, vertices, GL_UNSIGNED_INT, 0) }
             index.unbind()
         }
 
@@ -111,9 +116,19 @@ class OpenGlVertexBuffer(
 
     override fun toString() = "OpenGlVertexBuffer(vertices=$vertices, state=$state)"
 
-    private companion object {
+    internal companion object {
+        fun drawMode(primitive: PrimitiveTypes, vertices: Int, patchVertices: Int?): Int {
+            if (patchVertices == null) return primitive.gl
+            require(primitive.vertices == patchVertices) {
+                "Tessellation shader requires $patchVertices-vertex patches but buffer uses $primitive"
+            }
+            require(vertices % patchVertices == 0) {
+                "Tessellation draw contains $vertices vertices, not a multiple of patch size $patchVertices"
+            }
+            return GL_PATCHES
+        }
 
-        val PrimitiveTypes.gl: Int
+        private val PrimitiveTypes.gl: Int
             get() = when (this) {
                 PrimitiveTypes.POINT -> GL_POINTS
                 PrimitiveTypes.LINE -> GL_LINES

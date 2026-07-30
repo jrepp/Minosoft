@@ -25,10 +25,7 @@ class FloatShaderUniform(
 ) : ShaderUniform(native, name) {
     private var value = default
 
-    override fun upload() {
-        super.upload()
-        shader.native.setFloat(name, value)
-    }
+    override fun uploadTo(target: NativeShader) = target.setFloat(name, value)
 
     operator fun getValue(thisRef: Any, property: KProperty<*>): Float {
         return value
