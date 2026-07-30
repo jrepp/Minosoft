@@ -35,12 +35,12 @@ data class DimensionProperties(
     //   val bedWorks: Boolean = true,
     val effects: DimensionEffects = OverworldEffects,
     //   val hasRaids: Boolean = true,
-    // val logicalHeight: Int = DEFAULT_HEIGHT,
     //   val coordinateScale: Double = 0.0,
     val minY: Int = 0,
-    //   val hasCeiling: Boolean = false,
     val ultraWarm: Boolean = false,
     val height: Int = DEFAULT_HEIGHT,
+    val logicalHeight: Int = height,
+    val hasCeiling: Boolean = false,
     val supports3DBiomes: Boolean = true,
 ) {
     val maxY = height + minY - 1
@@ -53,6 +53,9 @@ data class DimensionProperties(
         check(maxSection >= minSection) { "Upper section can not be lower that the lower section ($minSection >= $maxSection)" }
         check(minSection in ChunkSize.CHUNK_MIN_SECTION..ChunkSize.CHUNK_MAX_SECTION) { "Minimum section out of bounds: $minSection" }
         check(maxSection in ChunkSize.CHUNK_MIN_SECTION..ChunkSize.CHUNK_MAX_SECTION) { "Maximum section out of bounds: $minSection" }
+        check(logicalHeight in 1..height) {
+            "Logical height must be positive and no greater than the physical height ($logicalHeight !in 1..$height)"
+        }
     }
 
 
@@ -70,12 +73,12 @@ data class DimensionProperties(
                 //bedWorks = data["bed_works"]?.toBoolean() ?: false,
                 effects = data["effects"].nullCast<String>()?.let { DefaultDimensionEffects[it.toResourceLocation()] } ?: identifier?.let { DefaultDimensionEffects[it] } ?: OverworldEffects,
                 //hasRaids = data["has_raids"]?.toBoolean() ?: false,
-                // logicalHeight = data["logical_height"]?.toInt() ?: DEFAULT_MAX_Y,
                 //coordinateScale = data["coordinate_scale"].nullCast() ?: 0.0,
                 minY = data["min_y"]?.toInt() ?: 0,
-                //hasCeiling = data["has_ceiling"]?.toBoolean() ?: false,
                 ultraWarm = data["ultrawarm"]?.toBoolean() ?: false,
                 height = data["height"]?.toInt() ?: DEFAULT_HEIGHT,
+                logicalHeight = data["logical_height"]?.toInt() ?: data["height"]?.toInt() ?: DEFAULT_HEIGHT,
+                hasCeiling = data["has_ceiling"]?.toBoolean() ?: false,
                 supports3DBiomes = data["supports_3d_biomes"]?.toBoolean() ?: true,
             )
         }

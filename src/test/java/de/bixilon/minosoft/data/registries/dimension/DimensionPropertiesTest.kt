@@ -14,6 +14,7 @@
 package de.bixilon.minosoft.data.registries.dimension
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 
@@ -52,5 +53,35 @@ class DimensionPropertiesTest {
     fun `default of deserialization`() {
         val properties = DimensionProperties.deserialize(null, emptyMap())
         assertEquals(properties, DimensionProperties())
+    }
+
+    @Test
+    fun `iris world information survives dimension deserialization`() {
+        val properties = DimensionProperties.deserialize(
+            null,
+            mapOf(
+                "min_y" to -64,
+                "height" to 384,
+                "logical_height" to 256,
+                "has_ceiling" to true,
+                "has_skylight" to false,
+                "ambient_light" to 0.1f,
+            ),
+        )
+
+        assertEquals(-64, properties.minY)
+        assertEquals(384, properties.height)
+        assertEquals(256, properties.logicalHeight)
+        assertEquals(true, properties.hasCeiling)
+        assertEquals(false, properties.skyLight)
+        assertEquals(0.1f, properties.ambientLight.base)
+    }
+
+    @Test
+    fun `logical height defaults to physical height and stays bounded`() {
+        assertEquals(384, DimensionProperties(height = 384).logicalHeight)
+        assertThrows(IllegalStateException::class.java) {
+            DimensionProperties(height = 256, logicalHeight = 257)
+        }
     }
 }
