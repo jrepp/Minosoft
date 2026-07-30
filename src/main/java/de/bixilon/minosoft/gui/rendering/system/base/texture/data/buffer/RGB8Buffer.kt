@@ -17,7 +17,6 @@ import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureTransparencies
-import de.bixilon.minosoft.util.collections.bytes.ByteListUtil.copy
 import java.nio.ByteBuffer
 
 class RGB8Buffer(

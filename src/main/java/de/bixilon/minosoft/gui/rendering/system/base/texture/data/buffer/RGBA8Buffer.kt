@@ -124,8 +124,7 @@ class RGBA8Buffer(
             if (alpha == 0x00) {
                 transparency = TextureTransparencies.TRANSPARENT
             } else if (alpha < 0xFF) {
-                transparency = TextureTransparencies.TRANSLUCENT
-                break
+                return TextureTransparencies.TRANSLUCENT
             }
         }
         return transparency
