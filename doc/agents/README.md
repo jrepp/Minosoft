@@ -57,6 +57,10 @@ instructions that differ from the root contract.
 
 - [Hot-reload acceptance protocol](acceptance/hot-reload.md) defines the
   repeatable process-generation gates and failure-preservation check.
+- [Agent trajectory tooling backlog](backlog/agent-trajectory-tooling.md)
+  prioritizes runtime leases, atomic diagnosis bundles, safe world snapshots,
+  compare-and-restore checkpoints, visual A/B automation, and isolated
+  world/server creation. It is target guidance, not implemented behavior.
 - [Blockbench producer-integration protocol](acceptance/blockbench.md) defines
   the isolated desktop export boundary, captured-output contract, automated
   Minosoft fixture gate, and the separate real-render and remote-server gates.
@@ -64,9 +68,16 @@ instructions that differ from the root contract.
   the separate mod and host compilation lanes.
 - [Sodium activation evidence](evidence/2026-07-21-sodium-activation.md) proves
   adapted pack activation and graphics-hook execution.
+- [Sodium terrain visual-fidelity evidence](evidence/2026-07-27-sodium-visual-fidelity.md)
+  records four-vertex light/color terrain, smooth solid/fluid lighting and AO,
+  cached biome blending, the Iris attribute bridge, and the live visual canary.
+- [Terrain runtime architecture](../design/terrain-runtime-architecture.md)
+  records the Minosoft scheduler, mesher, visibility, batching, and upload
+  baseline plus an implementation-neutral prioritized improvement path.
 - [Render-substrate target architecture](backlog/render-substrate.md) defines
-  the single replacement pipeline, built-in/Sodium/Iris ownership contracts,
-  objective completion function, delivery rungs, and small-model support queue.
+  the single replacement pipeline, built-in/optimized-terrain/shader-pipeline
+  ownership contracts, objective completion function, delivery rungs, and
+  small-model support queue.
   It is target guidance, not accepted runtime evidence.
 - [Render-substrate R0–R7 implementation checkpoint](evidence/2026-07-24-render-substrate-r0-r7.md)
   records the canonical graph/provider cutover, headless and broad checks,
@@ -114,15 +125,41 @@ instructions that differ from the root contract.
   reusable container-screen extensions, native sort/transfer/stack controls,
   managed server handler, operation telemetry, live end-to-end sort, and
   crafting-table/player-hotbar reconciliation.
+- [Creative creature catalog evidence](evidence/2026-07-26-creative-creature-catalog.md)
+  records the searchable entity-registry tab, production-model preview
+  boundary, and server-authoritative one-click spawn path.
 - [Iris and JEI activation evidence](evidence/2026-07-23-iris-jei-activation.md)
   records their exact pinned artifacts, blocker-free adapted activation,
   generation-owned render/reload and recipe-viewer hooks, live invocation and
   cleanup evidence, and the GUI quad-index invariant exposed by the recipe view.
 - [Iris and JEI behavioral acceptance](evidence/2026-07-23-iris-jei-acceptance.md)
+- [Iris render-pipeline support boundary](evidence/2026-07-26-iris-render-pipeline-support.md)
   records a clean four-generation supervised run, a real render-queue shader
   reload, JEI server presence and complete recipe-view navigation, stable
   parent/server ownership, and the launcher/navigation defects found by the
   stricter gates.
+- [Complementary motion-noise and hand evidence](evidence/2026-07-28-complementary-motion-and-hand.md)
+  separates pack-authored temporal cloud/foliage sampling from duplicate
+  rendering, records the managed motion-quality profile, and restores the
+  pinned Iris cutout alpha test for first-person arm and held-item routes.
+- [Camera-motion noise measurement evidence](evidence/2026-07-28-camera-motion-noise-measurement.md)
+  records the same-pose motion/control metric, representative-cadence override,
+  live cloud-region convergence result, and exact pose/throttle restoration.
+- [Cloud and foliage motion-noise diagnosis](evidence/2026-07-28-cloud-foliage-motion-noise-diagnosis.md)
+  separates fullscreen shader clouds, authored foliage waving, TAA-jitter
+  speckle, stable terrain publication, and entity distance boundaries while
+  keeping the entity pixel A/B explicitly unaccepted.
+- [Complementary temporal-stability implementation](evidence/2026-07-29-complementary-temporal-stability.md)
+  records the managed zero-jitter/static-foliage defaults, previous-wind motion
+  vectors, non-jittered material-254 routes, distance/mip foliage stabilization,
+  world-reprojected cloud history, and live disabled/enabled-waving driver
+  gates.
+- [Distant Horizons and Bliss integration checkpoint](evidence/2026-07-29-distant-horizons-bliss-integration.md)
+  records the exact DH/Bliss artifacts, bounded explored/generated/network LOD
+  store, cross-session persistence, managed-server transfer, native settings,
+  narrow dependency exception, focused selectable pack with Terralith/Tectonic,
+  executable distant terrain/water/shadow ABI, and driver-bound exact-Bliss
+  validation on a large diverse world.
 - [Chest-rendering evidence](evidence/2026-07-23-chest-rendering.md) records the
   `builtin/entity` item fallback gap, entity-backed section invalidation
   contract, the 61-block-item vanilla special-render audit, crafted-shield
@@ -140,6 +177,19 @@ instructions that differ from the root contract.
   records exact ETF/EMF/GeckoLib activation, headless ingestion, the neutral
   renderer bridge, transactional generation leases, existing-texture live
   retained-model swaps, focused tests, and the remaining runtime/visual gates.
+- [Content-fidelity continuation-gate completion](evidence/2026-07-26-content-fidelity-gate-completion.md)
+  audits every named EMF, ETF, GeckoLib, Animated Java, headless, multi-version,
+  transactional-reload, and GPU-cleanup requirement against current source,
+  automated tests, managed fixtures, and final real-OpenGL records while
+  keeping broader upstream parity explicitly separate.
+- [EMF/ETF living-entity render reference evidence](evidence/2026-07-26-emf-etf-render-reference.md)
+  records the managed zombie fixture, exact `rule_index` boundary, settled
+  zero-tolerance OpenGL reference, rejected upload/publication accounting, and
+  the distinction between a consumer fixture and a real Blockbench export.
+- [Naturalist registry-sync evidence](evidence/2026-07-26-naturalist-registry-sync.md)
+  records the pinned entity surface, standard Fabric configuration handshake,
+  owner/session transaction boundary, focused dependent-mod integration gate,
+  and the exact live-render and tracked-data work still required.
 - [Animated Java Blockbench export evidence](evidence/2026-07-24-animated-java-blockbench-export.md)
   pins the exact Blockbench/plugin/blueprint identities, proves an unmodified
   1.20.4 export, records its output manifest, and defines the Minosoft runtime,

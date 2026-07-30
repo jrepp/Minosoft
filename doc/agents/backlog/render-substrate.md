@@ -13,23 +13,21 @@ summaries in the [graphics](../areas/05-graphics.md) and
 Replace the current world-render pipeline with one canonical render substrate.
 Do not preserve the existing pipeline as a second/default implementation.
 Unmodded Minosoft remains supported by built-in terrain and shader providers
-that use the same contracts as adapted render mods. Sodium and Iris replace
-their respective providers; they do not wrap a separately executing native
-world pipeline.
+that use the same contracts as compatibility adapters. An optimized terrain
+provider and a shader-pack provider replace their respective built-in
+providers; they do not wrap a separately executing native world pipeline.
 
-The compatibility target is the exact pinned Sodium and Iris artifact set, not
-arbitrary Fabric/Mojang binary compatibility. Prefer isolated use or adaptation
-of their core algorithms where the host contract is sufficient. Keep Mojang
-type translation at the compatibility boundary instead of leaking it into the
-render substrate.
+Compatibility targets are exact pinned artifact sets, not arbitrary
+Fabric/Mojang binary compatibility. Keep Mojang type translation at the
+compatibility boundary instead of leaking it into the render substrate.
 
 ## Objective and completion function
 
 The objective is to make Minosoft's native render substrate closely satisfy the
-host semantics needed by the pinned Sodium and Iris contracts, while letting:
+host semantics needed by terrain and shader-pipeline providers, while letting:
 
 - built-in providers render the base profile;
-- Sodium own terrain preparation and submission when active; and
+- one optimized provider own terrain preparation and submission when active; and
 - Iris own shader-pack programs, views, targets, and composites when active.
 
 The objective is complete only when every predicate below is true:
@@ -38,9 +36,9 @@ The objective is complete only when every predicate below is true:
 RENDER_SUBSTRATE_COMPLETE =
     SINGLE_PIPELINE
  && BASE_PROFILE_ACCEPTED
- && SODIUM_OWNS_TERRAIN
+ && OPTIMIZED_TERRAIN_OWNS_PIPELINE
  && IRIS_OWNS_SHADER_PIPELINE
- && IRIS_SODIUM_COMPOSE
+ && TERRAIN_SHADER_PIPELINES_COMPOSE
  && TRANSACTIONAL_RESOURCES
  && LIFECYCLE_CLEAN
  && HEADLESS_SAFE
@@ -52,16 +50,16 @@ RENDER_SUBSTRATE_COMPLETE =
 
 | Predicate | Required evidence |
 | --- | --- |
-| `SINGLE_PIPELINE` | Base, Sodium, Iris, and combined profiles build and execute the same graph and resource contracts; provider selection changes ownership, not the frame architecture. |
+| `SINGLE_PIPELINE` | Base, optimized-terrain, shader-pack, and combined profiles build and execute the same graph and resource contracts; provider selection changes ownership, not the frame architecture. |
 | `BASE_PROFILE_ACCEPTED` | An unmodded session renders the agreed sky, terrain material classes, entities, block entities, particles/weather, world composite, and HUD gates through built-in providers. |
-| `SODIUM_OWNS_TERRAIN` | With Sodium active, the exact pinned compatibility module owns terrain build scheduling, mesh organization/upload, visibility/batching, and terrain draw submission. No built-in terrain draw runs for the same view. |
+| `OPTIMIZED_TERRAIN_OWNS_PIPELINE` | With an optimized terrain provider active, it owns build scheduling, mesh organization/upload, visibility/batching, and terrain draw submission. No built-in terrain draw runs for the same view. |
 | `IRIS_OWNS_SHADER_PIPELINE` | With Iris active, a real pinned shader pack—not a Minosoft presentation effect—selects programs, declares its required world/shadow views and targets, binds its uniforms/samplers, and executes composites. |
-| `IRIS_SODIUM_COMPOSE` | The combined profile renders Sodium terrain through Iris-selected programs and targets without duplicate terrain submission, missing phase data, or a fallback post-process substitution. |
+| `TERRAIN_SHADER_PIPELINES_COMPOSE` | The combined profile renders optimized terrain through shader-provider-selected programs and targets without duplicate terrain submission, missing phase data, or a fallback post-process substitution. |
 | `TRANSACTIONAL_RESOURCES` | Graph, program, texture, target, and vertex-layout candidates prepare off the active generation; failure preserves the last-known-good generation; successful swap retires replaced GPU objects on the render thread. |
 | `LIFECYCLE_CLEAN` | Twenty valid/invalid reload cycles and repeated activation/deactivation return registrations, callbacks, graph generations, buffers, textures, programs, and targets to the recorded steady-state counts. |
 | `HEADLESS_SAFE` | Graph descriptions, provider selection, shader-pack planning, terrain snapshots, and validation work with the dummy rendering system; OpenGL allocation and execution remain optional boundaries. |
 | `MULTI_VERSION_SAFE` | The substrate consumes version-normalized world/model inputs, and focused fixtures pass for every advertised protocol/content version touched by the change. No renderer contract embeds a 1.20.4-only registry layout. |
-| `PERFORMANCE_ACCEPTED` | On the recorded R0 scene and settings, the base profile's median CPU frame time is at most 10% above baseline and p95 at most 15% above baseline. The Sodium profile is no slower than the accepted base profile for p95 terrain preparation and submission. Counts remain bounded after warmup and reload. |
+| `PERFORMANCE_ACCEPTED` | On the recorded R0 scene and settings, the base profile's median CPU frame time is at most 10% above baseline and p95 at most 15% above baseline. The optimized-terrain profile is no slower than the accepted base profile for p95 terrain preparation and submission. Counts remain bounded after warmup and reload. |
 | `LEGACY_REMOVED` | The old flat world pipeline and single-world-framebuffer compositor have no production call sites or compatibility shims. Their tests and documentation are migrated or removed. |
 | `DOCUMENTATION_TRUTHFUL` | Evidence maps and dated evidence distinguish activation from behavioral ownership and name the exact commands, assets, captures, counters, and artifact hashes used for acceptance. |
 
@@ -77,9 +75,10 @@ last-known-good OpenGL program and texture-array publication. Terrain provider
 generations snapshot their negotiated vertex-layout declaration so a backend
 cannot mutate the shader ABI after publication.
 
-The remaining gap is behavioral rather than structural. The Sodium-labelled
-provider is exclusive, but delegates the existing Minosoft chunk core instead of
-owning the pinned Sodium algorithms. The Iris provider executes a bounded
+The remaining gap is behavioral rather than structural. The compatibility
+terrain provider is exclusive, but delegates the existing Minosoft chunk core
+instead of owning an optimized scheduler, mesher, upload path, visibility
+system, and batcher. The Iris provider executes a bounded
 project reference pack through terrain/shadow/composite programs, but has not
 accepted an independent pinned real-world Iris/OptiFine pack or its broader
 uniform, sampler, program-family, and target contract. Full GPU-object
@@ -108,7 +107,7 @@ PlaySession / normalized world snapshots
   +-----+-------------------------------+
   |                                     |
 TerrainBackend                     Scene producers
-built-in | Sodium                  sky/entities/particles
+built-in | optimized              sky/entities/particles
   |                                     |
   +---------- ShaderPipeline -----------+
              built-in | Iris
@@ -180,7 +179,7 @@ reasons. A selected `TerrainBackend` owns:
 - visibility, batching, and draw-command production; and
 - terrain submission for every graph view that requests it.
 
-The built-in backend preserves unmodded behavior. The Sodium backend replaces
+The built-in backend preserves unmodded behavior. An optimized backend replaces
 it completely while active. Selection is one owner per frame generation; two
 backends never submit the same terrain view.
 
@@ -229,13 +228,13 @@ contributions, worker tasks, and GPU retirement handles.
 
 | Rung | Work | Exit evidence |
 | --- | --- | --- |
-| R0 — Baseline | Record a deterministic base scene, frame phase trace, CPU/GPU timing, draw/upload counts, resource counts, context lifecycle, and current Sodium/Iris traces. | Re-runnable commands and captures identify the exact version, assets, settings, and artifacts used by later comparisons. |
+| R0 — Baseline | Record a deterministic base scene, frame phase trace, CPU/GPU timing, draw/upload counts, resource counts, context lifecycle, and current provider traces. | Re-runnable commands and captures identify the exact version, assets, settings, and artifacts used by later comparisons. |
 | R1 — Graph kernel | Add immutable graph/view/pass descriptions, stable IDs, dependency validation, recording execution, and owner-scoped candidate publication. Route one bounded world slice through it. | Headless graph tests cover ordering, cycles, removal, failure preservation, and deterministic traces. |
 | R2 — Resource generations | Add typed target/program/texture/layout declarations and render-thread candidate/publish/retire ownership. Make shader reload last-known-good. | Invalid candidates preserve IDs and visuals; valid/repeated swaps return resource counts to steady state on dummy and real OpenGL paths. |
 | R3 — Terrain boundary | Introduce section snapshots, semantic material/vertex declarations, one selected terrain backend, and graph-view terrain submissions. Migrate the built-in renderer. | Base profile passes visual and multi-version gates through the new backend; duplicate terrain submission is structurally impossible. |
-| R4 — Sodium ownership | Build the exact pinned translation boundary and move scheduling, meshing, upload, visibility/batching, and terrain draws to Sodium's core path. | Diagnostics name Sodium as the sole terrain owner; captures, counters, cancellation, unload, and performance gates pass. |
+| R4 — Optimized terrain ownership | Move scheduling, meshing, upload, visibility/batching, and terrain draws behind the exclusive optimized terrain provider. | Diagnostics name the selected provider as the sole terrain owner; captures, counters, cancellation, unload, and performance gates pass. |
 | R5 — Iris ownership | Let the exact pinned Iris path compile a real pack into graph views, programs, targets, uniforms, samplers, and composites. | A real shader pack executes shadow and composite paths; invalid reload preserves the active pack and base profile remains selectable. |
-| R6 — Composition | Negotiate Sodium vertex/material output with Iris layouts/programs and exercise auxiliary views without duplicate world preparation. | Base, Sodium, Iris, and combined matrix runs pass; combined captures and traces prove both ownership predicates simultaneously. |
+| R6 — Composition | Negotiate optimized terrain vertex/material output with shader-provider layouts/programs and exercise auxiliary views without duplicate world preparation. | Base, optimized-terrain, shader-pack, and combined matrix runs pass; combined captures and traces prove both ownership predicates simultaneously. |
 | R7 — Cutover | Migrate remaining scene producers and mod render hooks, remove the old world pipeline/framebuffer path, and update maps and diagnostics. | The complete objective function is true, repository search finds no production legacy call sites, and broad build/integration/hot-reload gates pass. |
 
 R1 and R2 may be developed together, but their acceptance remains separate.
@@ -258,12 +257,12 @@ reviewable conventional commit.
 
 | Step | Bounded task | Completion gate |
 | --- | --- | --- |
-| SM0 — Inventory | Produce repository-search-backed tables of pipeline call sites, framebuffer/resource owners, shader reload call sites, and current Sodium/Iris adapter hooks. | Every row names a source path and symbol; no target claim is presented as observed behavior. |
+| SM0 — Inventory | Produce repository-search-backed tables of pipeline call sites, framebuffer/resource owners, shader reload call sites, and current compatibility adapter hooks. | Every row names a source path and symbol; no target claim is presented as observed behavior. |
 | SM1 — Trace fixture | Add a CPU-only recording executor for an already-reviewed graph interface and assert a supplied phase/dependency trace. | Focused tests cover deterministic order, rejected cycles, and owner removal; no OpenGL dependency enters the test. |
 | SM2 — Canary scene | Add a deterministic, version-neutral canary scene specified by the lead: opaque, cutout, translucent, and entity draws using project-owned procedural assets. | The base profile emits the reviewed trace headlessly and a stable real-GL capture; the fixture bypasses neither the production graph nor provider selection. |
 | SM3 — Failure matrix | Add table-driven tests for supplied invalid target formats, missing semantics, program failure, candidate cancellation, and scope closure. | Each failure keeps the old generation selected and each successful retry returns counts to the stated baseline. |
 | SM4 — Mechanical migration | Move one named producer at a time from the legacy list into a pre-existing graph phase without changing its rendering policy. | Focused visual/trace tests pass, legacy references decrease, and unrelated producers are untouched. |
-| SM5 — Matrix harness | Extend existing launcher/test utilities with reviewed base/Sodium/Iris/combined profiles and bounded counters. | One command produces machine-readable ownership, phase, timing, and resource results for all four profiles; raw runtime logs remain uncommitted. |
+| SM5 — Matrix harness | Extend existing launcher/test utilities with reviewed base, optimized-terrain, shader-pack, and combined profiles plus bounded counters. | One command produces machine-readable ownership, phase, timing, and resource results for all four profiles; raw runtime logs remain uncommitted. |
 | SM6 — Evidence upkeep | Update the applicable map and dated evidence from accepted command output. | Claims use Observed/Verified/Target correctly and link the exact fixtures and commands. |
 
 The worker must stop and escalate when a task requires changing the graph model,
@@ -282,7 +281,8 @@ Run the smallest focused test first, then broaden in proportion to the rung:
 
 - CPU graph, negotiation, lifetime, and dummy-renderer tests;
 - real-OpenGL target/program/layout creation and failure preservation;
-- deterministic framebuffer captures for base, Sodium, Iris, and combined
+- deterministic framebuffer captures for base, optimized-terrain, shader-pack,
+  and combined
   profiles;
 - repeated activation, failed reload, valid reload, and teardown accounting;
 - multi-version world/model fixtures and headless graph preparation;
@@ -297,7 +297,7 @@ Record commands and durable conclusions in dated evidence. Do not commit raw
 
 - Preserving the implementation, draw-list shape, or incidental ordering of the
   current default pipeline.
-- Claiming arbitrary Fabric, Mojang, Sodium, Iris, or shader-pack compatibility.
+- Claiming arbitrary Fabric, Mojang, renderer-mod, or shader-pack compatibility.
 - Running two terrain pipelines and compositing their results.
 - Treating adapter activation, a scheduling hint, or a presentation shader as
   behavioral compatibility.

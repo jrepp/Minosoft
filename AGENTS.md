@@ -49,6 +49,60 @@ code. Repository-wide contribution, review, and commit expectations are in
   an invariant, establishes a decision, or alters the recommended validation.
   Do not record temporary implementation detail.
 
+## Live-runtime contract
+
+- Before mutating a running client or server, resolve the exact trajectory and
+  roles with `./play.sh status --json`, then record the endpoint generation,
+  player dimension/position/yaw/pitch, and any task-relevant world,
+  presentation, shader-pack, and resource state needed for restoration.
+- A trajectory isolates client home/profile/mod state. It does **not** isolate
+  the default dedicated-server process, port, `server/` directory,
+  `server.properties`, or selected level. Treat dedicated-server mutations as
+  shared unless the launch explicitly uses a separate server instance.
+- Diagnose visual failures in this order: clear transient GUI state with
+  `visual.prepare-reference`, capture the framebuffer, sample player/world
+  state, inspect loaded blocks around the camera, inspect `render.substrate`,
+  then run reversible shader/entity/particle A/B checks. Do not change renderer
+  code until pose, embedding/submersion, GUI, and acceptance-fixture causes are
+  ruled out.
+- Diagnose performance only with a named, repeatable workload and matched
+  trajectory, generation, pose, world, presentation/shader, fixture, window,
+  warm-up, and work-count or duration state. Capture counters before and after
+  each interval and compare deltas; do not compare cumulative totals from
+  processes with different uptime or use FPS, one frame, or one screenshot as
+  sufficient performance evidence.
+- Use `metrics.snapshot` for low-cost polling and request detailed
+  `render.substrate` state only at measurement boundaries. For terrain, report
+  phase sample counts and median/p95 together with
+  queue/outstanding/upload depth, current and cumulative worker utilization,
+  cancellation/staleness/rejection, visible sections, output/upload bytes, and
+  upload time. Treat histogram percentiles as bucket bounds, not exact
+  observations. Follow the
+  [scenario performance-measurement guidance](doc/agents/acceptance/scenarios.md#performance-measurement-guidance)
+  for sample sufficiency and artifact requirements.
+- Keep instrumentation overhead separate from candidate performance. At an
+  idle terrain boundary, interleave identical
+  `render.terrain-telemetry`-disabled/enabled workloads and reject the
+  instrumentation if p95 exceeds the disabled result by more than 10 percent
+  plus 100 microseconds. Then compare baseline/candidate builds with the same
+  instrumentation state. Prefer fixed primitive counters/histograms, numeric
+  keys, or explicitly reported sampling; do not add unsampled per-frame/draw
+  strings, maps, allocation-heavy traces, or logging to diagnose a hot path.
+- Re-resolve endpoints after every client/server generation change. If another
+  session changes live state, use compare-and-restore behavior where available;
+  do not overwrite state whose current owner or value is unknown.
+- Do not treat a live Anvil read as deterministic evidence. Gracefully stop and
+  save the server, or use an accepted snapshot boundary, before
+  `worldgen inspect`/`compare`; an `EOFException` from an active region is a
+  raced read, not terrain corruption.
+- Keep animated/checked-pixel fixtures out of ordinary play packs. Mount them
+  only for an explicitly named acceptance trajectory and verify the active
+  fixture list before diagnosing time-varying materials.
+- At handoff, either restore the recorded live invariants or clearly identify
+  the intentional new state. Confirm readiness with `status --json`, leave no
+  transient reference/canary override active, and link durable artifacts rather
+  than raw lifecycle logs.
+
 ## Build and verification
 
 CI runs on Java 17 while emitted bytecode targets Java 11. Prefer a Java 17
