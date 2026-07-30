@@ -29,18 +29,18 @@ float textureLayer;
 
 #ifndef HAS_GEOMETRY_SHADER
 flat out uint finTextureArray;
-out float finTextureLayer;
+flat out float finTextureLayer;
 out mediump vec2 finTextureUV;
 #endif
 
 #elif defined SHADER_TYPE_GEOMETRY
  flat out uint finTextureArray;
-out float finTextureLayer;
+flat out float finTextureLayer;
 out mediump vec2 finTextureUV;
 
 #elif defined SHADER_TYPE_FRAGMENT
  flat in uint finTextureArray;
-in float finTextureLayer;
+flat in float finTextureLayer;
 in mediump vec2 finTextureUV;
 #endif
 
