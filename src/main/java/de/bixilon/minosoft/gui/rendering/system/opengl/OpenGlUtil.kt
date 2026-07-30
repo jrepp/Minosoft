@@ -40,6 +40,7 @@ object OpenGlUtil {
             BlendingFunctions.ONE_MINUS_SOURCE_ALPHA -> GL_ONE_MINUS_SRC_ALPHA
             BlendingFunctions.DESTINATION_ALPHA -> GL_DST_ALPHA
             BlendingFunctions.ONE_MINUS_DESTINATION_ALPHA -> GL_ONE_MINUS_DST_ALPHA
+            BlendingFunctions.SOURCE_ALPHA_SATURATE -> GL_SRC_ALPHA_SATURATE
             BlendingFunctions.CONSTANT_COLOR -> GL_CONSTANT_COLOR
             BlendingFunctions.ONE_MINUS_CONSTANT_COLOR -> GL_ONE_MINUS_CONSTANT_COLOR
             BlendingFunctions.CONSTANT_ALPHA -> GL_CONSTANT_ALPHA

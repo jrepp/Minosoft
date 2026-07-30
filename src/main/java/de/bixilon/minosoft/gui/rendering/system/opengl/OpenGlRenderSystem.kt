@@ -70,6 +70,8 @@ class OpenGlRenderSystem(
     override var active: Boolean = false
         private set
     override val primitives = PrimitiveTypes.set(PrimitiveTypes.POINT, PrimitiveTypes.LINE, PrimitiveTypes.TRIANGLE)
+    override var blendFunction = BlendFunctionState.DEFAULT
+        private set
 
     var blendingSource = BlendingFunctions.ONE
         private set
@@ -94,7 +96,6 @@ class OpenGlRenderSystem(
                 gl { glBindFramebuffer(GL_FRAMEBUFFER, 0) }
                 viewport = context.window.size
             } else {
-                check(value is OpenGlFramebuffer) { "Can not use non OpenGL framebuffer!" }
                 value.bind()
             }
             field = value
@@ -179,6 +180,7 @@ class OpenGlRenderSystem(
         }
         blendingSource = source
         blendingDestination = destination
+        blendFunction = BlendFunctionState(source, destination, source, destination)
         gl { glBlendFunc(source.gl, destination.gl) }
     }
 
@@ -196,6 +198,7 @@ class OpenGlRenderSystem(
         this.destinationRGB = destinationRGB
         this.sourceAlpha = sourceAlpha
         this.destinationAlpha = destinationAlpha
+        blendFunction = BlendFunctionState(sourceRGB, destinationRGB, sourceAlpha, destinationAlpha)
     }
 
     override var depth: DepthFunctions = DepthFunctions.LESS

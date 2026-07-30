@@ -24,9 +24,26 @@ enum class BlendingFunctions {
     ONE_MINUS_SOURCE_ALPHA,
     DESTINATION_ALPHA,
     ONE_MINUS_DESTINATION_ALPHA,
+    SOURCE_ALPHA_SATURATE,
     CONSTANT_COLOR,
     ONE_MINUS_CONSTANT_COLOR,
     CONSTANT_ALPHA,
     ONE_MINUS_CONSTANT_ALPHA,
     ;
+}
+
+data class BlendFunctionState(
+    val sourceRGB: BlendingFunctions,
+    val destinationRGB: BlendingFunctions,
+    val sourceAlpha: BlendingFunctions,
+    val destinationAlpha: BlendingFunctions,
+) {
+    companion object {
+        val DEFAULT = BlendFunctionState(
+            BlendingFunctions.ONE,
+            BlendingFunctions.ONE_MINUS_SOURCE_ALPHA,
+            BlendingFunctions.ONE,
+            BlendingFunctions.ZERO,
+        )
+    }
 }

@@ -39,6 +39,7 @@ interface RenderSystem {
     val primitives: Set<PrimitiveTypes>
 
     val active: Boolean
+    val blendFunction: BlendFunctionState
 
     fun init()
     fun destroy()

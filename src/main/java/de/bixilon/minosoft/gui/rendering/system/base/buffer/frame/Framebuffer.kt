@@ -31,5 +31,6 @@ interface Framebuffer {
     fun init()
     fun delete()
 
+    fun bind()
     fun bindTexture()
 }

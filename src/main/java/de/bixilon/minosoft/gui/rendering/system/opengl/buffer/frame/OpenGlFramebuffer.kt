@@ -90,7 +90,7 @@ class OpenGlFramebuffer(
         }
     }
 
-    fun bind() {
+    override fun bind() {
         check(state == FramebufferState.COMPLETE) { "Framebuffer is incomplete: $state" }
         unsafeBind()
         system.viewport = scaled

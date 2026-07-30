@@ -36,6 +36,9 @@ class DummyFramebuffer(
     override fun delete() {
     }
 
+    override fun bind() {
+    }
+
     override fun bindTexture() {
     }
 }

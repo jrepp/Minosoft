@@ -20,6 +20,8 @@ import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
 
 class DummyVertexBuffer(
     override val struct: MeshStruct,
+    override val vertices: Int = 0,
+    override val primitive: PrimitiveTypes = PrimitiveTypes.QUAD,
 ) : VertexBuffer {
     override val state: GpuBufferStates = GpuBufferStates.PREPARING
 
@@ -29,9 +31,6 @@ class DummyVertexBuffer(
 
     override fun unload() {
     }
-
-    override val vertices: Int = 0
-    override val primitive: PrimitiveTypes = PrimitiveTypes.QUAD
 
     override fun draw() = Unit
 

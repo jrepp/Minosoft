@@ -45,6 +45,8 @@ class DummyRenderSystem(
     override var framebuffer: Framebuffer? = null
     override val active: Boolean = true
     override val primitives = PrimitiveTypes.setOfAll()
+    override var blendFunction = BlendFunctionState.DEFAULT
+        private set
 
     override var viewport = Vec2i.EMPTY
 
@@ -60,13 +62,17 @@ class DummyRenderSystem(
 
     override fun set(capability: RenderingCapabilities, status: Boolean) = Unit
 
-    override fun set(source: BlendingFunctions, destination: BlendingFunctions) = Unit
+    override fun set(source: BlendingFunctions, destination: BlendingFunctions) {
+        blendFunction = BlendFunctionState(source, destination, source, destination)
+    }
 
     override fun get(capability: RenderingCapabilities): Boolean {
         return false
     }
 
-    override fun setBlendFunction(sourceRGB: BlendingFunctions, destinationRGB: BlendingFunctions, sourceAlpha: BlendingFunctions, destinationAlpha: BlendingFunctions) = Unit
+    override fun setBlendFunction(sourceRGB: BlendingFunctions, destinationRGB: BlendingFunctions, sourceAlpha: BlendingFunctions, destinationAlpha: BlendingFunctions) {
+        blendFunction = BlendFunctionState(sourceRGB, destinationRGB, sourceAlpha, destinationAlpha)
+    }
 
     override var depth: DepthFunctions = DepthFunctions.NOT_EQUAL
     override var depthMask: Boolean = true
@@ -81,7 +87,8 @@ class DummyRenderSystem(
     }
 
     override fun createVertexBuffer(struct: MeshStruct, data: FloatBuffer, primitive: PrimitiveTypes, index: IntBuffer?, reused: Boolean): VertexBuffer {
-        return DummyVertexBuffer(struct)
+        val vertices = index?.remaining() ?: (data.remaining() / struct.floats)
+        return DummyVertexBuffer(struct, vertices, primitive)
     }
 
     override fun createFloatUniformBuffer(data: FloatBuffer): FloatUniformBuffer {
