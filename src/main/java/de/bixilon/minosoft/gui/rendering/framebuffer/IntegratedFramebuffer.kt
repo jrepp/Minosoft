@@ -99,11 +99,11 @@ interface IntegratedFramebuffer : Drawable {
     fun draw(shader: FramebufferShader) {
         context.system.framebuffer = null
         context.system.reset(
-            blending = true,
+            blending = shader.blending,
             sourceRGB = BlendingFunctions.SOURCE_ALPHA,
             destinationRGB = BlendingFunctions.ONE_MINUS_SOURCE_ALPHA,
         )
-        framebuffer.bindTexture()
+        if (shader.bindFramebufferTexture) framebuffer.bindTexture()
         shader.use()
         mesh.draw()
     }

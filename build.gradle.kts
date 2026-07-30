@@ -190,6 +190,12 @@ testing {
             targets {
                 all {
                     testTask.configure {
+                        if (
+                            System.getenv("MINOSOFT_OPENGL_IRIS_COMPUTE_TEST") == "true" &&
+                            System.getProperty("os.name").contains("mac", ignoreCase = true)
+                        ) {
+                            jvmArgs("-XstartOnFirstThread")
+                        }
                         filter {
                             isFailOnNoMatchingTests = true
                         }
@@ -227,6 +233,13 @@ testing {
                 // ToDo: Include dependencies from project
                 implementation("de.bixilon:kutil:$kutilVersion")
                 implementation("it.unimi.dsi:fastutil-core:8.5.18")
+                implementation(platform("org.lwjgl:lwjgl-bom:$lwjglVersion"))
+                implementation("org.lwjgl:lwjgl")
+                implementation("org.lwjgl:lwjgl-glfw")
+                implementation("org.lwjgl:lwjgl-opengl")
+                runtimeOnly("org.lwjgl:lwjgl:$lwjglVersion:natives-$lwjglNatives")
+                runtimeOnly("org.lwjgl:lwjgl-glfw:$lwjglVersion:natives-$lwjglNatives")
+                runtimeOnly("org.lwjgl:lwjgl-opengl:$lwjglVersion:natives-$lwjglNatives")
 
                 implementation("de.bixilon:mbf-kotlin:1.0.3") { exclude("com.github.luben", "zstd-jni") }
 
@@ -244,6 +257,12 @@ testing {
                 all {
                     testTask.configure {
                         maxHeapSize = "2G"
+                        if (
+                            System.getenv("MINOSOFT_OPENGL_TESSELLATION_TEST") == "true" &&
+                            System.getProperty("os.name").contains("mac", ignoreCase = true)
+                        ) {
+                            jvmArgs("-XstartOnFirstThread")
+                        }
                         filter {
                             isFailOnNoMatchingTests = true
                         }
