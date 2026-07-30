@@ -20,7 +20,6 @@ import de.bixilon.minosoft.data.world.border.area.DynamicBorderArea
 import de.bixilon.minosoft.data.world.border.area.StaticBorderArea
 import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.data.world.positions.BlockPosition
-import kotlin.math.abs
 import kotlin.time.Duration
 
 class WorldBorder {
@@ -58,10 +57,16 @@ class WorldBorder {
     fun getDistanceTo(x: Double, z: Double): Double {
         val center = center
         val radius = area.radius
+        val west = maxOf(-MAX_RADIUS, center.x - radius)
+        val east = minOf(MAX_RADIUS, center.x + radius)
+        val north = maxOf(-MAX_RADIUS, center.y - radius)
+        val south = minOf(MAX_RADIUS, center.y + radius)
 
         return minOf(
-            minOf(MAX_RADIUS, radius - abs(center.x)) - abs(x),
-            minOf(MAX_RADIUS, radius - abs(center.y)) - abs(z),
+            x - west,
+            east - x,
+            z - north,
+            south - z,
         )
     }
 
