@@ -15,10 +15,7 @@ package de.bixilon.minosoft.gui.rendering.light.updater.normal
 
 import de.bixilon.kmath.vec.vec3.f.MVec3f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
-import de.bixilon.kutil.math.MathConstants.PIf
-import de.bixilon.kutil.math.Trigonometry.sin
 import de.bixilon.kutil.observer.DataObserver.Companion.observe
-import de.bixilon.kutil.time.TimeUtil.now
 import de.bixilon.minosoft.data.registries.dimension.DimensionProperties
 import de.bixilon.minosoft.data.registries.effects.vision.VisionEffect
 import de.bixilon.minosoft.data.world.chunk.light.types.LightLevel
@@ -26,6 +23,7 @@ import de.bixilon.minosoft.data.world.time.DayPhases
 import de.bixilon.minosoft.data.world.time.WorldTime
 import de.bixilon.minosoft.data.world.weather.WorldWeather
 import de.bixilon.minosoft.gui.rendering.light.LightmapBuffer
+import de.bixilon.minosoft.gui.rendering.light.VisionEffectIntensity
 import de.bixilon.minosoft.gui.rendering.light.updater.LightmapUpdater
 import de.bixilon.minosoft.gui.rendering.sky.NightLighting
 import de.bixilon.minosoft.gui.rendering.sky.SkyRenderer
@@ -33,8 +31,6 @@ import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3fUtil.interpolateLine
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import kotlin.math.abs
 import kotlin.math.pow
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.TimeSource.Monotonic.ValueTimeMark
 
 /**
  * Updates the lightmap similar to vanilla
@@ -55,7 +51,6 @@ class NormalLightmapUpdater(
     override fun update(force: Boolean, buffer: LightmapBuffer) {
         val dimension = session.world.dimension
         val skylight = dimension.skyLight && dimension.effects.daylightCycle
-        val time = now()
 
         if (!(force || this.force)) {
             if (!skylight) {
@@ -64,17 +59,17 @@ class NormalLightmapUpdater(
             }
         }
         if (skylight) {
-            updateBlockSky(dimension, buffer, time)
+            updateBlockSky(dimension, buffer)
         } else {
-            updateBlock(dimension, buffer, time)
+            updateBlock(dimension, buffer)
         }
 
         this.force = false
     }
 
-    private fun updateBlock(dimension: DimensionProperties, buffer: LightmapBuffer, millis: ValueTimeMark) {
+    private fun updateBlock(dimension: DimensionProperties, buffer: LightmapBuffer) {
         val gamma = profile.gamma
-        val nightVision = getNightVisionStrength(millis)
+        val nightVision = getNightVisionStrength()
 
         for (block in 0 until LightLevel.LEVELS) {
             val color = calculateBlock(dimension.ambientLight[block]).unsafe
@@ -84,7 +79,7 @@ class NormalLightmapUpdater(
         }
     }
 
-    private fun updateBlockSky(dimension: DimensionProperties, buffer: LightmapBuffer, millis: ValueTimeMark) {
+    private fun updateBlockSky(dimension: DimensionProperties, buffer: LightmapBuffer) {
         val time = session.world.time
         val weather = session.world.weather
 
@@ -92,7 +87,7 @@ class NormalLightmapUpdater(
         val blockColors = Array(LightLevel.LEVELS) { calculateBlock(dimension.ambientLight[it]) }
 
         val gamma = profile.gamma
-        val nightVision = getNightVisionStrength(millis)
+        val nightVision = getNightVisionStrength()
 
         val color = MVec3f()
         for (sky in 0 until LightLevel.LEVELS) {
@@ -206,18 +201,9 @@ class NormalLightmapUpdater(
         color.put(interpolateLinear(gamma, color.unsafe, color.transform { 1.0f - (1.0f - it).pow(4) }.unsafe))
     }
 
-    private fun getNightVisionStrength(time: ValueTimeMark): Float {
+    private fun getNightVisionStrength(): Float {
         val nightVision = session.player.effects[VisionEffect.NightVision] ?: return 0.0f
-        val end = nightVision.end
-        if (time > end) {
-            return 0.0f
-        }
-        val remaining = end - time
-        if (remaining > 8.seconds) {
-            return 1.0f
-        }
-
-        return 0.3f + sin((remaining / 8.seconds).toFloat() * PIf * 0.2f) * 0.7f
+        return VisionEffectIntensity.nightVision(nightVision, session.player.renderInfo.partialTick)
     }
 
     private fun Vec3f.brighten(value: Float): Vec3f {
