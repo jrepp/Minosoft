@@ -182,7 +182,7 @@ class PlaySession(
             } else {
                 established = true
                 try {
-                    contentFidelity.close()
+                    closeContentAndAssets()
                 } finally {
                     state = PlaySessionStates.DISCONNECTED
                     ACTIVE_CONNECTIONS -= this
@@ -276,6 +276,7 @@ class PlaySession(
                                 commit = {
                                     assets = candidate.assets
                                     dataPacks = candidate.dataPacks
+                                    candidate.commitManagers()
                                 },
                             )
                         } catch (error: Throwable) {
@@ -316,7 +317,7 @@ class PlaySession(
             Log.log(LogMessageType.LOADING, level = LogLevels.FATAL) { exception }
             if (this::assets.isInitialized) {
                 try {
-                    contentFidelity.close()
+                    closeContentAndAssets()
                 } catch (cleanup: Throwable) {
                     exception.addSuppressed(cleanup)
                 }
@@ -349,6 +350,35 @@ class PlaySession(
         state = PlaySessionStates.DISCONNECTED
     }
 
+    /**
+     * Content snapshots and the mounted asset managers have different
+     * lifetimes. A content-fidelity reload may retire a snapshot while the
+     * session must keep using the same resource/data-pack managers.
+     */
+    private fun closeContentAndAssets() {
+        var failure: Throwable? = null
+        try {
+            contentFidelity.close()
+        } catch (error: Throwable) {
+            failure = error
+        }
+        if (this::assets.isInitialized) {
+            try {
+                assets.unload()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        if (this::dataPacks.isInitialized) {
+            try {
+                dataPacks.unload()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        failure?.let { throw it }
+    }
+
     companion object {
         // TODO: heavy memory leak
         val ACTIVE_CONNECTIONS: MutableSet<PlaySession> = synchronizedSetOf()
@@ -375,7 +405,16 @@ class PlaySession(
         val content: PreparedContent<ContentFidelitySnapshot>,
     ) : AutoCloseable {
         private val closed = AtomicBoolean()
+        @Volatile
+        private var managersCommitted = false
 
+        @Synchronized
+        fun commitManagers() {
+            check(!closed.get()) { "Can not commit a closed session-assets candidate." }
+            managersCommitted = true
+        }
+
+        @Synchronized
         override fun close() {
             if (!closed.compareAndSet(false, true)) return
             var failure: Throwable? = null
@@ -384,15 +423,17 @@ class PlaySession(
             } catch (error: Throwable) {
                 failure = error
             }
-            try {
-                assets.unload()
-            } catch (error: Throwable) {
-                failure?.addSuppressed(error) ?: run { failure = error }
-            }
-            try {
-                dataPacks.unload()
-            } catch (error: Throwable) {
-                failure?.addSuppressed(error) ?: run { failure = error }
+            if (!managersCommitted) {
+                try {
+                    assets.unload()
+                } catch (error: Throwable) {
+                    failure?.addSuppressed(error) ?: run { failure = error }
+                }
+                try {
+                    dataPacks.unload()
+                } catch (error: Throwable) {
+                    failure?.addSuppressed(error) ?: run { failure = error }
+                }
             }
             failure?.let { throw it }
         }
