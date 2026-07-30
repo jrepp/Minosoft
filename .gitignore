@@ -3,6 +3,8 @@ out/
 .idea/
 *.iml
 hs_err_pid*.log
+*.hprof
+.DS_Store
 
 # Ignore Gradle project-specific cache directory
 .gradle
