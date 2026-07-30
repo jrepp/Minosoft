@@ -71,8 +71,12 @@ candidate without advancing the generation. Content-owned shader slots are
 leased by stable array/layer coordinate: retired holes are reused without
 renumbering live meshes, and dead trailing layers shrink on the next
 transaction. Pre-existing resource-pack slots remain permanent. General
-resource-pack reload, repeated real-OpenGL accounting, and atomic shader reload
-remain incomplete.
+resource-pack reload and atomic shader reload remain incomplete. The bounded
+debug acceptance form `render.reload-content {"rejectAt":"after-upload"}` or
+`{"rejectAt":"after-publication"}` runs the real allocation/rollback path
+without changing mounted files. It reports whether the active generation and
+all typed live OpenGL counts stayed unchanged; this is a diagnostic contract,
+not a content-pack extension.
 
 ## Asset priority
 
@@ -264,6 +268,30 @@ The current content generation discovers and parses:
 - GeckoLib `.geo.json` and `.animation.json`;
 - ETF/OptiFine random-entity `.properties`.
 
+In Creative mode, proportional `Items`, `Creatures`, and JEI-owned `Recipes`
+tabs use more of a fullscreen viewport without stretching vanilla inventory
+slots. The creature tab searches the active session entity registry and
+previews every entity with an actual baked skeletal route, including routed CEM
+and GeckoLib content. It retains raw production quads and bone IDs, evaluates
+the model's real clips on the CPU, including advancing `query.anim_time`/`q.anim_time`
+for expression channels, provides an animation selector, supports
+drag rotation, can hold the authored default rotation, and slowly orbits while
+idle. Selected test clips loop locally, including production one-shots, without
+changing runtime clip semantics. It does not instantiate a
+client-only entity. Exact entity identity remains part of texture selection
+when several species share geometry. `Spawn` uses the normal server `/summon`
+command and is disabled when absent from the server-granted command tree;
+woolly and sheared sheep are fixed, non-injectable state presets.
+
+Skeletal matrices use column-vector joint order
+`T(pivot) · R · S · T(-pivot)`. Gecko/Bedrock static and animated rotations are
+converted from their clockwise model convention before applying that hierarchy.
+Gecko box UVs retain Bedrock's negative-Z front slot and mirrored U direction
+instead of using vanilla Java's reversed north/south assignment. Hinged
+zero-thickness planes snap to nearby pivots and overlap the joint by 0.05 source
+pixels without changing their authored UV density. These invariants are shared
+by production rendering and preview playback.
+
 At render initialization, the neutral geometry bridge creates retained
 `SkeletalModel` instances, preserves direct OptiFine texture paths, and maps
 CEM filenames such as `cow.jem` to matching entity IDs. Existing animal and
@@ -338,11 +366,20 @@ shortest-path yaw interpolation.
 `view_range` applies to every display type at the vanilla 64-block base scale.
 Finite nonnegative `width` and `height` define the visibility AABB; zero on
 either axis disables frustum-box rejection while retaining range rejection.
-`glow_color_override` is parsed and retained, but Minosoft has no entity
-team/glowing outline pass yet. Headless registry and exact
-Animated-Java-export integration tests cover the implemented state; real
-OpenGL rendered-reference and repeated-baseline accounting checks remain
-required. Typed per-context GPU counters are now available through
+Entity flag `Glowing` (`0x40`) enables the shared entity-outline pass.
+`glow_color_override` selects a display outline color but does not enable it;
+without an override, scoreboard/player team color and then white provide the
+fallback. Block, item, text-display, EMF/ETF skeletal, Gecko skeletal/layer,
+Gecko armor, and emissive geometry can contribute to the texture-mask pass,
+including when occluded. Invisible glowing geometry is excluded from normal
+entity layers. Headless registry and exact Animated-Java-export integration
+tests cover those semantics. A live OpenGL probe covers shader/framebuffer
+initialization, graph placement, and endpoint cleanup. The exact Animated Java
+export additionally passes a deterministic default-pose render plus four
+summon/reload/remove generations with bounded fixture GPU objects; checked
+default/walk references and both uploaded-candidate and published-candidate
+rollback paths preserve exact pixels and balanced live GPU counts.
+Typed per-context GPU counters are available through
 `render.substrate.gpuResources`; they cover buffers, vertex arrays, textures,
 renderbuffers, framebuffers, shaders, programs, and queries. See
 the [display semantics evidence](agents/evidence/2026-07-24-animated-java-display-semantics.md).
@@ -354,11 +391,11 @@ for Blockbench-related content:
 
 | Component | Role | License/distribution | Prepared state | Missing behavior |
 | --- | --- | --- | --- | --- |
-| Entity Model Features (EMF) | Fabric replacement for OptiFine CEM geometry and expressions | LGPL-3.0 | Exact 3.0.17 adapter activates; JEM/JPM, five shipped native-rig alias sets, the full public expression input-name catalog (apart from intentional `nan`), the audited numeric/boolean method surface, raw `nbt(key,query)` predicates, centralized live partial-tick clocks/frame counters, degree/radian and body-relative rotations, vanilla limb interpolation, movement projection, dimensions, position/health/hurt/death/equipment/use/attachment/locomotion/tame/aggressive/anger inputs, bounded fluid/ground and stopped-arrow probes, dimension/biome/heightmap-aware rain wetness using the pinned fixed-seed altitude and frozen-biome temperature samplers, hovered state, selected ETF rule index, an explicit first-person/held/item-frame/GUI/head/shoulder context carrier, live aliased part-property reads, ordered absolute writes, distinct subtree visibility versus local-box hiding, missing-target rejection, targeted native-part replacement, isolated attach roots, discovery, skeletal binding, owner-scoped native shadow/leash output consumption, bounded terrain-conforming projection using the resource-pack shadow texture with audited UV/clamp/LOD/blend behavior, audited local mob/EMF and generic/knot/player leash anchors with crossed 24-segment ribbon geometry, previous/current vanilla mob body-control interpolation shared by skeletal roots and leash anchors, per-segment endpoint block/sky lightmap interpolation, generation-leased texture slots, and transactional model reload are source-native. | Broader entity aliases; CEM invocation from non-world render paths; special-case limb/entity parity; complex attachment semantics; exact player-holder body-yaw dynamics; non-default shadow sampler-metadata overrides and reference-render acceptance; diagnostic parity; fallback/visual fixtures; and configuration. |
-| Entity Texture Features (ETF) | OptiFine-style random, emissive, and variant entity textures | LGPL-3.0 | Exact 7.0.13 adapter activates; property parsing, deterministic variants, expanded entity/environment plus bounded entity/client-player/vehicle NBT context, NBT existence/inversion/range/wildcard-path/pattern queries, negated string sets, semantic Minecraft-version ranges, calendar/world/client values, biome tags, active-mod IDs, equipment keywords and item IDs, general mob variants, panda genes, llama inventory strength, horse jump and movement attributes, percent health, spawner false for ordinary entities, and predicate-gated vertical block identifiers exist. Audited `blocks` and ETF's misleadingly named `blockSpawned` both inspect the current and immediately lower block, including ETF's colon-separated block-state subset grammar; `blockAboveSolid`/`blockBelowSolid` consume Minosoft's `solid_render`-derived full-opacity flag, matching the pinned `isOpaqueFullCube` call. Regional difficulty follows the vanilla 1.20.4 client formula, and generation-owned selection state exposes the prior `textureRule` and `textureSuffix` to dependent feature rules. Configured emissive suffixes, two-stage blink timing, generation-owned 2,048-entity LRU selection state per texture, independent skeletal body/feature materials, and additive emissive passes exist. ETF-marked 64×64 player skins derive blink/blink2, matching emissive textures, all eight coat styles and lengths, moved-coat base edits, fat-coat inflation, coat emissives, leggings suppression, forced lower-skin opacity, legacy/controller villager noses, five textured nose sources, removal semantics, nose emissives, marker-selected animated glint masks, and profile-controlled ETF-only base transparency without upstream code. World and first-person views share the derived base/blink material state. Content and native entity models participate in transactional catalog/material replacement and stable-slot texture compaction. | Broader non-skeletal and block-entity feature bindings, the rest of ETF configuration, repeated real-GL validation, and visual fixtures. |
-| GeckoLib | Runtime library for mod-authored geo models and keyframe animations | MIT | Exact 4.4.4 adapter activates; geo and animation JSON—including sound, particle, and custom-instruction keyframes—parses into the neutral model. Matching clips attach to geometry, and the pinned built-in easing catalog plus first easing argument evaluate with 4.4.4 behavior. Owner-scoped custom easing registration reaches both source-native controllers and retained playback. Predicate/layer controllers support transitions, state-driven animation speed/easing overrides, triggerable animations, typed per-controller keyframe handlers that preserve locator and `pre_effect_script` data, and generation-owned caches. A bounded `RawAnimation` stage builder/runtime covers default/play-once/hold/loop clips, tick waits, repeat expansion, cross-stage delta carry, keyframe delivery, stable finished-animation identity, explicit reset, and triggered base-animation reload. Generic object animatables have a headless manager facade with typed data tickets, first-tick/update state, controller triggers, reload snapshots, quiescent registration ownership, a shared instanced cache, and a bounded per-ID singleton cache. Custom loop names survive JSON normalization and resolve through an owner-scoped repeat/advance/hold registry. Stable content identities and owner-scoped routes cover entities, block entities, items, and armor without retaining a content generation. Routed geometry now renders on living entities, block entities, world/item-display entities, first-person held items, and equipped armor slots. Owner-scoped, generation-baked opaque/translucent/additive texture passes support state predicates and optional full-bright rendering. Compatible named controller layers preserve clip/raw-queue progress and fired-event position across retained entity, item, and armor replacement; routed block-entity section caches rebuild after publication. Finalized transforms feed native positional sound and registered particle factories, locator positions resolve after bone transforms, and custom instructions reach an owner-scoped listener. Retained geometry/clip/layer-texture candidates swap transactionally, with generation-leased stable texture slots. | Binary API compatibility; GUI item views; exact armor-to-parent-bone fitting; dependent-mod and visual validation; and repeated real-GL validation. |
+| Entity Model Features (EMF) | Fabric replacement for OptiFine CEM geometry and expressions | LGPL-3.0 | Exact 3.0.17 adapter activates; JEM/JPM, five shipped native-rig alias sets, the full public expression input-name catalog (apart from intentional `nan`), the audited numeric/boolean method surface, raw `nbt(key,query)` predicates, centralized live partial-tick clocks/frame counters, degree/radian and body-relative rotations, vanilla limb interpolation, movement projection, dimensions, position/health/hurt/death/equipment/use/attachment/locomotion/tame/aggressive/anger inputs, bounded fluid/ground and stopped-arrow probes, dimension/biome/heightmap-aware rain wetness using the pinned fixed-seed altitude and frozen-biome temperature samplers, hovered state, selected ETF rule index, an explicit first-person/held/item-frame/GUI/head/shoulder context carrier, live aliased part-property reads, ordered absolute writes, distinct subtree visibility versus local-box hiding, missing-target rejection, targeted native-part replacement, isolated attach roots, discovery, skeletal binding, owner-scoped native shadow/leash output consumption, bounded terrain-conforming projection using the resource-pack shadow texture with audited UV/clamp/LOD/blend behavior, audited local mob/EMF and generic/knot/player leash anchors with crossed 24-segment ribbon geometry, previous/current vanilla mob body-control interpolation shared by skeletal roots and leash anchors, per-segment endpoint block/sky lightmap interpolation, generation-leased texture slots, and transactional model reload are source-native. A checked native-zombie reference proves one targeted CEM replacement driven by ETF's selected `rule_index`, exact settled pixels, rollback, and recovery. | Broader entity aliases; CEM invocation from non-world render paths; special-case limb/entity parity; complex attachment semantics; exact player-holder body-yaw dynamics; non-default shadow sampler-metadata overrides; diagnostic parity; additional visual fixtures; and configuration. |
+| Entity Texture Features (ETF) | OptiFine-style random, emissive, and variant entity textures | LGPL-3.0 | Exact 7.0.13 adapter activates; property parsing, deterministic variants, expanded entity/environment plus bounded entity/client-player/vehicle NBT context, NBT existence/inversion/range/wildcard-path/pattern queries, negated string sets, semantic Minecraft-version ranges, calendar/world/client values, biome tags, active-mod IDs, equipment keywords and item IDs, general mob variants, panda genes, llama inventory strength, horse jump and movement attributes, percent health, spawner false for ordinary entities, and predicate-gated vertical block identifiers exist. Audited `blocks` and ETF's misleadingly named `blockSpawned` both inspect the current and immediately lower block, including ETF's colon-separated block-state subset grammar; `blockAboveSolid`/`blockBelowSolid` consume Minosoft's `solid_render`-derived full-opacity flag, matching the pinned `isOpaqueFullCube` call. Regional difficulty follows the vanilla 1.20.4 client formula, and generation-owned selection state exposes the prior `textureRule` and `textureSuffix` to dependent feature rules. Configured emissive suffixes, two-stage blink timing, generation-owned 2,048-entity LRU selection state per texture, independent skeletal body/feature materials, and additive emissive passes exist. ETF-marked 64×64 player skins derive blink/blink2, matching emissive textures, all eight coat styles and lengths, moved-coat base edits, fat-coat inflation, coat emissives, leggings suppression, forced lower-skin opacity, legacy/controller villager noses, five textured nose sources, removal semantics, nose emissives, marker-selected animated glint masks, and profile-controlled ETF-only base transparency without upstream code. World and first-person views share the derived base/blink material state. Content and native entity models participate in transactional catalog/material replacement and stable-slot texture compaction. A checked health-selected zombie rule reaches the CEM expression context and remains exact through rejected and accepted real-GL transactions. | Broader non-skeletal and block-entity feature bindings, the rest of ETF configuration, independent variant/emissive/blink visual references, and wider driver coverage. |
+| GeckoLib | Runtime library for mod-authored geo models and keyframe animations | MIT | Exact 4.4.4 adapter activates; geo and animation JSON—including sound, particle, and custom-instruction keyframes—parses into the neutral model. Matching clips attach to geometry, and the pinned built-in easing catalog plus first easing argument evaluate with 4.4.4 behavior. Blockbench/Bedrock `math.*` trig expressions use degrees while bare EMF trig remains radian-based, and controller transitions retain their evaluated source pose. Owner-scoped custom easing registration reaches both source-native controllers and retained playback. Predicate/layer controllers support transitions, bounded declared numeric/boolean protocol tracked-data inputs, immutable bounded random/entity-type/nearby-player host-state inputs, bounded host-event-to-trigger mappings, state-driven animation speed/easing overrides, triggerable animations, typed per-controller keyframe handlers that preserve locator and `pre_effect_script` data, and generation-owned caches. A bounded `RawAnimation` stage builder/runtime covers default/play-once/hold/loop clips, tick waits, repeat expansion, cross-stage delta carry, keyframe delivery, stable finished-animation identity, explicit reset, and triggered base-animation reload. Generic object animatables have a headless manager facade with typed data tickets, first-tick/update state, controller triggers, reload snapshots, quiescent registration ownership, a shared instanced cache, and a bounded per-ID singleton cache. Custom loop names survive JSON normalization and resolve through an owner-scoped repeat/advance/hold registry. Stable content identities and owner-scoped routes cover entities, block entities, items, and armor without retaining a content generation. Routed geometry now renders on living entities, block entities, world/item-display entities, first-person held items, and equipped armor slots. Owner-scoped, generation-baked opaque/translucent/additive texture passes support state predicates and optional full-bright rendering. Dependent-mod base-texture definitions independently declare every bakeable candidate and select only among that set using bounded entity identity/name/baby/aggressive and tracked-data state; generation tokens prevent replacement callbacks from driving retained old models. Compatible named controller layers preserve clip/raw-queue progress and fired-event position across retained entity, item, and armor replacement; routed block-entity section caches rebuild after publication. Finalized transforms feed native positional sound and registered particle factories, locator positions resolve after bone transforms, and custom instructions reach an owner-scoped listener. Handler-defined sound/particle aliases can be mapped, suppressed, or passed through by a content-identity-bound resolver; retained entity/item/armor/block-entity bindings fail closed after owner replacement. Retained geometry/clip/base/layer-texture candidates swap transactionally, with generation-leased stable texture slots. Entity animation packets enter a bounded per-entity sequence journal, and retained living consumers replay only fresh events through owner-scoped controller triggers. The pinned Naturalist adapter supplies 32 dependent-mod routes, 25 content identities and texture resolvers, and all 33 remote entity definitions. Its native zebra renderer is bridged from the exact adult horse layer into neutral geometry; the unrelated ostrich mesh is excluded while shipped zebra clip bone names remain attachable. Its snake primary controller selects stopped default, move, climb, and sleep from exact pinned tracked indices; a separate controller maps main/off-arm swing events to the exact non-looping 0.25-second attack clip. Independent tongue and rattle controllers reproduce the pinned random-versus-age play-once predicate and exact rattlesnake/nearby-player loop predicate. The exact sound handler maps only tongue `hiss` and suppresses the current `idle` plus handler-less `rattle` aliases. Live server-spawned rattlesnakes resolve their exact geometry and source texture through rejection/recovery with balanced candidate GL objects; the retained snake is one 252-vertex selected-texture pass with no duplicate fallback, emissive, or Gecko overlay body. | Binary API compatibility; the remaining Molang language; GUI item views; exact armor-to-parent-bone fitting; checked remote Naturalist controller/seam pixels and sound timing; source renderer overlays/held-food substitutions; additional dependent mods; broader visual parity; and repeated visible multi-entity validation. |
 | OptiFine | Original CEM and extended resource-pack implementation | Official-site distribution; no Packwiz redistribution | Catalogued as a format reference only. | The OptiFine JAR cannot be activated as an ordinary Minosoft mod because it transforms Mojang/Forge classes that Minosoft does not expose. Support therefore means native Minosoft parsers and render/runtime bindings for selected OptiFine formats, surfaced through exact EMF/ETF adapters—not a native implementation of OptiFine's binary patcher. |
-| Animated Java | Blockbench authoring/export workflow producing resource-pack and data-pack content | Authoring tool; no runtime artifact staged | Resource and data namespaces mount separately into one session content generation. Local sessions run bounded functions, tags, storage/entity macros, schedules, scoreboards/storage, selectors, an exporter-oriented `execute` subset including score comparisons, entity-data and function predicates, feet/eyes anchors, coordinate/entity facing, and `on target`/`on attacker`, plus display/entity mutation commands. `return`, `return fail`, and `return run` terminate the owning function even when reached through an `execute` condition; a called function still owns its own return boundary. Session-owned display/interaction/passenger trees support load→summon→tick→remove in a reduced fixture pinned to Animated Java 1.10.2, including the exporter's tween-guard command form. Its exact pinned compiler templates are fingerprinted, and upstream-shaped tests prove entity-backed callback dispatch plus the exporter's signed four-word UUID-to-string path. Local attack/interact packets populate interaction records and execute the matching advancement reward handler as the player. Failed candidate load tags atomically restore command and entity state. The exact Blockbench 5.1.4 and official Animated Java 1.10.2 exporter combination reproducibly generates a pinned, unmodified upstream armor-stand fixture with 13 resource files, 109 data files, and a complete output manifest. Minosoft passes its model-discovery, load/summon/walk/remove, repeated runtime replacement, rejected-load recovery, stable-entity, and CPU-generation cleanup gates. This remains an import workflow, not a runtime JAR. | Add broader upstream blueprints where they expand the surface, then prove remote-server, visual, and repeated real-GPU behavior. |
+| Animated Java | Blockbench authoring/export workflow producing resource-pack and data-pack content | Authoring tool; no runtime artifact staged | Resource and data namespaces mount separately through session-owned managers while content snapshots retire independently. Local sessions run bounded functions, tags, storage/entity macros, schedules, scoreboards/storage, selectors, an exporter-oriented `execute` subset including score comparisons, entity-data and function predicates, feet/eyes anchors, coordinate/entity facing, and `on target`/`on attacker`, plus display/entity mutation commands. `return`, `return fail`, and `return run` terminate the owning function even when reached through an `execute` condition; a called function still owns its own return boundary. Session-owned display/interaction/passenger trees support load→summon→tick→remove in a reduced fixture pinned to Animated Java 1.10.2, including the exporter's tween-guard command form. Its exact pinned compiler templates are fingerprinted, and upstream-shaped tests prove entity-backed callback dispatch plus the exporter's signed four-word UUID-to-string path. Local attack/interact packets populate interaction records and execute the matching advancement reward handler as the player. Failed candidate load tags atomically restore command and entity state. The exact Blockbench 5.1.4 and official Animated Java 1.10.2 exporter combination reproducibly generates a pinned, unmodified upstream armor-stand fixture with 13 resource files, 109 data files, and a complete output manifest. The managed pack validates/stages that exact fixture. Minosoft passes model discovery, load/summon/walk/remove, repeated runtime replacement, rejected-load recovery, stable identity, CPU cleanup, and real-OpenGL positive/rejected/recovery loops. On the documented macOS/Apple M4 Max target, checked 550×550 default and static walk-frame-10 crops match with zero tolerance before/after normal reload and both rejected-reload checkpoints. Each rejection retires 16 candidate buffers and eight vertex arrays with zero live delta, preserves the active generation, and leaves mounted functions callable. Stable entity-identity draw ordering prevents independently collected bones from flickering at coplanar joints. Entity removal plus full cloud-grid replacement and forced collection produces no new GPU finalizer warning. This remains an import workflow, not a runtime JAR. | Add broader upstream blueprints where they expand the surface, then prove remote-server behavior, glowing outline pixels, and another driver/platform reference. |
 
 All four pinned artifacts now preflight as `ADAPTED` at the artifact layer.
 That label means their exact metadata surfaces select Minosoft-owned adapters;
@@ -373,9 +410,13 @@ manifest, and acceptance boundary are recorded in the
 The exporter result and Minosoft's headless manifest/model discovery,
 load/summon/walk/remove lifecycle, repeated runtime replacement, rejected-load
 rollback/recovery, stable entity identity, and exactly-once CPU-generation
-cleanup pass against the unmodified output. Rendered references, remote-server
-behavior, glowing outlines, and repeated real-GPU accounting remain separate
-gates. The display-state boundary is recorded in the
+cleanup pass against the unmodified output. The exact managed fixture also
+passes a real-OpenGL default-pose/four-generation summon/remove loop with
+pixel-stable joint ordering and no cumulative fixture-object growth. Checked
+default/walk plus rejected-reload/recovery references now pass; glowing/team
+references, remote-server behavior, and another driver remain separate gates.
+The display-state boundary is
+recorded in the
 [display semantics evidence](agents/evidence/2026-07-24-animated-java-display-semantics.md).
 The accounting and teardown substrate is recorded in
 [OpenGL resource-accounting evidence](agents/evidence/2026-07-24-opengl-resource-accounting.md).
@@ -386,13 +427,44 @@ part aliases, CEM expression evaluation, Gecko clip evaluation, and ETF
 variant/emissive discovery. This is a data/runtime compatibility gate, not
 rendered visual or live-reload acceptance.
 
+A separate pinned Naturalist fixture crosses the production local data-pack
+authority, exact owner-declared dependent-mod entity materialization, retained
+Gecko renderer, and content reload path. The real-GL scenario observes the
+snake's one 252-vertex selected-texture body pass, all four independent
+controllers, and the exact nearby-player rattle loop advancing across reload.
+Retained controller diagnostics are immutable, bounded to 64 records while
+preserving total count/truncation, and fail closed after owner retirement.
+This closes a local controller/topology gate; checked remote controller/seam
+pixels, packet sound timing, off-screen resume, and Naturalist renderer
+overlays remain.
+
+The explicitly named continuation gates—EMF neutral/JEM/JPM/alias/expression/
+binding/reload, ETF selection/variant/emissive/blink/cache, Gecko ingestion and
+dependent-mod controller API, Animated Java predicates/displays/data packs,
+and the shared headless/multi-version/transaction/GPU lifecycle—are mapped to
+current source and acceptance records in the
+[gate-completion audit](agents/evidence/2026-07-26-content-fidelity-gate-completion.md).
+The artifact catalogs remain `partial` relative to full upstream-project
+parity; that broader boundary is intentionally not relabeled by the bounded
+gate decision.
+
+A separate managed 1.20.4 living fixture now crosses the production resource
+pack, data pack, local summon, native zombie renderer, CEM composition, ETF
+selection, EMF expression, content transaction, and OpenGL cleanup paths. Its
+settled 750×1150 crop matches with zero tolerance before two bounded rejected
+reloads and after accepted recovery. Each rejection retires 21 buffers, 11
+vertex arrays, and one texture with zero live delta. The pinned EMF name is
+`rule_index`; ETF's `textureRule`/`texture_rule` spelling is confined to ETF
+property conditions. See the
+[EMF/ETF render evidence](agents/evidence/2026-07-26-emf-etf-render-reference.md).
+
 ### Source-native Gecko dependent-mod binding
 
 An adapted mod must bind behavior to a complete `SkeletalContentIdentity`
 (geometry resource, `GECKOLIB` format, and geometry identifier). Do not route
 by basename alone: one `.geo.json` document may contain several geometries.
 
-Register the three independent surfaces before the initial model load, or
+Register the independent surfaces before the initial model load, or
 before `/reload content` when adding them at runtime:
 
 ```kotlin
@@ -431,8 +503,23 @@ val controllers = GeckoLibControllerBindingRegistry.register("example-mod", iden
         GeckoLibControllerDefinition(
             name = "locomotion",
             initialClip = "animation.clockwork_bird.idle",
+            trackedDataInputs = listOf(
+                GeckoLibTrackedDataInput("example.perched", index = 19),
+            ),
+            hostStateInputs = listOf(
+                GeckoLibHostStateInput(
+                    "example.nearby_player",
+                    GeckoLibHostStateQuery.NearbyPlayer(
+                        range = 4.0,
+                        horizontalExpansion = 4.0,
+                        verticalExpansion = 2.0,
+                    ),
+                ),
+            ),
             predicate = GeckoLibAnimationPredicate { state, current ->
-                val target = if (state.moving) {
+                val target = if (state.data["example.perched"] == 1.0) {
+                    "animation.clockwork_bird.perch"
+                } else if (state.moving) {
                     "animation.clockwork_bird.walk"
                 } else {
                     "animation.clockwork_bird.idle"
@@ -441,8 +528,43 @@ val controllers = GeckoLibControllerBindingRegistry.register("example-mod", iden
                 else GeckoLibControllerDecision.Play(target)
             },
         ),
+        GeckoLibControllerDefinition(
+            name = "attack",
+            triggerableAnimations = mapOf(
+                "attack" to "animation.clockwork_bird.attack",
+            ),
+            eventTriggers = mapOf(
+                GeckoLibHostEvents.entityAnimation(EntityAnimations.SWING_MAIN_ARM) to "attack",
+            ),
+        ),
     )
 }
+
+val effects = GeckoLibRuntimeEffectRegistry.register("example-mod", identity) { context ->
+    when {
+        context.event.type != SkeletalAnimationEventType.SOUND ->
+            GeckoLibRuntimeEffectResolution.PassThrough
+        context.event.payload == "wing_flap" ->
+            GeckoLibRuntimeEffectResolution.Play(
+                ResourceLocation.of("example:entity.clockwork_bird.wing_flap"),
+            )
+        else -> GeckoLibRuntimeEffectResolution.Ignore
+    }
+}
+
+val normal = ResourceLocation.of("example:textures/entity/clockwork_bird.png")
+val alarm = ResourceLocation.of("example:textures/entity/clockwork_bird_alarm.png")
+val baseTextures = GeckoLibEntityTextureRegistry.register(
+    owner = "example-mod",
+    identity = identity,
+    definition = GeckoLibEntityTextureDefinition(
+        fallback = normal,
+        textures = setOf(normal, alarm),
+        selector = GeckoLibEntityTextureSelector { state ->
+            if (state.aggressive || state.boolean(19)) alarm else normal
+        },
+    ),
+)
 
 val layers = GeckoLibRenderLayerRegistry.register(
     owner = "example-mod",
@@ -458,13 +580,89 @@ val layers = GeckoLibRenderLayerRegistry.register(
 )
 ```
 
+Controller host state is declaration-driven just like tracked data. The current
+immutable query DTOs cover bounded random integers, exact entity-type checks,
+and nearby-player range/AABB checks. The entity renderer resolves only declared
+inputs; headless managers accept an explicit resolver. Input names must be
+unique across tracked and host declarations, and retained query DTOs contain no
+adapter callback that could cross content generations.
+
+Animation sound and particle `effect` values are handler-defined aliases in
+GeckoLib; they are not inherently Minecraft resource locations. A runtime
+effect resolver returns `Play` to map an alias, `Ignore` to reproduce a handler
+that deliberately does nothing, or `PassThrough` only when the payload is
+already meant to be parsed as a resource location. Entity, item, armor, and
+block-entity consumers bind the resolver generation when the retained instance
+is created. Closing the owner makes that old binding fail closed, so a retained
+old model cannot invoke a replacement adapter's resolver.
+
+Remote entity routes also need a native factory definition. This is separate
+from the geometry route because the server chooses the numeric protocol ID:
+
+```kotlin
+val remoteTypes = FabricRemoteRegistrySync.register(
+    owner = "example-mod",
+    values = listOf(
+        FabricRemoteEntityDefinition(
+            identifier = ResourceLocation.of("example:clockwork_bird"),
+            width = 0.5f,
+            height = 0.6f,
+        ),
+    ),
+)
+```
+
+When Fabric API is active, Minosoft participates in the standard Fabric
+Registry Sync v0 configuration handshake. It advertises
+`fabric:registry/sync/direct`, reassembles the bounded direct payload, decodes
+grouped namespaces and delta-coded raw IDs, and transactionally replaces the
+receiving session's entity-ID table. Known vanilla types keep their native
+factories; owner-scoped dependent-mod definitions materialize generic living or
+non-living types. An unknown remote entity type rejects the transaction instead
+of allowing a later spawn packet to use the wrong factory. The current boundary
+covers entity IDs only. Other synchronized registries, mod-specific tracked
+data beyond exact source-native adapter mappings, binary Gecko/Mojang APIs, and
+checked live remote pixels remain separate gates.
+
 Close registrations in reverse order when the owning adapter unloads. Closure
 immediately prevents retained instances from calling the old controller or
-render-layer predicates. Layer textures and meshes remain owned by their
-content generation and are released with the retired model. A replacement
-layer registration cannot drive a mesh baked for an earlier registration.
-Run `/reload content` after changing layer definitions or textures so their
-candidate meshes join the atomic model/texture publication.
+base-texture/render-layer predicates. Base-texture definitions must declare a
+non-empty candidate set containing their fallback; a selector returning
+anything else uses that fallback. `state.int(index)` and
+`state.boolean(index)` are bounded accessors over exact protocol-level tracked
+indices and should be used only for a pinned dependent-mod/version mapping.
+Controller predicates declare their own numeric/boolean inputs with
+`GeckoLibTrackedDataInput`; the living renderer reads only those indices and
+places their finite values in `GeckoLibAnimationState.data`. Missing,
+non-numeric, or non-finite values use the declared default. Conflicting
+definitions for one input name reject controller construction instead of
+silently reinterpreting the wire value.
+
+Geometry inflation changes retained vertex bounds, not box-UV atlas layout.
+For Gecko content the binder follows pinned 4.4.4 behavior and floors the
+uninflated source cube size before deriving the six box-UV rectangles. This is
+kept separately as `SkeletalElement.boxUvSize`; using inflated `from`/`to`
+dimensions here would stretch atlas coordinates and sample across neighboring
+regions. Gecko-compatible zero-thickness cubes still retain all six authored
+faces because those faces may separate under bone animation.
+
+`eventTriggers` maps a namespaced host event to a trigger declared by the same
+controller. An undeclared trigger rejects controller construction. Incoming
+entity-animation packets are appended to a 64-entry per-entity sequence
+journal; render consumers keep independent cursors and receive only events at
+most two entity ticks old. The oldest entries are discarded on overflow, so a
+renderer does not retain unbounded network history or replay a stale attack
+after a long absence. Dispatch crosses the same quiescent registration boundary
+as controller predicates: closing the owner immediately suppresses retained
+event callbacks. This path currently covers protocol `EntityAnimations`;
+arbitrary Gecko gameplay events still require an explicit source-native
+adapter mapping.
+
+Base and layer textures plus their meshes remain owned by the content
+generation and are released with the retired model. Replacement registrations
+cannot drive meshes baked for an earlier registration. Run `/reload content`
+after changing definitions or textures so their candidates join the atomic
+model/texture publication.
 
 A headless or non-rendered object can create its controller manager from the
 exact leased `ContentFidelitySnapshot`. Use
