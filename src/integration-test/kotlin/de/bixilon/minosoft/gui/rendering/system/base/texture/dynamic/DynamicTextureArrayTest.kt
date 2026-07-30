@@ -56,6 +56,21 @@ class DynamicTextureArrayTest {
         assertEquals(array.generation, 1)
     }
 
+    fun `retained dynamic texture can be refreshed after storage replacement`() {
+        val context = RenderContext::class.java.allocate()
+        context::queue.forceSet(Queue())
+        val array = DummyDynamicTextureArray(context)
+        val texture = array.push("skin", async = false) { RGBA8Buffer(Vec2i(64, 64)) }
+
+        assertEquals(array.uploads, 1)
+        array.reload()
+        array.refresh(texture)
+
+        assertEquals(array.storageGeneration, 1L)
+        assertEquals(array.uploads, 2)
+        assertEquals(texture.state, DynamicTextureState.LOADED)
+    }
+
     @Test(timeOut = 1_000)
     fun `synchronous upload failure releases the array lock`() {
         val context = RenderContext::class.java.allocate()

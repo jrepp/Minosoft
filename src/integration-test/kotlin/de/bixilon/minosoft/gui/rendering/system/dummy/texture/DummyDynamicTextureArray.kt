@@ -22,6 +22,8 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicText
 class DummyDynamicTextureArray(context: RenderContext) : DynamicTextureArray(context, 1, 0) {
     var reloads = 0
         private set
+    var uploads = 0
+        private set
     var generation = 0
         private set
     var failNextReload = false
@@ -39,8 +41,10 @@ class DummyDynamicTextureArray(context: RenderContext) : DynamicTextureArray(con
             throw IllegalStateException("Candidate reload failed")
         }
         generation++
+        storageGeneration++
     }
     override fun upload(index: Int, texture: DynamicTexture) {
+        uploads++
         if (failNextUpload) {
             failNextUpload = false
             throw IllegalStateException("Texture upload failed")

@@ -13,6 +13,7 @@
 
 package de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic
 
+import de.bixilon.kutil.concurrent.lock.LockUtil.locked
 import de.bixilon.kutil.concurrent.lock.locks.reentrant.ReentrantRWLock
 import de.bixilon.kutil.concurrent.pool.io.DefaultIOPool
 import de.bixilon.kutil.concurrent.pool.runnable.ThreadPoolRunnable
@@ -39,6 +40,8 @@ abstract class DynamicTextureArray(
     protected var textures: Array<WeakReference<DynamicTexture>?> = arrayOfNulls(initialSize)
     protected val shaders: MutableSet<TextureShader> = mutableSetOf()
     private val lock = ReentrantRWLock()
+    var storageGeneration: Long = 0L
+        protected set
 
     val capacity get() = textures.size
 
@@ -121,6 +124,19 @@ abstract class DynamicTextureArray(
         } finally {
             lock.unlock()
         }
+    }
+
+    /**
+     * Re-uploads one retained texture into the active storage generation.
+     * Renderers use this after a backing-array replacement when a long-lived
+     * dynamic layer must be guaranteed present before its next draw.
+     */
+    fun refresh(texture: DynamicTexture) {
+        val index = lock.locked {
+            textures.indexOfFirst { it?.get() === texture }
+        }
+        require(index >= 0) { "Dynamic texture is not retained by this array: $texture" }
+        upload(index, texture)
     }
 
 
