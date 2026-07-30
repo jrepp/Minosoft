@@ -47,6 +47,7 @@ public final class MinosoftDebugBridgeMod implements ModInitializer {
     @Override
     public void onInitialize() {
         if (!enabled()) return;
+        DistantHorizonsLodServer.install();
         ServerLifecycleEvents.SERVER_STARTED.register(this::start);
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> close());
         ServerTickEvents.END_SERVER_TICK.register(this::updateSnapshot);
@@ -99,7 +100,10 @@ public final class MinosoftDebugBridgeMod implements ModInitializer {
             .put("ready", current.ready)
             .put("ticks", current.ticks)
             .put("players", current.playerCount)
-            .put("worlds", current.worldCount);
+            .put("worlds", current.worldCount)
+            .put("distantLodRequests", DistantHorizonsLodServer.requestCount())
+            .put("distantLodTiles", DistantHorizonsLodServer.tileCount())
+            .put("distantLodQueued", DistantHorizonsLodServer.queuedTiles());
     }
 
     private DebugOperationResult sampleState(JsonNode body) {

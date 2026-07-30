@@ -42,6 +42,9 @@ dependencies {
     include(implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.0")!!)
     include(implementation("net.java.dev.jna:jna-jpms:5.18.1")!!)
     include(implementation("net.java.dev.jna:jna-platform-jpms:5.18.1")!!)
+    testImplementation(platform("org.junit:junit-bom:5.14.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
@@ -53,4 +56,8 @@ java {
 tasks.processResources {
     inputs.property("version", project.version)
     filesMatching("fabric.mod.json") { expand("version" to project.version) }
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
