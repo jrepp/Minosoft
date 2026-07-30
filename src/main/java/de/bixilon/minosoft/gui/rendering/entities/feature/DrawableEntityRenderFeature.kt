@@ -19,6 +19,10 @@ import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 abstract class DrawableEntityRenderFeature(renderer: EntityRenderer<*>) : EntityRenderFeature(renderer), FeatureDrawable {
     override val distance2 get() = renderer.distance2
     override val sort = this::class.java.hashCode()
+    override val stableOrder: Long
+        get() = renderer.entity.id?.toLong()
+            ?: renderer.entity.uuid?.let { it.mostSignificantBits xor it.leastSignificantBits }
+            ?: 0L
 
     override fun collect(drawer: EntityDrawer) {
         drawer += this

@@ -15,37 +15,91 @@ package de.bixilon.minosoft.gui.rendering.entities.renderer.living.player
 
 import de.bixilon.kmath.vec.vec2.f.Vec2f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.kmath.vec.vec4.f.Vec4f
 import de.bixilon.minosoft.data.entities.entities.player.SkinParts
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.models.block.element.FaceVertexData
 import de.bixilon.minosoft.gui.rendering.skeletal.mesh.AbstractSkeletalMeshBuilder
 import de.bixilon.minosoft.gui.rendering.skeletal.mesh.SkeletalMeshUtil
 import de.bixilon.minosoft.gui.rendering.system.base.MeshUtil.buffer
+import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureTransparencies
 import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTexture
 import de.bixilon.minosoft.gui.rendering.util.mesh.builder.quad.QuadConsumer.Companion.iterate
 import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
+import de.bixilon.minosoft.gui.rendering.util.mesh.uv.PackedUV
 import de.bixilon.minosoft.gui.rendering.util.mesh.uv.array.UnpackedUVArray
+
+/**
+ * Player meshes select their dynamic skin layer at draw time. Their baked UVs
+ * therefore stay in the logical 0..1 skin domain instead of inheriting the
+ * physical sub-rectangle of a placeholder static-array texture.
+ */
+internal object PlayerSkinUvTexture : ShaderTexture {
+    override val shaderId = 0
+    override val transparency = TextureTransparencies.TRANSLUCENT
+
+    override fun transformUV(uv: Vec2f) = uv
+    override fun transformUV(u: Float, v: Float) = PackedUV(u, v)
+    override fun transformU(u: Float) = u
+    override fun transformV(v: Float) = v
+    override fun transformUV(uv: PackedUV) = uv
+}
 
 open class PlayerModelMeshBuilder(context: RenderContext) : AbstractSkeletalMeshBuilder(context, PlayerMeshStruct, 1) {
 
-    inline fun addVertex(x: Float, y: Float, z: Float, u: Float, v: Float, partTransformNormal: Float) = data.add(
-        x, y, z,
-        u, v,
-        partTransformNormal,
-    )
+    inline fun addVertex(
+        x: Float,
+        y: Float,
+        z: Float,
+        u: Float,
+        v: Float,
+        partTransformNormal: Float,
+        midUv: Vec2f,
+        tangent: Vec4f,
+    ) {
+        data.add(
+            x, y, z,
+            u, v,
+            partTransformNormal,
+            midUv.x, midUv.y,
+        )
+        data.add(tangent.x, tangent.y, tangent.z, tangent.w)
+    }
 
-    private fun addVertex(position: FaceVertexData, positionOffset: Int, uv: UnpackedUVArray, uvOffset: Int, partTransformNormal: Float) = addVertex(
+    private fun addVertex(
+        position: FaceVertexData,
+        positionOffset: Int,
+        uv: UnpackedUVArray,
+        uvOffset: Int,
+        partTransformNormal: Float,
+        midUv: Vec2f,
+        tangent: Vec4f,
+    ) = addVertex(
         position[positionOffset + 0], position[positionOffset + 1], position[positionOffset + 2],
         uv.raw[uvOffset + 0], uv.raw[uvOffset + 1],
         partTransformNormal,
+        midUv,
+        tangent,
     )
 
     override fun addQuad(positions: FaceVertexData, uv: UnpackedUVArray, transform: Int, normal: Vec3f, texture: ShaderTexture, path: String) {
         val part = encodedPart(path)
         val partTransformNormal = ((part shl 19) or (transform shl 12) or SkeletalMeshUtil.encodeNormal(normal)).buffer()
+        val midUv = SkeletalMeshUtil.faceUvMidpoint(uv)
+        val tangent = SkeletalMeshUtil.faceTangent(positions, uv, normal)
 
         // TODO: verify render order
-        iterate { addVertex(positions, it * Vec3f.LENGTH, uv, it * Vec2f.LENGTH, partTransformNormal) }
+        iterate {
+            addVertex(
+                positions,
+                it * Vec3f.LENGTH,
+                uv,
+                it * Vec2f.LENGTH,
+                partTransformNormal,
+                midUv,
+                tangent,
+            )
+        }
         addIndexQuad()
     }
 
@@ -53,6 +107,8 @@ open class PlayerModelMeshBuilder(context: RenderContext) : AbstractSkeletalMesh
         val position: Vec3f,
         val uv: Vec2f,
         val partTransformNormal: Int,
+        val midUv: Vec2f,
+        val tangent: Vec4f,
     ) {
         companion object : MeshStruct(PlayerMeshStruct::class)
     }

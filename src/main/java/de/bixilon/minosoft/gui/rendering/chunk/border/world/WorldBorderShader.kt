@@ -17,6 +17,10 @@ import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
 import de.bixilon.minosoft.gui.rendering.camera.fog.FogManager
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.types.CameraPositionShader
 import de.bixilon.minosoft.gui.rendering.shader.types.FogShader
@@ -28,6 +32,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 class WorldBorderShader(
     native: NativeShader,
 ) : Shader(native), TextureShader, ViewProjectionShader, FogShader, CameraPositionShader {
+    override val sceneContract = SceneShaderContract(SceneProgramFamily.TEXTURED, SceneVertexAbi.WORLD_BORDER, SceneStateAbi.WORLD_BORDER)
     override var textures: TextureManager by textureManager()
     override var viewProjectionMatrix: Mat4f by viewProjectionMatrix()
     override var cameraPosition: Vec3f by cameraPosition()

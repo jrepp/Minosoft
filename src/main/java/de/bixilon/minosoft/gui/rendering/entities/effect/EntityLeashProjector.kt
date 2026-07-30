@@ -42,6 +42,7 @@ object EntityLeashProjector {
         val color1: RGBAColor,
         val light0: LightLevel,
         val light1: LightLevel,
+        val normal: Vec3f,
     )
 
     /**
@@ -167,6 +168,7 @@ object EntityLeashProjector {
                     currentColor,
                     previousLight,
                     currentLight,
+                    ribbonNormal(previous.first, current.first, current.second, reverse),
                 )
                 previous = current
                 previousColor = currentColor
@@ -178,6 +180,33 @@ object EntityLeashProjector {
 
     private fun color(index: Int, reverse: Boolean) =
         if (index % 2 == if (reverse) 1 else 0) DARK else LIGHT
+
+    /**
+     * Normal of the retained front triangle (first0, first1, second1). The two
+     * bounded fallbacks preserve distinct crossed-ribbon orientations when a
+     * vertical or zero-length leash collapses the submitted face.
+     */
+    private fun ribbonNormal(
+        first0: Vec3f,
+        first1: Vec3f,
+        second1: Vec3f,
+        reverse: Boolean,
+    ): Vec3f {
+        val segmentX = first1.x - first0.x
+        val segmentY = first1.y - first0.y
+        val segmentZ = first1.z - first0.z
+        val diagonalX = second1.x - first0.x
+        val diagonalY = second1.y - first0.y
+        val diagonalZ = second1.z - first0.z
+        val normalX = segmentY * diagonalZ - segmentZ * diagonalY
+        val normalY = segmentZ * diagonalX - segmentX * diagonalZ
+        val normalZ = segmentX * diagonalY - segmentY * diagonalX
+        val length = sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ)
+        if (length <= NORMAL_EPSILON) {
+            return if (reverse) Vec3f(1.0f, 0.0f, 0.0f) else Vec3f(0.0f, 0.0f, 1.0f)
+        }
+        return Vec3f(normalX / length, normalY / length, normalZ / length)
+    }
 
     private fun crossSection(point: Vec3f, offsetX: Float, offsetZ: Float, reverse: Boolean): Pair<Vec3f, Vec3f> {
         val firstY = if (reverse) point.y else point.y + WIDTH
@@ -210,4 +239,6 @@ object EntityLeashProjector {
         val sine = sin(angle)
         return Vec3d(vector.x * cosine + vector.y * sine, vector.y * cosine - vector.x * sine, vector.z)
     }
+
+    private const val NORMAL_EPSILON = 1.0e-8f
 }

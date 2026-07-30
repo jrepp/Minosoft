@@ -13,15 +13,29 @@
 
 package de.bixilon.minosoft.gui.rendering.entities.renderer.living.player
 
+import de.bixilon.kmath.vec.vec2.f.Vec2f
 import de.bixilon.minosoft.assets.util.InputStreamUtil.readJson
 import de.bixilon.minosoft.data.entities.entities.player.SkinParts
 import de.bixilon.minosoft.gui.rendering.skeletal.model.SkeletalModel
+import de.bixilon.minosoft.gui.rendering.util.mesh.uv.PackedUV
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class PlayerModelMeshBuilderTest {
+    @Test
+    fun `dynamic player skin bake keeps logical uv coordinates`() {
+        val uv = Vec2f(0.625f, 0.375f)
+        assertEquals(uv, PlayerSkinUvTexture.transformUV(uv))
+        assertEquals(uv.x, PlayerSkinUvTexture.transformU(uv.x))
+        assertEquals(uv.y, PlayerSkinUvTexture.transformV(uv.y))
+
+        val packed = PlayerSkinUvTexture.transformUV(uv.x, uv.y)
+        assertEquals(PackedUV(uv), packed)
+        assertEquals(packed, PlayerSkinUvTexture.transformUV(packed))
+    }
+
     @Test
     fun `ETF nose paths use isolated feature tags`() {
         assertEquals(

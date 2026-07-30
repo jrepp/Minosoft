@@ -18,6 +18,7 @@ import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationEvent
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibEventPlayback
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibEventPlaybackTarget
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRuntimeEffectRegistry
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRuntimeEventContext
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRuntimeEvents
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
@@ -32,6 +33,8 @@ class GeckoLibEntityEventConsumer(
     private val renderer: EntityRenderer<*>,
     private val instance: SkeletalInstance,
 ) : GeckoLibEventPlaybackTarget {
+    private val effectBinding = instance.model.contentIdentity?.let(GeckoLibRuntimeEffectRegistry::bind)
+
     fun dispatch(animation: String, event: SkeletalAnimationEvent) {
         val context = GeckoLibRuntimeEventContext(
             animation = animation,
@@ -39,9 +42,10 @@ class GeckoLibEntityEventConsumer(
             position = position(event.locator),
             entityId = renderer.entity.id,
             entityUuid = renderer.entity.uuid,
+            contentIdentity = instance.model.contentIdentity,
         )
         GeckoLibRuntimeEvents.dispatch(context)
-        GeckoLibEventPlayback.dispatch(context, this)
+        GeckoLibEventPlayback.dispatch(context, this, effectBinding)
     }
 
     override fun playSound(context: GeckoLibRuntimeEventContext, sound: ResourceLocation) {

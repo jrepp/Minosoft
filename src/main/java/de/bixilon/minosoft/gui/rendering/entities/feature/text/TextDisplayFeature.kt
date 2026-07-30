@@ -23,6 +23,7 @@ import de.bixilon.minosoft.data.entities.entities.display.TextDisplayEntity
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.gui.rendering.RenderConstants
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
+import de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
 import de.bixilon.minosoft.gui.rendering.font.renderer.component.ChatComponentRenderer
@@ -32,11 +33,12 @@ import de.bixilon.minosoft.gui.rendering.gui.elements.HorizontalAlignments
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
+import de.bixilon.minosoft.data.text.formatting.color.Colors
 import kotlin.time.Duration
 
 class TextDisplayFeature(
     renderer: EntityRenderer<TextDisplayEntity>,
-) : MeshedFeature<Mesh>(renderer) {
+) : MeshedFeature<Mesh>(renderer), EntityOutlineFeature {
     private val displayEntity = renderer.entity
     private var renderKey: RenderKey? = null
     private var info: TextRenderInfo? = null
@@ -112,6 +114,23 @@ class TextDisplayFeature(
             super.draw(mesh)
         } finally {
             system.reset()
+        }
+    }
+
+    override fun drawOutline(color: RGBAColor) {
+        val mesh = this.mesh ?: return
+        val system = renderer.renderer.context.system
+        val shader = renderer.renderer.features.text.shader
+        try {
+            system.reset(depthTest = false, blending = false, faceCulling = false, depthMask = false)
+            shader.outlineColor = color
+            shader.use()
+            shader.matrix = matrix.unsafe
+            shader.tint = renderer.light.value
+            super.draw(mesh)
+        } finally {
+            shader.outlineColor = Colors.TRANSPARENT
+            system.reset(depthTest = false, blending = false, faceCulling = false, depthMask = false)
         }
     }
 

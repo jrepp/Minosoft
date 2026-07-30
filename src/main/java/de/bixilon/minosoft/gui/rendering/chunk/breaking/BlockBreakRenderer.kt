@@ -46,6 +46,10 @@ class BlockBreakRenderer(
     private val lock = Lock.lock()
     private val instances: HashMap<Int, BreakInstance> = HashMap()
 
+    val instanceCount: Int get() = lock.locked { instances.size }
+
+    fun hasInstance(id: Int): Boolean = lock.locked { id in instances }
+
     override fun postInit(latch: AbstractLatch) {
         shader.load()
     }

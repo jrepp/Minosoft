@@ -10,6 +10,7 @@
 package de.bixilon.minosoft.gui.rendering.entities.effect
 
 import de.bixilon.kmath.vec.vec2.f.Vec2f
+import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.data.entities.entities.AgeableMob
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
@@ -83,11 +84,22 @@ class EntityShadowFeature(
             val z0 = (quad.z0 - offset.z).toFloat()
             val z1 = (quad.z1 - offset.z).toFloat()
             val color = shadowColor(quad.opacity)
-            builder.addVertex(x0, y, z0, texture, Vec2f(quad.u0, quad.v0), color)
-            builder.addVertex(x0, y, z1, texture, Vec2f(quad.u0, quad.v1), color)
-            builder.addVertex(x1, y, z1, texture, Vec2f(quad.u1, quad.v1), color)
-            builder.addVertex(x1, y, z0, texture, Vec2f(quad.u1, quad.v0), color)
-            builder.addIndexQuad()
+            builder.addQuad(
+                positions = arrayOf(
+                    Vec3f(x0, y, z0),
+                    Vec3f(x0, y, z1),
+                    Vec3f(x1, y, z1),
+                    Vec3f(x1, y, z0),
+                ),
+                uvs = arrayOf(
+                    Vec2f(quad.u0, quad.v0),
+                    Vec2f(quad.u0, quad.v1),
+                    Vec2f(quad.u1, quad.v1),
+                    Vec2f(quad.u1, quad.v0),
+                ),
+                texture = texture,
+                color = color,
+            )
         }
         mesh = builder.bake()
     }

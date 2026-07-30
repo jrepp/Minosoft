@@ -13,6 +13,10 @@ import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationEvent
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalAnimationEventType
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
+import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRuntimeEffectRegistry
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRuntimeEffectResolution
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRuntimeEvents
 import de.bixilon.minosoft.data.entities.entities.animal.Pig
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
@@ -42,25 +46,39 @@ class GeckoLibEntityEventConsumerTest {
         val particles = RecordingParticles()
         entity.session.world.audio = audio
         entity.session.world.particle = particles
+        val identity = SkeletalContentIdentity(
+            ResourceLocation.of("test:geo/entity.geo.json"),
+            SkeletalContentFormat.GECKOLIB,
+            "geometry.test",
+        )
         val model = BakedSkeletalModel(
             mesh = Mesh::class.java.allocate(),
             transform = BakedSkeletalTransform(0, Vec3f.EMPTY, emptyMap()),
             transformCount = 1,
             animations = emptyMap(),
+            contentIdentity = identity,
         )
         val instance = SkeletalInstance(entities.context, model, model.transform.instance())
-        val consumer = GeckoLibEntityEventConsumer(renderer, instance)
         val instructions = mutableListOf<String>()
         val registration = GeckoLibRuntimeEvents.register("test") {
             if (it.event.type == SkeletalAnimationEventType.CUSTOM_INSTRUCTION) {
                 instructions += it.event.payload
             }
         }
+        val effects = GeckoLibRuntimeEffectRegistry.register("test", identity) {
+            if (it.event.type == SkeletalAnimationEventType.SOUND && it.event.payload == "step") {
+                GeckoLibRuntimeEffectResolution.Play(ResourceLocation.of("test:step"))
+            } else {
+                GeckoLibRuntimeEffectResolution.PassThrough
+            }
+        }
+        val consumer = GeckoLibEntityEventConsumer(renderer, instance)
         try {
-            consumer.dispatch("idle", SkeletalAnimationEvent(0.0f, SkeletalAnimationEventType.SOUND, "test:step"))
+            consumer.dispatch("idle", SkeletalAnimationEvent(0.0f, SkeletalAnimationEventType.SOUND, "step"))
             consumer.dispatch("idle", SkeletalAnimationEvent(0.0f, SkeletalAnimationEventType.PARTICLE, "minecraft:flame"))
             consumer.dispatch("idle", SkeletalAnimationEvent(0.0f, SkeletalAnimationEventType.CUSTOM_INSTRUCTION, "attack"))
         } finally {
+            effects.close()
             registration.close()
         }
 
@@ -70,6 +88,7 @@ class GeckoLibEntityEventConsumerTest {
         assertTrue((particles.values.single().position - entity.physics.position).length() < 0.1)
         assertEquals(instructions, listOf("attack"))
         assertEquals(GeckoLibRuntimeEvents.owners(), emptyList<String>())
+        assertEquals(GeckoLibRuntimeEffectRegistry.owners(), emptyMap<SkeletalContentIdentity, String>())
     }
 
     private class RecordingAudio : AbstractAudioPlayer {

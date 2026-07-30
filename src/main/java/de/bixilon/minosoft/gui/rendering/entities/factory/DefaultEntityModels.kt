@@ -18,6 +18,8 @@ import de.bixilon.minosoft.data.registries.factory.DefaultFactory
 import de.bixilon.minosoft.gui.rendering.entities.renderer.item.FallingBlockEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.item.ItemEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.item.PrimedTNTEntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.feature.armor.VanillaArmorModels
+import de.bixilon.minosoft.gui.rendering.entities.renderer.lightning.LightningBoltRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.display.BlockDisplayEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.display.ItemDisplayEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.display.TextDisplayEntityRenderer
@@ -36,12 +38,14 @@ object DefaultEntityModels : DefaultFactory<RegisteredEntityModelFactory<*>>(
     PlayerRenderer,
     PigRenderer, CowRenderer, SheepRenderer, ZombieRenderer,
     PrimedTNTEntityRenderer, FallingBlockEntityRenderer, ItemEntityRenderer,
+    LightningBoltRenderer,
     BlockDisplayEntityRenderer, ItemDisplayEntityRenderer, TextDisplayEntityRenderer,
 ) {
 
     fun load(loader: ModelLoader, latch: AbstractLatch?) {
         Log.log(LogMessageType.LOADING, LogLevels.VERBOSE) { "Loading entity models..." }
 
+        VanillaArmorModels.register(loader)
         FallbackLivingEntityRenderer.register(loader)
         for (type in loader.context.session.registries.entityType) {
             val factory = this[type.identifier] ?: continue

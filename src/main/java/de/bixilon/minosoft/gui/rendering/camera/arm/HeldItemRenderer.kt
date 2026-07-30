@@ -34,6 +34,8 @@ import de.bixilon.minosoft.gui.rendering.models.item.ItemPredicateContext
 import de.bixilon.minosoft.gui.rendering.models.item.ItemRender
 import de.bixilon.minosoft.gui.rendering.models.item.ItemRenderUtil.getModel
 import de.bixilon.minosoft.gui.rendering.models.item.resolve
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisDrawState
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.SkeletalModelStates
 import de.bixilon.minosoft.gui.rendering.skeletal.instance.SkeletalInstance
@@ -46,7 +48,7 @@ import kotlin.time.TimeSource.Monotonic.ValueTimeMark
 
 class HeldItemRenderer(private val context: RenderContext) {
     private val shader = context.system.shader.create(minosoft("camera/held_item")) { HeldItemShader(it) }
-    private var mesh: Mesh? = null
+    private var meshes: HeldItemMeshes? = null
     private var key: MeshKey? = null
     private var display = Mat4f()
     private var flat = false
@@ -60,6 +62,12 @@ class HeldItemRenderer(private val context: RenderContext) {
 
     fun draw(entity: PlayerEntity, slot: EquipmentSlots, arm: Arms, perspective: Mat4f) {
         val stack = entity.equipment[slot] ?: return clear()
+        context.shaderPipeline.withDrawState(IrisDrawState(item = stack.item.identifier)) {
+            drawStack(entity, stack, arm, perspective)
+        }
+    }
+
+    private fun drawStack(entity: PlayerEntity, stack: ItemStack, arm: Arms, perspective: Mat4f) {
         val model = stack.item.getModel(context.session)?.resolve(
             stack,
             ItemPredicateContext.of(entity, stack, context.itemPredicates),
@@ -73,13 +81,25 @@ class HeldItemRenderer(private val context: RenderContext) {
         clearSkeletal()
         model ?: return clear()
         ensureMesh(stack, arm, model)
-        val mesh = this.mesh ?: return
+        val meshes = this.meshes ?: return
 
-        shader.use()
-        shader.viewProjectionMatrix = perspective
-        shader.matrix = FirstPersonItemTransform.create(arm, display, flat, entity.armSwing.progress(arm))
-        shader.tint = ChatColors.WHITE.rgb()
-        mesh.draw()
+        val matrix = FirstPersonItemTransform.create(arm, display, flat, entity.armSwing.progress(arm))
+        meshes.opaque?.let { drawMesh(it, SceneProgramFamily.HAND, perspective, matrix) }
+        meshes.translucent?.let { mesh ->
+            try {
+                context.system.reset(
+                    blending = true,
+                    depthMask = false,
+                    sourceRGB = BlendingFunctions.SOURCE_ALPHA,
+                    destinationRGB = BlendingFunctions.ONE_MINUS_SOURCE_ALPHA,
+                    sourceAlpha = BlendingFunctions.ONE,
+                    destinationAlpha = BlendingFunctions.ONE_MINUS_SOURCE_ALPHA,
+                )
+                drawMesh(mesh, SceneProgramFamily.HAND_WATER, perspective, matrix)
+            } finally {
+                context.system.reset()
+            }
+        }
     }
 
     private fun drawSkeletal(
@@ -147,15 +167,41 @@ class HeldItemRenderer(private val context: RenderContext) {
         if (this.key == key) return
         clear()
 
-        val builder = BlockMeshBuilder(context)
-        model.render(Vec3f.EMPTY, builder, stack, context.tints.getItemTint(stack))
-        val mesh = builder.bake()
-        mesh.load()
+        val opaque = BlockMeshBuilder(context)
+        val translucent = BlockMeshBuilder(context)
+        model.render(
+            Vec3f.EMPTY,
+            HeldItemMaterialConsumer(opaque, translucent),
+            stack,
+            context.tints.getItemTint(stack),
+        )
+        val meshes = HeldItemMeshes(
+            opaque = opaque.bakeIfPresent(),
+            translucent = translucent.bakeIfPresent(),
+        )
+        meshes.load()
 
         this.key = key
-        this.mesh = mesh
+        this.meshes = meshes
         this.display = display(model, stack, arm)
         this.flat = model.isFlat(stack)
+    }
+
+    private fun BlockMeshBuilder.bakeIfPresent(): Mesh? {
+        if (_data?.isEmpty != false) {
+            drop()
+            return null
+        }
+        return bake()
+    }
+
+    private fun drawMesh(mesh: Mesh, family: SceneProgramFamily, perspective: Mat4f, matrix: Mat4f) {
+        shader.withProgramFamily(family) {
+            shader.viewProjectionMatrix = perspective
+            shader.matrix = matrix
+            shader.tint = ChatColors.WHITE.rgb()
+            mesh.draw()
+        }
     }
 
     private fun display(model: ItemRender?, stack: ItemStack, arm: Arms): Mat4f {
@@ -181,15 +227,8 @@ class HeldItemRenderer(private val context: RenderContext) {
     }
 
     private fun clearMesh() {
-        val mesh = this.mesh
-        if (mesh != null) {
-            when (mesh.state) {
-                MeshStates.PREPARING -> mesh.drop()
-                MeshStates.LOADED -> mesh.unload()
-                MeshStates.UNLOADED -> Unit
-            }
-        }
-        this.mesh = null
+        this.meshes?.unload()
+        this.meshes = null
         this.key = null
     }
 
@@ -243,9 +282,16 @@ class HeldItemRenderer(private val context: RenderContext) {
                         depth = DepthFunctions.EQUAL,
                     )
                 }
-                shader.use()
-                shader.tint = ChatColors.WHITE.rgb()
-                instance.drawMesh(shader, layer.mesh)
+                val drawLayer = {
+                    shader.tint = ChatColors.WHITE.rgb()
+                    instance.drawMesh(shader, layer.mesh)
+                }
+                if (layer.blend == GeckoLibRenderLayerBlend.OPAQUE) {
+                    shader.use()
+                    drawLayer()
+                } else {
+                    shader.withProgramFamily(SceneProgramFamily.HAND_WATER, drawLayer)
+                }
             }
         } finally {
             context.system.reset()
@@ -263,6 +309,26 @@ class HeldItemRenderer(private val context: RenderContext) {
         val arm: Arms,
         val model: BakedSkeletalModel,
     )
+
+    private data class HeldItemMeshes(
+        val opaque: Mesh?,
+        val translucent: Mesh?,
+    ) {
+        fun load() {
+            opaque?.load()
+            translucent?.load()
+        }
+
+        fun unload() {
+            listOfNotNull(opaque, translucent).forEach { mesh ->
+                when (mesh.state) {
+                    MeshStates.PREPARING -> mesh.drop()
+                    MeshStates.LOADED -> mesh.unload()
+                    MeshStates.UNLOADED -> Unit
+                }
+            }
+        }
+    }
 
     private companion object {
         const val MOVEMENT_EPSILON_SQUARED = 1.0E-7

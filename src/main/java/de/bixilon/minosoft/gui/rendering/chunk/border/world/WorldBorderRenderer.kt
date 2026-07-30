@@ -49,7 +49,8 @@ class WorldBorderRenderer(
     private val border = context.session.world.border
     private lateinit var texture: Texture
     private var offsetReset = now()
-    override val skip get() = border.getDistanceTo(context.session.player.physics.position) > MAX_DISTANCE
+    var referenceSuppressed = false
+    override val skip get() = referenceSuppressed || border.getDistanceTo(context.session.player.physics.position) > MAX_DISTANCE
     private var reload = false
 
     override fun registerLayers() {
@@ -59,7 +60,7 @@ class WorldBorderRenderer(
             this::draw,
             PipelineSemantic.WORLD_OVERLAY,
             passId = RenderPassId("minosoft:scene/world-border"),
-        ) { this.mesh == null }
+        ) { this.mesh == null || skip }
     }
 
     override fun init(latch: AbstractLatch) {
@@ -120,6 +121,7 @@ class WorldBorderRenderer(
     }
 
     private fun draw() {
+        if (skip) return
         val mesh = this.mesh ?: return
         update()
 

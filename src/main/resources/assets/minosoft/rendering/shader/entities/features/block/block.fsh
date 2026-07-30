@@ -16,6 +16,7 @@
 
 out lowp vec4 foutColor;
 
+uniform lowp vec4 uOutlineColor;
 
 #include "minosoft:tint"
 #include "minosoft:texture"
@@ -27,4 +28,7 @@ void main() {
     applyDefaults();
     applyTint();
     applyTexel();
+    if (uOutlineColor.a > 0.0f) {
+        foutColor = uOutlineColor;
+    }
 }

@@ -17,6 +17,7 @@ import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.mat.mat4.f.MMat4f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.data.entities.entities.player.Arms
+import de.bixilon.minosoft.gui.rendering.camera.CameraUtil
 import de.bixilon.minosoft.gui.rendering.models.raw.display.DisplayPositions
 import de.bixilon.minosoft.gui.rendering.models.raw.display.ModelDisplay
 import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3fUtil.rad
@@ -26,6 +27,19 @@ import kotlin.test.assertTrue
 import kotlin.math.abs
 
 class FirstPersonItemTransformTest {
+    @Test
+    fun `hand projection keeps screen position while moving depth forward`() {
+        val projection = CameraUtil.perspective(60.0f, 1.5f, 0.1f, 100.0f)
+        val hand = ArmRenderer.handProjection(projection)
+
+        for (column in 0 until 4) {
+            assertEquals(projection[0, column], hand[0, column])
+            assertEquals(projection[1, column], hand[1, column])
+            assertEquals(projection[2, column] * 0.125f, hand[2, column])
+            assertEquals(projection[3, column], hand[3, column])
+        }
+    }
+
     @Test
     fun `main arm selects matching vanilla display transform`() {
         assertEquals(FirstPersonItemTransform.displayPosition(Arms.RIGHT), DisplayPositions.FIRST_PERSON_RIGHT_HAND)

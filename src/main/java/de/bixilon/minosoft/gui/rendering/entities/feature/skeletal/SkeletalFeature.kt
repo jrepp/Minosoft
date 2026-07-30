@@ -19,16 +19,23 @@ import de.bixilon.kmath.vec.vec3.f.MVec3f
 import de.bixilon.kutil.primitive.FloatUtil.rad
 import de.bixilon.minosoft.gui.rendering.entities.easteregg.EntityEasterEggs.isFlipped
 import de.bixilon.minosoft.gui.rendering.entities.feature.DrawableEntityRenderFeature
+import de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.LivingEntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisEntityOverlay
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibAnimationState
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLayerBlend
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibHostEvents
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.SkeletalModelStates
 import de.bixilon.minosoft.gui.rendering.skeletal.instance.SkeletalInstance
 import de.bixilon.minosoft.assets.model.texture.entity.EntityTextureMaterialFrame
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
+import de.bixilon.minosoft.data.text.formatting.color.Colors
+import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import kotlin.time.Duration
@@ -37,16 +44,28 @@ import kotlin.random.Random
 open class SkeletalFeature(
     renderer: EntityRenderer<*>,
     val instance: SkeletalInstance,
-) : DrawableEntityRenderFeature(renderer) {
+) : DrawableEntityRenderFeature(renderer), EntityOutlineFeature {
+    override val castsShadow get() = true
+    override val additionalLayers: Set<EntityLayer>
+        get() = if (layer == EntityLayer.Translucent) emptySet() else TRANSLUCENT_LAYER
     protected val manager = renderer.renderer.context.skeletal
     private val rotation = MVec3f()
     private val expressionRandom = Random(renderer.entity.uuid?.hashCode() ?: renderer.entity.id ?: 0)
+    private val geckoHostRandom = Random((renderer.entity.uuid?.hashCode() ?: renderer.entity.id ?: 0) xor GECKO_HOST_RANDOM_SALT)
     private val expressionContext = CemEntityExpressionContextFactory(renderer)
     private var entityTexture: EntityTextureMaterialFrame? = null
     private var entityTextures: Map<de.bixilon.minosoft.data.registries.identified.ResourceLocation, EntityTextureMaterialFrame> = emptyMap()
     private val geckoEvents = GeckoLibEntityEventConsumer(renderer, instance)
+    private var animationEventCursor = 0L
     private val publishesCemRenderEffects =
         instance.model.contentIdentity?.format == SkeletalContentFormat.OPTIFINE_CEM
+    /**
+     * Acceptance-only material override for proving the retained emissive
+     * entity layer when the current scene has no authored emissive companion.
+     * Normal rendering leaves this false and remains entirely asset-driven.
+     */
+    @Volatile
+    var referenceEmissiveBaseOverride = false
 
     protected var position = Vec3d.EMPTY
     protected var yaw = 0.0f
@@ -92,19 +111,24 @@ open class SkeletalFeature(
         instance.transform.reset()
         updatePosition()
         instance.animation.draw(delta)
+        replayEntityAnimations()
         val geckoState = if (instance.model.contentIdentity?.format == SkeletalContentFormat.GECKOLIB) {
             val entity = renderer.entity
             val velocity = entity.physics.velocity
             GeckoLibAnimationState(
                 ageSeconds = entity.age.coerceAtLeast(0) / 20.0f,
                 moving = velocity.x * velocity.x + velocity.z * velocity.z > MOVEMENT_EPSILON_SQUARED,
-                data = mapOf(
-                    "query.is_on_ground" to if (entity.physics.onGround) 1.0 else 0.0,
-                    "query.is_in_water" to if (entity.physics.inWater) 1.0 else 0.0,
-                    "query.is_sneaking" to if (entity.isSneaking) 1.0 else 0.0,
-                    "query.is_sprinting" to if (entity.isSprinting) 1.0 else 0.0,
-                    "query.is_swimming" to if (entity.isSwimming) 1.0 else 0.0,
-                ),
+                data = buildMap {
+                    put("query.is_on_ground", if (entity.physics.onGround) 1.0 else 0.0)
+                    put("query.is_in_water", if (entity.physics.inWater) 1.0 else 0.0)
+                    put("query.is_sneaking", if (entity.isSneaking) 1.0 else 0.0)
+                    put("query.is_sprinting", if (entity.isSprinting) 1.0 else 0.0)
+                    put("query.is_swimming", if (entity.isSwimming) 1.0 else 0.0)
+                    putAll(instance.geckoAnimation.resolveTrackedData(entity.data::raw))
+                    putAll(instance.geckoAnimation.resolveHostState { input ->
+                        GeckoLibEntityHostStateResolver.resolve(entity, input, geckoHostRandom)
+                    })
+                },
             )
         } else {
             null
@@ -136,18 +160,28 @@ open class SkeletalFeature(
         instance.material = entityTexture?.base
     }
 
+    private fun replayEntityAnimations() {
+        if (!instance.geckoAnimation.active) return
+        val entity = renderer.entity
+        val batch = entity.animationEvents.readAfter(animationEventCursor)
+        animationEventCursor = batch.latestSequence
+        for (event in batch.events) {
+            val age = entity.age - event.entityAge
+            if (age !in 0..MAX_REPLAY_AGE_TICKS) continue
+            instance.geckoAnimation.triggerEvent(GeckoLibHostEvents.entityAnimation(event.animation))
+        }
+    }
+
     override fun prepare() {
-        super.prepare()
+        super<DrawableEntityRenderFeature>.prepare()
         if (instance.state == SkeletalModelStates.PREPARING) {
             instance.load()
         }
     }
 
     override fun draw() {
-        var tint = renderer.light.value
-        if (renderer is LivingEntityRenderer<*>) {
-            tint *= renderer.damage.value
-        }
+        manager.shader.entityColor = entityColor()
+        val tint = tint()
         instance.draw(tint)
         if (instance.model.entityTextureLayers.isNotEmpty()) {
             val shader = manager.shader
@@ -156,8 +190,30 @@ open class SkeletalFeature(
                 layer.meshes[texture]?.let { instance.drawMesh(shader, it) }
             }
         }
-        drawGeckoRenderLayers(tint)
-        val emissiveMeshes = if (instance.model.entityTextureLayers.isEmpty()) {
+        drawGeckoRenderLayers(tint, translucent = false)
+    }
+
+    override fun drawLayer(layer: EntityLayer) {
+        if (layer == this.layer) return draw()
+        if (layer != EntityLayer.Translucent) return
+        manager.shader.entityColor = entityColor()
+        val tint = tint()
+        drawGeckoRenderLayers(tint, translucent = true)
+        drawEmissive()
+    }
+
+    private fun tint(): de.bixilon.minosoft.data.text.formatting.color.RGBColor {
+        return modelTint(renderer.light.value)
+    }
+
+    private fun entityColor() = (renderer as? LivingEntityRenderer<*>)
+        ?.let { IrisEntityOverlay.resolve(it.entity) }
+        ?: de.bixilon.kmath.vec.vec4.f.Vec4f.EMPTY
+
+    private fun drawEmissive() {
+        val emissiveMeshes = if (referenceEmissiveBaseOverride) {
+            referenceEmissiveBaseMeshes()
+        } else if (instance.model.entityTextureLayers.isEmpty()) {
             entityTexture?.emissive?.let { emissive ->
                 listOf(instance.model.mesh(emissive))
             }.orEmpty()
@@ -180,20 +236,72 @@ open class SkeletalFeature(
                 depth = DepthFunctions.EQUAL,
             )
             val shader = manager.shader
-            shader.use()
-            shader.tint = ChatColors.WHITE.rgb()
-            emissiveMeshes.forEach { instance.drawMesh(shader, it) }
+            shader.withProgramFamily(SceneProgramFamily.ENTITY_EYES) {
+                shader.tint = ChatColors.WHITE.rgb()
+                emissiveMeshes.forEach { instance.drawMesh(shader, it) }
+            }
         } finally {
             system.reset()
         }
     }
 
-    private fun drawGeckoRenderLayers(tint: de.bixilon.minosoft.data.text.formatting.color.RGBColor) {
+    val referenceEmissiveBaseMeshCount: Int
+        get() = referenceEmissiveBaseMeshes().size
+
+    private fun referenceEmissiveBaseMeshes() = if (instance.model.entityTextureLayers.isEmpty()) {
+        listOf(instance.model.mesh(entityTexture?.base ?: instance.material ?: instance.model.entityTextureBase))
+    } else {
+        instance.model.entityTextureLayers.mapNotNull { (base, layer) ->
+            layer.meshes[entityTextures[base]?.base ?: base]
+        }
+    }
+
+    /**
+     * Allows stateful render layers such as dyed sheep wool to preserve the
+     * entity light/damage tint while adding their own material color.
+     */
+    protected open fun modelTint(tint: de.bixilon.minosoft.data.text.formatting.color.RGBColor) = tint
+
+    override fun drawOutline(color: RGBAColor) {
+        val system = renderer.renderer.context.system
+        val shader = manager.shader
+        try {
+            system.reset(depthTest = false, blending = false, faceCulling = false, depthMask = false)
+            shader.outlineColor = color
+            instance.draw(shader)
+            if (instance.model.entityTextureLayers.isNotEmpty()) {
+                for ((base, layer) in instance.model.entityTextureLayers) {
+                    val texture = entityTextures[base]?.base ?: base
+                    layer.meshes[texture]?.let { instance.drawMesh(shader, it) }
+                }
+            }
+            for ((name, layer) in instance.model.geckoRenderLayers) {
+                instance.geckoAnimation.renderLayer(name, layer.registrationId) ?: continue
+                instance.drawMesh(shader, layer.mesh)
+            }
+            if (instance.model.entityTextureLayers.isEmpty()) {
+                entityTexture?.emissive?.let { instance.drawMesh(shader, instance.model.mesh(it)) }
+            } else {
+                for ((base, layer) in instance.model.entityTextureLayers) {
+                    entityTextures[base]?.emissive?.let(layer.meshes::get)?.let { instance.drawMesh(shader, it) }
+                }
+            }
+        } finally {
+            shader.outlineColor = Colors.TRANSPARENT
+            system.reset(depthTest = false, blending = false, faceCulling = false, depthMask = false)
+        }
+    }
+
+    private fun drawGeckoRenderLayers(
+        tint: de.bixilon.minosoft.data.text.formatting.color.RGBColor,
+        translucent: Boolean,
+    ) {
         if (instance.model.geckoRenderLayers.isEmpty()) return
         val system = renderer.renderer.context.system
         val shader = manager.shader
         try {
             for ((name, layer) in instance.model.geckoRenderLayers) {
+                if ((layer.blend != GeckoLibRenderLayerBlend.OPAQUE) != translucent) continue
                 instance.geckoAnimation.renderLayer(name, layer.registrationId) ?: continue
                 when (layer.blend) {
                     GeckoLibRenderLayerBlend.OPAQUE -> system.reset(
@@ -221,9 +329,16 @@ open class SkeletalFeature(
                         depth = DepthFunctions.EQUAL,
                     )
                 }
-                shader.use()
-                shader.tint = if (layer.fullBright) ChatColors.WHITE.rgb() else tint
-                instance.drawMesh(shader, layer.mesh)
+                val drawLayer = {
+                    shader.tint = if (layer.fullBright) ChatColors.WHITE.rgb() else tint
+                    instance.drawMesh(shader, layer.mesh)
+                }
+                if (!layer.fullBright || layer.blend != GeckoLibRenderLayerBlend.ADDITIVE) {
+                    shader.use()
+                    drawLayer()
+                } else {
+                    shader.withProgramFamily(SceneProgramFamily.ENTITY_EYES, drawLayer)
+                }
             }
         } finally {
             system.reset()
@@ -250,6 +365,9 @@ open class SkeletalFeature(
     }
 
     private companion object {
+        val TRANSLUCENT_LAYER = setOf<EntityLayer>(EntityLayer.Translucent)
+        const val GECKO_HOST_RANDOM_SALT = 0x4D534746
         const val MOVEMENT_EPSILON_SQUARED = 1.0E-7
+        const val MAX_REPLAY_AGE_TICKS = 2
     }
 }

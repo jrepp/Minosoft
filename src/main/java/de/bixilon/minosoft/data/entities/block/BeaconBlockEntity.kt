@@ -13,20 +13,28 @@
 
 package de.bixilon.minosoft.data.entities.block
 
+import de.bixilon.kutil.primitive.IntUtil.toInt
 import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.data.world.positions.BlockPosition
+import de.bixilon.minosoft.gui.rendering.RenderContext
+import de.bixilon.minosoft.gui.rendering.chunk.entities.renderer.beacon.BeaconBeamRenderer
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
 class BeaconBlockEntity(session: PlaySession, position: BlockPosition, state: BlockState) : BlockEntity(session, position, state), BlockActionEntity {
+    @Volatile
+    var levels = 0
+        private set
 
     override fun setBlockActionData(type: Int, data: Int) {
         // no data used, just recalculates the beam
     }
 
     override fun updateNBT(nbt: Map<String, Any>) {
-        // ToDO: {Secondary: -1, Paper.Range: -1.0D, Primary: -1, x: -90, y: 4, Levels: 0, z: 212, id: "minecraft:beacon"}
+        levels = (nbt["Levels"] ?: nbt["levels"])?.toInt()?.coerceIn(0, 4) ?: 0
     }
+
+    override fun createRenderer(context: RenderContext) = BeaconBeamRenderer(this, context)
 
     companion object : BlockEntityFactory<BeaconBlockEntity> {
         override val identifier = minecraft("beacon")

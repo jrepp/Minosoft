@@ -100,10 +100,10 @@ class EntityLeashFeature(
     private fun build(start: Vec3f, end: Vec3f, startLight: LightLevel, endLight: LightLevel): Mesh {
         val builder = LightColorMeshBuilder(livingRenderer.renderer.context, EntityLeashProjector.SEGMENTS * 2)
         for (quad in EntityLeashProjector.ribbons(start, end, startLight, endLight)) {
-            builder.addVertex(quad.first0, quad.color0, quad.light0)
-            builder.addVertex(quad.second0, quad.color0, quad.light0)
-            builder.addVertex(quad.second1, quad.color1, quad.light1)
-            builder.addVertex(quad.first1, quad.color1, quad.light1)
+            builder.addVertex(quad.first0, quad.color0, quad.light0, quad.normal)
+            builder.addVertex(quad.second0, quad.color0, quad.light0, quad.normal)
+            builder.addVertex(quad.second1, quad.color1, quad.light1, quad.normal)
+            builder.addVertex(quad.first1, quad.color1, quad.light1, quad.normal)
             builder.addIndexQuad()
         }
         return builder.bake()

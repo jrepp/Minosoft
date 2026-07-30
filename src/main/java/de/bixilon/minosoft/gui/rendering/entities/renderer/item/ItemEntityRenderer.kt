@@ -36,9 +36,9 @@ class ItemEntityRenderer(renderer: EntitiesRenderer, entity: ItemEntity) : Entit
         entity::stack.observe(this, true) { item.stack = it }
     }
 
-    override fun update(time: ValueTimeMark, delta: Duration) {
+    override fun update(time: ValueTimeMark, delta: Duration, auxiliaryVisible: Boolean) {
         updateFloatingRotation(delta)
-        super.update(time, delta)
+        super.update(time, delta, auxiliaryVisible)
     }
 
     private fun updateFloatingRotation(delta: Duration) {

@@ -13,7 +13,9 @@
 
 package de.bixilon.minosoft.gui.rendering.entities.feature.block
 
+import de.bixilon.kmath.vec.vec2.f.Vec2f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.kmath.vec.vec4.f.Vec4f
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.BlockVertexConsumer
@@ -28,16 +30,33 @@ import de.bixilon.minosoft.gui.rendering.util.mesh.uv.array.PackedUVArray
 
 class BlockMeshBuilder(context: RenderContext) : QuadMeshBuilder(context, BlockMeshStruct), BlockVertexConsumer {
 
-    inline fun addVertex(x: Float, y: Float, z: Float, uv: PackedUV, texture: ShaderTexture, tint: RGBColor) = data.add(
-        x, y, z,
-        uv.raw,
-        texture.shaderId.buffer(),
-        tint.rgb.buffer(),
-    )
+    inline fun addVertex(
+        x: Float,
+        y: Float,
+        z: Float,
+        uv: PackedUV,
+        texture: ShaderTexture,
+        tint: RGBColor,
+        midUv: Vec2f,
+        normal: Vec3f,
+        tangent: Vec4f,
+    ) {
+        data.add(
+            x, y, z,
+            uv.raw,
+            texture.shaderId.buffer(),
+            tint.rgb.buffer(),
+            midUv.x, midUv.y,
+        )
+        data.add(normal.x, normal.y, normal.z)
+        data.add(tangent.x, tangent.y, tangent.z, tangent.w)
+    }
 
 
     override fun addQuad(offset: Vec3f, positions: FaceVertexData, uv: PackedUVArray, texture: ShaderTexture, light: Int, tint: RGBColor, ao: IntArray) {
         ensureSize(1)
+        val midUv = faceUvMidpoint(uv)
+        val quad = de.bixilon.minosoft.gui.rendering.terrain.IrisTerrainQuad.calculate(positions, uv)
 
         iterate {
             val vertexOffset = it * Vec3f.LENGTH
@@ -47,6 +66,9 @@ class BlockMeshBuilder(context: RenderContext) : QuadMeshBuilder(context, BlockM
                 uv[it],
                 texture,
                 tint,
+                midUv,
+                quad.normal,
+                quad.tangent,
             )
         }
         addIndexQuad()
@@ -57,7 +79,22 @@ class BlockMeshBuilder(context: RenderContext) : QuadMeshBuilder(context, BlockM
         val uv: PackedUV,
         val texture: ShaderTexture,
         val tint: RGBColor,
+        val midUv: Vec2f,
+        val normal: Vec3f,
+        val tangent: Vec4f,
     ) {
         companion object : MeshStruct(BlockMeshStruct::class)
+    }
+
+    internal companion object {
+        fun faceUvMidpoint(uv: PackedUVArray): Vec2f {
+            var u = 0.0f
+            var v = 0.0f
+            for (vertex in 0 until PackedUVArray.COMPONENTS) {
+                u += uv[vertex].u
+                v += uv[vertex].v
+            }
+            return Vec2f(u / PackedUVArray.COMPONENTS, v / PackedUVArray.COMPONENTS)
+        }
     }
 }

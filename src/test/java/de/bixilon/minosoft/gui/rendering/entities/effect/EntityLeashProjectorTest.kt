@@ -110,6 +110,14 @@ class EntityLeashProjectorTest {
                 it.x.isFinite() && it.y.isFinite() && it.z.isFinite()
             }
         })
+        assertTrue(quads.all { quad ->
+            val length = kotlin.math.sqrt(
+                quad.normal.x * quad.normal.x +
+                    quad.normal.y * quad.normal.y +
+                    quad.normal.z * quad.normal.z,
+            )
+            kotlin.math.abs(length - 1.0f) < 0.0001f
+        })
     }
 
     @Test
@@ -122,6 +130,9 @@ class EntityLeashProjectorTest {
         assertTrue(quads.flatMap { listOf(it.first0, it.second0, it.second1, it.first1) }.all {
             it.x.isFinite() && it.y.isFinite() && it.z.isFinite()
         })
+        assertTrue(quads.all { it.normal.x.isFinite() && it.normal.y.isFinite() && it.normal.z.isFinite() })
+        assertEquals(Vec3f(0.0f, 0.0f, 1.0f), quads.first().normal)
+        assertEquals(Vec3f(1.0f, 0.0f, 0.0f), quads[EntityLeashProjector.SEGMENTS].normal)
     }
 
     @Test

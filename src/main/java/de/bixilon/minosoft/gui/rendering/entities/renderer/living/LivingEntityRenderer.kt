@@ -13,28 +13,23 @@
 
 package de.bixilon.minosoft.gui.rendering.entities.renderer.living
 
-import de.bixilon.kutil.math.interpolation.Interpolator
 import de.bixilon.kutil.primitive.FloatUtil.rad
 import de.bixilon.minosoft.data.entities.Poses
 import de.bixilon.minosoft.data.entities.entities.LivingEntity
-import de.bixilon.minosoft.data.entities.event.events.damage.DamageEvent
-import de.bixilon.minosoft.data.entities.event.events.damage.DamageListener
-import de.bixilon.minosoft.data.text.formatting.color.ChatColors
-import de.bixilon.minosoft.data.text.formatting.color.ColorInterpolation
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.gui.rendering.entities.effect.EntityLeashFeature
 import de.bixilon.minosoft.gui.rendering.entities.effect.EntityShadowFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.armor.VanillaArmorFeature
 import de.bixilon.minosoft.gui.rendering.entities.feature.skeletal.GeckoLibArmorFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.TimeSource.Monotonic.ValueTimeMark
 
-abstract class LivingEntityRenderer<E : LivingEntity>(renderer: EntitiesRenderer, entity: E) : EntityRenderer<E>(renderer, entity), DamageListener {
-    val damage = Interpolator(ChatColors.WHITE.rgb(), ColorInterpolation::interpolateRGB) // TODO delta^2 or no interpolation at all?
+abstract class LivingEntityRenderer<E : LivingEntity>(renderer: EntitiesRenderer, entity: E) : EntityRenderer<E>(renderer, entity) {
     val shadow = EntityShadowFeature(this).register()
     val leash = EntityLeashFeature(this).register()
     val geckoArmor = GeckoLibArmorFeature(this).register()
+    val vanillaArmor = VanillaArmorFeature(this).register()
+    val vanillaArmorDecorations = vanillaArmor.decorations.register()
 
 
     override fun updateMatrix(delta: Duration) {
@@ -45,15 +40,4 @@ abstract class LivingEntityRenderer<E : LivingEntity>(renderer: EntitiesRenderer
         }
     }
 
-    override fun update(time: ValueTimeMark, delta: Duration) {
-        if (damage.delta >= 1.0f) {
-            damage.push(ChatColors.WHITE.rgb())
-        }
-        damage.add((delta / 1.seconds).toFloat(), 0.1f) // TODO: 1 second?
-        super.update(time, delta)
-    }
-
-    override fun onDamage(type: DamageEvent) {
-        damage.push(ChatColors.RED.rgb())
-    }
 }

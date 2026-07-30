@@ -17,6 +17,7 @@
 out lowp vec4 foutColor;
 
 uniform float uFlashProgress;
+uniform lowp vec4 uOutlineColor;
 
 in vec4 finFlashColor;
 
@@ -32,4 +33,7 @@ void main() {
     applyTexel();
 
     foutColor = mix(foutColor, finFlashColor, uFlashProgress);
+    if (uOutlineColor.a > 0.0f) {
+        foutColor = uOutlineColor;
+    }
 }

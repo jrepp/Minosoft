@@ -13,7 +13,6 @@
 
 #version 330 core
 
-#define FOG
 #define DISABLE_ALPHA_DISCARD
 
 out lowp vec4 foutColor;
@@ -22,7 +21,6 @@ out lowp vec4 foutColor;
 #include "minosoft:tint"
 #include "minosoft:texture"
 #include "minosoft:alpha"
-#include "minosoft:fog"
 #include "minosoft:animation"
 
 flat in uint finAllowTransparency;

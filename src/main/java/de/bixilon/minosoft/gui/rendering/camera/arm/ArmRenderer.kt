@@ -16,6 +16,7 @@ package de.bixilon.minosoft.gui.rendering.camera.arm
 
 import de.bixilon.kmath.mat.mat4.f.MMat4f
 import de.bixilon.kmath.mat.mat4.f.Mat4f
+import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.kutil.cast.CastUtil.nullCast
 import de.bixilon.kutil.exception.Broken
@@ -37,21 +38,138 @@ import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerR
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerRenderer.Companion.SKIN
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerRenderer.Companion.SLIM
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerRenderer.Companion.WIDE
-import de.bixilon.minosoft.gui.rendering.renderer.drawable.Drawable
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.Renderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerSkinUvTexture
+import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
-import de.bixilon.minosoft.gui.rendering.system.base.IntegratedBufferTypes
+import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
+import de.bixilon.minosoft.gui.rendering.system.base.settings.RenderSettings
+import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.RGBA8Buffer
+import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.TextureBuffer
+import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicTexture
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
-class ArmRenderer(override val context: RenderContext) : Renderer, Drawable {
+class ArmRenderer(override val context: RenderContext) : WorldRenderer {
+    override val layers = LayerSettings()
     private var perspective = Mat4f()
-    override val framebuffer get() = context.framebuffer.gui
     val shader = context.system.shader.create(minosoft("entities/player/arm")) { ArmShader(it) }
     private val mainHandItem = HeldItemRenderer(context)
     private val offHandItem = HeldItemRenderer(context)
+    private var referenceSkinTexture: DynamicTexture? = null
+    private var refreshedOrdinarySkin: DynamicTexture? = null
+    private var refreshedOrdinarySkinGeneration = Long.MIN_VALUE
+    var armDraws: Long = 0L
+        private set
+    var lastArmDrawFrame: Long = -1L
+        private set
+    var lastArmTextureShaderId: Int? = null
+        private set
+
+    val referenceSkinEnabled: Boolean
+        get() = referenceSkinTexture != null
+    val referenceSkinShaderId: Int?
+        get() = referenceSkinTexture?.shaderId
+
+    fun ordinarySkinDiagnostics(): ArmSkinDiagnostics? {
+        val entity = context.session.camera.entity.nullCast<PlayerEntity>() ?: return null
+        val renderer = entity.renderer?.nullCast<PlayerRenderer<*>>() ?: return null
+        val frame = renderer.skinFrame()
+        val fallback = context.textures.skins.default[entity]?.texture
+        return ArmSkinDiagnostics(
+            selected = (frame?.base ?: fallback)?.diagnostics(entity.mainArm),
+            frame = frame?.base?.diagnostics(entity.mainArm),
+            fallback = fallback?.diagnostics(entity.mainArm),
+        )
+    }
+
+    private fun DynamicTexture.diagnostics(arm: Arms): ArmSkinTextureDiagnostics {
+        val buffer = data?.buffer
+        return ArmSkinTextureDiagnostics(
+            shaderId = shaderId,
+            state = state.name.lowercase(),
+            width = buffer?.size?.x,
+            height = buffer?.size?.y,
+            visiblePixels = buffer?.countPixels(),
+            nonBlackVisiblePixels = buffer?.countPixels(nonBlack = true),
+            armNonBlackVisiblePixels = buffer?.countArmPixels(arm),
+        )
+    }
+
+    private fun TextureBuffer.countPixels(nonBlack: Boolean = false): Int {
+        var count = 0
+        for (y in 0 until size.y) {
+            for (x in 0 until size.x) {
+                val color = getRGBA(x, y)
+                if (color.alpha == 0) continue
+                if (nonBlack && color.red == 0 && color.green == 0 && color.blue == 0) continue
+                count++
+            }
+        }
+        return count
+    }
+
+    private fun TextureBuffer.countArmPixels(arm: Arms): Int {
+        if (size.x < 64 || size.y < 64) return 0
+        val xRange = when (arm) {
+            Arms.RIGHT -> 40 until 56
+            Arms.LEFT -> 32 until 48
+        }
+        val yRange = when (arm) {
+            Arms.RIGHT -> 16 until 32
+            Arms.LEFT -> 48 until 64
+        }
+        var count = 0
+        for (y in yRange) {
+            for (x in xRange) {
+                val color = getRGBA(x, y)
+                if (color.alpha == 0) continue
+                if (color.red == 0 && color.green == 0 && color.blue == 0) continue
+                count++
+            }
+        }
+        return count
+    }
+
+    /**
+     * Selects a generated high-contrast skin-sized texture for a reversible
+     * visual acceptance check. This does not replace the player skin or world
+     * model.
+     */
+    fun setReferenceSkinEnabled(enabled: Boolean) {
+        referenceSkinTexture = if (enabled) {
+            context.textures.dynamic.push(REFERENCE_SKIN, async = false) {
+                RGBA8Buffer(Vec2i(64)).apply {
+                    for (y in 0 until 64) {
+                        for (x in 0 until 64) {
+                            val even = ((x / 4) + (y / 4)) % 2 == 0
+                            if (even) {
+                                setRGBA(x, y, 0xFF, 0x20, 0xD0, 0xFF)
+                            } else {
+                                setRGBA(x, y, 0x20, 0xFF, 0xE0, 0xFF)
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            null
+        }
+    }
+
+    override fun registerLayers() {
+        layers.registerSemantic(
+            layer = HandLayer,
+            shader = null,
+            renderer = this::drawHand,
+            semantic = PipelineSemantic.HAND,
+            passId = RenderPassId("minosoft:scene/hand"),
+        )
+    }
 
     override fun init(latch: AbstractLatch) {
         registerModels()
@@ -62,13 +180,15 @@ class ArmRenderer(override val context: RenderContext) : Renderer, Drawable {
         mainHandItem.postInit()
         offHandItem.postInit()
         context.window::size.observe(this, true) {
-            perspective = CameraUtil.perspective(60.0f.rad, it.x.toFloat() / it.y, NEAR_PLANE, FALLBACK_FAR_PLANE)
+            perspective = handProjection(
+                CameraUtil.perspective(60.0f.rad, it.x.toFloat() / it.y, NEAR_PLANE, FALLBACK_FAR_PLANE),
+            )
         }
     }
 
     private fun registerModels() {
         val skeletal = context.models.skeletal
-        val override = mapOf(SKIN to context.textures.debugTexture) // disable textures, they all dynamic
+        val override = mapOf(SKIN to PlayerSkinUvTexture)
 
         skeletal.register(LEFT_ARM_WIDE, WIDE, override) { ArmMeshBuilder(context, Arms.LEFT) }
         skeletal.register(RIGHT_ARM_WIDE, WIDE, override) { ArmMeshBuilder(context, Arms.RIGHT) }
@@ -90,13 +210,11 @@ class ArmRenderer(override val context: RenderContext) : Renderer, Drawable {
         return context.models.skeletal[name]
     }
 
-    override fun draw() {
+    private fun drawHand() {
         if (!context.camera.view.view.renderArm) return
         val entity = context.session.camera.entity.nullCast<PlayerEntity>() ?: return
         val renderer = entity.renderer?.nullCast<PlayerRenderer<*>>()
         val arm = entity.mainArm
-
-        context.system.clear(IntegratedBufferTypes.DEPTH_BUFFER)
 
         context.system.reset(faceCulling = true, depthTest = true, blending = true, depthMask = true)
 
@@ -105,10 +223,30 @@ class ArmRenderer(override val context: RenderContext) : Renderer, Drawable {
         val model = skin?.let { getModel(arm, it) }
         if (mainHand == null && renderer != null && model != null) {
             val frame = renderer.skinFrame()
+            val referenceSkin = referenceSkinTexture
+            val fallbackSkin = context.textures.skins.default[entity]?.texture
+            val ordinarySkin = frame?.base ?: fallbackSkin
+            val dynamicTextures = context.textures.dynamic
+            if (
+                referenceSkin == null &&
+                ordinarySkin != null &&
+                (
+                    refreshedOrdinarySkin !== ordinarySkin ||
+                        refreshedOrdinarySkinGeneration != dynamicTextures.storageGeneration
+                    )
+            ) {
+                dynamicTextures.refresh(ordinarySkin)
+                refreshedOrdinarySkin = ordinarySkin
+                refreshedOrdinarySkinGeneration = dynamicTextures.storageGeneration
+            }
 
             shader.use()
             shader.skinParts = renderer.model?.skinParts ?: 0xFF
-            shader.texture = frame?.base?.shaderId ?: context.textures.debugTexture.shaderId
+            val textureShaderId = referenceSkin?.shaderId
+                ?: frame?.base?.shaderId
+                ?: fallbackSkin?.shaderId
+                ?: context.textures.debugTexture.shaderId
+            shader.texture = textureShaderId
             shader.tint = ChatColors.WHITE.rgb()
 
             val pivot = Vec3f((if (arm == Arms.RIGHT) 6f else -6f) / 16f, 24 / 16f, 0f)
@@ -132,7 +270,10 @@ class ArmRenderer(override val context: RenderContext) : Renderer, Drawable {
             shader.transform = perspective * matrix
 
             model.mesh.draw()
-            frame?.emissive?.let { emissive ->
+            armDraws++
+            lastArmDrawFrame = context.frameNumber
+            lastArmTextureShaderId = textureShaderId
+            frame?.emissive?.takeIf { referenceSkin == null }?.let { emissive ->
                 try {
                     context.system.reset(
                         blending = true,
@@ -168,7 +309,33 @@ class ArmRenderer(override val context: RenderContext) : Renderer, Drawable {
         private val RIGHT_ARM_WIDE = minosoft("right_arm_wide")
         private val LEFT_ARM_SLIM = minosoft("left_arm_slim")
         private val RIGHT_ARM_SLIM = minosoft("right_arm_slim")
+        private val REFERENCE_SKIN = minosoft("debug/reference_hand_skin")
+        private const val HAND_DEPTH_SCALE = 0.125f
 
         override fun build(session: PlaySession, context: RenderContext) = ArmRenderer(context)
+
+        internal fun handProjection(projection: Mat4f): Mat4f =
+            Mat4f(1.0f, 1.0f, HAND_DEPTH_SCALE, 1.0f) * projection
+    }
+
+    private object HandLayer : RenderLayer {
+        override val settings = RenderSettings.DEFAULT
+        override val priority = 0
     }
 }
+
+data class ArmSkinDiagnostics(
+    val selected: ArmSkinTextureDiagnostics?,
+    val frame: ArmSkinTextureDiagnostics?,
+    val fallback: ArmSkinTextureDiagnostics?,
+)
+
+data class ArmSkinTextureDiagnostics(
+    val shaderId: Int,
+    val state: String,
+    val width: Int?,
+    val height: Int?,
+    val visiblePixels: Int?,
+    val nonBlackVisiblePixels: Int?,
+    val armNonBlackVisiblePixels: Int?,
+)

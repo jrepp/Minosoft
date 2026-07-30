@@ -25,6 +25,7 @@ import de.bixilon.minosoft.gui.rendering.entities.feature.block.BlockMeshBuilder
 import de.bixilon.minosoft.gui.rendering.entities.feature.block.BlockShader
 import de.bixilon.minosoft.gui.rendering.entities.feature.item.ItemFeature.ItemRenderDistance.Companion.getCount
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
+import de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineFeature
 import de.bixilon.minosoft.gui.rendering.entities.feature.skeletal.GeckoLibEntityEventConsumer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.ContentModelReloadable
@@ -34,6 +35,7 @@ import de.bixilon.minosoft.gui.rendering.models.item.ItemRender
 import de.bixilon.minosoft.gui.rendering.models.item.ItemRenderUtil.getModel
 import de.bixilon.minosoft.gui.rendering.models.item.resolve
 import de.bixilon.minosoft.gui.rendering.models.raw.display.DisplayPositions
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.SkeletalModelStates
 import de.bixilon.minosoft.gui.rendering.skeletal.instance.GeckoLibAnimationManagerSnapshot
 import de.bixilon.minosoft.gui.rendering.skeletal.instance.SkeletalInstance
@@ -41,6 +43,8 @@ import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
 import de.bixilon.minosoft.util.Backports.nextFloatPort
+import de.bixilon.minosoft.data.text.formatting.color.Colors
+import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import java.util.*
 import kotlin.time.Duration
 
@@ -49,7 +53,8 @@ open class ItemFeature(
     stack: ItemStack?,
     display: DisplayPositions,
     val many: Boolean = true,
-) : MeshedFeature<Mesh>(renderer), ContentModelReloadable {
+) : MeshedFeature<Mesh>(renderer), ContentModelReloadable, EntityOutlineFeature {
+    override val castsShadow get() = true
     var display: DisplayPositions = display
         set(value) {
             if (field == value) return
@@ -192,7 +197,7 @@ open class ItemFeature(
     }
 
     override fun prepare() {
-        super.prepare()
+        super<MeshedFeature>.prepare()
         val skeletal = this.skeletal ?: return
         if (skeletal.state == SkeletalModelStates.PREPARING) skeletal.load()
     }
@@ -216,10 +221,42 @@ open class ItemFeature(
 
 
     protected open fun draw(mesh: Mesh, shader: BlockShader) {
-        shader.use()
-        shader.matrix = matrix.unsafe
-        shader.tint = renderer.light.value
-        super.draw(mesh)
+        // Ordinary item-model quads share the retained block-feature vertex
+        // layout, but Iris classifies dropped and display items as entity
+        // geometry. Preserve the physical ABI while selecting the entity
+        // program family instead of masquerading as a moving block.
+        shader.withProgramFamily(SceneProgramFamily.ENTITY) {
+            shader.matrix = matrix.unsafe
+            shader.tint = renderer.light.value
+            mesh.draw()
+        }
+    }
+
+    override fun drawOutline(color: RGBAColor) {
+        val context = renderer.renderer.context
+        val system = context.system
+        try {
+            system.reset(depthTest = false, blending = false, faceCulling = false, depthMask = false)
+            val skeletal = this.skeletal
+            if (skeletal != null) {
+                val shader = context.skeletal.shader
+                shader.outlineColor = color
+                skeletal.draw(shader)
+                for ((name, layer) in skeletal.model.geckoRenderLayers) {
+                    skeletal.geckoAnimation.renderLayer(name, layer.registrationId) ?: continue
+                    skeletal.drawMesh(shader, layer.mesh)
+                }
+            } else {
+                val mesh = this.mesh ?: return
+                val shader = renderer.renderer.features.block.shader
+                shader.outlineColor = color
+                draw(mesh, shader)
+            }
+        } finally {
+            context.skeletal.shader.outlineColor = Colors.TRANSPARENT
+            renderer.renderer.features.block.shader.outlineColor = Colors.TRANSPARENT
+            system.reset(depthTest = false, blending = false, faceCulling = false, depthMask = false)
+        }
     }
 
     override fun unload() {

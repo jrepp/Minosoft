@@ -21,8 +21,10 @@ import de.bixilon.minosoft.data.entities.entities.player.SkinParts
 import de.bixilon.minosoft.data.entities.entities.player.SkinParts.Companion.pack
 import de.bixilon.minosoft.data.entities.entities.player.properties.textures.metadata.SkinModel
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
-import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerModelMeshBuilder
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerRenderer
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisEntityOverlay
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
@@ -65,7 +67,8 @@ open class PlayerModel(
 
             shader.use()
             shader.texture = frame?.base?.shaderId ?: renderer.renderer.context.textures.debugTexture.shaderId
-            shader.tint = renderer.light.value.mix(renderer.damage.value)
+            shader.tint = renderer.light.value
+            shader.entityColor = IrisEntityOverlay.resolve(renderer.entity)
             shader.skinParts = this.skinParts
             shader.inflate = 0.0f
             shader.hideBase = false
@@ -88,7 +91,7 @@ open class PlayerModel(
                 )
                 shader.use()
                 shader.texture = coat.shaderId
-                shader.tint = renderer.light.value.mix(renderer.damage.value)
+                shader.tint = renderer.light.value
                 shader.skinParts = SkinParts.JACKET.bitmask
                 shader.inflate = frame.coatInflation
                 shader.hideBase = true
@@ -151,7 +154,7 @@ open class PlayerModel(
         shader.use()
         shader.texture = texture
         val renderer = this.renderer.unsafeCast<PlayerRenderer<*>>()
-        shader.tint = renderer.light.value.mix(renderer.damage.value)
+        shader.tint = renderer.light.value
         shader.skinParts = 0x00
         shader.inflate = 0.0f
         shader.hideBase = true
@@ -179,16 +182,17 @@ open class PlayerModel(
             destinationAlpha = BlendingFunctions.ONE,
             depth = DepthFunctions.EQUAL,
         )
-        shader.use()
-        shader.texture = texture
-        shader.tint = ChatColors.WHITE.rgb()
-        shader.skinParts = skinParts
-        shader.inflate = inflation
-        shader.hideBase = hideBase
-        shader.featurePart = featurePart
-        shader.allowBaseTransparency = !hideBase
-        shader.glint = false
-        instance.model.mesh.draw()
+        shader.withProgramFamily(SceneProgramFamily.ENTITY_EYES) {
+            shader.texture = texture
+            shader.tint = ChatColors.WHITE.rgb()
+            shader.skinParts = skinParts
+            shader.inflate = inflation
+            shader.hideBase = hideBase
+            shader.featurePart = featurePart
+            shader.allowBaseTransparency = !hideBase
+            shader.glint = false
+            instance.model.mesh.draw()
+        }
     }
 
     private fun drawGlint(
@@ -209,18 +213,19 @@ open class PlayerModel(
             destinationAlpha = BlendingFunctions.ZERO,
             depth = DepthFunctions.EQUAL,
         )
-        shader.use()
-        shader.texture = texture
-        shader.tint = ChatColors.WHITE.rgb()
-        shader.skinParts = skinParts
-        shader.inflate = inflation
-        shader.hideBase = hideBase
-        shader.featurePart = featurePart
-        shader.allowBaseTransparency = false
-        shader.glintTexture = PlayerRenderer.GLINT.shaderId
-        shader.glintTime = this.renderer.unsafeCast<PlayerRenderer<*>>().entity.age.toFloat()
-        shader.glint = true
-        instance.model.mesh.draw()
+        shader.withProgramFamily(SceneProgramFamily.ARMOR_GLINT) {
+            shader.texture = texture
+            shader.tint = ChatColors.WHITE.rgb()
+            shader.skinParts = skinParts
+            shader.inflate = inflation
+            shader.hideBase = hideBase
+            shader.featurePart = featurePart
+            shader.allowBaseTransparency = false
+            shader.glintTexture = PlayerRenderer.GLINT.shaderId
+            shader.glintTime = this.renderer.unsafeCast<PlayerRenderer<*>>().entity.age.toFloat()
+            shader.glint = true
+            instance.model.mesh.draw()
+        }
     }
 
     private fun EtfPlayerNoseType.featurePart(): Int? = when (this) {

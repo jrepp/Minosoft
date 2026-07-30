@@ -17,7 +17,10 @@ import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLay
 import de.bixilon.minosoft.data.container.equipment.EquipmentSlots
 import de.bixilon.minosoft.data.container.stack.ItemStack
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
+import de.bixilon.minosoft.data.text.formatting.color.Colors
+import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.gui.rendering.entities.feature.DrawableEntityRenderFeature
+import de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.ContentModelReloadable
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.LivingEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
@@ -25,6 +28,8 @@ import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.SkeletalModelStates
 import de.bixilon.minosoft.gui.rendering.skeletal.instance.GeckoLibAnimationManagerSnapshot
 import de.bixilon.minosoft.gui.rendering.skeletal.instance.SkeletalInstance
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisDrawState
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisEntityOverlay
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import java.util.EnumMap
@@ -37,7 +42,8 @@ import kotlin.time.Duration
  */
 class GeckoLibArmorFeature(
     private val livingRenderer: LivingEntityRenderer<*>,
-) : DrawableEntityRenderFeature(livingRenderer), ContentModelReloadable {
+) : DrawableEntityRenderFeature(livingRenderer), ContentModelReloadable, EntityOutlineFeature {
+    override val castsShadow get() = true
     private val entries = EnumMap<EquipmentSlots, Entry>(EquipmentSlots::class.java)
     private val pending = EnumMap<EquipmentSlots, GeckoLibAnimationManagerSnapshot>(EquipmentSlots::class.java)
     private val rotation = MVec3f()
@@ -112,10 +118,35 @@ class GeckoLibArmorFeature(
     }
 
     override fun draw() {
-        val tint = livingRenderer.light.value.mix(livingRenderer.damage.value)
+        val context = livingRenderer.renderer.context
+        val tint = livingRenderer.light.value
+        context.skeletal.shader.entityColor = IrisEntityOverlay.resolve(livingRenderer.entity)
         for (entry in entries.values) {
-            entry.instance.draw(tint)
-            drawRenderLayers(entry.instance, tint)
+            context.shaderPipeline.withDrawState(IrisDrawState(item = entry.stack.item.identifier)) {
+                entry.instance.draw(tint)
+                drawRenderLayers(entry.instance, tint)
+            }
+        }
+    }
+
+    override fun drawOutline(color: RGBAColor) {
+        val context = livingRenderer.renderer.context
+        val system = context.system
+        val shader = context.skeletal.shader
+        try {
+            system.reset(depthTest = false, blending = false, faceCulling = false, depthMask = false)
+            shader.outlineColor = color
+            for (entry in entries.values) {
+                val instance = entry.instance
+                instance.draw(shader)
+                for ((name, layer) in instance.model.geckoRenderLayers) {
+                    instance.geckoAnimation.renderLayer(name, layer.registrationId) ?: continue
+                    instance.drawMesh(shader, layer.mesh)
+                }
+            }
+        } finally {
+            shader.outlineColor = Colors.TRANSPARENT
+            system.reset(depthTest = false, blending = false, faceCulling = false, depthMask = false)
         }
     }
 

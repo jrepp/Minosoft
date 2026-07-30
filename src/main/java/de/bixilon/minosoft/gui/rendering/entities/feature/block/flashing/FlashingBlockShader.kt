@@ -15,11 +15,20 @@ package de.bixilon.minosoft.gui.rendering.entities.feature.block.flashing
 
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
 import de.bixilon.minosoft.gui.rendering.entities.feature.block.BlockShader
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 
 class FlashingBlockShader(
     native: NativeShader,
 ) : BlockShader(native) {
+    override val sceneContract = SceneShaderContract(
+        SceneProgramFamily.BLOCK,
+        SceneVertexAbi.BLOCK_FEATURE,
+        SceneStateAbi.FLASHING_BLOCK,
+    )
     var flashColor by uniform("uFlashColor", ChatColors.WHITE.rgb())
     var flashProgress by uniform("uFlashProgress", 0.0f)
 }

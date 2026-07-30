@@ -149,10 +149,11 @@ abstract class PlayerEntity(
     }
 
     override fun handleAnimation(animation: EntityAnimations) {
+        super.handleAnimation(animation)
         when (animation) {
             EntityAnimations.SWING_MAIN_ARM -> swingHand(Hands.MAIN)
             EntityAnimations.SWING_OFF_ARM -> swingHand(Hands.OFF)
-            else -> super.handleAnimation(animation)
+            else -> Unit
         }
     }
 

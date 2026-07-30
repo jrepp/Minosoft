@@ -41,39 +41,49 @@ class WorldBorderMeshBuilder(
         val y2 = (minOf(WorldBorder.MAX_RADIUS, center.y + radius) - offset.z).toFloat()
 
         // north
-        addVertex(x1, -1.0f, y1, 2, radius)
-        addVertex(x1, +1.0f, y1, 3, radius)
-        addVertex(x2, +1.0f, y1, 0, radius)
-        addVertex(x2, -1.0f, y1, 1, radius)
+        addVertex(x1, -1.0f, y1, 2, radius, NORTH_NORMAL)
+        addVertex(x1, +1.0f, y1, 3, radius, NORTH_NORMAL)
+        addVertex(x2, +1.0f, y1, 0, radius, NORTH_NORMAL)
+        addVertex(x2, -1.0f, y1, 1, radius, NORTH_NORMAL)
         addIndexQuad()
 
         // south
-        addVertex(x2, -1.0f, y2, 2, radius)
-        addVertex(x2, +1.0f, y2, 3, radius)
-        addVertex(x1, +1.0f, y2, 0, radius)
-        addVertex(x1, -1.0f, y2, 1, radius)
+        addVertex(x2, -1.0f, y2, 2, radius, SOUTH_NORMAL)
+        addVertex(x2, +1.0f, y2, 3, radius, SOUTH_NORMAL)
+        addVertex(x1, +1.0f, y2, 0, radius, SOUTH_NORMAL)
+        addVertex(x1, -1.0f, y2, 1, radius, SOUTH_NORMAL)
         addIndexQuad()
 
         // west
-        addVertex(x1, -1.0f, y2, 2, radius)
-        addVertex(x1, +1.0f, y2, 3, radius)
-        addVertex(x1, +1.0f, y1, 0, radius)
-        addVertex(x1, -1.0f, y1, 1, radius)
+        addVertex(x1, -1.0f, y2, 2, radius, WEST_NORMAL)
+        addVertex(x1, +1.0f, y2, 3, radius, WEST_NORMAL)
+        addVertex(x1, +1.0f, y1, 0, radius, WEST_NORMAL)
+        addVertex(x1, -1.0f, y1, 1, radius, WEST_NORMAL)
         addIndexQuad()
 
         // east
-        addVertex(x2, -1.0f, y1, 2, radius)
-        addVertex(x2, +1.0f, y1, 3, radius)
-        addVertex(x2, +1.0f, y2, 0, radius)
-        addVertex(x2, -1.0f, y2, 1, radius)
+        addVertex(x2, -1.0f, y1, 2, radius, EAST_NORMAL)
+        addVertex(x2, +1.0f, y1, 3, radius, EAST_NORMAL)
+        addVertex(x2, +1.0f, y2, 0, radius, EAST_NORMAL)
+        addVertex(x2, -1.0f, y2, 1, radius, EAST_NORMAL)
         addIndexQuad()
     }
 
-    private fun addVertex(x: Float, y: Float, z: Float, uvIndex: Int, width: Float) = data.add(
-        x, y, z,
-        uvIndex.buffer(),
-        width,
-    )
+    private fun addVertex(
+        x: Float,
+        y: Float,
+        z: Float,
+        uvIndex: Int,
+        width: Float,
+        normal: Vec3f,
+    ) {
+        data.add(
+            x, y, z,
+            uvIndex.buffer(),
+            width,
+        )
+        data.add(normal.x, normal.y, normal.z)
+    }
 
     override fun bake() = WorldBorderMesh(offset, center, radius, createVertexBuffer())
 
@@ -82,7 +92,15 @@ class WorldBorderMeshBuilder(
         val position: Vec3f,
         val uvIndex: Int,
         val width: Float,
+        val normal: Vec3f,
     ) {
         companion object : MeshStruct(WorldBorderMeshStruct::class)
+    }
+
+    companion object {
+        internal val NORTH_NORMAL = Vec3f(0.0f, 0.0f, 1.0f)
+        internal val SOUTH_NORMAL = Vec3f(0.0f, 0.0f, -1.0f)
+        internal val WEST_NORMAL = Vec3f(1.0f, 0.0f, 0.0f)
+        internal val EAST_NORMAL = Vec3f(-1.0f, 0.0f, 0.0f)
     }
 }

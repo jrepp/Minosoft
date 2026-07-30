@@ -28,6 +28,7 @@ import de.bixilon.minosoft.gui.rendering.entities.effect.EntityRenderEffects
 import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderFeature
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureManager
 import de.bixilon.minosoft.gui.rendering.entities.feature.hitbox.HitboxFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.flame.EntityFlameFeature
 import de.bixilon.minosoft.gui.rendering.entities.feature.text.name.EntityNameFeature
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLevels
 import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3dUtil
@@ -47,10 +48,18 @@ abstract class EntityRenderer<E : Entity>(
 
     val hitbox = HitboxFeature(this).register()
     val name = EntityNameFeature(this).register()
+    val flame = EntityFlameFeature(this).register()
     val light = Interpolator(ChatColors.WHITE.rgb(), ColorInterpolation::interpolateRGB)
     val matrix = MMat4f()
     var visibility = EntityVisibilityLevels.OUT_OF_VIEW_DISTANCE
         protected set
+    /**
+     * Acceptance-only visibility override used by supervised render canaries.
+     * Normal rendering leaves this null, so native frustum and occlusion
+     * decisions remain authoritative.
+     */
+    @Volatile
+    var referenceVisibilityOverride: EntityVisibilityLevels? = null
 
     fun <T : EntityRenderFeature> T.register(): T {
         features += this
@@ -72,17 +81,17 @@ abstract class EntityRenderer<E : Entity>(
         }
     }
 
-    fun update(time: ValueTimeMark) {
+    fun update(time: ValueTimeMark, auxiliaryVisible: Boolean = false) {
         val delta = if (this.update == TimeUtil.NULL) Duration.ZERO else (time - update)
-        update(time, delta)
+        update(time, delta, auxiliaryVisible)
         this.update = time
     }
 
-    open fun update(time: ValueTimeMark, delta: Duration) {
+    open fun update(time: ValueTimeMark, delta: Duration, auxiliaryVisible: Boolean = false) {
         updateLight(delta)
         updateRenderInfo(time)
         updateMatrix(delta)
-        features.update(delta)
+        features.update(delta, auxiliaryVisible)
     }
 
     open fun updateRenderInfo(time: ValueTimeMark) {
@@ -127,11 +136,18 @@ abstract class EntityRenderer<E : Entity>(
         features.collect(drawer)
     }
 
+    open fun collectShadow(drawer: EntityDrawer) {
+        features.collectShadow(drawer)
+    }
+
     open fun isVisibleTo(camera: Entity) = entity.isVisibleTo(camera)
-    open fun isVisible() = visibility >= EntityVisibilityLevels.OCCLUDED && isVisibleTo(renderer.context.session.camera.entity) // some features are visible through walls, TODO: optimize this case
+    open fun isVisible() = visibility >= EntityVisibilityLevels.OCCLUDED && (
+        isVisibleTo(renderer.context.session.camera.entity) || entity.hasGlowingEffect
+    )
 
     open fun updateVisibility(level: EntityVisibilityLevels) {
-        this.visibility = level
-        features.updateVisibility(level)
+        val effective = referenceVisibilityOverride ?: level
+        this.visibility = effective
+        features.updateVisibility(effective)
     }
 }

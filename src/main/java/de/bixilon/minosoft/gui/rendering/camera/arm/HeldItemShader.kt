@@ -15,6 +15,10 @@ package de.bixilon.minosoft.gui.rendering.camera.arm
 
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.types.TextureShader
 import de.bixilon.minosoft.gui.rendering.shader.types.TintedShader
@@ -23,6 +27,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 
 class HeldItemShader(native: NativeShader) : Shader(native), TextureShader, TintedShader, ViewProjectionShader {
+    override val sceneContract = SceneShaderContract(SceneProgramFamily.HAND, SceneVertexAbi.HELD_ITEM, SceneStateAbi.HELD_ITEM)
     override var textures: TextureManager by textureManager()
     override var viewProjectionMatrix: Mat4f by viewProjectionMatrix()
     var matrix: Mat4f by uniform("uMatrix", Mat4f())

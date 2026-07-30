@@ -14,12 +14,17 @@
 package de.bixilon.minosoft.gui.rendering.entities.renderer.living.player
 
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.types.TintedShader
 import de.bixilon.minosoft.gui.rendering.skeletal.shader.BaseSkeletalShader
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.uniform.FloatUniformBuffer
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 
 class PlayerShader(native: NativeShader, buffer: FloatUniformBuffer) : BaseSkeletalShader(native, buffer), TintedShader {
+    override val sceneContract = SceneShaderContract(SceneProgramFamily.ENTITY, SceneVertexAbi.PLAYER_SKELETAL, SceneStateAbi.PLAYER)
     var texture by uniform("uIndexLayer", 0x00, NativeShader::setUInt)
     override var tint by uniform("uTintColor", ChatColors.WHITE.rgb())
     var skinParts by uniform("uSkinParts", 0xFF, NativeShader::setUInt)

@@ -15,17 +15,27 @@
 package de.bixilon.minosoft.gui.rendering.shader
 
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
+import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.gui.rendering.RenderContext
+import de.bixilon.minosoft.gui.rendering.chunk.entities.renderer.beacon.BeaconBeamShader
+import de.bixilon.minosoft.gui.rendering.entities.renderer.lightning.LightningShader
 import de.bixilon.minosoft.gui.rendering.shader.generic.ColorShader
 import de.bixilon.minosoft.gui.rendering.shader.generic.Generic2dTextureShader
 import de.bixilon.minosoft.gui.rendering.shader.generic.GenericTextureShader
 import de.bixilon.minosoft.gui.rendering.shader.generic.LightColorShader
+import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
 
 class ShaderManager(
     val context: RenderContext,
 ) {
     val genericColorShader = context.system.shader.create(minosoft("generic/color")) { ColorShader(it) }
+    val genericLineShader = context.system.shader.create(minosoft("generic/color")) {
+        ColorShader(it, SceneProgramFamily.LINE)
+    }
     val entityLeashShader = context.system.shader.create(minosoft("generic/color_light")) { LightColorShader(it) }
+    val beaconBeamTexture = context.textures.static.create(minecraft("entity/beacon_beam").texture(), mipmaps = false)
+    val beaconBeamShader = context.system.shader.create(minosoft("chunk/entities/beacon/beam")) { BeaconBeamShader(it) }
+    val lightningShader = context.system.shader.create(minosoft("entities/lightning/lightning")) { LightningShader(it) }
     val genericTextureShader = context.system.shader.create(minosoft("generic/texture")) { GenericTextureShader(it) }
     val entityShadowTextureShader = context.system.shader.create(minosoft("generic/texture")) {
         it.defines["DISABLE_MIPMAPS"] = ""
@@ -37,7 +47,10 @@ class ShaderManager(
 
     fun postInit() {
         genericColorShader.load()
+        genericLineShader.load()
         entityLeashShader.load()
+        beaconBeamShader.load()
+        lightningShader.load()
         genericTextureShader.load()
         entityShadowTextureShader.load()
         genericTexture2dShader.load()

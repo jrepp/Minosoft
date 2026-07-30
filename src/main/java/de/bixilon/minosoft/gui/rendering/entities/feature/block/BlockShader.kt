@@ -16,7 +16,12 @@ package de.bixilon.minosoft.gui.rendering.entities.feature.block
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
+import de.bixilon.minosoft.data.text.formatting.color.Colors
 import de.bixilon.minosoft.gui.rendering.camera.fog.FogManager
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.types.FogShader
 import de.bixilon.minosoft.gui.rendering.shader.types.TextureShader
@@ -28,10 +33,12 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 open class BlockShader(
     native: NativeShader,
 ) : Shader(native), TextureShader, ViewProjectionShader, FogShader, TintedShader {
+    override val sceneContract = SceneShaderContract(SceneProgramFamily.BLOCK, SceneVertexAbi.BLOCK_FEATURE, SceneStateAbi.BLOCK)
     override var textures: TextureManager by textureManager()
     override var viewProjectionMatrix: Mat4f by viewProjectionMatrix()
     override var cameraPosition: Vec3f by cameraPosition()
     override var fog: FogManager by fog()
     var matrix: Mat4f by uniform("uMatrix", Mat4f())
     override var tint by uniform("uTintColor", ChatColors.WHITE.rgb())
+    var outlineColor by uniform("uOutlineColor", Colors.TRANSPARENT)
 }

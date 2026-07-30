@@ -69,7 +69,7 @@ class BlockOutlineRenderer(
     override fun registerLayers() {
         layers.registerSemantic(
             BlockOutlineLayer,
-            context.shaders.genericColorShader,
+            context.shaders.genericLineShader,
             this::draw,
             PipelineSemantic.WORLD_OVERLAY,
             passId = RenderPassId("minosoft:scene/block-outline"),
@@ -95,6 +95,33 @@ class BlockOutlineRenderer(
             context.system.depth = DepthFunctions.ALWAYS
         }
         mesh.draw()
+    }
+
+    /**
+     * Returns the exact block for which the host would prepare an outline.
+     *
+     * Iris uses the same presentation predicate for its selected-block
+     * uniforms, so keep this query beside the renderer policy instead of
+     * teaching the shader pipeline a second version of the rules.
+     */
+    internal fun irisSelectedTarget(): BlockTarget? {
+        if (!profile.enabled) return null
+        val target = context.session.camera.target.target.nullCast<BlockTarget>() ?: return null
+        val state = target.state
+        if (
+            BlockStateFlags.OUTLINE !in state.flags ||
+            state.block !is OutlinedBlock ||
+            session.world.border.isOutside(target.blockPosition)
+        ) {
+            return null
+        }
+        if (target.distance >= session.player.reachDistance) return null
+        val restricted = session.player.gamemode == Gamemodes.ADVENTURE ||
+            session.player.gamemode == Gamemodes.SPECTATOR
+        if (restricted && state.block !is BlockWithEntity<*>) {
+            return null
+        }
+        return target
     }
 
     override fun postPrepareDraw() {

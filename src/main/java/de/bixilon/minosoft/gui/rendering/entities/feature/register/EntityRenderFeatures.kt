@@ -15,7 +15,9 @@ package de.bixilon.minosoft.gui.rendering.entities.feature.register
 
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
+import de.bixilon.minosoft.gui.rendering.entities.feature.armor.VanillaArmorRegister
 import de.bixilon.minosoft.gui.rendering.entities.feature.block.BlockRegister
+import de.bixilon.minosoft.gui.rendering.entities.feature.flame.EntityFlameRegister
 import de.bixilon.minosoft.gui.rendering.entities.feature.hitbox.HitboxManager
 import de.bixilon.minosoft.gui.rendering.entities.feature.text.BillboardTextRegister
 import de.bixilon.minosoft.gui.rendering.entities.feature.text.score.ScoreRegister
@@ -32,6 +34,8 @@ class EntityRenderFeatures(renderer: EntitiesRenderer) : Initializable {
     val text = BillboardTextRegister(renderer).register()
     val score = ScoreRegister(renderer).register()
     val block = BlockRegister(renderer).register()
+    val flame = EntityFlameRegister(renderer).register()
+    val armor = VanillaArmorRegister(renderer).register()
 
 
     override fun init() {

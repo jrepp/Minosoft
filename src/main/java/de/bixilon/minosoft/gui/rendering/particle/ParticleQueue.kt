@@ -33,6 +33,10 @@ class ParticleQueue(val renderer: ParticleRenderer) {
         queue.clear()
     }
 
+    fun contains(particle: Particle): Boolean = lock.locked {
+        particle in queue
+    }
+
     fun addTo(list: MutableList<Particle>) {
         if (queue.isEmpty()) return
         lock.lock()

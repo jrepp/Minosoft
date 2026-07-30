@@ -18,16 +18,20 @@ import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
+import de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
+import de.bixilon.minosoft.data.text.formatting.color.Colors
+import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import kotlin.time.Duration
 
 open class BlockFeature(
     renderer: EntityRenderer<*>,
     state: BlockState?,
     val scale: Vec3f = DEFAULT_SCALE,
-) : MeshedFeature<Mesh>(renderer) {
+) : MeshedFeature<Mesh>(renderer), EntityOutlineFeature {
+    override val castsShadow get() = true
     private var matrix = MMat4f()
     var state: BlockState? = state
         set(value) {
@@ -82,6 +86,20 @@ open class BlockFeature(
         shader.matrix = matrix.unsafe
         shader.tint = renderer.light.value
         super.draw(mesh)
+    }
+
+    override fun drawOutline(color: RGBAColor) {
+        val mesh = this.mesh ?: return
+        val system = renderer.renderer.context.system
+        val shader = renderer.renderer.features.block.shader
+        try {
+            system.reset(depthTest = false, blending = false, faceCulling = false, depthMask = false)
+            shader.outlineColor = color
+            draw(mesh, shader)
+        } finally {
+            shader.outlineColor = Colors.TRANSPARENT
+            system.reset(depthTest = false, blending = false, faceCulling = false, depthMask = false)
+        }
     }
 
     companion object {

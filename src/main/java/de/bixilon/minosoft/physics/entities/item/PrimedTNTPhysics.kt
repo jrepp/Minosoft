@@ -46,7 +46,7 @@ class PrimedTNTPhysics(entity: PrimedTNT) : EntityPhysics<PrimedTNT>(entity) {
     }
 
     companion object {
-        const val GRAVITY = -0.04
+        const val GRAVITY = 0.04
         val ON_GROUND = Vec3d(0.7, -0.5, 0.7)
     }
 }

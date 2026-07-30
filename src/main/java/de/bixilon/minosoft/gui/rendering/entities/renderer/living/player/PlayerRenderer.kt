@@ -31,6 +31,7 @@ import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.gui.rendering.entities.factory.RegisteredEntityModelFactory
 import de.bixilon.minosoft.gui.rendering.entities.feature.text.score.EntityScoreFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.armor.VanillaArmorPoseSource
 import de.bixilon.minosoft.gui.rendering.entities.model.human.PlayerModel
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.LivingEntityRenderer
 import de.bixilon.minosoft.gui.rendering.models.loader.ModelLoader
@@ -48,8 +49,9 @@ import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.texture
 import kotlin.time.Duration
 import kotlin.time.TimeSource.Monotonic.ValueTimeMark
 
-open class PlayerRenderer<E : PlayerEntity>(renderer: EntitiesRenderer, entity: E) : LivingEntityRenderer<E>(renderer, entity), DynamicTextureListener {
+open class PlayerRenderer<E : PlayerEntity>(renderer: EntitiesRenderer, entity: E) : LivingEntityRenderer<E>(renderer, entity), DynamicTextureListener, VanillaArmorPoseSource {
     var model: PlayerModel? = null
+    override val vanillaArmorPose get() = model?.instance
     var skin: DynamicTexture? = null
         private set
     var etfSkin: EtfPlayerSkinTextures? = null
@@ -72,8 +74,8 @@ open class PlayerRenderer<E : PlayerEntity>(renderer: EntitiesRenderer, entity: 
         this.unloadModel = false
     }
 
-    override fun update(time: ValueTimeMark, delta: Duration) {
-        super.update(time, delta)
+    override fun update(time: ValueTimeMark, delta: Duration, auxiliaryVisible: Boolean) {
+        super.update(time, delta, auxiliaryVisible)
         if (unloadModel) unloadModel()
         if (this.model == null) {
             this.model = createModel()
@@ -230,7 +232,7 @@ open class PlayerRenderer<E : PlayerEntity>(renderer: EntitiesRenderer, entity: 
         override fun register(loader: ModelLoader) {
             GLINT = loader.context.textures.static.create(GLINT_TEXTURE)
             val override = mapOf(
-                SKIN to loader.context.textures.debugTexture,
+                SKIN to PlayerSkinUvTexture,
                 NOSE to loader.context.textures.debugTexture,
             ) // disable textures, they all dynamic
             loader.skeletal.register(WIDE, override = override, mesh = this)

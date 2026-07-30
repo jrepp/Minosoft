@@ -23,18 +23,22 @@ class LightColorMeshBuilder(
     estimate: Int = 100,
 ) : QuadMeshBuilder(context, LightColorMeshStruct, estimate) {
 
-    fun addVertex(position: Vec3f, color: RGBAColor, light: LightLevel) = data.add(
-        position.x,
-        position.y,
-        position.z,
-        color.rgba.buffer(),
-        light.index.buffer(),
-    )
+    fun addVertex(position: Vec3f, color: RGBAColor, light: LightLevel, normal: Vec3f) {
+        data.add(
+            position.x,
+            position.y,
+            position.z,
+            color.rgba.buffer(),
+            light.index.buffer(),
+        )
+        data.add(normal.x, normal.y, normal.z)
+    }
 
     data class LightColorMeshStruct(
         val position: Vec3f,
         val color: RGBColor,
         val light: Int,
+        val normal: Vec3f,
     ) {
         companion object : MeshStruct(LightColorMeshStruct::class)
     }

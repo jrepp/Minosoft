@@ -15,6 +15,7 @@ package de.bixilon.minosoft.gui.rendering.entities.feature
 
 import de.bixilon.minosoft.gui.rendering.entities.draw.EntityDrawer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineFeature
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLevels
 import kotlin.time.Duration
 
@@ -37,16 +38,29 @@ class FeatureManager(val renderer: EntityRenderer<*>) : Iterable<EntityRenderFea
         this.features -= feature
     }
 
-    fun update(delta: Duration) {
+    fun update(delta: Duration, auxiliaryVisible: Boolean = false) {
         for (feature in features) {
-            if (!feature.isVisible()) continue
+            val outline = (feature as? EntityOutlineFeature)?.outlineColor()
+            val shadow = feature as? FeatureDrawable
+            val shadowVisible = auxiliaryVisible &&
+                shadow?.castsShadow == true &&
+                feature.isShadowVisible()
+            if (!feature.isNormallyVisible() && outline == null && !shadowVisible) continue
             feature.update(delta)
         }
     }
 
     fun unload() {
-        features.forEach { it.unload() }
+        var failure: Throwable? = null
+        for (feature in features) {
+            try {
+                feature.unload()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
         features.clear()
+        failure?.let { throw it }
     }
 
     fun enqueueUnload() {
@@ -54,13 +68,28 @@ class FeatureManager(val renderer: EntityRenderer<*>) : Iterable<EntityRenderFea
     }
 
     @Deprecated("What, why and how?")
+    @Suppress("DEPRECATION")
     fun invalidate() = features.forEach { it.invalidate() }
     fun updateVisibility(level: EntityVisibilityLevels) = features.forEach { it.updateVisibility(level) }
     fun collect(drawer: EntityDrawer) {
         for (feature in features) {
-            if (!feature.isVisible()) continue
-            feature.collect(drawer)
+            val outline = (feature as? EntityOutlineFeature)?.outlineColor()
+            if (outline != null) drawer.addOutline(feature, outline)
+            if (feature.isNormallyVisible()) feature.collect(drawer)
         }
+    }
+
+    fun collectShadow(drawer: EntityDrawer) {
+        for (feature in features) {
+            val drawable = feature as? FeatureDrawable ?: continue
+            if (!feature.isShadowVisible() || !drawable.castsShadow) continue
+            drawer.addShadow(drawable)
+        }
+    }
+
+    private fun EntityRenderFeature.isNormallyVisible(): Boolean {
+        if (!isVisible()) return false
+        return renderer.isVisibleTo(renderer.renderer.context.session.camera.entity)
     }
 
     fun clear() {

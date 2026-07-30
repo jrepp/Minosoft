@@ -22,12 +22,15 @@ import de.bixilon.minosoft.gui.rendering.entities.model.human.PlayerModel
 open class LocalPlayerRenderer(renderer: EntitiesRenderer, entity: LocalPlayerEntity) : PlayerRenderer<LocalPlayerEntity>(renderer, entity) {
 
     init {
-        renderer.context.camera.view::view.observe(this, instant = true) { hitbox.enabled = it.renderSelf; model?.enabled = it.renderSelf }
+        renderer.context.camera.view::view.observe(this, instant = true) {
+            hitbox.enabled = it.renderSelf
+            model?.mainViewEnabled = it.renderSelf
+        }
     }
 
     override fun createModel(skin: SkinModel): PlayerModel? {
         val model = super.createModel(skin) ?: return null
-        model.enabled = renderer.context.camera.view.view.renderSelf
+        model.mainViewEnabled = renderer.context.camera.view.view.renderSelf
         return model
     }
 }

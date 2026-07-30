@@ -52,6 +52,14 @@ class ChunkBorderRenderer(
     private var chunkPosition: ChunkPosition? = null
     private var sectionHeight: Int = Int.MIN_VALUE
 
+    /**
+     * Acceptance-only presentation gate. Normal rendering leaves this null
+     * and follows the user's F3+G profile setting.
+     */
+    @Volatile
+    var referenceEnabledOverride: Boolean? = null
+    val effectiveEnabled get() = referenceEnabledOverride ?: profile.chunkBorder.enabled
+
     override var mesh: Mesh? = null
 
     override var nextMesh: Mesh? = null
@@ -64,7 +72,7 @@ class ChunkBorderRenderer(
             this::draw,
             PipelineSemantic.WORLD_OVERLAY,
             passId = RenderPassId("minosoft:scene/chunk-border"),
-        ) { mesh == null || !profile.chunkBorder.enabled }
+        ) { mesh == null || !effectiveEnabled }
     }
 
     override fun init(latch: AbstractLatch) {
@@ -81,7 +89,7 @@ class ChunkBorderRenderer(
     }
 
     override fun prepareDrawAsync() {
-        if (!profile.chunkBorder.enabled) {
+        if (!effectiveEnabled) {
             this.unload = true
             return
         }

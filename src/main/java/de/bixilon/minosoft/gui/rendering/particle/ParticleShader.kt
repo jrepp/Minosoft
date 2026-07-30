@@ -17,6 +17,10 @@ import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.gui.rendering.camera.fog.FogManager
 import de.bixilon.minosoft.gui.rendering.light.LightmapBuffer
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.types.FogShader
 import de.bixilon.minosoft.gui.rendering.shader.types.LightShader
@@ -30,6 +34,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 class ParticleShader(
     native: NativeShader,
 ) : Shader(native), TextureShader, LightShader, PlayerLightShader, ViewProjectionShader, FogShader {
+    override val sceneContract = SceneShaderContract(SceneProgramFamily.PARTICLE, SceneVertexAbi.PARTICLE_POINT, SceneStateAbi.PARTICLE)
     override var textures: TextureManager by textureManager()
     override val lightmap: LightmapBuffer by lightmap()
     override var viewProjectionMatrix: Mat4f by viewProjectionMatrix()

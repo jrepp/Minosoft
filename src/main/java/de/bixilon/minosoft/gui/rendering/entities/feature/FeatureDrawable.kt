@@ -18,11 +18,29 @@ import de.bixilon.minosoft.gui.rendering.renderer.drawable.Drawable
 
 interface FeatureDrawable : Drawable, Comparable<FeatureDrawable> {
     val layer: EntityLayer get() = EntityLayer.Opaque
+    val additionalLayers: Set<EntityLayer> get() = emptySet()
+    val castsShadow: Boolean get() = false
     val priority: Int get() = 0
     val sort: Int // sorting purposes
+    /**
+     * Stable final ordering for otherwise equivalent drawables.
+     *
+     * Entity preparation runs in parallel, so collection order must not decide
+     * which equal-depth fragment wins at model-part intersections.
+     */
+    val stableOrder: Long get() = 0L
     val distance2: Double
 
     fun prepare() = Unit
+
+    /**
+     * Draws only the geometry owned by [layer]. Most features own one layer;
+     * composite model features can expose secondary translucent geometry
+     * without replaying their opaque base mesh.
+     */
+    fun drawLayer(layer: EntityLayer) {
+        if (layer == this.layer) draw()
+    }
 
     override fun compareTo(other: FeatureDrawable): Int {
         var compare = priority.compareTo(other.priority)

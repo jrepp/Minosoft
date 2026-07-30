@@ -11,6 +11,10 @@ package de.bixilon.minosoft.gui.rendering.shader.generic
 
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.minosoft.gui.rendering.light.LightmapBuffer
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.types.LightShader
 import de.bixilon.minosoft.gui.rendering.shader.types.ViewProjectionShader
@@ -19,6 +23,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 class LightColorShader(
     native: NativeShader,
 ) : Shader(native), LightShader, ViewProjectionShader {
+    override val sceneContract = SceneShaderContract(SceneProgramFamily.LEASH, SceneVertexAbi.POSITION_COLOR_LIGHT, SceneStateAbi.LIGHT_COLOR)
     override val lightmap: LightmapBuffer by lightmap()
     override var viewProjectionMatrix: Mat4f by viewProjectionMatrix()
 }

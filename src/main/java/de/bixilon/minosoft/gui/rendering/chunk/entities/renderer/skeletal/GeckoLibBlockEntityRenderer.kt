@@ -19,6 +19,7 @@ import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibAnimation
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibEventPlayback
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibEventPlaybackTarget
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLayerBlend
+import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRuntimeEffectRegistry
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRuntimeEventContext
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRuntimeEvents
 import de.bixilon.minosoft.data.entities.block.BlockEntity
@@ -48,8 +49,13 @@ class GeckoLibBlockEntityRenderer(
     val contentModel: BakedSkeletalModel,
 ) : de.bixilon.minosoft.gui.rendering.chunk.entities.BlockEntityRenderer, GeckoLibEventPlaybackTarget {
     private val skeletal = contentModel.createInstance(context)
+    private val effectBinding = contentModel.contentIdentity?.let(GeckoLibRuntimeEffectRegistry::bind)
     private var light = LightLevel.MAX
     private var lastDraw: ValueTimeMark = TimeUtil.NULL
+    override val hasTranslucentPass = contentModel.geckoRenderLayers.values.any {
+        it.blend != GeckoLibRenderLayerBlend.OPAQUE
+    }
+    override val castsTranslucentShadow = hasTranslucentPass
 
     init {
         skeletal.neutralAnimation.eventConsumer = ::dispatch
@@ -86,15 +92,20 @@ class GeckoLibBlockEntityRenderer(
         }
 
         skeletal.draw(light)
-        drawRenderLayers()
+        drawRenderLayers(translucent = false)
     }
 
-    private fun drawRenderLayers() {
+    override fun drawTranslucent() {
+        drawRenderLayers(translucent = true)
+    }
+
+    private fun drawRenderLayers(translucent: Boolean) {
         if (skeletal.model.geckoRenderLayers.isEmpty()) return
         val system = context.system
         val shader = context.skeletal.lightmapShader
         try {
             for ((name, layer) in skeletal.model.geckoRenderLayers) {
+                if ((layer.blend != GeckoLibRenderLayerBlend.OPAQUE) != translucent) continue
                 skeletal.geckoAnimation.renderLayer(name, layer.registrationId) ?: continue
                 when (layer.blend) {
                     GeckoLibRenderLayerBlend.OPAQUE -> system.reset(
@@ -155,9 +166,10 @@ class GeckoLibBlockEntityRenderer(
             animation = animation,
             event = event,
             position = position(event.locator),
+            contentIdentity = contentModel.contentIdentity,
         )
         GeckoLibRuntimeEvents.dispatch(eventContext)
-        GeckoLibEventPlayback.dispatch(eventContext, this)
+        GeckoLibEventPlayback.dispatch(eventContext, this, effectBinding)
     }
 
     override fun playSound(context: GeckoLibRuntimeEventContext, sound: ResourceLocation) {

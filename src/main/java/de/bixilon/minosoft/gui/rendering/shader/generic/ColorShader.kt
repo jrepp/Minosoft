@@ -14,12 +14,18 @@
 package de.bixilon.minosoft.gui.rendering.shader.generic
 
 import de.bixilon.kmath.mat.mat4.f.Mat4f
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
+import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.shader.SceneStateAbi
+import de.bixilon.minosoft.gui.rendering.shader.SceneVertexAbi
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.types.ViewProjectionShader
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 
 class ColorShader(
     native: NativeShader,
+    family: SceneProgramFamily = SceneProgramFamily.BASIC,
 ) : Shader(native), ViewProjectionShader {
+    override val sceneContract = SceneShaderContract(family, SceneVertexAbi.POSITION_COLOR, SceneStateAbi.COLOR)
     override var viewProjectionMatrix: Mat4f by viewProjectionMatrix()
 }

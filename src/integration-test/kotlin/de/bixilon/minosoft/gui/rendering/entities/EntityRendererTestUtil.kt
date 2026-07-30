@@ -41,6 +41,7 @@ import de.bixilon.minosoft.gui.rendering.light.RenderLight
 import de.bixilon.minosoft.gui.rendering.models.item.ItemPredicateRuntime
 import de.bixilon.minosoft.gui.rendering.models.loader.ModelLoader
 import de.bixilon.minosoft.gui.rendering.shader.ShaderManager
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderPipelineRegistry
 import de.bixilon.minosoft.gui.rendering.skeletal.SkeletalManager
 import de.bixilon.minosoft.gui.rendering.system.dummy.DummyRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTextureRenderData
@@ -65,6 +66,7 @@ object EntityRendererTestUtil {
         context::camera.forceSet(Camera(context))
         context::light.forceSet(RenderLight(context))
         context::shaders.forceSet(ShaderManager(context))
+        context::shaderPipeline.forceSet(ShaderPipelineRegistry())
         context::skeletal.forceSet(SkeletalManager(context))
         context::models.forceSet(ModelLoader(context))
         context::itemPredicates.forceSet(ItemPredicateRuntime())

@@ -33,6 +33,7 @@ import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil.createS
 import de.bixilon.minosoft.test.ITUtil.allocate
 import org.testng.Assert.assertEquals
 import org.testng.Assert.assertFalse
+import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
 import kotlin.time.TimeSource.Monotonic.ValueTimeMark
 
@@ -91,12 +92,15 @@ class ParticleRendererTest {
         val renderer = create()
         val particle = TestParticle(renderer.context.session)
         renderer += particle
+        assertTrue(renderer.hasParticle(particle))
         renderer.draw(); renderer.draw()
+        assertTrue(renderer.hasParticle(particle))
         particle.dead = true
         renderer.draw()
         assertEquals(particle.vertices, 2)
         assertEquals(particle.tryTicks, 2)
         assertEquals(renderer.size, 0)
+        assertFalse(renderer.hasParticle(particle))
     }
 
     fun `add 2 particles`() {

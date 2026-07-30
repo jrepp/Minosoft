@@ -23,6 +23,7 @@ import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLevels
+import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
 import de.bixilon.minosoft.gui.rendering.util.mesh.integrated.LineMeshBuilder
@@ -136,7 +137,6 @@ class HitboxFeature(renderer: EntityRenderer<*>) : MeshedFeature<Mesh>(renderer)
         } else {
             system.reset()
         }
-        manager.shader.use()
-        super.draw(mesh)
+        manager.shader.withProgramFamily(SceneProgramFamily.LINE, mesh::draw)
     }
 }

@@ -40,9 +40,12 @@ flat out uint finAllowTransparency;
 void run_skeletal(uint inTransformNormal, vec3 inPosition) {
     vec4 position = uTransform * vec4(inPosition, 1.0f);
     gl_Position = position;
-    vec3 normal = transformNormal(decodeNormal(inTransformNormal & 0xFFFu), uTransform);
 
-    finTintColor = vec4(vec3(getShade(normal)), 1.0f);
+    // uTransform includes the first-person projection. Treating it as a
+    // normal matrix can invert every visible arm face and shade the complete
+    // hand black. First-person skin color is presentation-stable here; world
+    // and item lighting remain on their respective retained routes.
+    finTintColor = vec4(1.0f);
     finFragmentPosition = position.xyz;
 }
 

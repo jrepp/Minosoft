@@ -13,8 +13,10 @@
 
 package de.bixilon.minosoft.gui.rendering.particle
 
+import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.kutil.array.ArrayUtil.cast
+import de.bixilon.kutil.concurrent.lock.LockUtil.locked
 import de.bixilon.kutil.latch.AbstractLatch
 import de.bixilon.kutil.observer.DataObserver.Companion.observe
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
@@ -61,8 +63,13 @@ class ParticleRenderer(
     val ticker = ParticleTicker(this)
     private var matrixUpdate = true
 
+    /**
+     * Visual-reference suppression that does not clear or otherwise mutate
+     * the live particle simulation.
+     */
+    var referenceSuppressed = false
 
-    override val skip get() = !enabled
+    override val skip get() = !enabled || referenceSuppressed
 
 
     var enabled = true
@@ -85,22 +92,26 @@ class ParticleRenderer(
     val size: Int
         get() = particles.size
 
+    fun hasParticle(particle: Particle): Boolean = particles.lock.locked {
+        particle in particles.particles || queue.contains(particle)
+    }
+
     override fun registerLayers() {
         layers.registerSemantic(
             OpaqueLayer,
             shader,
-            renderer = { mesh?.draw() },
-            semantic = PipelineSemantic.PARTICLES,
+            renderer = { if (!referenceSuppressed) mesh?.draw() },
+            semantic = PipelineSemantic.PARTICLES_OPAQUE,
             passId = RenderPassId("minosoft:scene/particles-opaque"),
-            skip = { mesh == null },
+            skip = { referenceSuppressed || mesh == null },
         )
         layers.registerSemantic(
             TranslucentLayer,
             shader,
-            renderer = { translucentMesh?.draw() },
-            semantic = PipelineSemantic.PARTICLES,
+            renderer = { if (!referenceSuppressed) translucentMesh?.draw() },
+            semantic = PipelineSemantic.PARTICLES_TRANSLUCENT,
             passId = RenderPassId("minosoft:scene/particles-translucent"),
-            skip = { translucentMesh == null },
+            skip = { referenceSuppressed || translucentMesh == null },
         )
     }
 
@@ -148,9 +159,9 @@ class ParticleRenderer(
     }
 
     private fun updateShader() {
-        val matrix = context.camera.matrix.viewProjectionMatrix
-        shader.cameraRight = Vec3f(matrix[0, 0], matrix[0, 1], matrix[0, 2])
-        shader.cameraUp = Vec3f(matrix[1, 0], matrix[1, 1], matrix[1, 2])
+        val (right, up) = particleBillboardAxes(context.camera.matrix.viewMatrix)
+        shader.cameraRight = right
+        shader.cameraUp = up
     }
 
     override fun prePrepareDraw() {
@@ -204,3 +215,13 @@ class ParticleRenderer(
         }
     }
 }
+
+/**
+ * Extracts the world-space billboard basis from the view transform. The
+ * projection matrix must not participate here: its FOV and aspect scaling
+ * would turn a particle's world-space radius into a screen-dependent quad.
+ */
+internal fun particleBillboardAxes(viewMatrix: Mat4f): Pair<Vec3f, Vec3f> = Pair(
+    Vec3f(viewMatrix[0, 0], viewMatrix[0, 1], viewMatrix[0, 2]),
+    Vec3f(viewMatrix[1, 0], viewMatrix[1, 1], viewMatrix[1, 2]),
+)

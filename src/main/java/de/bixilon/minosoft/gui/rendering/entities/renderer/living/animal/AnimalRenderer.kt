@@ -19,6 +19,7 @@ import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.gui.rendering.entities.model.animal.AnimalModelFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.LivingEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.ContentModelReloadable
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.ContentModelInspectable
 import de.bixilon.minosoft.gui.rendering.skeletal.instance.GeckoLibAnimationManagerSnapshot
 import de.bixilon.minosoft.util.Backports.nextFloatPort
 import kotlin.random.Random
@@ -26,9 +27,11 @@ import kotlin.random.asJavaRandom
 import kotlin.time.Duration
 import kotlin.time.TimeSource.Monotonic.ValueTimeMark
 
-abstract class AnimalRenderer<E : AgeableMob>(renderer: EntitiesRenderer, entity: E) : LivingEntityRenderer<E>(renderer, entity), ContentModelReloadable {
+abstract class AnimalRenderer<E : AgeableMob>(renderer: EntitiesRenderer, entity: E) : LivingEntityRenderer<E>(renderer, entity), ContentModelReloadable, ContentModelInspectable {
     protected open var model: AnimalModelFeature<*>? = null
     private var pendingGeckoAnimation: GeckoLibAnimationManagerSnapshot? = null
+    override val retainedContentModel get() = model?.instance?.model
+    override val retainedContentControllers get() = model?.instance?.geckoAnimation?.inspection
     val scale = if (renderer.profile.animal.randomScale) Random.asJavaRandom().nextFloatPort(0.9f, 1.1f) else 1.0f
     protected var unloadModel = false
 
@@ -47,8 +50,8 @@ abstract class AnimalRenderer<E : AgeableMob>(renderer: EntitiesRenderer, entity
         }
     }
 
-    override fun update(time: ValueTimeMark, delta: Duration) {
-        super.update(time, delta)
+    override fun update(time: ValueTimeMark, delta: Duration, auxiliaryVisible: Boolean) {
+        super.update(time, delta, auxiliaryVisible)
         if (model == null) {
             this.model = createModel()
             model?.register()

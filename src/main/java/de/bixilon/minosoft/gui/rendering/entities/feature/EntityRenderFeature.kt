@@ -26,6 +26,13 @@ abstract class EntityRenderFeature(val renderer: EntityRenderer<*>) {
 
     var enabled = true
 
+    /**
+     * Main-camera visibility is independent from auxiliary-view ownership.
+     * First-person hides the local body from the main view, but an Iris
+     * player-only shadow pass must still be able to collect that body.
+     */
+    var mainViewEnabled = true
+
     open fun updateVisibility(level: EntityVisibilityLevels) {
         this.visibility = level
     }
@@ -37,7 +44,10 @@ abstract class EntityRenderFeature(val renderer: EntityRenderer<*>) {
     open fun update(delta: Duration) = Unit
     open fun unload() = Unit
 
-    open fun isVisible() = this.visibility >= EntityVisibilityLevels.VISIBLE && enabled
+    open fun isVisible() =
+        this.visibility >= EntityVisibilityLevels.VISIBLE && enabled && mainViewEnabled
+
+    open fun isShadowVisible() = enabled
 
 
     abstract fun collect(drawer: EntityDrawer)

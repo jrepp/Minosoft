@@ -25,6 +25,7 @@ out lowp vec4 foutColor;
 #include "minosoft:animation"
 
 flat in uint finAllowTransparency;
+uniform lowp vec4 entityColor;
 
 uniform bool uGlint;
 uniform bool uAllowBaseTransparency;
@@ -61,6 +62,7 @@ void main() {
     } else {
         foutColor *= texel;
     }
+    foutColor.rgb = mix(foutColor.rgb, entityColor.rgb, entityColor.a);
 
     #ifdef FOG
     fog_set();
