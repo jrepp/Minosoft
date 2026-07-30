@@ -76,12 +76,16 @@ abstract class QuadMeshBuilder(
     }
 
     override fun addIndexQuad(front: Boolean, reverse: Boolean) {
+        addIndexQuad(front, reverse, false)
+    }
+
+    fun addIndexQuad(front: Boolean = true, reverse: Boolean = false, flipDiagonal: Boolean) {
         val data = _data
         val offset = if (data != null) (data.size / struct.floats) - PrimitiveTypes.QUAD.vertices else 0
         assert(offset >= 0)
 
         if (remap) {
-            IndexUtil.addTriangleQuad(index, offset, front, reverse)
+            IndexUtil.addTriangleQuad(index, offset, front, reverse, flipDiagonal)
         } else {
             // That could be left out (=> no index buffer)
             IndexUtil.addNativeQuad(index, offset, front, reverse)

@@ -20,6 +20,7 @@ import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.kmath.vec.vec3.i.Vec3i
+import de.bixilon.kmath.vec.vec4.f.Vec4f
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor
 import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTexture
@@ -61,6 +62,8 @@ abstract class MeshStruct(struct: KClass<*>) {
                 Vec3d::class -> Vec3d.LENGTH * Double.SIZE_BYTES
                 Vec3f::class -> Vec3f.LENGTH * Float.SIZE_BYTES
                 Vec3i::class -> Vec3i.LENGTH * Int.SIZE_BYTES
+
+                Vec4f::class -> 4 * Float.SIZE_BYTES
 
                 Vec2d::class -> Vec2d.LENGTH * Double.SIZE_BYTES
                 Vec2f::class -> Vec2f.LENGTH * Float.SIZE_BYTES
