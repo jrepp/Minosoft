@@ -6,4 +6,11 @@
 
 #version 330 core
 
-#include "/lib/shadow_depth.fsh"
+/* RENDERTARGETS: 0 */
+
+in vec4 finTintColor;
+out vec4 foutColor;
+
+void main() {
+    foutColor = finTintColor;
+}

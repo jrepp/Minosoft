@@ -5,5 +5,6 @@
  */
 
 #version 330 core
+uniform int renderStage;
 
-#include "/lib/shadow_depth.fsh"
+#include "/lib/shadow_terrain.vsh"

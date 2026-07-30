@@ -1,0 +1,10 @@
+#version 330 core
+
+layout (location = 0) in vec2 vinPosition;
+layout (location = 1) in vec2 vinUV;
+out vec2 finUV;
+
+void main() {
+    gl_Position = vec4(vinPosition, 0.0, 1.0);
+    finUV = vinUV;
+}

@@ -4,6 +4,4 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#version 330 core
-
-#include "/lib/shadow_depth.fsh"
+#include "gbuffers_basic.vsh"

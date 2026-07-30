@@ -5,11 +5,17 @@
  */
 
 #version 330 core
+uniform ivec2 gtextureSize;
+// minosoft:texture_array_index finTextureArray
+
+/* RENDERTARGETS: 0 */
 
 #define FOG
 
 out lowp vec4 foutColor;
 in lowp vec3 finPlayerLightTint;
+flat in float finTerrainBlockId;
+in vec4 finTerrainMaterialGuard;
 
 #include "minosoft:tint"
 #include "minosoft:texture"
@@ -19,6 +25,8 @@ in lowp vec3 finPlayerLightTint;
 #include "minosoft:player_light"
 
 void main() {
+    if (isnan(finTerrainBlockId + dot(finTerrainMaterialGuard, vec4(1.0)))) discard;
+    if (gtextureSize.x <= 0 || gtextureSize.y <= 0) discard;
     applyDefaults();
     applyTint();
     foutColor.rgb = max(foutColor.rgb, finPlayerLightTint * playerLightContribution(finFragmentPosition));
