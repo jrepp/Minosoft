@@ -15,6 +15,7 @@ package de.bixilon.minosoft.data.entities
 import de.bixilon.kutil.time.TimeUtil.now
 import de.bixilon.minosoft.data.Tickable
 import de.bixilon.minosoft.data.registries.effects.StatusEffectType
+import de.bixilon.minosoft.data.registries.effects.vision.VisionEffect
 import de.bixilon.minosoft.protocol.network.session.play.tick.Ticks
 
 data class StatusEffectInstance(
@@ -26,15 +27,31 @@ data class StatusEffectInstance(
     val end = start + duration.duration
     var remaining = duration
         private set
+    var factorCalculationData: StatusEffectFactorCalculationData? =
+        if (type === VisionEffect.Darkness) StatusEffectFactorCalculationData(DARKNESS_PADDING_TICKS) else null
+        private set
 
+    val infinite: Boolean
+        get() = duration.ticks == INFINITE_DURATION
     val expired: Boolean
-        get() = remaining.ticks <= 0
+        get() = !infinite && remaining.ticks <= 0
     val progress: Float
-        get() = ((end - now()) / duration.duration).toFloat()
+        get() = if (infinite) 1.0f else ((end - now()) / duration.duration).toFloat()
 
 
     override fun tick() {
-        remaining--
+        if (!infinite) {
+            remaining--
+        }
+        factorCalculationData?.update(this)
+    }
+
+    fun setFactorCalculationData(data: StatusEffectFactorCalculationData?) {
+        factorCalculationData = data
+    }
+
+    companion object {
+        const val INFINITE_DURATION = -1
+        private const val DARKNESS_PADDING_TICKS = 22
     }
 }
-

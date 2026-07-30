@@ -17,6 +17,7 @@ import de.bixilon.kutil.cast.CastUtil.nullCast
 import de.bixilon.kutil.json.JsonObject
 import de.bixilon.kutil.json.JsonUtil.toJsonObject
 import de.bixilon.minosoft.data.entities.StatusEffectInstance
+import de.bixilon.minosoft.data.entities.StatusEffectFactorCalculationData
 import de.bixilon.minosoft.data.entities.entities.LivingEntity
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.network.session.play.tick.Ticks
@@ -63,6 +64,9 @@ class EntityEffectS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
         this.showIcon = showIcon
         if (buffer.versionId >= V_22W12A) {
             factorCalculationData = buffer.readOptional { buffer.readNBT().toJsonObject() }
+            effect.setFactorCalculationData(
+                factorCalculationData?.let(StatusEffectFactorCalculationData::fromJson),
+            )
         }
     }
 
