@@ -15,6 +15,7 @@ package de.bixilon.minosoft.gui.rendering.gui.gui.screen.menu.options.lighting
 
 import de.bixilon.kmath.vec.vec2.f.Vec2f
 import de.bixilon.minosoft.config.profile.profiles.rendering.light.LightC
+import de.bixilon.minosoft.config.profile.profiles.rendering.light.LightC.Companion.DEFAULT_GAMMA
 import de.bixilon.minosoft.data.language.IntegratedLanguage
 import de.bixilon.minosoft.data.language.LanguageUtil.i18n
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
@@ -115,7 +116,6 @@ class LightingMenu(guiRenderer: GUIRenderer) : Menu(guiRenderer, preferredElemen
     }
 
     companion object : GUIBuilder<LayoutedGUIElement<LightingMenu>> {
-        private const val DEFAULT_GAMMA = 0.0f
         private const val DEFAULT_PLAYER_LIGHT_INTENSITY = 0.15f
         private const val DEFAULT_FULLBRIGHT = false
         private const val DEFAULT_AMBIENT_OCCLUSION = true

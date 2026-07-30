@@ -13,10 +13,16 @@
 
 package de.bixilon.minosoft.gui.rendering.gui.gui.screen.menu.options.lighting
 
+import de.bixilon.minosoft.config.profile.profiles.rendering.RenderingProfile
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class LightingControlsTest {
+
+    @Test
+    fun `rendering profile starts at minecraft default brightness`() {
+        assertEquals(0.5f, RenderingProfile().light.gamma)
+    }
 
     @Test
     fun `brightness increases in stable ten percent steps`() {
