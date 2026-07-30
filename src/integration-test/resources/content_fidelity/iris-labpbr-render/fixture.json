@@ -1,0 +1,12 @@
+{
+  "producer": "Minosoft acceptance",
+  "version": "2",
+  "minecraft": "1.20.4",
+  "purpose": "Constant diffuse with independently toggled normal-only, specular-only, and combined LabPBR phases for Iris shader-pack framebuffer acceptance.",
+  "output": {
+    "resource_files": 7,
+    "data_files": 3,
+    "manifest_sha256": "b45f544728e23287230c7f31895af0b7cd352f0caa3dcdb4f7a8442407a659fb",
+    "manifest_algorithm": "SHA-256 of sorted lines '<file-sha256>  <path>\\n' for all regular files below resources/ and datapacks/."
+  }
+}

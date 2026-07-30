@@ -1,0 +1,12 @@
+{
+  "producer": "Minosoft acceptance",
+  "version": "2",
+  "minecraft": "1.20.4",
+  "purpose": "Fixed local-authority rattlesnake scene proving Naturalist geometry, texture, controller state, name rendering, Iris overlay routing, reload continuity, and cleanup through the source-native Gecko bridge.",
+  "output": {
+    "resource_files": 1,
+    "data_files": 6,
+    "manifest_sha256": "41359b7640e7107037e41fb1a6f278c490b00cca1a8f257f30f6383f5041cc41",
+    "manifest_algorithm": "SHA-256 of sorted lines '<file-sha256>  <path>\\n' for all regular files below resources/ and datapacks/."
+  }
+}

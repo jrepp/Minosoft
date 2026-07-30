@@ -1,0 +1,12 @@
+{
+  "producer": "Minosoft acceptance",
+  "version": "1",
+  "minecraft": "1.20.4",
+  "purpose": "Fixed native-zombie scene proving CEM composition, EMF expressions, ETF NBT rule selection, rendering, reload, and cleanup.",
+  "output": {
+    "resource_files": 3,
+    "data_files": 3,
+    "manifest_sha256": "5e83cf91b28ed7ac5da233ae87ec6d1a774eb106721ee5b6df089845703fec22",
+    "manifest_algorithm": "SHA-256 of sorted lines '<file-sha256>  <path>\\n' for all regular files below resources/ and datapacks/."
+  }
+}

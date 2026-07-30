@@ -53,6 +53,40 @@ jobs:
       - name: Unit test
         run: './gradlew test'
 
+      - name: Install Mesa Iris acceptance dependencies
+        if: matrix.os == 'ubuntu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libgl1-mesa-dri \
+            libglx-mesa0 \
+            mesa-utils \
+            xauth \
+            xvfb
+
+      - name: Iris OpenGL 4.3 production gate
+        if: matrix.os == 'ubuntu'
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "true"
+          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+          MESA_GL_VERSION_OVERRIDE: "4.5"
+          MESA_GLSL_VERSION_OVERRIDE: "450"
+          MINOSOFT_OPENGL_IRIS_COMPUTE_TEST: "true"
+          MINOSOFT_OPENGL_IRIS_COMPUTE_REQUIRE_CAPABILITIES: "true"
+          MINOSOFT_IRIS_TEST_NON_MAC: "true"
+          MINOSOFT_IRIS_TEST_OPTIONS: "WORLD_SPACE_REFLECTIONS=1;COLORED_LIGHTING=128"
+        run: |
+          shader_pack="${RUNNER_TEMP}/ComplementaryUnbound_r5.8.1.zip"
+          curl --fail --location \
+            --output "${shader_pack}" \
+            "https://cdn.modrinth.com/data/R6NEzAwj/versions/VMHXIk50/ComplementaryUnbound_r5.8.1.zip"
+          echo "9098dd9e0c18b80f7aba2839cea33ce9a614d97665bbfcac87ccce6e4771667c41602d99088852cb1642ccab20b2ceff9b98af8f2e795bd0d3b90b7c9cbab914  ${shader_pack}" \
+            | sha512sum --check -
+          export MINOSOFT_IRIS_TEST_PACK="${shader_pack}"
+          xvfb-run --auto-servernum ./gradlew test -x :debug-core:test \
+            --tests de.bixilon.minosoft.gui.rendering.shader.pipeline.OpenGlIrisCustomResourceComputeTest \
+            --tests 'de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisShaderPackPlannerTest.external shader pack crosses the complete planner contract when configured'
+
       - name: Integration test
         run: './gradlew integrationTest'
 
