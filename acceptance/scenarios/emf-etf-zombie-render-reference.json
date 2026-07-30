@@ -1,0 +1,215 @@
+{
+  "name": "emf-etf-zombie-render-reference",
+  "steps": [
+    {
+      "name": "client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "clear transient UI and debug geometry",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": false },
+        { "pointer": "/hitboxesEnabled", "equals": false },
+        { "pointer": "/cloudsSuppressed", "equals": true }
+      ]
+    },
+    {
+      "name": "remove prior zombie fixture",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft_acceptance:emf_etf_zombie/remove",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      },
+      "assert": [
+        { "pointer": "/contentGeneration", "min": 1 }
+      ]
+    },
+    {
+      "name": "summon fixed ETF-selected CEM zombie",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft_acceptance:emf_etf_zombie/summon",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      },
+      "assert": [
+        { "pointer": "/executed", "equals": 1 },
+        { "pointer": "/contentGeneration", "min": 1 }
+      ]
+    },
+    {
+      "name": "spawn lighting interpolation settles",
+      "type": "sleep",
+      "duration": "3s"
+    },
+    {
+      "name": "clear focus-loss UI before initial zombie reference",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true }
+    },
+    {
+      "name": "ETF rule 1 drives the composed CEM pose",
+      "type": "screenshot",
+      "baseline": "../baselines/emf-etf-3.0.17-7.0.13/zombie-rule-1-macos-retina-3456x1910.png",
+      "sourceWidth": 3456,
+      "sourceHeight": 1910,
+      "region": [1350, 400, 750, 1150],
+      "pixelThreshold": 0,
+      "maxChangedRatio": 0.0,
+      "maxMeanError": 0.0
+    },
+    {
+      "name": "living fixture uses the native zombie renderer",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.entities" },
+      "assert": [
+        { "pointer": "/entityCount", "equals": 2 },
+        { "pointer": "/entities/1/type", "equals": "minecraft:zombie" },
+        { "pointer": "/entities/1/renderer", "equals": "ZombieRenderer" },
+        { "pointer": "/entities/1/tags/0", "equals": "minosoft.acceptance.emf_etf" }
+      ]
+    },
+    {
+      "name": "reject after candidate upload",
+      "type": "request",
+      "role": "client",
+      "operation": "render.reload-content",
+      "body": { "rejectAt": "after-upload" },
+      "assert": [
+        { "pointer": "/accepted", "equals": false },
+        { "pointer": "/expectedRejection", "equals": true },
+        { "pointer": "/rejectionPoint", "equals": "after-upload" },
+        { "pointer": "/generationUnchanged", "equals": true },
+        { "pointer": "/gpuBalanced", "equals": true },
+        { "pointer": "/gpuResourceDelta/created", "min": 1 },
+        { "pointer": "/gpuResourceDelta/live", "equals": 0 }
+      ]
+    },
+    {
+      "name": "clear focus-loss UI after zombie upload rejection",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true }
+    },
+    {
+      "name": "CEM and ETF render survives upload rejection",
+      "type": "screenshot",
+      "baseline": "../baselines/emf-etf-3.0.17-7.0.13/zombie-rule-1-macos-retina-3456x1910.png",
+      "sourceWidth": 3456,
+      "sourceHeight": 1910,
+      "region": [1350, 400, 750, 1150],
+      "pixelThreshold": 0,
+      "maxChangedRatio": 0.0,
+      "maxMeanError": 0.0
+    },
+    {
+      "name": "reject after model and texture publication",
+      "type": "request",
+      "role": "client",
+      "operation": "render.reload-content",
+      "body": { "rejectAt": "after-publication" },
+      "assert": [
+        { "pointer": "/accepted", "equals": false },
+        { "pointer": "/expectedRejection", "equals": true },
+        { "pointer": "/rejectionPoint", "equals": "after-publication" },
+        { "pointer": "/generationUnchanged", "equals": true },
+        { "pointer": "/gpuBalanced", "equals": true },
+        { "pointer": "/gpuResourceDelta/created", "min": 1 },
+        { "pointer": "/gpuResourceDelta/live", "equals": 0 }
+      ]
+    },
+    {
+      "name": "clear focus-loss UI after zombie publication rollback",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true }
+    },
+    {
+      "name": "CEM and ETF render survives publication rollback",
+      "type": "screenshot",
+      "baseline": "../baselines/emf-etf-3.0.17-7.0.13/zombie-rule-1-macos-retina-3456x1910.png",
+      "sourceWidth": 3456,
+      "sourceHeight": 1910,
+      "region": [1350, 400, 750, 1150],
+      "pixelThreshold": 0,
+      "maxChangedRatio": 0.0,
+      "maxMeanError": 0.0
+    },
+    {
+      "name": "recover with accepted content reload",
+      "type": "request",
+      "role": "client",
+      "operation": "render.reload-content",
+      "body": {},
+      "assert": [
+        { "pointer": "/accepted", "equals": true },
+        { "pointer": "/generation", "min": 2 }
+      ]
+    },
+    {
+      "name": "recovered render settles",
+      "type": "sleep",
+      "duration": "1s"
+    },
+    {
+      "name": "clear focus-loss UI before recovered zombie reference",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true }
+    },
+    {
+      "name": "CEM and ETF render survives accepted recovery",
+      "type": "screenshot",
+      "baseline": "../baselines/emf-etf-3.0.17-7.0.13/zombie-rule-1-macos-retina-3456x1910.png",
+      "sourceWidth": 3456,
+      "sourceHeight": 1910,
+      "region": [1350, 400, 750, 1150],
+      "pixelThreshold": 0,
+      "maxChangedRatio": 0.0,
+      "maxMeanError": 0.0
+    },
+    {
+      "name": "remove zombie fixture through retained data pack",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft_acceptance:emf_etf_zombie/remove",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      }
+    },
+    {
+      "name": "zombie fixture is gone",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.entities" },
+      "assert": [
+        { "pointer": "/entityCount", "equals": 1 }
+      ]
+    }
+  ]
+}

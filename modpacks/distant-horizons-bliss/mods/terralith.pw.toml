@@ -1,0 +1,14 @@
+# Copyright (C) 2026 Jacob Repp
+
+name = "Terralith"
+filename = "Terralith_1.20.4_v2.4.11_FABRIC.jar"
+side = "server"
+
+[download]
+hash-format = "sha512"
+hash = "563e21b485d5ab38655712c5ce6f254d3c25e6661f2c55ec89cbeaf1389a826255790d5d6d4fd84476f23e02918f80e4d0af8b25e47b7420252b927ba884dbc8"
+url = "https://cdn.modrinth.com/data/8oi3bsk5/versions/zA1qYB0L/Terralith_1.20.4_v2.4.11_FABRIC.jar"
+
+[update.modrinth]
+mod-id = "8oi3bsk5"
+version = "zA1qYB0L"

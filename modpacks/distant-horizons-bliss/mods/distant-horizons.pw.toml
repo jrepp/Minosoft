@@ -1,0 +1,14 @@
+# Copyright (C) 2026 Jacob Repp
+
+name = "Distant Horizons"
+filename = "DistantHorizons-2.4.4-b-1.20.4-fabric-forge.jar"
+side = "client"
+
+[download]
+hash-format = "sha512"
+hash = "6d88ddd2b321851b91fdc8024c5e779b0f7459aa64e9f4b7a4832c7ffda7feb255fcd8f41628e3da72a695376c746190cc7dc9e6308d8e9e405348547c987ee5"
+url = "https://cdn.modrinth.com/data/uCdwusMi/versions/8ClbUcsw/DistantHorizons-2.4.4-b-1.20.4-fabric-forge.jar"
+
+[update.modrinth]
+mod-id = "uCdwusMi"
+version = "8ClbUcsw"

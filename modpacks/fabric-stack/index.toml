@@ -4,15 +4,24 @@ hash-format = "sha256"
 
 [[files]]
 file = "fabric.mod.json"
-hash = "f11559c69fc255c03c34e61a7c766ce5bb0df632bc6945d96f0c1a86b2788c10"
+hash = "12af900efe4fe1124e8d63da20f6077d0e1a3bc437f724a559e6d875b64ba42a"
 
 [[files]]
 file = "ladder.tsv"
-hash = "6da3b737c721ee097831af96d485a1e11070db85187118bf7c8353ca3e1a7ce0"
+hash = "e653bd72036a9df7db915f481461692f15276939ed0ca644b0bf4b9fcd1c700f"
+
+[[files]]
+file = "fixtures.tsv"
+hash = "45fd39ce7b5993d0854f44849d7ad130dccb9a46c3b6ae2d8c5138a79a8b5ae6"
 
 [[files]]
 file = "resourcepacks/enhanced-audio.pw.toml"
 hash = "d09faf04ca1b235636fc758c4b5438b29d930ed2f7742816d1afa9530bcd6424"
+metafile = true
+
+[[files]]
+file = "shaderpacks/complementary-unbound.pw.toml"
+hash = "63a723a8486925bcd6f2f5b5b3b038607432fe666b6b6ed3480915785c43f4b3"
 metafile = true
 
 [[files]]
@@ -43,6 +52,11 @@ metafile = true
 [[files]]
 file = "mods/iris.pw.toml"
 hash = "19b22ca1413e79c5deebd4aff9560507ed534cfd497ba61bea94476d2c7f6c7e"
+metafile = true
+
+[[files]]
+file = "mods/distant-horizons.pw.toml"
+hash = "286d738296cdeae9b62f2d7e683decac0a92f524264e942c8afc705cdb8cae1c"
 metafile = true
 
 [[files]]

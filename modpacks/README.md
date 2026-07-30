@@ -51,6 +51,8 @@ List, prepare, or inspect packs without starting the client:
 ./play.sh modpack inspect sodium --trajectory experiment-a
 ./play.sh modpack prepare content-fidelity --trajectory content-fidelity-main
 ./play.sh modpack inspect content-fidelity --trajectory content-fidelity-main
+./play.sh modpack prepare distant-horizons-bliss --trajectory dh-bliss-main
+./play.sh modpack inspect distant-horizons-bliss --trajectory dh-bliss-main
 ```
 
 ## Pack contract
@@ -61,6 +63,11 @@ Each pack directory contains:
 - `mods/*.pw.toml` — immutable third-party artifact URLs and hashes.
 - `resourcepacks/*.pw.toml` — immutable client resource-pack ZIPs, mounted in
   filename order with later entries taking higher asset priority.
+- `shaderpacks/*.pw.toml` — at most one immutable client shader-pack ZIP,
+  selected through the Iris adapter unless `MINOSOFT_SHADER_PACK` explicitly
+  overrides it. An optional top-level `shader-options = "NAME=value;..."` sets
+  the verified compatibility baseline unless `MINOSOFT_SHADER_OPTIONS`
+  explicitly overrides it.
 - `fabric.mod.json` — Fabric metadata for the aggregate pack entry.
 - `ladder.tsv` — ordered compatibility claims and acceptance evidence.
 
@@ -70,6 +77,9 @@ store. Resource packs are staged separately from executable mod JARs and written
 into the trajectory's resources profile immediately before client launch; manual
 profile packs are preserved after the managed stack. `packwiz refresh` can be
 used when Packwiz is installed; checked-in hashes must remain consistent.
+Shader packs are staged separately, validated for a `shaders/` tree, and passed
+to the client from the out-of-source store; they are never mounted as resource
+packs or expanded into the repository.
 
 Pack selection currently performs Fabric metadata discovery and compatibility
 preflight. A mod marked blocked is staged but not activated. This distinction is

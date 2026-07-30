@@ -1,13 +1,13 @@
 # Copyright (C) 2026 Jacob Repp
 
-name = "Minosoft Fabric Compatibility Stack"
+name = "Minosoft Distant Horizons + Bliss"
 pack-format = "packwiz:1.1.0"
-version = "0.8.0"
+version = "0.1.0"
 
 [index]
 file = "index.toml"
 hash-format = "sha256"
-hash = "58e2700f08a64f832f20fdbb6f478619e3a4befc7085cb1024c60ebae60f2d82"
+hash = "2d8c533ca1e32743cf0c3cdc159aa8913f8fafdd11a5955c5cadf18c30ea26c0"
 
 [versions]
 fabric = "0.15.11"

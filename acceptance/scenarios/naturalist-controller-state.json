@@ -1,0 +1,143 @@
+{
+  "name": "naturalist-controller-state",
+  "steps": [
+    {
+      "name": "client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "clear transient UI and debug geometry",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": false },
+        { "pointer": "/hitboxesEnabled", "equals": false },
+        { "pointer": "/cloudsSuppressed", "equals": true }
+      ]
+    },
+    {
+      "name": "remove prior Naturalist fixture",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft_acceptance:naturalist_snake/remove",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 180.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 20.35, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      },
+      "assert": [
+        { "pointer": "/contentGeneration", "min": 1 }
+      ]
+    },
+    {
+      "name": "summon fixed local-authority rattlesnake",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft_acceptance:naturalist_snake/summon",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 180.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 20.35, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      },
+      "assert": [
+        { "pointer": "/executed", "equals": 1 },
+        { "pointer": "/contentGeneration", "min": 1 }
+      ]
+    },
+    {
+      "name": "renderer and controller state settle",
+      "type": "sleep",
+      "duration": "2s"
+    },
+    {
+      "name": "nearby player drives exact retained rattle controller",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.entities" },
+      "assert": [
+        { "pointer": "/entityCount", "equals": 2 },
+        { "pointer": "/entities/1/type", "equals": "naturalist:rattlesnake" },
+        { "pointer": "/entities/1/renderer", "equals": "FallbackLivingEntityRenderer" },
+        { "pointer": "/entities/1/contentFormat", "equals": "geckolib" },
+        { "pointer": "/entities/1/contentGeometry", "equals": "geometry.snake" },
+        { "pointer": "/entities/1/contentTexture", "equals": "naturalist:textures/entity/snake/rattlesnake.png" },
+        { "pointer": "/entities/1/contentKnownDrawPasses", "equals": 1 },
+        { "pointer": "/entities/1/contentSelectedTextureVertices", "equals": 252 },
+        { "pointer": "/entities/1/contentControllerCount", "equals": 4 },
+        { "pointer": "/entities/1/contentControllersTruncated", "equals": false },
+        { "pointer": "/entities/1/contentControllers/0/name", "equals": "controller" },
+        { "pointer": "/entities/1/contentControllers/0/currentClip", "exists": false },
+        { "pointer": "/entities/1/contentControllers/1/name", "equals": "attackController" },
+        { "pointer": "/entities/1/contentControllers/2/name", "equals": "tongueController" },
+        { "pointer": "/entities/1/contentControllers/3/name", "equals": "rattleController" },
+        { "pointer": "/entities/1/contentControllers/3/currentClip", "equals": "animation.sf_nba.snake.rattle" },
+        { "pointer": "/entities/1/contentControllers/3/elapsedSeconds", "min": 0.25 },
+        { "pointer": "/entities/1/contentControllers/3/queued", "equals": true },
+        { "pointer": "/entities/1/contentControllers/3/queueStageIndex", "equals": 0 },
+        { "pointer": "/entities/1/contentControllers/3/queueStageCount", "equals": 1 },
+        { "pointer": "/entities/1/contentControllers/3/queueCurrentAnimation", "equals": "animation.sf_nba.snake.rattle" }
+      ]
+    },
+    {
+      "name": "reload production content",
+      "type": "request",
+      "role": "client",
+      "operation": "render.reload-content",
+      "body": {},
+      "assert": [
+        { "pointer": "/accepted", "equals": true },
+        { "pointer": "/generation", "min": 2 }
+      ]
+    },
+    {
+      "name": "replacement renderer settles",
+      "type": "sleep",
+      "duration": "1s"
+    },
+    {
+      "name": "rattle controller survives retained replacement",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.entities" },
+      "assert": [
+        { "pointer": "/entities/1/type", "equals": "naturalist:rattlesnake" },
+        { "pointer": "/entities/1/contentControllerCount", "equals": 4 },
+        { "pointer": "/entities/1/contentControllers/3/currentClip", "equals": "animation.sf_nba.snake.rattle" },
+        { "pointer": "/entities/1/contentControllers/3/elapsedSeconds", "min": 0.25 },
+        { "pointer": "/entities/1/contentControllers/3/queued", "equals": true },
+        { "pointer": "/entities/1/contentKnownDrawPasses", "equals": 1 }
+      ]
+    },
+    {
+      "name": "remove Naturalist fixture through retained data pack",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft_acceptance:naturalist_snake/remove",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 180.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 20.35, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      }
+    },
+    {
+      "name": "Naturalist fixture is gone",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.entities" },
+      "assert": [
+        { "pointer": "/entityCount", "equals": 1 }
+      ]
+    }
+  ]
+}

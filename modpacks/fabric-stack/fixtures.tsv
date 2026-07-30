@@ -1,0 +1,4 @@
+id	source	manifest_sha256	resource_files	data_files
+naturalist-controller-render	src/integration-test/resources/content_fidelity/naturalist-controller-render	41359b7640e7107037e41fb1a6f278c490b00cca1a8f257f30f6383f5041cc41	1	6
+# iris-labpbr-render is an animated checked-pixel acceptance fixture, not ordinary play content.
+# Keep it under src/integration-test and mount it only for an explicit LabPBR acceptance run.

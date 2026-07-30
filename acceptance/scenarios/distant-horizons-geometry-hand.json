@@ -1,0 +1,124 @@
+{
+  "name": "distant-horizons-geometry-hand",
+  "steps": [
+    {
+      "name": "client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "clear transient UI and debug geometry",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hitboxesEnabled", "equals": false }
+      ]
+    },
+    {
+      "name": "enable detached distant presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.presentation",
+      "body": { "enabled": true },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/nonPersistent", "equals": true }
+      ]
+    },
+    {
+      "name": "distant geometry settles",
+      "type": "sleep",
+      "duration": "2s"
+    },
+    {
+      "name": "bounded adaptive geometry is active",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.render-diagnostics",
+      "body": {},
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/tileCount", "min": 1 },
+        { "pointer": "/cellCount", "min": 1 },
+        { "pointer": "/renderReadyNativeChunks", "min": 1 },
+        { "pointer": "/maximumSkirtDrop", "max": 32 }
+      ]
+    },
+    {
+      "name": "bind generated high-contrast hand reference",
+      "type": "request",
+      "role": "client",
+      "operation": "render.prepare-reference-hand",
+      "body": { "enabled": true },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/texture", "equals": "minosoft:debug/reference_hand_skin" },
+        { "pointer": "/referenceTextureShaderId", "min": 1 },
+        { "pointer": "/playerSkinUnchanged", "equals": true }
+      ]
+    },
+    {
+      "name": "reference hand draw settles",
+      "type": "sleep",
+      "duration": "1s"
+    },
+    {
+      "name": "reference texture reached the hand draw",
+      "type": "request",
+      "role": "client",
+      "operation": "render.prepare-reference-hand",
+      "body": { "enabled": true },
+      "assert": [
+        { "pointer": "/referenceTextureBound", "equals": true },
+        { "pointer": "/lastArmTextureShaderId", "min": 1 },
+        { "pointer": "/armDraws", "min": 1 },
+        { "pointer": "/lastArmDrawFrame", "min": 1 }
+      ]
+    },
+    {
+      "name": "restore player hand presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "render.prepare-reference-hand",
+      "body": { "enabled": false },
+      "assert": [
+        { "pointer": "/enabled", "equals": false },
+        { "pointer": "/playerSkinUnchanged", "equals": true }
+      ]
+    },
+    {
+      "name": "restore configured distant presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.presentation",
+      "body": { "restore": true },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/nonPersistent", "equals": true }
+      ]
+    },
+    {
+      "name": "restore ordinary presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "hideHud": false,
+        "hideHitboxes": true,
+        "hideClouds": false,
+        "hideWorldBorder": false,
+        "hideEntities": false,
+        "hideParticles": false
+      },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": true },
+        { "pointer": "/cloudsSuppressed", "equals": false }
+      ]
+    }
+  ]
+}

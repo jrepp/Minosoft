@@ -1,0 +1,117 @@
+{
+  "name": "animated-java-render-cleanup",
+  "steps": [
+    {
+      "name": "client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "remove prior generated entities",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "animated_java:global/remove/everything",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      },
+      "assert": [
+        { "pointer": "/contentGeneration", "min": 1 }
+      ]
+    },
+    {
+      "name": "summon generated model",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "aj:armor_stand_minimal/summon",
+        "arguments": { "args": "{}" },
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      },
+      "assert": [
+        { "pointer": "/executed", "equals": 7 }
+      ]
+    },
+    {
+      "name": "generated model reaches the renderer",
+      "type": "sleep",
+      "duration": "1s"
+    },
+    {
+      "name": "remove generated model",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "animated_java:global/remove/everything",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      },
+      "assert": [
+        { "pointer": "/executed", "equals": 8 }
+      ]
+    },
+    {
+      "name": "renderer drains removals",
+      "type": "sleep",
+      "duration": "1s"
+    },
+    {
+      "name": "move camera across cloud array ownership boundary",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "animated_java:global/remove/everything",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 512.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      },
+      "assert": [
+        { "pointer": "/executed", "equals": 0 }
+      ]
+    },
+    {
+      "name": "renderer replaces distant cloud arrays",
+      "type": "sleep",
+      "duration": "1s"
+    },
+    {
+      "name": "restore deterministic camera",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "animated_java:global/remove/everything",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      },
+      "assert": [
+        { "pointer": "/executed", "equals": 0 }
+      ]
+    },
+    {
+      "name": "renderer replaces restored cloud arrays",
+      "type": "sleep",
+      "duration": "1s"
+    },
+    {
+      "name": "only the local player remains",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.entities" },
+      "assert": [
+        { "pointer": "/entities/0/type", "equals": "minecraft:player" },
+        { "pointer": "/entities/1", "absent": true }
+      ]
+    }
+  ]
+}

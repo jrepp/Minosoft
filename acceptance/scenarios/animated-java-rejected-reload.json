@@ -1,0 +1,223 @@
+{
+  "name": "animated-java-rejected-reload",
+  "steps": [
+    {
+      "name": "client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "clear transient UI for reference capture",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": false }
+      ]
+    },
+    {
+      "name": "remove prior generated entities",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "animated_java:global/remove/everything",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      }
+    },
+    {
+      "name": "summon settled walk frame 10",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "aj:armor_stand_minimal/summon",
+        "arguments": { "args": "{animation:\"walk\",frame:10}" },
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      },
+      "assert": [
+        { "pointer": "/executed", "equals": 7 }
+      ]
+    },
+    {
+      "name": "walk frame interpolation settles",
+      "type": "sleep",
+      "duration": "1s"
+    },
+    {
+      "name": "clear focus-loss UI before initial reference",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true }
+    },
+    {
+      "name": "pre-rejection walk frame",
+      "type": "screenshot",
+      "baseline": "../baselines/animated-java-1.10.2/walk-frame-10-macos-retina-3456x1910.png",
+      "sourceWidth": 3456,
+      "sourceHeight": 1910,
+      "region": [1100, 900, 550, 550],
+      "pixelThreshold": 0,
+      "maxChangedRatio": 0.0,
+      "maxMeanError": 0.0
+    },
+    {
+      "name": "reject after candidate upload",
+      "type": "request",
+      "role": "client",
+      "operation": "render.reload-content",
+      "body": { "rejectAt": "after-upload" },
+      "assert": [
+        { "pointer": "/accepted", "equals": false },
+        { "pointer": "/expectedRejection", "equals": true },
+        { "pointer": "/rejectionPoint", "equals": "after-upload" },
+        { "pointer": "/generationUnchanged", "equals": true },
+        { "pointer": "/gpuBalanced", "equals": true },
+        { "pointer": "/gpuResourceDelta/created", "min": 1 },
+        { "pointer": "/gpuResourceDelta/live", "equals": 0 }
+      ]
+    },
+    {
+      "name": "clear focus-loss UI after upload rejection",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true }
+    },
+    {
+      "name": "walk frame survives uploaded candidate rejection",
+      "type": "screenshot",
+      "baseline": "../baselines/animated-java-1.10.2/walk-frame-10-macos-retina-3456x1910.png",
+      "sourceWidth": 3456,
+      "sourceHeight": 1910,
+      "region": [1100, 900, 550, 550],
+      "pixelThreshold": 0,
+      "maxChangedRatio": 0.0,
+      "maxMeanError": 0.0
+    },
+    {
+      "name": "reject after model and texture publication",
+      "type": "request",
+      "role": "client",
+      "operation": "render.reload-content",
+      "body": { "rejectAt": "after-publication" },
+      "assert": [
+        { "pointer": "/accepted", "equals": false },
+        { "pointer": "/expectedRejection", "equals": true },
+        { "pointer": "/rejectionPoint", "equals": "after-publication" },
+        { "pointer": "/generationUnchanged", "equals": true },
+        { "pointer": "/gpuBalanced", "equals": true },
+        { "pointer": "/gpuResourceDelta/created", "min": 1 },
+        { "pointer": "/gpuResourceDelta/live", "equals": 0 }
+      ]
+    },
+    {
+      "name": "clear focus-loss UI after publication rollback",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true }
+    },
+    {
+      "name": "walk frame survives publication rollback",
+      "type": "screenshot",
+      "baseline": "../baselines/animated-java-1.10.2/walk-frame-10-macos-retina-3456x1910.png",
+      "sourceWidth": 3456,
+      "sourceHeight": 1910,
+      "region": [1100, 900, 550, 550],
+      "pixelThreshold": 0,
+      "maxChangedRatio": 0.0,
+      "maxMeanError": 0.0
+    },
+    {
+      "name": "remove hierarchy through retained data pack",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "animated_java:global/remove/everything",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      }
+    },
+    {
+      "name": "resummon through retained data pack",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "aj:armor_stand_minimal/summon",
+        "arguments": { "args": "{animation:\"walk\",frame:10}" },
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      },
+      "assert": [
+        { "pointer": "/executed", "equals": 7 }
+      ]
+    },
+    {
+      "name": "recover with accepted content reload",
+      "type": "request",
+      "role": "client",
+      "operation": "render.reload-content",
+      "body": {},
+      "assert": [
+        { "pointer": "/accepted", "equals": true },
+        { "pointer": "/generation", "min": 2 }
+      ]
+    },
+    {
+      "name": "recovered render settles",
+      "type": "sleep",
+      "duration": "1s"
+    },
+    {
+      "name": "clear focus-loss UI before recovery reference",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true }
+    },
+    {
+      "name": "walk frame survives recovery",
+      "type": "screenshot",
+      "baseline": "../baselines/animated-java-1.10.2/walk-frame-10-macos-retina-3456x1910.png",
+      "sourceWidth": 3456,
+      "sourceHeight": 1910,
+      "region": [1100, 900, 550, 550],
+      "pixelThreshold": 0,
+      "maxChangedRatio": 0.0,
+      "maxMeanError": 0.0
+    },
+    {
+      "name": "remove generated hierarchy",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "animated_java:global/remove/everything",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 19.5, "z": 3.5, "yaw": 180.0, "pitch": 0.0 }
+      }
+    },
+    {
+      "name": "generated hierarchy is gone",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.entities" },
+      "assert": [
+        { "pointer": "/entityCount", "equals": 1 }
+      ]
+    }
+  ]
+}

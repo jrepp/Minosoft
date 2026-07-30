@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "minosoft_distant_horizons_bliss",
+  "version": "0.1.0",
+  "name": "Minosoft Distant Horizons + Bliss",
+  "description": "A focused source-native integration pack for Distant Horizons LOD ingestion and Bliss shader compatibility.",
+  "environment": "client",
+  "license": "GPL-3.0-only",
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "minecraft": "1.20.4",
+    "fabric-api": "=0.97.3+1.20.4",
+    "sodium": "=0.5.8+mc1.20.4",
+    "iris": "=1.7.2+mc1.20.4",
+    "distanthorizons": "=2.4.4-b"
+  },
+  "custom": {
+    "minosoft:modpack": {
+      "packwiz": "pack.toml",
+      "ladder": "ladder.tsv",
+      "entry": "distant-horizons-bliss",
+      "activation": "adapted",
+      "adapters": [
+        "minosoft:fabric-api-0.97.3-mc1.20.4",
+        "minosoft:sodium-0.5.8-mc1.20.4",
+        "minosoft:iris-1.7.2-mc1.20.4",
+        "minosoft:distant-horizons-2.4.4-b-mc1.20.4"
+      ]
+    }
+  }
+}

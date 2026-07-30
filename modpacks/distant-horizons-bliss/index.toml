@@ -1,0 +1,46 @@
+# Copyright (C) 2026 Jacob Repp
+
+hash-format = "sha256"
+
+[[files]]
+file = "fabric.mod.json"
+hash = "30558a85ffca2cd44c9d5ca19c93103283f10ebf9a9e2889b9a7a73ead341ed6"
+
+[[files]]
+file = "ladder.tsv"
+hash = "234820d6b153d2c6db0bbb62597c181856770829f76d52fce2b48193a91b0f63"
+
+[[files]]
+file = "mods/fabric-api.pw.toml"
+hash = "9d99d1fcad45387093968a5657aff7db7985135317434a1b00b4edbae3a7bafc"
+metafile = true
+
+[[files]]
+file = "mods/sodium.pw.toml"
+hash = "8c8358aca0b62f662b7aebd5856de5eb957648eb8213c5bcac2028963aece888"
+metafile = true
+
+[[files]]
+file = "mods/iris.pw.toml"
+hash = "19b22ca1413e79c5deebd4aff9560507ed534cfd497ba61bea94476d2c7f6c7e"
+metafile = true
+
+[[files]]
+file = "mods/distant-horizons.pw.toml"
+hash = "286d738296cdeae9b62f2d7e683decac0a92f524264e942c8afc705cdb8cae1c"
+metafile = true
+
+[[files]]
+file = "mods/terralith.pw.toml"
+hash = "675c5fe8cfe3886f15e40240a76949e236f441166c7efeb1dbf66173dedfadae"
+metafile = true
+
+[[files]]
+file = "mods/tectonic.pw.toml"
+hash = "9d31c9d5e43ec20bcc32ac21019962768c2be32208b1d96c0dbd1ddf4f4bccc4"
+metafile = true
+
+[[files]]
+file = "shaderpacks/bliss.pw.toml"
+hash = "4f3578f87201c56ec2b55d14670898b20eac32fba79f62fe6cd4f7ec7634cfca"
+metafile = true
