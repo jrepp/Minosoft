@@ -42,12 +42,14 @@ abstract class ContainerScreen<C : Container>(
     protected open val customRenderer: Boolean = false
     private var fabricExtensions: List<FabricContainerScreenExtensionBinding>? = null
 
-    private fun extensions(): List<FabricContainerScreenExtensionBinding> {
+    protected fun extensions(): List<FabricContainerScreenExtensionBinding> {
         fabricExtensions?.let { return it }
         return FabricContainerScreenExtensions.build(
             FabricContainerScreenExtensionContext(guiRenderer, container, containerElement.size),
         ).onEach { it.extension.element.parent = this }.also { fabricExtensions = it }
     }
+
+    protected open fun isExtensionStandalone(extension: de.bixilon.minosoft.modding.loader.fabric.FabricContainerScreenExtension): Boolean = true
 
     override fun forceRender(offset: Vec2f, consumer: GuiVertexConsumer, options: GUIVertexOptions?) {
         super.forceRender(offset, consumer, options)
@@ -60,7 +62,7 @@ abstract class ContainerScreen<C : Container>(
     protected open fun forceRenderContainerScreen(offset: Vec2f, consumer: GuiVertexConsumer, options: GUIVertexOptions?) {
         containerElement.render(offset, consumer, options)
         for (binding in extensions()) {
-            if (!binding.active) continue
+            if (!binding.active || !isExtensionStandalone(binding.extension)) continue
             binding.extension.element.render(offset + binding.extension.offset, consumer, options)
         }
     }
@@ -72,7 +74,7 @@ abstract class ContainerScreen<C : Container>(
 
     override fun getAt(position: Vec2f): Pair<Element, Vec2f>? {
         for (binding in extensions().asReversed()) {
-            if (!binding.active) continue
+            if (!binding.active || !isExtensionStandalone(binding.extension)) continue
             val extension = binding.extension
             if (position isSmaller extension.offset) continue
             val inner = position - extension.offset

@@ -33,4 +33,32 @@ class InventoryScreenTest {
         assertFalse(InventoryScreen.shouldClose(KeyCodes.KEY_E, KeyChangeTypes.PRESS, searchFocused = true))
         assertFalse(InventoryScreen.shouldClose(KeyCodes.KEY_ESCAPE, KeyChangeTypes.PRESS, searchFocused = false))
     }
+
+    @Test
+    fun `tab routes to the creative catalog while search is not focused`() {
+        assertTrue(
+            InventoryScreen.shouldRouteToCreativeCatalog(
+                KeyCodes.KEY_TAB,
+                KeyChangeTypes.PRESS,
+                creative = true,
+                searchFocused = false,
+            ),
+        )
+        assertFalse(
+            InventoryScreen.shouldRouteToCreativeCatalog(
+                KeyCodes.KEY_TAB,
+                KeyChangeTypes.PRESS,
+                creative = false,
+                searchFocused = false,
+            ),
+        )
+        assertFalse(
+            InventoryScreen.shouldRouteToCreativeCatalog(
+                KeyCodes.KEY_TAB,
+                KeyChangeTypes.RELEASE,
+                creative = true,
+                searchFocused = false,
+            ),
+        )
+    }
 }

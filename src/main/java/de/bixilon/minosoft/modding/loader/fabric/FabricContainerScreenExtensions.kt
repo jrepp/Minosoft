@@ -23,6 +23,7 @@ data class FabricContainerScreenExtensionContext(
 data class FabricContainerScreenExtension(
     val offset: Vec2f,
     val element: Element,
+    val creativeTabLabel: String? = null,
 )
 
 fun interface FabricContainerScreenExtensionFactory {
@@ -38,7 +39,7 @@ internal class FabricContainerScreenExtensionRegistration(
     val bindings = mutableSetOf<FabricContainerScreenExtensionBinding>()
 }
 
-internal class FabricContainerScreenExtensionBinding internal constructor(
+class FabricContainerScreenExtensionBinding internal constructor(
     private val registration: FabricContainerScreenExtensionRegistration,
     val extension: FabricContainerScreenExtension,
 ) : AutoCloseable {

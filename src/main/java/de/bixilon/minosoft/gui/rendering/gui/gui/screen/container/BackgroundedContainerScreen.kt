@@ -34,15 +34,19 @@ abstract class BackgroundedContainerScreen<C : Container>(
     protected val containerBackground = AtlasImageElement(guiRenderer, atlasElement)
     override val customRenderer: Boolean get() = true
 
+    protected open fun containerOffset(screenSize: Vec2f, backgroundSize: Vec2f): Vec2f {
+        return (screenSize - backgroundSize) / 2.0f
+    }
+
     override fun forceRender(offset: Vec2f, consumer: GuiVertexConsumer, options: GUIVertexOptions?) {
-        val centerOffset = offset + (size - containerBackground.size) / 2
+        val centerOffset = offset + containerOffset(size, containerBackground.size)
         super.forceRender(centerOffset, consumer, options)
         containerBackground.render(centerOffset, consumer, options)
         forceRenderContainerScreen(centerOffset, consumer, options)
     }
 
     override fun getAt(position: Vec2f): Pair<Element, Vec2f>? {
-        val centerOffset = (size - containerBackground.size) / 2
+        val centerOffset = containerOffset(size, containerBackground.size)
         val start = position - centerOffset
 
         return getContainerAt(start) ?: super.getAt(start)

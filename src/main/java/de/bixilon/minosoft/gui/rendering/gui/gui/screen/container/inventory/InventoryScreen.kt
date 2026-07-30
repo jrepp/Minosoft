@@ -39,16 +39,36 @@ open class InventoryScreen(
 ) {
     private val skinArea = atlasElement?.areas?.get("skin")
     private val skin = skinArea?.let { PlayerSkinElement(guiRenderer, it.size).apply { parent = this@InventoryScreen } }
-    private val creativeCatalog = CreativeItemCatalogElement(
+    private val creativeExtensionTabs = extensions().mapNotNull { binding ->
+        binding.extension.creativeTabLabel?.let { label ->
+            CreativeInventoryExternalCatalogTab(label, binding.extension.element)
+        }
+    }
+    private val creativeBodySize = CreativeInventoryLayout.bodySize(
+        guiRenderer.scaledSize,
+        containerBackground.size,
+    )
+    private val creativeCatalog = CreativeInventoryCatalogElement(
         guiRenderer,
         container,
         guiRenderer.session.registries.item
             .distinctBy { it.identifier }
             .filterNot { it.identifier.namespace == "minecraft" && it.identifier.path == "air" }
             .sortedBy { it.identifier.toString() },
+        creativeExtensionTabs,
+        creativeBodySize,
     ).apply { parent = this@InventoryScreen }
 
     private val creative: Boolean get() = guiRenderer.session.player.gamemode == Gamemodes.CREATIVE
+
+    override fun isExtensionStandalone(extension: de.bixilon.minosoft.modding.loader.fabric.FabricContainerScreenExtension): Boolean {
+        return !creative || extension.creativeTabLabel == null
+    }
+
+    override fun containerOffset(screenSize: Vec2f, backgroundSize: Vec2f): Vec2f {
+        if (!creative) return super.containerOffset(screenSize, backgroundSize)
+        return CreativeInventoryLayout.containerOffset(screenSize, backgroundSize, creativeCatalog.size)
+    }
 
     override fun forceRenderContainerScreen(offset: Vec2f, consumer: GuiVertexConsumer, options: GUIVertexOptions?) {
         if (creative) {
@@ -81,7 +101,9 @@ open class InventoryScreen(
             guiRenderer.gui.popOrPause()
             return true
         }
-        if (searchFocused) return creativeCatalog.onKey(key, type)
+        if (shouldRouteToCreativeCatalog(key, type, creative, searchFocused)) {
+            return creativeCatalog.onKey(key, type)
+        }
         return super.onKey(key, type)
     }
 
@@ -109,10 +131,24 @@ open class InventoryScreen(
 
     companion object {
         val ATLAS = minecraft("container/inventory")
-        private val CATALOG_OFFSET = Vec2f(-CreativeItemCatalogElement.SIZE.x - 4.0f, 0.0f)
 
         internal fun shouldClose(key: KeyCodes, type: KeyChangeTypes, searchFocused: Boolean): Boolean {
             return key == KeyCodes.KEY_E && type == KeyChangeTypes.PRESS && !searchFocused
         }
+
+        internal fun shouldRouteToCreativeCatalog(
+            key: KeyCodes,
+            type: KeyChangeTypes,
+            creative: Boolean,
+            searchFocused: Boolean,
+        ): Boolean {
+            return creative && (searchFocused || key == KeyCodes.KEY_TAB && type == KeyChangeTypes.PRESS)
+        }
     }
+
+    private val CATALOG_OFFSET: Vec2f
+        get() = Vec2f(
+            -creativeCatalog.size.x - CreativeInventoryLayout.INVENTORY_GAP,
+            -CreativeInventoryCatalogElement.TAB_HEIGHT,
+        )
 }

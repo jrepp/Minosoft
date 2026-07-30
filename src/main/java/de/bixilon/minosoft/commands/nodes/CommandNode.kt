@@ -116,6 +116,13 @@ abstract class CommandNode(
         children.clear()
     }
 
+    fun hasDirectChild(name: String): Boolean {
+        if (name.isBlank()) return false
+        return (redirect?.children ?: children).any {
+            it is NamedNode && (it.name == name || name in it.aliases)
+        }
+    }
+
 
     protected fun checkForDeadEnd(reader: CommandReader) {
         if ((redirect?.children ?: children).isEmpty()) {

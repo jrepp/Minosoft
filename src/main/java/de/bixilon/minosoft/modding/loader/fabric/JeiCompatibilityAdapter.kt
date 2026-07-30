@@ -88,6 +88,7 @@ object JeiCompatibilityAdapter : FabricCompatibilityAdapter {
                 FabricContainerScreenExtension(
                     offset = Vec2f(-85.0f, 8.0f),
                     element = JeiIngredientOverlayElement(context.renderer),
+                    creativeTabLabel = "Recipes",
                 )
             },
         )

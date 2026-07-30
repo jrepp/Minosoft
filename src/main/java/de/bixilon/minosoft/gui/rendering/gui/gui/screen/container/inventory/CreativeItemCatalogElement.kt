@@ -40,17 +40,23 @@ class CreativeItemCatalogElement(
     guiRenderer: GUIRenderer,
     private val container: PlayerInventory,
     items: List<Item>,
+    private val catalogSize: Vec2f = SIZE,
 ) : Element(guiRenderer), AbstractLayout<Element> {
-    private val pager = CreativeCatalogPager(items, PAGE_SIZE) { item ->
+    private val columns = ((catalogSize.x - GRID_OFFSET.x * 2.0f) / CELL_SIZE).toInt().coerceAtLeast(COLUMNS)
+    private val rows = ((catalogSize.y - GRID_OFFSET.y - FOOTER_HEIGHT) / CELL_SIZE).toInt().coerceAtLeast(ROWS)
+    private val pageSize = columns * rows
+    private val searchSize = Vec2f(catalogSize.x - SEARCH_OFFSET.x * 2.0f, 10.0f)
+    private val pageLabelOffset = Vec2f(6.0f, catalogSize.y - FOOTER_HEIGHT + 1.0f)
+    private val pager = CreativeCatalogPager(items, pageSize) { item ->
         val identifier = item.identifier.toString()
         val path = item.identifier.path.replace('_', ' ')
         val translated = guiRenderer.session.language.forceTranslate(item.translationKey).message
         "$identifier $path $translated"
     }
-    private val background = ColorElement(guiRenderer, SIZE, BACKGROUND)
-    private val innerBackground = ColorElement(guiRenderer, SIZE - 2, INNER_BACKGROUND)
+    private val background = ColorElement(guiRenderer, catalogSize, BACKGROUND)
+    private val innerBackground = ColorElement(guiRenderer, catalogSize - 2, INNER_BACKGROUND)
     private val slotBackground = ColorElement(guiRenderer, Vec2f(CELL_SIZE - 1), SLOT_BACKGROUND)
-    private val search: CatalogSearchElement = CatalogSearchElement(guiRenderer, ::onSearchChanged)
+    private val search: CatalogSearchElement = CatalogSearchElement(guiRenderer, searchSize, ::onSearchChanged)
         .apply { parent = this@CreativeItemCatalogElement }
     private val searchPlaceholder = TextElement(
         guiRenderer,
@@ -59,7 +65,7 @@ class CreativeItemCatalogElement(
         parent = this,
     )
     private val pageLabel = TextElement(guiRenderer, "", background = null, parent = this)
-    private val entries = Array(PAGE_SIZE) { CatalogItemElement(guiRenderer, this) }
+    private val entries = Array(pageSize) { CatalogItemElement(guiRenderer, this) }
     private var searchFocused = false
     val isSearchFocused: Boolean get() = searchFocused
 
@@ -67,7 +73,7 @@ class CreativeItemCatalogElement(
     override var activeDragElement: Element? = null
 
     init {
-        _size = SIZE
+        _size = catalogSize
         updatePage()
     }
 
@@ -123,7 +129,7 @@ class CreativeItemCatalogElement(
             slotBackground.render(offset + entryOffset, consumer, options)
             entry.render(offset + entryOffset, consumer, options)
         }
-        pageLabel.render(offset + PAGE_LABEL_OFFSET, consumer, options)
+        pageLabel.render(offset + pageLabelOffset, consumer, options)
     }
 
     override fun forceSilentApply() {
@@ -137,7 +143,7 @@ class CreativeItemCatalogElement(
 
     override fun getAt(position: Vec2f): Pair<Element, Vec2f>? {
         val searchPosition = position - SEARCH_OFFSET
-        if (searchPosition.x >= 0.0f && searchPosition.y >= 0.0f && searchPosition.x < SEARCH_SIZE.x && searchPosition.y < SEARCH_SIZE.y) {
+        if (searchPosition.x >= 0.0f && searchPosition.y >= 0.0f && searchPosition.x < searchSize.x && searchPosition.y < searchSize.y) {
             return Pair(search, searchPosition)
         }
 
@@ -146,9 +152,9 @@ class CreativeItemCatalogElement(
 
         val column = (grid.x / CELL_SIZE).toInt()
         val row = (grid.y / CELL_SIZE).toInt()
-        if (column !in 0 until COLUMNS || row !in 0 until ROWS) return null
+        if (column !in 0 until columns || row !in 0 until rows) return null
 
-        val index = row * COLUMNS + column
+        val index = row * columns + column
         val entry = entries[index]
         if (entry.stack == null) return null
         return Pair(entry, Vec2f(grid.x - column * CELL_SIZE, grid.y - row * CELL_SIZE))
@@ -194,7 +200,7 @@ class CreativeItemCatalogElement(
     }
 
     private fun entryOffset(index: Int): Vec2f {
-        return GRID_OFFSET + Vec2f((index % COLUMNS) * CELL_SIZE, (index / COLUMNS) * CELL_SIZE)
+        return GRID_OFFSET + Vec2f((index % columns) * CELL_SIZE, (index / columns) * CELL_SIZE)
     }
 
     class CatalogItemElement(
@@ -262,6 +268,7 @@ class CreativeItemCatalogElement(
 
     private class CatalogSearchElement(
         guiRenderer: GUIRenderer,
+        private val searchSize: Vec2f,
         onChange: () -> Unit,
     ) : TextInputElement(
         guiRenderer = guiRenderer,
@@ -270,11 +277,11 @@ class CreativeItemCatalogElement(
         cutAtSize = true,
     ) {
         override var size: Vec2f
-            get() = SEARCH_SIZE
+            get() = searchSize
             set(value) = Unit
 
         init {
-            prefMaxSize = SEARCH_SIZE
+            prefMaxSize = searchSize
             hideCursor()
             forceSilentApply()
         }
@@ -285,12 +292,11 @@ class CreativeItemCatalogElement(
         const val ROWS = 7
         const val PAGE_SIZE = COLUMNS * ROWS
         const val CELL_SIZE = 18.0f
-        val SIZE = Vec2f(170, 166)
+        val SIZE = CreativeInventoryLayout.COMPACT_BODY_SIZE
 
         private val GRID_OFFSET = Vec2f(4, 17)
         private val SEARCH_OFFSET = Vec2f(6, 4)
-        private val SEARCH_SIZE = Vec2f(158, 10)
-        private val PAGE_LABEL_OFFSET = Vec2f(6, 148)
+        private const val FOOTER_HEIGHT = 18.0f
         private const val SEARCH_MAX_LENGTH = 64
         private val BACKGROUND = RGBAColor(0xC6, 0xC6, 0xC6, 0xFF)
         private val INNER_BACKGROUND = RGBAColor(0x20, 0x20, 0x20, 0xF0)
