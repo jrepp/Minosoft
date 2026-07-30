@@ -15,6 +15,7 @@ package de.bixilon.minosoft.data.entities.entities
 
 import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.kutil.exception.Broken
+import de.bixilon.minosoft.data.entities.EntityAnimations
 import de.bixilon.minosoft.data.entities.EntityRotation
 import de.bixilon.minosoft.data.entities.data.EntityData
 import de.bixilon.minosoft.data.registries.entities.EntityFactory
@@ -26,6 +27,8 @@ import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil.createSession
 import org.testng.Assert.assertEquals
 import org.testng.Assert.assertSame
+import org.testng.Assert.assertTrue
+import org.testng.Assert.expectThrows
 import org.testng.annotations.Test
 
 @Test(groups = ["entities"])
@@ -47,6 +50,79 @@ class EntityTest {
         assertSame(player.customName, name)
     }
 
+    fun `invisible and glowing flags are independent`() {
+        val entity = create()
+
+        entity.data[Entity.FLAGS_DATA] = 0x20
+        assertEquals(entity.isInvisible, true)
+        assertEquals(entity.hasGlowingEffect, false)
+
+        entity.data[Entity.FLAGS_DATA] = 0x40
+        assertEquals(entity.isInvisible, false)
+        assertEquals(entity.hasGlowingEffect, true)
+
+        entity.data[Entity.FLAGS_DATA] = 0x60
+        assertEquals(entity.isInvisible, true)
+        assertEquals(entity.hasGlowingEffect, true)
+    }
+
+    fun `fire canary toggle preserves unrelated synchronized flags`() {
+        val entity = create()
+        entity.data[Entity.FLAGS_DATA] = 0x40
+
+        entity.isOnFire = true
+        assertEquals(entity.isOnFire, true)
+        assertEquals(entity.hasGlowingEffect, true)
+
+        entity.isOnFire = false
+        assertEquals(entity.isOnFire, false)
+        assertEquals(entity.hasGlowingEffect, true)
+    }
+
+    fun `outline canary toggle preserves unrelated synchronized flags`() {
+        val entity = create()
+        entity.data[Entity.FLAGS_DATA] = 0x21
+
+        entity.hasGlowingEffect = true
+        assertEquals(entity.hasGlowingEffect, true)
+        assertEquals(entity.isInvisible, true)
+        assertEquals(entity.isOnFire, true)
+
+        entity.hasGlowingEffect = false
+        assertEquals(entity.hasGlowingEffect, false)
+        assertEquals(entity.isInvisible, true)
+        assertEquals(entity.isOnFire, true)
+    }
+
+    fun `raw tracked data is bounded and preserves protocol values`() {
+        val entity = create()
+        entity.data[19] = 2
+        assertEquals(entity.data.raw(19), 2)
+        entity.data[19] = null
+        assertEquals(entity.data.raw(19), null)
+        expectThrows(IllegalArgumentException::class.java) { entity.data.raw(-1) }
+        expectThrows(IllegalArgumentException::class.java) { entity.data.raw(255) }
+    }
+
+    fun `protocol animations retain a bounded independently readable journal`() {
+        val entity = create()
+        entity.handleAnimation(EntityAnimations.SWING_MAIN_ARM)
+        entity.handleAnimation(EntityAnimations.TAKE_DAMAGE)
+
+        val first = entity.animationEvents.readAfter(0)
+        assertEquals(first.events.map { it.animation }, listOf(EntityAnimations.SWING_MAIN_ARM, EntityAnimations.TAKE_DAMAGE))
+        assertEquals(first.latestSequence, 2L)
+        assertEquals(first.overflowed, false)
+        assertEquals(entity.animationEvents.readAfter(first.latestSequence).events, emptyList<Any>())
+
+        repeat(de.bixilon.minosoft.data.entities.EntityAnimationJournal.DEFAULT_CAPACITY + 1) {
+            entity.handleAnimation(EntityAnimations.EAT_FOOD)
+        }
+        val overflow = entity.animationEvents.readAfter(0)
+        assertTrue(overflow.overflowed)
+        assertEquals(overflow.events.size, de.bixilon.minosoft.data.entities.EntityAnimationJournal.DEFAULT_CAPACITY)
+        assertEquals(overflow.events.last().sequence, overflow.latestSequence)
+    }
 
     private class TestEntity(session: PlaySession = createSession()) : Entity(session, EntityType(Companion.identifier, null, 1.0f, 1.0f, factory = Companion), EntityData(session), Vec3d.EMPTY, EntityRotation.EMPTY) {
 

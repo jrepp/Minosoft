@@ -25,6 +25,7 @@ import de.bixilon.kutil.reflection.ReflectionUtil.getFieldOrNull
 import de.bixilon.kutil.time.TimeUtil
 import de.bixilon.kutil.time.TimeUtil.now
 import de.bixilon.minosoft.data.abilities.Gamemodes
+import de.bixilon.minosoft.data.entities.EntityAnimationJournal
 import de.bixilon.minosoft.data.entities.EntityAnimations
 import de.bixilon.minosoft.data.entities.EntityRenderInfo
 import de.bixilon.minosoft.data.entities.EntityRotation
@@ -82,6 +83,8 @@ abstract class Entity(
     val commandTags: MutableSet<String> = Collections.synchronizedSet(linkedSetOf())
     /** Mutable command-side NBT retained for local datapack entity operations. */
     val commandNbt: MutableMap<String, Any> = Collections.synchronizedMap(linkedMapOf())
+    /** Bounded transient server animation history for independent render consumers. */
+    val animationEvents = EntityAnimationJournal()
     open val primaryPassenger: Entity? = null
     open val clientControlled: Boolean get() = primaryPassenger is LocalPlayerEntity
 
@@ -151,8 +154,9 @@ abstract class Entity(
     }
 
     @get:SynchronizedEntityData
-    val isOnFire: Boolean
+    var isOnFire: Boolean
         get() = getEntityFlag(0x01)
+        set(value) = setEntityFlag(0x01, value)
 
     @get:SynchronizedEntityData
     open val isSneaking: Boolean
@@ -171,8 +175,9 @@ abstract class Entity(
         get() = getEntityFlag(0x20)
 
     @get:SynchronizedEntityData
-    val hasGlowingEffect: Boolean
-        get() = getEntityFlag(0x20)
+    var hasGlowingEffect: Boolean
+        get() = getEntityFlag(0x40)
+        set(value) = setEntityFlag(0x40, value)
 
     var isFlyingWithElytra: Boolean
         get() = getEntityFlag(0x80)
@@ -264,7 +269,9 @@ abstract class Entity(
 
     open fun physics(): EntityPhysics<*> = physics.unsafeCast()
 
-    open fun handleAnimation(animation: EntityAnimations) = Unit
+    open fun handleAnimation(animation: EntityAnimations) {
+        animationEvents.record(animation, age.coerceAtLeast(0))
+    }
 
 
     override fun init() {

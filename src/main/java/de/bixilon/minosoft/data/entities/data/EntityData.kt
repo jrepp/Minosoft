@@ -71,6 +71,21 @@ class EntityData(
         observersLock.release()
     }
 
+    /**
+     * Returns one protocol-level tracked-data value without requiring a
+     * Pixlyzer field name. Source-native dependent-mod adapters use this for
+     * pinned custom indices that vanilla registries cannot name.
+     */
+    fun raw(index: Int): Any? {
+        require(index in 0..MAX_TRACKED_INDEX) { "Entity data index must be between 0 and $MAX_TRACKED_INDEX." }
+        lock.acquire()
+        return try {
+            data[index]
+        } finally {
+            lock.release()
+        }
+    }
+
     @Suppress("NON_PUBLIC_CALL_FROM_PUBLIC_INLINE")
     inline fun <reified K> get(field: EntityDataField, default: K): K {
         val index = session.registries.getEntityDataIndex(field) ?: return default // field is not present (in this version)
@@ -127,5 +142,9 @@ class EntityData(
         val value = if (raw != null) converter?.invoke(raw) ?: raw.cast<V>() else null
 
         return EntityDataDelegate(value.unsafeCast(), field, this, converter)
+    }
+
+    private companion object {
+        const val MAX_TRACKED_INDEX = 254
     }
 }
