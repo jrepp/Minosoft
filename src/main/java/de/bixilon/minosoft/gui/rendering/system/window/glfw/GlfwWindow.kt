@@ -172,14 +172,6 @@ class GlfwWindow(
     override fun init(profile: RenderingProfile) {
         initLatch.await() // wait for async glfw init
         glfwDefaultWindowHints()
-        if (context.profile.advanced.preferQuads) {
-            // yes, this is dirty. We can only use a geometry shader in 3.3+, but in 3.3+ we can not use GL_QUAD.
-            // we can still bind it to a lower version and use features that need a more recent version of opengl.
-            // most drivers allow us to do this, but not all (e.g. mesa). TODO: crash then
-            setOpenGLVersion(3, 0, false)
-        } else {
-            setOpenGLVersion(3, 3, true)
-        }
         glfwWindowHint(GLFW_VISIBLE, false.glfw)
         if (PlatformInfo.OS != OSTypes.MAC) {
             // Somehow apple does not like the value 0. Setting it to GLFW_DONT_CARE does not help. See https://github.com/Bixilon/Minosoft/issues/40
@@ -203,8 +195,19 @@ class GlfwWindow(
             else -> {}
         }
 
-
-        window = glfwCreateWindow(size.x, size.y, RunConfiguration.APPLICATION_NAME, MemoryUtil.NULL, MemoryUtil.NULL)
+        val contextRequests = OpenGlContextRequest.candidates(
+            isMac = PlatformInfo.OS == OSTypes.MAC,
+            preferQuads = context.profile.advanced.preferQuads,
+        )
+        for (request in contextRequests) {
+            setOpenGLVersion(request.major, request.minor, request.coreProfile)
+            window = glfwCreateWindow(size.x, size.y, RunConfiguration.APPLICATION_NAME, MemoryUtil.NULL, MemoryUtil.NULL)
+            if (window != MemoryUtil.NULL) break
+            log {
+                "OpenGL ${request.major}.${request.minor} " +
+                    "${if (request.coreProfile) "core" else "compatibility"} context unavailable; trying fallback."
+            }
+        }
         if (window == MemoryUtil.NULL) {
             try {
                 destroy()
