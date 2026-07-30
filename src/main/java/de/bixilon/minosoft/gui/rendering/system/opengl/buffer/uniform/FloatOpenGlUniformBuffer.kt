@@ -28,7 +28,11 @@ class FloatOpenGlUniformBuffer(
     bindingIndex: Int,
     override var data: FloatBuffer,
 ) : OpenGlUniformBuffer(system, bindingIndex), FloatUniformBuffer {
-    override val size get() = data.limit()
+    // glBindBufferRange takes its range in bytes. The upload API below uses
+    // float indices, so keep its bounds checks against data.limit() rather than
+    // accidentally shrinking the bound uniform block to one quarter of its
+    // storage.
+    override val size get() = bindingSizeBytes(data.limit())
 
     override fun initialUpload() {
         data.position(0)
@@ -44,7 +48,7 @@ class FloatOpenGlUniformBuffer(
 
     override fun upload(start: Int, end: Int) {
         check(initialSize == size) { "Can not change buffer size!" }
-        if (start < 0 || end >= size) {
+        if (start < 0 || end >= data.limit()) {
             throw IndexOutOfBoundsException(start)
         }
         bind()
@@ -55,5 +59,9 @@ class FloatOpenGlUniformBuffer(
     override fun unsafeDrop() {
         if (data.isDirect) memFree(data)
         this::data.forceSet(null)
+    }
+
+    internal companion object {
+        fun bindingSizeBytes(floatCount: Int): Int = Math.multiplyExact(floatCount, Float.SIZE_BYTES)
     }
 }
