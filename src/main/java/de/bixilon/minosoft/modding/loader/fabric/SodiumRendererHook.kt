@@ -214,6 +214,6 @@ private class SodiumTerrainBackend(
     }
 
     companion object {
-        val OWNER = RenderOwnerId("minosoft:sodium-0.5.8-terrain")
+        val OWNER = RenderOwnerId("minosoft:sodium-compatible-terrain")
     }
 }

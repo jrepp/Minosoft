@@ -14,6 +14,7 @@ import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentFormat
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentIdentity
 import de.bixilon.minosoft.assets.model.skeletal.SkeletalContentParsers
 import de.bixilon.minosoft.assets.model.skeletal.binding.SkeletalPartAliasSet
+import de.bixilon.minosoft.assets.model.skeletal.binding.SkeletalPartAliasRegistry
 import de.bixilon.minosoft.assets.model.skeletal.binding.SkeletalPartAliases
 import de.bixilon.minosoft.assets.model.skeletal.cem.CEM_PARSER_REGISTRATION
 import de.bixilon.minosoft.assets.model.skeletal.expression.SkeletalExpressionContext
@@ -35,6 +36,53 @@ import org.testng.annotations.Test
 import java.nio.file.Paths
 
 class ContentFidelityMultiVersionTest {
+
+    @Test
+    fun `render fixture binds zombie CEM pose to the selected ETF rule`() {
+        val fixture = Paths.get(
+            requireNotNull(javaClass.classLoader.getResource("content_fidelity/emf-etf-zombie-render/fixture.json")).toURI(),
+        ).parent
+        val assets = DirectoryAssetsManager(fixture.resolve("resources"))
+        val registrations = listOf(
+            SkeletalContentParsers.register(CEM_PARSER_REGISTRATION),
+            EntityTextureRuleParsers.register("test:render-fixture", OptifineEntityTexturePropertiesParser),
+            SkeletalPartAliases.register(SkeletalPartAliasRegistry.ZOMBIE),
+        )
+        try {
+            assets.load()
+            val prepared = ContentFidelityLoader(assets).prepare()
+            try {
+                val snapshot = prepared.value
+                val cem = snapshot.skeletal.values.flatten().single()
+                val binding = SkeletalModelBinder.bind(
+                    cem,
+                    ProtocolVersions.V_1_20_4,
+                    ResourceLocation.of("minecraft:zombie"),
+                )
+                assertEquals(binding.aliases["leftArm"], "left_arm")
+
+                val evaluated = CemExpressionEvaluator(cem.expressions, binding.aliases)
+                    .evaluate(SkeletalExpressionContext(mapOf("rule_index" to 1.0)))
+                assertEquals(
+                    evaluated.transforms.getValue("left_arm").getValue(CemTransformProperty.ROTATE_X),
+                    0.65f,
+                )
+
+                val properties = ResourceLocation.of(
+                    "minecraft:optifine/random/entity/zombie/zombie.properties",
+                )
+                val rule = snapshot.entityTextureRules.getValue(properties).rules.single()
+                assertEquals(rule.suffixes, listOf(1))
+                assertEquals(rule.conditions.single().key, "nbt.Health")
+                assertEquals(rule.conditions.single().value, "20")
+            } finally {
+                prepared.cleanup.close()
+            }
+        } finally {
+            registrations.asReversed().forEach(AutoCloseable::close)
+            if (assets.loaded) assets.unload()
+        }
+    }
 
     @Test
     fun `headless fixture binds CEM ETF and Gecko surfaces across 1_19_4 and 1_20_4`() {

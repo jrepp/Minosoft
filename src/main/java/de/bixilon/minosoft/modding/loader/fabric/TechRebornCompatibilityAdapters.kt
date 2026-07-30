@@ -33,6 +33,7 @@ object FabricApiCompatibilityAdapter : FabricCompatibilityAdapter {
         FabricHostCapability.KEY_BINDINGS,
         FabricHostCapability.PARTICLE_EVENTS,
         FabricHostCapability.PLAYER_INTERACTIONS,
+        FabricHostCapability.REMOTE_REGISTRY_SYNC,
         FabricHostCapability.RESOURCE_RELOAD_EVENTS,
         FabricHostCapability.SCREENS,
         FabricHostCapability.SOUND_EVENTS,
@@ -67,12 +68,13 @@ object FabricApiCompatibilityAdapter : FabricCompatibilityAdapter {
         scope.own(FabricKeyBindings.install(id))
         scope.own(FabricParticleEvents.install(id))
         scope.own(FabricPlayerInteractionHooks.install(id))
+        scope.own(FabricRemoteRegistrySync.install(id))
         scope.own(FabricResourceReloadEvents.install(id))
         scope.own(FabricScreens.install(id))
         scope.own(FabricSoundEvents.install(id))
         scope.own(FabricWorldEvents.install(id))
         Log.log(LogMessageType.MOD_LOADING, LogLevels.INFO) {
-            "FABRIC_API_MODULES_ACTIVE version=${probe.metadata.version} modules=${modules.size} clientEvents=true clientConnectionEvents=true clientCommands=true clientPayloadChannels=true clientTickEvents=true worldEvents=true chunkEvents=true blockMutationEvents=true entityEvents=true playerInteractions=true particleEvents=true soundEvents=true inputEvents=true keyBindings=true screens=true hudLayers=true resourceReloadEvents=true"
+            "FABRIC_API_MODULES_ACTIVE version=${probe.metadata.version} modules=${modules.size} clientEvents=true clientConnectionEvents=true clientCommands=true clientPayloadChannels=true remoteRegistrySync=true clientTickEvents=true worldEvents=true chunkEvents=true blockMutationEvents=true entityEvents=true playerInteractions=true particleEvents=true soundEvents=true inputEvents=true keyBindings=true screens=true hudLayers=true resourceReloadEvents=true"
         }
     }
 }

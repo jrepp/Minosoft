@@ -35,6 +35,32 @@ enum class FabricCompatibilityBlocker {
     NESTED_JARS,
 }
 
+enum class FabricDependencyRelation(val wireName: String) {
+    DEPENDS("depends"),
+    BREAKS("breaks"),
+    CONFLICTS("conflicts"),
+}
+
+data class FabricDependencyIssue(
+    val owner: FabricMetadata,
+    val relation: FabricDependencyRelation,
+    val dependency: FabricDependency,
+    val providers: List<FabricMetadata>,
+) {
+    val message: String get() = when (relation) {
+        FabricDependencyRelation.DEPENDS -> if (providers.isEmpty()) {
+            "${owner.id} requires missing ${dependency.id} ${dependency.predicates.joinToString(" || ")}"
+        } else {
+            "${owner.id} requires ${dependency.id} ${dependency.predicates.joinToString(" || ")}, " +
+                "found ${providers.joinToString { it.version }}"
+        }
+
+        FabricDependencyRelation.BREAKS,
+        FabricDependencyRelation.CONFLICTS,
+        -> "${owner.id} ${relation.wireName} ${dependency.id} ${providers.joinToString { it.version }}"
+    }
+}
+
 data class FabricModProbe(
     val metadata: FabricMetadata,
     val blockers: Set<FabricCompatibilityBlocker>,
@@ -217,10 +243,13 @@ object FabricPackPreflight {
             for (provided in metadata.provides) providers.getOrPut(provided) { mutableListOf() } += metadata
         }
         return probes.map { probe ->
-            val issues = (listOf(probe.metadata) + probe.nestedMods).flatMap { validateDependencies(it, providers) }.distinct()
+            val issues = (listOf(probe.metadata) + probe.nestedMods)
+                .flatMap { validateDependencies(it, providers) }
+                .distinct()
+                .filterNot { probe.adapter?.acceptsDependencyIssue(it) == true }
             if (issues.isEmpty()) probe else probe.copy(
                 blockers = probe.blockers + FabricCompatibilityBlocker.DEPENDENCY_RESOLUTION,
-                dependencyIssues = issues,
+                dependencyIssues = issues.map(FabricDependencyIssue::message),
             )
         }
     }
@@ -228,20 +257,22 @@ object FabricPackPreflight {
     private fun validateDependencies(
         metadata: FabricMetadata,
         providers: Map<String, List<FabricMetadata>>,
-    ): List<String> = buildList {
+    ): List<FabricDependencyIssue> = buildList {
         for (dependency in metadata.dependencies["depends"].orEmpty()) {
             if (dependency.id in PLATFORM_DEPENDENCIES) continue
             val candidates = providers[dependency.id].orEmpty()
             if (candidates.isEmpty()) {
-                add("${metadata.id} requires missing ${dependency.id} ${dependency.predicates.joinToString(" || ")}")
+                add(FabricDependencyIssue(metadata, FabricDependencyRelation.DEPENDS, dependency, emptyList()))
             } else if (candidates.none { dependency.matches(it.version) }) {
-                add("${metadata.id} requires ${dependency.id} ${dependency.predicates.joinToString(" || ")}, found ${candidates.joinToString { it.version }}")
+                add(FabricDependencyIssue(metadata, FabricDependencyRelation.DEPENDS, dependency, candidates))
             }
         }
-        for (key in listOf("breaks", "conflicts")) {
-            for (dependency in metadata.dependencies[key].orEmpty()) {
+        for (relation in listOf(FabricDependencyRelation.BREAKS, FabricDependencyRelation.CONFLICTS)) {
+            for (dependency in metadata.dependencies[relation.wireName].orEmpty()) {
                 val matching = providers[dependency.id].orEmpty().filter { dependency.matches(it.version) }
-                if (matching.isNotEmpty()) add("${metadata.id} $key ${dependency.id} ${matching.joinToString { it.version }}")
+                if (matching.isNotEmpty()) {
+                    add(FabricDependencyIssue(metadata, relation, dependency, matching))
+                }
             }
         }
     }

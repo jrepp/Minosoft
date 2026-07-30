@@ -23,6 +23,7 @@ interface FabricCompatibilityAdapter {
     }
 
     fun supports(metadata: FabricMetadata): Boolean
+    fun acceptsDependencyIssue(issue: FabricDependencyIssue): Boolean = false
     fun activate(probe: FabricModProbe, scope: FabricRegistrationScope)
 }
 
@@ -38,6 +39,7 @@ enum class FabricHostCapability(val wireName: String) {
     CHUNK_RENDER_SCHEDULING("chunk-render-scheduling"),
     CONTAINER_SCREEN_EXTENSIONS("container-screen-extensions"),
     CONTENT_CATALOG("content-catalog"),
+    DISTANT_TERRAIN_LOD("distant-terrain-lod"),
     ENERGY_STORAGE("energy-storage"),
     ENTITY_TEXTURE_CONTENT("entity-texture-content"),
     ENTITY_VISIBILITY("entity-visibility"),
@@ -50,6 +52,7 @@ enum class FabricHostCapability(val wireName: String) {
     PARTICLE_EVENTS("particle-events"),
     PLAYER_INTERACTIONS("player-interactions"),
     RECIPE_VIEWER("recipe-viewer"),
+    REMOTE_REGISTRY_SYNC("remote-registry-sync"),
     RESOURCE_RELOAD_EVENTS("resource-reload-events"),
     SCREENS("screens"),
     SHADER_PIPELINE("shader-pipeline"),
@@ -106,6 +109,7 @@ object FabricCompatibilityAdapters {
             ImmediatelyFastCompatibilityAdapter,
             InventoryManagementCompatibilityAdapter,
             IrisCompatibilityAdapter,
+            DistantHorizonsCompatibilityAdapter,
             JeiCompatibilityAdapter,
             EntityTextureFeaturesCompatibilityAdapter,
             EntityModelFeaturesCompatibilityAdapter,

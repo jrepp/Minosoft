@@ -20,6 +20,7 @@ import de.bixilon.minosoft.assets.datapack.LocalDataPackCommandAuthority
 import de.bixilon.minosoft.assets.datapack.SessionDataPackRuntime
 import de.bixilon.minosoft.data.abilities.Gamemodes
 import de.bixilon.minosoft.data.chat.message.SimpleChatMessage
+import de.bixilon.minosoft.data.entities.EntityRotation
 import de.bixilon.minosoft.data.chat.type.DefaultMessageTypes
 import de.bixilon.minosoft.data.entities.entities.player.additional.AdditionalDataUpdate
 import de.bixilon.minosoft.data.entities.entities.InteractionEntity
@@ -169,6 +170,50 @@ class LocalConnection(
         }
     }
 
+    /**
+     * Executes one mounted data-pack function through the same session-owned
+     * runtime used by local ticks. The origin is installed only for command
+     * execution; a successful call then moves the local camera to its requested
+     * deterministic acceptance pose. Failures restore the previous player pose.
+     */
+    @Synchronized
+    fun executeDataPackFunction(
+        reference: String,
+        arguments: Map<String, String>,
+        origin: Vec3d,
+        originRotation: EntityRotation,
+        camera: Vec3d,
+        cameraRotation: EntityRotation,
+    ): LocalDataPackExecution {
+        check(active && ::session.isInitialized) { "Local connection is not active." }
+        val runtime = dataPackRuntime ?: throw IllegalStateException("Local data-pack runtime is not active.")
+        require(origin.isFinite() && camera.isFinite()) { "Local data-pack acceptance positions must be finite." }
+        require(originRotation.isFinite() && cameraRotation.isFinite()) { "Local data-pack acceptance rotations must be finite." }
+
+        val player = session.player
+        val previousPosition = player.physics.position
+        val previousRotation = player.physics.rotation
+        player.physics.forceTeleport(origin)
+        player.physics.forceSetRotation(originRotation)
+        player.physics.forceSetHeadYaw(originRotation.yaw)
+        val executed = try {
+            runtime.execute(reference, arguments)
+        } catch (error: Throwable) {
+            player.physics.forceTeleport(previousPosition)
+            player.physics.forceSetRotation(previousRotation)
+            player.physics.forceSetHeadYaw(previousRotation.yaw)
+            throw error
+        }
+        player.physics.forceTeleport(camera)
+        player.physics.forceSetRotation(cameraRotation)
+        player.physics.forceSetHeadYaw(cameraRotation.yaw)
+        return LocalDataPackExecution(
+            executed = executed,
+            generation = runtime.activeGenerationId,
+            tick = runtime.tick,
+        )
+    }
+
     private fun recordInteraction(entityId: Int, attack: Boolean) {
         val entity = session.world.entities[entityId] as? InteractionEntity ?: return
         if (displayFactory?.owns(entity) != true) return
@@ -188,4 +233,13 @@ class LocalConnection(
             Log.log(LogMessageType.LOADING, LogLevels.WARN, error)
         }
     }
+
+    private fun Vec3d.isFinite() = x.isFinite() && y.isFinite() && z.isFinite()
+    private fun EntityRotation.isFinite() = yaw.isFinite() && pitch.isFinite()
+
+    data class LocalDataPackExecution(
+        val executed: Int,
+        val generation: Long?,
+        val tick: Long,
+    )
 }
