@@ -180,7 +180,7 @@ class TerrainPerformanceTelemetryTest {
 
     private companion object {
         const val WARMUP_ROUNDS = 6
-        const val MEASURED_ROUNDS = 24
+        const val MEASURED_ROUNDS = 100
         const val PHASES_PER_ROUND = 128
         const val WORK_PER_PHASE = 8_192
         const val MAX_P95_RATIO = 1.10
