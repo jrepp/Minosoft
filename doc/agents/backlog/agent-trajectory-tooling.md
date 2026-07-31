@@ -52,7 +52,9 @@ The first four ownership/evidence primitives are repository commands:
   warnings rather than an internally inconsistent bundle.
 - `worldgen snapshot` refuses a reachable or managed running server, acquires or
   validates a `server-world` lease, copies into a partial candidate, rejects
-  symlinks/source mutation, hashes the result, and atomically publishes it.
+  symlinks/source mutation, resolves source and output-parent identity before
+  containment checks, preserves existing links, hashes the result, and
+  atomically publishes it.
 - Checkpoints cover `player-pose`. Capture records the original pose, `mark`
   establishes the expected post-mutation value, and restore refuses a mismatch
   before server-authoritative teleport. Conflict and restored records are
@@ -127,6 +129,8 @@ Implemented stopped-world slice:
   unreachable. A bounded live server save/flush operation remains target work.
 - The launcher copies only the selected level into a new explicit target and
   verifies that source identity did not change during the snapshot boundary.
+  Source and output-parent paths are canonicalized before containment checks,
+  so a symlink alias cannot route the candidate back into the active world.
 - No autosave state is changed in the stopped-world slice. A later live
   save/flush implementation must resume any suspension in `finally`.
 - The current manifest records source/output, trajectory, file count/bytes,

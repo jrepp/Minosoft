@@ -78,6 +78,27 @@ Primary references:
 
 Commit: `994a2cb41`.
 
+## Follow-up audit
+
+A line-by-line follow-up of the new stateful boundaries established these
+additional durable conclusions:
+
+- World snapshot containment must compare canonical source and output-parent
+  identity, not lexical paths. Existing entries, including dangling symbolic
+  links, are never replaced (`d73b6d1ef`, `64d90ca9f`).
+- Lease creation rejects blank durable fields and sub-millisecond TTLs, and
+  persisted tokens must match their filenames (`e67bd07ca`).
+- An override fallback is retained across every republication and retired once
+  only after registry closure and its final lease. This removed the terrain
+  registry's eager built-in close (`3401a4c85`).
+- Fixed terrain histograms derive sample counts from captured buckets, bounded
+  gauges saturate, and invalid worker completion cannot corrupt the active
+  count (`12d88faff`, `b59c20adf`).
+- Render timing status takes one median/p95 snapshot per window. Experimental
+  FPS presentation delegates the real timing snapshot instead of reporting
+  zero samples, and shader cleanup runs outside the registry monitor
+  (`eecf55d2e`, `0c23164b2`, `24ff9db26`).
+
 ## Verification
 
 Passed checks:

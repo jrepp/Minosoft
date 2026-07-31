@@ -123,9 +123,15 @@ and tests remain the behavioral authority.
   and `TransactionalOverrideStore` when one fallback has at most one active
   replaceable owner. Do not duplicate tokens, stale-registration checks, or
   deferred-retirement bookkeeping in each registry.
+- Treat an override fallback as retained state: do not retire it while the
+  registry can republish it, do not install the fallback instance as an
+  override, and retire it exactly once only after registry closure and every
+  fallback lease have completed.
 - Prepare and validate a complete candidate before publication. A registration
   closes only the generation it installed; closing a stale handle must not
   remove a newer generation.
+- Build related median/p95/sample fields from one immutable timing snapshot.
+  Do not sort the same bounded timing window once per debug-response field.
 
 ## Verification checklist
 
