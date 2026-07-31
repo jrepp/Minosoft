@@ -294,13 +294,11 @@ class TerrainPerformanceTelemetry(
 
     private class FixedTerrainLatencyHistogram {
         private val buckets = AtomicLongArray(LATENCY_BUCKET_UPPER_BOUNDS_NANOS.size + 1)
-        private val samples = AtomicLong()
         private val totalNanos = AtomicLong()
         private val maximumNanos = AtomicLong()
 
         fun record(nanoseconds: Long) {
             require(nanoseconds >= 0L) { "Terrain latency must not be negative" }
-            addSaturating(samples, 1L)
             addSaturating(totalNanos, nanoseconds)
             updateMaximum(maximumNanos, nanoseconds)
             var bucket = 0
@@ -315,7 +313,9 @@ class TerrainPerformanceTelemetry(
 
         fun snapshot(): TerrainLatencySnapshot {
             val bucketSnapshot = LongArray(buckets.length()) { buckets.get(it) }
-            val sampleCount = samples.get()
+            val sampleCount = bucketSnapshot.fold(0L) { total, count ->
+                if (Long.MAX_VALUE - total < count) Long.MAX_VALUE else total + count
+            }
             return TerrainLatencySnapshot(
                 samples = sampleCount,
                 totalNanos = totalNanos.get(),
