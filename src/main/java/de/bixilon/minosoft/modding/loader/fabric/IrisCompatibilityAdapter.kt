@@ -13,7 +13,6 @@ import de.bixilon.minosoft.debug.DebugOperationException
 import de.bixilon.minosoft.debug.DebugOperationResult
 import de.bixilon.minosoft.debug.ModDebugProvider
 import de.bixilon.minosoft.debug.ModDebugRegistrar
-import de.bixilon.kutil.latch.AbstractLatch
 import de.bixilon.minosoft.config.profile.ProfileOptions
 import de.bixilon.minosoft.config.settings.BooleanConfigControl
 import de.bixilon.minosoft.config.settings.ConfigEntry
@@ -26,14 +25,14 @@ import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.RenderingStates
 import de.bixilon.minosoft.gui.rendering.chunk.ChunkRenderer
-import de.bixilon.minosoft.gui.rendering.framebuffer.IntegratedFramebuffer
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.Renderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisShaderPackPlanner
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisWorldShaderPipeline
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderPackOption
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderPackSettings
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderPipelinePlan
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderPipelineRendererBridge
+import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderPipelineRendererCallbacks
 import de.bixilon.minosoft.gui.rendering.system.opengl.irisPerBufferBlending
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.util.logging.Log
@@ -574,24 +573,20 @@ internal fun irisMinecraftVersion(name: String): Int {
 
 private class IrisRendererHookBuilder(
     private val controller: IrisPresentationController,
-) : RendererBuilder<IrisRendererHook> {
-    override fun build(session: PlaySession, context: RenderContext) = IrisRendererHook(context, controller)
-}
-
-private class IrisRendererHook(
-    override val context: RenderContext,
-    private val controller: IrisPresentationController,
-) : Renderer {
-    override val framebuffer: IntegratedFramebuffer? = null
-
-    override fun postInit(latch: AbstractLatch) {
-        val installed = controller.attach(context)
-        Log.log(LogMessageType.MOD_LOADING, LogLevels.INFO) {
-            "IRIS_PIPELINE_SELECTION installed=$installed pack=${controller.packName(context)} fingerprint=${controller.fingerprint(context)}"
-        }
+) : RendererBuilder<ShaderPipelineRendererBridge> {
+    override fun build(session: PlaySession, context: RenderContext): ShaderPipelineRendererBridge {
+        val callbacks = ShaderPipelineRendererCallbacks(
+            installed = {
+                val installed = controller.attach(context)
+                Log.log(LogMessageType.MOD_LOADING, LogLevels.INFO) {
+                    "IRIS_PIPELINE_SELECTION installed=$installed pack=${controller.packName(context)} " +
+                        "fingerprint=${controller.fingerprint(context)}"
+                }
+            },
+            unloaded = { controller.detach(context) },
+        )
+        return ShaderPipelineRendererBridge(context, callbacks)
     }
-
-    override fun unload() = controller.detach(context)
 }
 
 private class IrisDebugProvider(

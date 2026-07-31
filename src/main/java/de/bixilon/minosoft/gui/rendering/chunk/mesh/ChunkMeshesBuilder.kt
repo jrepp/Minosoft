@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -31,6 +32,8 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTextur
 import de.bixilon.minosoft.gui.rendering.terrain.IrisTerrainMaterial
 import de.bixilon.minosoft.gui.rendering.terrain.IrisTerrainMaterialResolver
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainDirectionalVisibility
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
+import de.bixilon.minosoft.terrain.model.mesh.TerrainMeshArtifact
 import de.bixilon.minosoft.gui.rendering.util.mesh.uv.array.PackedUVArray
 
 class ChunkMeshesBuilder(
@@ -38,12 +41,16 @@ class ChunkMeshesBuilder(
     val section: ChunkSection,
     val details: IntInlineSet,
     private val materialResolver: IrisTerrainMaterialResolver = IrisTerrainMaterialResolver.EMPTY,
+    snapshot: TerrainBuildSnapshot? = null,
 ) : BlockVertexConsumer { // TODO: Don't inherit
-    var opaque = ChunkMeshBuilder(context, section.blocks.count.opaqueCount())
-    var cutout = ChunkMeshBuilder(context, section.blocks.count.translucentCount())
-    var translucent = ChunkMeshBuilder(context, section.blocks.count.translucentCount())
-    var text = ChunkMeshBuilder(context, if (ChunkMeshDetails.TEXT in details && section.entities.count > 0) 128 else 0)
-    var entities: ArrayList<BlockEntityRenderer> = ArrayList(if (ChunkMeshDetails.ENTITIES in details) section.entities.count else 0)
+    private val estimatedBlocks = snapshot?.blockCount ?: section.blocks.count
+    private val estimatedEntities = snapshot?.entities?.size ?: section.entities.count
+    var opaque = ChunkMeshBuilder(context, estimatedBlocks.opaqueCount())
+    var cutout = ChunkMeshBuilder(context, estimatedBlocks.translucentCount())
+    var translucent = ChunkMeshBuilder(context, estimatedBlocks.translucentCount())
+    var text = ChunkMeshBuilder(context, if (ChunkMeshDetails.TEXT in details && estimatedEntities > 0) 128 else 0)
+    var entities: ArrayList<BlockEntityRenderer> = ArrayList(if (ChunkMeshDetails.ENTITIES in details) estimatedEntities else 0)
+    var entityPositions: List<InSectionPosition> = emptyList()
     private var material: IrisTerrainMaterial? = null
 
     // used for frustum culling
@@ -93,6 +100,7 @@ class ChunkMeshesBuilder(
         position: SectionPosition,
         modelRevision: Long = 0L,
         connectivity: TerrainDirectionalVisibility = TerrainDirectionalVisibility.ALL,
+        artifact: TerrainMeshArtifact? = null,
     ): ChunkMeshes? {
         val outputBytes = listOf(opaque, cutout, translucent, text).fold(0L) { total, builder ->
             val vertexBytes = Math.multiplyExact(builder._data?.size?.toLong() ?: 0L, Float.SIZE_BYTES.toLong())
@@ -108,7 +116,7 @@ class ChunkMeshesBuilder(
 
         val entities = entities.takeIf { it.isNotEmpty() }?.toTypedArray()
 
-        if (meshes.size == 0 && entities == null) {
+        if (meshes.size == 0 && entities == null && entityPositions.isEmpty()) {
             return null
         }
 
@@ -123,15 +131,22 @@ class ChunkMeshesBuilder(
             connectivity,
             outputBytes,
             meshes,
+            entityPositions.toList(),
             entities,
+            artifact,
         )
     }
 
     fun drop() {
-        opaque.drop()
-        cutout.drop()
-        translucent.drop()
-        text.drop()
+        var failure: Throwable? = null
+        for (builder in arrayOf(opaque, cutout, translucent, text)) {
+            try {
+                builder.drop()
+            } catch (error: Throwable) {
+                if (failure == null) failure = error else failure.addSuppressed(error)
+            }
+        }
+        failure?.let { throw it }
     }
 
     override fun addQuad(offset: Vec3f, positions: FaceVertexData, uv: PackedUVArray, texture: ShaderTexture, light: Int, tint: RGBColor, ao: IntArray) {

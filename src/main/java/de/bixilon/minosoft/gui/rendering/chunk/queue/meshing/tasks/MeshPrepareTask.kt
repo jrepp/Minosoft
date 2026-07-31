@@ -16,8 +16,8 @@ package de.bixilon.minosoft.gui.rendering.chunk.queue.meshing.tasks
 
 import de.bixilon.minosoft.data.world.chunk.ChunkSection
 import de.bixilon.minosoft.data.world.positions.SectionPosition
-import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildIdentity
-import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainCancellationToken
+import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentity
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainCancellationToken
 
 class MeshPrepareTask(
     val section: ChunkSection,

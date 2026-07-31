@@ -18,6 +18,7 @@ import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.registries.fluid.Fluid
 import de.bixilon.minosoft.data.world.chunk.ChunkSection
 import de.bixilon.minosoft.data.world.positions.InSectionPosition
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
 import de.bixilon.minosoft.gui.rendering.models.block.state.baked.cull.side.FaceProperties
 import de.bixilon.minosoft.gui.rendering.models.block.state.baked.cull.side.SideProperties
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureTransparencies
@@ -67,6 +68,21 @@ object FluidCulling {
     fun canFluidCull(section: ChunkSection, position: InSectionPosition, direction: Directions, fluid: Fluid, height: Float): FluidCull {
         val state = section.traceBlock(position, direction) ?: return FluidCull.VISIBLE
 
+        return canFluidCull(state, direction.inverted, fluid, height)
+    }
+
+    fun canFluidCull(
+        snapshot: TerrainBuildSnapshot,
+        position: InSectionPosition,
+        direction: Directions,
+        fluid: Fluid,
+        height: Float,
+    ): FluidCull {
+        val state = snapshot.stateOrNull(
+            position.x + direction.x,
+            position.y + direction.y,
+            position.z + direction.z,
+        ) ?: return FluidCull.VISIBLE
         return canFluidCull(state, direction.inverted, fluid, height)
     }
 }

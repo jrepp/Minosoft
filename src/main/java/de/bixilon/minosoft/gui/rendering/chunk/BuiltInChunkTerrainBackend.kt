@@ -25,6 +25,7 @@ import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendDescriptor
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainInvalidationReason
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainSectionSnapshot
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 
 class BuiltInChunkTerrainBackend(
     private val renderer: ChunkRenderer,
@@ -48,7 +49,7 @@ class BuiltInChunkTerrainBackend(
     override fun finishFrame() = renderer.finishTerrainFrameCore()
 
     override fun invalidate(snapshot: TerrainSectionSnapshot, reason: TerrainInvalidationReason) {
-        renderer.invalidate(snapshot.position)
+        renderer.invalidate(snapshot.position, reason.toBuildCause())
     }
 
     override fun close() = renderer.closeTerrainCore()
@@ -56,4 +57,14 @@ class BuiltInChunkTerrainBackend(
     companion object {
         val OWNER = RenderOwnerId("minosoft:built-in-terrain")
     }
+}
+
+internal fun TerrainInvalidationReason.toBuildCause(): TerrainBuildCause = when (this) {
+    TerrainInvalidationReason.BLOCK -> TerrainBuildCause.BLOCK_CHANGE
+    TerrainInvalidationReason.LIGHT -> TerrainBuildCause.LIGHT_CHANGE
+    TerrainInvalidationReason.NEIGHBOUR -> TerrainBuildCause.NEIGHBOUR_CHANGE
+    TerrainInvalidationReason.VISIBILITY -> TerrainBuildCause.CULLED
+    TerrainInvalidationReason.RESOURCE_GENERATION,
+    TerrainInvalidationReason.BACKEND_REPLACED -> TerrainBuildCause.RESOURCE_GENERATION_CHANGE
+    TerrainInvalidationReason.WORLD_UNLOAD -> TerrainBuildCause.WORLD_UNLOAD
 }

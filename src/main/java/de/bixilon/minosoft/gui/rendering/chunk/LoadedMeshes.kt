@@ -25,6 +25,10 @@ import de.bixilon.minosoft.gui.rendering.chunk.mesh.details.ChunkMeshDetails
 import de.bixilon.minosoft.gui.rendering.chunk.queue.meshing.ChunkMeshingCause
 import de.bixilon.minosoft.gui.rendering.chunk.visible.VisibleMeshes
 import de.bixilon.minosoft.gui.rendering.chunk.visible.VisibilityGraphInvalidReason
+import de.bixilon.minosoft.gui.rendering.terrain.near.NearSurfaceCoverage
+import de.bixilon.minosoft.gui.rendering.terrain.near.NearSurfaceCoverageIndex
+import de.bixilon.minosoft.gui.rendering.terrain.near.NearSurfaceCoverageEnvironment
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageSnapshot
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 
 data class LoadedVisibilitySnapshot(
@@ -35,6 +39,7 @@ data class LoadedVisibilitySnapshot(
 data class NativeTerrainOwnershipSnapshot(
     val revision: Long,
     val chunks: Set<ChunkPosition>,
+    val lifecycle: TerrainCoverageSnapshot? = null,
 )
 
 class LoadedMeshes(
@@ -43,9 +48,16 @@ class LoadedMeshes(
     private val meshes: MutableMap<ChunkPosition, Int2ObjectOpenHashMap<ChunkMeshes>> = HashMap(1000)
     private val lock = RWLock.rwlock()
     private var revision = 0L
+    private val surfaceCoverage = NearSurfaceCoverageIndex {
+        NearSurfaceCoverageEnvironment(
+            worldEpoch = renderer.world.terrainEpoch,
+            providerGeneration = renderer.terrain.selection().generation,
+            frame = renderer.context.frameNumber,
+        )
+    }
 
 
-    val size get() = meshes.size
+    val size get() = lock.acquired { meshes.size }
 
     operator fun get(position: SectionPosition) = lock.acquired { meshes[position.chunkPosition]?.get(position.y) }
     operator fun plusAssign(mesh: ChunkMeshes) {
@@ -54,6 +66,7 @@ class LoadedMeshes(
             val chunk = meshes.getOrPut(mesh.position.chunkPosition) { Int2ObjectOpenHashMap() }
             revision++
             previous = chunk.put(mesh.position.y, mesh)
+            updateOwnership(mesh.position.chunkPosition, chunk, mesh)
 
             val visible = renderer.visibility.meshes
             previous?.let { visible -= it }
@@ -79,10 +92,12 @@ class LoadedMeshes(
                 this.meshes -= position.chunkPosition
             }
             revision++
+            updateOwnership(position.chunkPosition, meshes, mesh)
             return@locked mesh
         }
 
         renderer.visibility.meshes -= mesh
+        if (mesh.regionBacked) renderer.regionTerrain?.remove(mesh)
 
         renderer.unloadingQueue += mesh
         renderer.cache -= position
@@ -92,9 +107,11 @@ class LoadedMeshes(
         val meshes = lock.locked {
             val removed = meshes.remove(position) ?: return
             revision++
+            surfaceCoverage.remove(position)
             removed
         }
         meshes.values.forEach { renderer.visibility.meshes -= it }
+        meshes.values.forEach { if (it.regionBacked) renderer.regionTerrain?.remove(it) }
 
         renderer.unloadingQueue += meshes.values
         renderer.cache -= position
@@ -108,7 +125,9 @@ class LoadedMeshes(
         if (meshes.isNotEmpty()) {
             revision++
         }
+        surfaceCoverage.clear()
         meshes.clear()
+        renderer.regionTerrain?.clear()
     }
 
 
@@ -140,8 +159,14 @@ class LoadedMeshes(
      * chunks because terrain can still be queued or rebuilding at that point.
      */
     fun ownershipSnapshot(): NativeTerrainOwnershipSnapshot = lock.acquired {
-        NativeTerrainOwnershipSnapshot(revision, meshes.keys.toSet())
+        surfaceCoverage.snapshot().let { NativeTerrainOwnershipSnapshot(it.revision, it.chunks, it.lifecycle) }
     }
+
+    fun coverageRequested(position: ChunkPosition) = lock.locked { surfaceCoverage.requested(position) }
+
+    fun coverageBuilding(position: ChunkPosition) = lock.locked { surfaceCoverage.building(position) }
+
+    fun coverageUploadPending(position: ChunkPosition) = lock.locked { surfaceCoverage.uploadPending(position) }
 
     fun publishVisibility(snapshot: LoadedVisibilitySnapshot, meshes: VisibleMeshes): Boolean = lock.acquired {
         if (snapshot.revision != revision) {
@@ -151,64 +176,85 @@ class LoadedMeshes(
         true
     }
 
-    fun forEachLoaded(consumer: (ChunkMeshes) -> Unit) = lock.acquired {
-        for (column in meshes.values) {
-            for (mesh in column.values) {
-                consumer(mesh)
+    fun forEachLoaded(consumer: (ChunkMeshes) -> Unit) {
+        val snapshot = lock.acquired {
+            val snapshot = ArrayList<ChunkMeshes>()
+            for (column in meshes.values) {
+                snapshot.addAll(column.values)
             }
+            snapshot
+        }
+        for (mesh in snapshot) {
+            consumer(mesh)
         }
     }
 
     fun update() = lock.locked {
         renderer.meshingQueue.lock.lock()
-        var changed = false
+        try {
+            var changed = false
 
-        val iterator = this.meshes.iterator()
-        while (iterator.hasNext()) {
-            val (chunkPosition, meshes) = iterator.next()
+            val iterator = this.meshes.iterator()
+            while (iterator.hasNext()) {
+                val (chunkPosition, meshes) = iterator.next()
 
-            if (!renderer.visibility.isInViewDistance(chunkPosition)) {
-                iterator.remove()
-                changed = true
-                val values = meshes.values
-                val chunk = values.iterator().next().section.chunk // dirty hack
-
-                meshes.values.forEach { renderer.visibility.meshes -= it }
-                renderer.culledQueue += chunk
-                renderer.unloadingQueue += values
-                renderer.cache -= chunkPosition
-                continue
-            }
-
-            val sections = meshes.values.iterator()
-            while (sections.hasNext()) {
-                val mesh = sections.next() ?: continue
-
-                if (!renderer.visibility.isInViewDistance(mesh.position)) {
-                    sections.remove()
+                if (!renderer.visibility.isInViewDistance(chunkPosition)) {
+                    iterator.remove()
                     changed = true
-                    renderer.culledQueue += mesh.section
-                    renderer.visibility.meshes -= mesh
-                    renderer.unloadingQueue += mesh
+                    val values = meshes.values
+                    val chunk = values.iterator().next().section.chunk // dirty hack
+
+                    meshes.values.forEach { renderer.visibility.meshes -= it }
+                    meshes.values.forEach { if (it.regionBacked) renderer.regionTerrain?.remove(it) }
+                    renderer.culledQueue += chunk
+                    renderer.unloadingQueue += values
                     renderer.cache -= chunkPosition
+                    surfaceCoverage.remove(chunkPosition)
                     continue
                 }
 
-                val next = ChunkMeshDetails.update(mesh.details, mesh.position, renderer.visibility.sectionPosition) + renderer.mesher.details
+                val sections = meshes.values.iterator()
+                while (sections.hasNext()) {
+                    val mesh = sections.next() ?: continue
 
-                if (next == mesh.details) continue
+                    if (!renderer.visibility.isInViewDistance(mesh.position)) {
+                        sections.remove()
+                        changed = true
+                        renderer.culledQueue += mesh.section
+                        renderer.visibility.meshes -= mesh
+                        if (mesh.regionBacked) renderer.regionTerrain?.remove(mesh)
+                        renderer.unloadingQueue += mesh
+                        renderer.cache -= chunkPosition
+                        updateOwnership(chunkPosition, meshes, mesh)
+                        continue
+                    }
 
-                renderer.meshingQueue.unsafeAdd(mesh.section, ChunkMeshingCause.LEVEL_OF_DETAIL_UPDATE)
+                    val next = ChunkMeshDetails.update(mesh.details, mesh.position, renderer.visibility.sectionPosition) + renderer.mesher.details
+
+                    if (next == mesh.details) continue
+
+                    renderer.meshingQueue.unsafeAdd(mesh.section, ChunkMeshingCause.LEVEL_OF_DETAIL_UPDATE)
+                }
+
+                if (meshes.isEmpty()) {
+                    iterator.remove()
+                }
             }
-
-            if (meshes.isEmpty()) {
-                iterator.remove()
+            if (changed) {
+                revision++
             }
+            renderer.meshingQueue.sort()
+        } finally {
+            renderer.meshingQueue.lock.unlock()
         }
-        if (changed) {
-            revision++
-        }
-        renderer.meshingQueue.sort()
-        renderer.meshingQueue.lock.unlock()
+    }
+
+    private fun updateOwnership(
+        position: ChunkPosition,
+        uploaded: Int2ObjectOpenHashMap<ChunkMeshes>,
+        representative: ChunkMeshes,
+    ) {
+        val required = NearSurfaceCoverage.requiredSections(representative.section.chunk.light.heightmap)
+        surfaceCoverage.update(position, required, uploaded.keys.toSet())
     }
 }

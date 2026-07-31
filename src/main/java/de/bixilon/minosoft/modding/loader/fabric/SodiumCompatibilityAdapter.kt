@@ -16,6 +16,11 @@ import de.bixilon.minosoft.config.settings.SteppedConfigControl
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.data.world.World
 import de.bixilon.minosoft.debug.ClientDebugChannel
+import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
+import de.bixilon.minosoft.gui.rendering.terrain.BuiltInTerrainVertexLayout
+import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendDescriptor
+import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
+import de.bixilon.minosoft.gui.rendering.terrain.near.provider.TerrainProviderSelection
 import de.bixilon.minosoft.gui.rendering.tint.sampler.SamplingAlgorithms
 
 object SodiumCompatibilityAdapter : FabricCompatibilityAdapter {
@@ -36,7 +41,7 @@ object SodiumCompatibilityAdapter : FabricCompatibilityAdapter {
 
     override fun activate(probe: FabricModProbe, scope: FabricRegistrationScope) {
         require(supports(probe.metadata)) { "Unsupported Sodium artifact: ${probe.metadata.version}" }
-        val terrain = SodiumTerrainController()
+        val terrain = TerrainProviderSelection(TERRAIN_DESCRIPTOR)
         scope.own(terrain)
         scope.own(FabricRendererRegistry.register(id, SodiumRendererHookBuilder(terrain)))
         scope.own(ClientDebugChannel.register(SodiumDebugProvider(terrain)))
@@ -177,4 +182,11 @@ object SodiumCompatibilityAdapter : FabricCompatibilityAdapter {
         FANCY("Fancy"),
     }
 
+    internal val TERRAIN_DESCRIPTOR = TerrainBackendDescriptor(
+        owner = RenderOwnerId("minosoft:sodium-compatible-terrain"),
+        implementation = "sodium-0.5.8-adapter-minosoft-core",
+        materials = TerrainMaterialClass.entries.toSet(),
+        vertexLayout = BuiltInTerrainVertexLayout.VALUE,
+        supportsAuxiliaryViews = true,
+    )
 }

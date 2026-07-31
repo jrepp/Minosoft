@@ -19,6 +19,7 @@ import de.bixilon.minosoft.data.registries.fluid.Fluid
 import de.bixilon.minosoft.data.world.chunk.ChunkSection
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.data.world.positions.InSectionPosition
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
 
 object FluidCornerHeightUtil {
 
@@ -38,6 +39,25 @@ object FluidCornerHeightUtil {
         return 0.0f
     }
 
+    private fun TerrainBuildSnapshot.getFluidHeight(
+        fluid: Fluid,
+        position: InSectionPosition,
+        offset: BlockPosition,
+    ): Float {
+        val x = position.x + offset.x
+        val y = position.y + offset.y
+        val z = position.z + offset.z
+        if (fluid.matches(stateOrNull(x, y + 1, z))) return 1.0f
+
+        val state = stateOrNull(x, y, z) ?: return 0.0f
+        val height = fluid.getHeight(state)
+        if (height != 0.0f) return height
+        if (BlockStateFlags.FULL_OPAQUE in state.flags || BlockStateFlags.FULL_COLLISION in state.flags) {
+            return -1.0f
+        }
+        return 0.0f
+    }
+
     fun updateFluidHeights(section: ChunkSection, position: InSectionPosition, fluid: Fluid, heights: FloatArray) {
         heights[0] = section.getFluidHeight(fluid, position, BlockPosition(-1, 0, -1))
         heights[1] = section.getFluidHeight(fluid, position, BlockPosition(+0, 0, -1))
@@ -48,6 +68,24 @@ object FluidCornerHeightUtil {
         heights[6] = section.getFluidHeight(fluid, position, BlockPosition(-1, 0, +1))
         heights[7] = section.getFluidHeight(fluid, position, BlockPosition(+0, 0, +1))
         heights[8] = section.getFluidHeight(fluid, position, BlockPosition(+1, 0, +1))
+    }
+
+    fun updateFluidHeights(
+        snapshot: TerrainBuildSnapshot,
+        position: InSectionPosition,
+        fluid: Fluid,
+        heights: FloatArray,
+    ) {
+        require(heights.size >= 9) { "Fluid height workspace must contain at least nine entries" }
+        heights[0] = snapshot.getFluidHeight(fluid, position, BlockPosition(-1, 0, -1))
+        heights[1] = snapshot.getFluidHeight(fluid, position, BlockPosition(+0, 0, -1))
+        heights[2] = snapshot.getFluidHeight(fluid, position, BlockPosition(+1, 0, -1))
+        heights[3] = snapshot.getFluidHeight(fluid, position, BlockPosition(-1, 0, +0))
+        heights[4] = snapshot.getFluidHeight(fluid, position, BlockPosition(+0, 0, +0))
+        heights[5] = snapshot.getFluidHeight(fluid, position, BlockPosition(+1, 0, +0))
+        heights[6] = snapshot.getFluidHeight(fluid, position, BlockPosition(-1, 0, +1))
+        heights[7] = snapshot.getFluidHeight(fluid, position, BlockPosition(+0, 0, +1))
+        heights[8] = snapshot.getFluidHeight(fluid, position, BlockPosition(+1, 0, +1))
     }
 
     fun updateCornerHeights(heights: FloatArray, corners: FloatArray) {

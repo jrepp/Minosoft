@@ -24,6 +24,7 @@ import de.bixilon.minosoft.data.world.chunk.chunk.Chunk
 import de.bixilon.minosoft.data.world.chunk.light.types.LightLevel
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.gui.rendering.models.block.element.FaceVertexData
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
 import kotlin.math.roundToInt
 
 data class TerrainQuadLight(
@@ -39,17 +40,33 @@ data class TerrainQuadLight(
  * samples, and the diagonal sample. Partial and inset faces bilinearly
  * interpolate those corners instead of snapping to a full-cube result.
  */
-class SmoothTerrainLighting(
-    private val chunk: Chunk,
+class SmoothTerrainLighting private constructor(
+    private val lightAt: (BlockPosition) -> Int?,
+    private val opaqueAt: (BlockPosition) -> Boolean,
 ) {
+    constructor(chunk: Chunk) : this(
+        lightAt = { position ->
+            chunk.neighbours.traceChunk(position.chunkPosition - chunk.position)
+                ?.light?.get(position.inChunkPosition)?.index
+        },
+        opaqueAt = { position ->
+            chunk.neighbours.traceBlock(position)?.flags
+                ?.let { BlockStateFlags.FULL_OPAQUE in it } == true
+        },
+    )
+
+    constructor(snapshot: TerrainBuildSnapshot) : this(
+        lightAt = snapshot::lightOrNull,
+        opaqueAt = { position ->
+            snapshot.state(position)?.flags?.let { BlockStateFlags.FULL_OPAQUE in it } == true
+        },
+    )
+
     private fun sampleLight(position: BlockPosition, fallback: LightLevel): LightLevel {
-        val target = chunk.neighbours.traceChunk(position.chunkPosition - chunk.position) ?: return fallback
-        return target.light[position.inChunkPosition]
+        return lightAt(position)?.let { LightLevel(it.toByte()) } ?: fallback
     }
 
-    private fun isOpaque(position: BlockPosition): Boolean {
-        return chunk.neighbours.traceBlock(position)?.flags?.let { BlockStateFlags.FULL_OPAQUE in it } == true
-    }
+    private fun isOpaque(position: BlockPosition): Boolean = opaqueAt(position)
 
     private fun offset(position: BlockPosition, axis: Axes, amount: Int): BlockPosition = when (axis) {
         Axes.X -> position.with(x = position.x + amount)

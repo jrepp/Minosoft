@@ -20,18 +20,26 @@ package de.bixilon.minosoft.gui.rendering.terrain.runtime
 import de.bixilon.minosoft.data.registries.biomes.Biome
 import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.registries.blocks.state.BlockStateFlags
+import de.bixilon.minosoft.data.registries.blocks.types.entity.BlockWithEntity
 import de.bixilon.minosoft.data.world.chunk.ChunkSection
 import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.data.world.chunk.chunk.Chunk
+import de.bixilon.minosoft.data.world.biome.source.BiomeSourceFlags
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
+import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.data.world.positions.InChunkPosition
 import de.bixilon.minosoft.data.world.positions.InSectionPosition
 import de.bixilon.minosoft.data.world.positions.SectionPosition
+import de.bixilon.minosoft.protocol.network.session.play.PlaySession
+import java.util.Collections
 
 data class TerrainBlockEntityMetadata(
     val position: InSectionPosition,
     val blockIdentifier: String,
+    val nbt: Map<String, Any>,
 )
+
+class TerrainSnapshotCaptureException(message: String) : IllegalStateException(message)
 
 /**
  * Detached, bounded and version-normalized input captured under a stable chunk
@@ -44,6 +52,9 @@ class TerrainBuildSnapshot private constructor(
     val halo: Int,
     val centerRevision: Long,
     val modelRevision: Long,
+    val completeHorizontalNeighbours: Boolean,
+    val horizontalBiomeSampling: Boolean,
+    val verticalBiomeSampling: Boolean,
     states: Array<BlockState?>,
     light: ByteArray,
     biomes: Array<Biome?>,
@@ -51,11 +62,19 @@ class TerrainBuildSnapshot private constructor(
     entities: List<TerrainBlockEntityMetadata>,
 ) {
     private val width = ChunkSize.SECTION_LENGTH + halo * 2
-    private val states = states.copyOf()
-    private val light = light.copyOf()
-    private val biomes = biomes.copyOf()
-    private val opaque = opaque.copyOf()
-    val entities = entities.toList()
+    private val origin = BlockPosition.of(position)
+    // The constructor is private and receives fresh capture-owned arrays.
+    private val states = states
+    private val light = light
+    private val biomes = biomes
+    private val opaque = opaque
+    val entities: List<TerrainBlockEntityMetadata> = java.util.List.copyOf(entities)
+    private val entitiesByPosition = this.entities.associateBy { it.position }
+    val blockCount = opaque.indices.count { states[centerIndex(InSectionPosition(it))] != null }
+    val fluidCount = opaque.indices.count {
+        states[centerIndex(InSectionPosition(it))]?.flags?.contains(BlockStateFlags.FLUID) == true
+    }
+    val isEmpty: Boolean get() = blockCount == 0 && entities.isEmpty()
 
     init {
         val volume = Math.multiplyExact(Math.multiplyExact(width, width), width)
@@ -73,6 +92,50 @@ class TerrainBuildSnapshot private constructor(
 
     fun isOpaque(position: InSectionPosition): Boolean = opaque[position.index]
 
+    fun isOpaque(x: Int, y: Int, z: Int): Boolean =
+        stateOrNull(x, y, z)?.flags?.contains(BlockStateFlags.FULL_OPAQUE) == true
+
+    fun hasBlockEntity(position: InSectionPosition): Boolean = position in entitiesByPosition
+
+    fun blockEntityMetadata(position: InSectionPosition): TerrainBlockEntityMetadata? = entitiesByPosition[position]
+
+    /** Creates a candidate-local entity from detached state for entity-dependent block models. */
+    fun createBlockEntity(session: PlaySession, position: InSectionPosition): de.bixilon.minosoft.data.entities.block.BlockEntity? {
+        val metadata = entitiesByPosition[position] ?: return null
+        val state = state(position.x, position.y, position.z) ?: return null
+        if (state.block.identifier.toString() != metadata.blockIdentifier) return null
+        val block = state.block as? BlockWithEntity<*> ?: return null
+        val entity = block.createBlockEntity(session, origin + position, state) ?: return null
+        entity.updateNBT(metadata.nbt)
+        return entity
+    }
+
+    fun state(position: BlockPosition): BlockState? {
+        return stateOrNull(position.x - origin.x, position.y - origin.y, position.z - origin.z)
+    }
+
+    fun light(position: BlockPosition): Int {
+        return lightOrZero(position.x - origin.x, position.y - origin.y, position.z - origin.z)
+    }
+
+    fun biome(position: BlockPosition): Biome? {
+        return biomeOrNull(position.x - origin.x, position.y - origin.y, position.z - origin.z)
+    }
+
+    fun stateOrNull(x: Int, y: Int, z: Int): BlockState? =
+        indexOrNull(x, y, z)?.let(states::get)
+
+    fun lightOrZero(x: Int, y: Int, z: Int): Int =
+        indexOrNull(x, y, z)?.let { light[it].toInt() and 0xFF } ?: 0
+
+    fun lightOrNull(position: BlockPosition): Int? {
+        return indexOrNull(position.x - origin.x, position.y - origin.y, position.z - origin.z)
+            ?.let { light[it].toInt() and 0xFF }
+    }
+
+    fun biomeOrNull(x: Int, y: Int, z: Int): Biome? =
+        indexOrNull(x, y, z)?.let(biomes::get)
+
     fun connectivity(): TerrainDirectionalVisibility = TerrainConnectivityBuilder.build(opaque)
 
     private fun index(x: Int, y: Int, z: Int): Int {
@@ -85,23 +148,36 @@ class TerrainBuildSnapshot private constructor(
         return (translatedY * width + translatedZ) * width + translatedX
     }
 
+    private fun indexOrNull(x: Int, y: Int, z: Int): Int? {
+        if (x !in -halo until ChunkSize.SECTION_LENGTH + halo) return null
+        if (y !in -halo until ChunkSize.SECTION_LENGTH + halo) return null
+        if (z !in -halo until ChunkSize.SECTION_LENGTH + halo) return null
+        return index(x, y, z)
+    }
+
+    private fun centerIndex(position: InSectionPosition): Int = index(position.x, position.y, position.z)
+
     companion object {
         private const val MAX_CAPTURE_ATTEMPTS = 3
 
         fun capture(section: ChunkSection, halo: Int = 1): TerrainBuildSnapshot {
-            require(halo in 1 until ChunkSize.SECTION_LENGTH) {
-                "Terrain snapshot halo must be between 1 and ${ChunkSize.SECTION_LENGTH - 1}"
+            require(halo in 1..ChunkSize.SECTION_LENGTH) {
+                "Terrain snapshot halo must be between 1 and ${ChunkSize.SECTION_LENGTH}"
             }
             repeat(MAX_CAPTURE_ATTEMPTS) {
                 captureOnce(section, halo)?.let { return it }
             }
-            throw IllegalStateException("Terrain model changed repeatedly during snapshot capture")
+            throw TerrainSnapshotCaptureException("Terrain model changed repeatedly during snapshot capture")
         }
 
         private fun captureOnce(section: ChunkSection, halo: Int): TerrainBuildSnapshot? {
             val chunks = neighbourChunks(section)
             chunks.forEach { it.lock.lock() }
             try {
+                val activeChunks = currentNeighbourChunks(section)
+                if (activeChunks.size != chunks.size || activeChunks.indices.any { activeChunks[it] !== chunks[it] }) {
+                    return null
+                }
                 val sections = relevantSections(section, chunks, halo)
                 val before = sections.associateWith { it.terrainRevision.get() }
                 val width = ChunkSize.SECTION_LENGTH + halo * 2
@@ -133,7 +209,7 @@ class TerrainBuildSnapshot private constructor(
                                 )
                                 val targetSection = targetChunk[inChunk.sectionHeight]
                                 states[index] = targetSection?.blocks?.get(inChunk.inSectionPosition)
-                                light[index] = targetSection?.light?.get(inChunk.inSectionPosition)?.raw ?: 0
+                                light[index] = targetChunk.light[inChunk].raw
                                 biomes[index] = accessor[targetChunk, inChunk]
                             }
                             index++
@@ -153,14 +229,23 @@ class TerrainBuildSnapshot private constructor(
                     opaque[cell] = state != null && BlockStateFlags.FULL_OPAQUE in state.flags
                 }
                 val entities = ArrayList<TerrainBlockEntityMetadata>(section.entities.count)
-                section.entities.forEach { position, entity ->
-                    entities += TerrainBlockEntityMetadata(position, entity.state.block.identifier.toString())
+                for (cell in 0 until ChunkSize.BLOCKS_PER_SECTION) {
+                    val position = InSectionPosition(cell)
+                    val entity = section.entities[position] ?: continue
+                    entities += TerrainBlockEntityMetadata(
+                        position,
+                        entity.state.block.identifier.toString(),
+                        detachedNbt(entity.toNbt()),
+                    )
                 }
                 return TerrainBuildSnapshot(
                     SectionPosition.of(section),
                     halo,
                     before[section] ?: section.terrainRevision.get(),
                     fingerprint(before),
+                    section.chunk.neighbours.complete,
+                    section.chunk.biomeSource?.flags?.contains(BiomeSourceFlags.HORIZONTAL) == true,
+                    section.chunk.biomeSource?.flags?.contains(BiomeSourceFlags.VERTICAL) == true,
                     states,
                     light,
                     biomes,
@@ -172,16 +257,46 @@ class TerrainBuildSnapshot private constructor(
             }
         }
 
+        private fun detachedNbt(source: Map<String, Any>): Map<String, Any> {
+            val copy = LinkedHashMap<String, Any>(source.size)
+            for ((key, value) in source) copy[key] = detachedValue(value)
+            return Collections.unmodifiableMap(copy)
+        }
+
+        private fun detachedValue(value: Any): Any = when (value) {
+            is Map<*, *> -> {
+                val copy = LinkedHashMap<String, Any>(value.size)
+                for ((key, entry) in value) {
+                    if (entry != null) copy[key.toString()] = detachedValue(entry)
+                }
+                Collections.unmodifiableMap(copy)
+            }
+            is List<*> -> Collections.unmodifiableList(value.mapNotNull { it?.let(::detachedValue) })
+            is ByteArray -> value.copyOf()
+            is ShortArray -> value.copyOf()
+            is IntArray -> value.copyOf()
+            is LongArray -> value.copyOf()
+            is FloatArray -> value.copyOf()
+            is DoubleArray -> value.copyOf()
+            is BooleanArray -> value.copyOf()
+            is CharArray -> value.copyOf()
+            is Array<*> -> Collections.unmodifiableList(value.mapNotNull { it?.let(::detachedValue) })
+            else -> value
+        }
+
         private fun neighbourChunks(section: ChunkSection): List<Chunk> {
             section.chunk.lock.lock()
             return try {
-                (listOf(section.chunk) + section.chunk.neighbours.array.filterNotNull())
-                    .distinctBy { it.position }
-                    .sortedWith(compareBy<Chunk> { it.position.x }.thenBy { it.position.z })
+                currentNeighbourChunks(section)
             } finally {
                 section.chunk.lock.unlock()
             }
         }
+
+        private fun currentNeighbourChunks(section: ChunkSection): List<Chunk> =
+            (listOf(section.chunk) + section.chunk.neighbours.array.filterNotNull())
+                .distinctBy { it.position }
+                .sortedWith(compareBy<Chunk> { it.position.x }.thenBy { it.position.z })
 
         private fun relevantSections(
             center: ChunkSection,

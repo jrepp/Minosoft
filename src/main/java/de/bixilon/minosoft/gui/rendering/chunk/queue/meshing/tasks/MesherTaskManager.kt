@@ -44,7 +44,7 @@ class MesherTaskManager(
         for (task in tasks) {
             task.cancel()
             if (requeue) {
-                renderer.invalidate(task.section)
+                renderer.invalidate(task.section, de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause.TASK_RETRY)
             }
         }
     }
@@ -55,7 +55,7 @@ class MesherTaskManager(
 
             task.cancel()
             if (requeue) {
-                renderer.invalidate(task.section)
+                renderer.invalidate(task.section, de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause.TASK_RETRY)
             }
         }
     }

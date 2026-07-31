@@ -31,6 +31,7 @@ import de.bixilon.minosoft.data.world.chunk.update.chunk.ChunkUnloadUpdate
 import de.bixilon.minosoft.data.world.chunk.update.chunk.NeighbourSetUpdate
 import de.bixilon.minosoft.gui.rendering.RenderingStates
 import de.bixilon.minosoft.gui.rendering.chunk.ChunkRenderer
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 import de.bixilon.minosoft.gui.rendering.util.VecUtil.inSectionHeight
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
 import de.bixilon.minosoft.protocol.network.session.play.PlaySessionStates
@@ -76,23 +77,23 @@ object ChunkRendererChangeListener {
         val neighbours = update.chunk.neighbours
         val sectionHeight = update.position.sectionHeight
 
-        invalidate(update.chunk, sectionHeight)
+        invalidate(update.chunk, sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
         val inPosition = update.position.inSectionPosition
 
         if (inPosition.y == 0) {
-            invalidate(update.chunk, sectionHeight - 1)
+            invalidate(update.chunk, sectionHeight - 1, TerrainBuildCause.BLOCK_CHANGE)
         } else if (inPosition.y == ChunkSize.SECTION_MAX_Y) {
-            invalidate(update.chunk, sectionHeight + 1)
+            invalidate(update.chunk, sectionHeight + 1, TerrainBuildCause.BLOCK_CHANGE)
         }
         if (inPosition.z == 0) {
-            invalidate(neighbours[Directions.NORTH], sectionHeight)
+            invalidate(neighbours[Directions.NORTH], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
         } else if (inPosition.z == ChunkSize.SECTION_MAX_Z) {
-            invalidate(neighbours[Directions.SOUTH], sectionHeight)
+            invalidate(neighbours[Directions.SOUTH], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
         }
         if (inPosition.x == 0) {
-            invalidate(neighbours[Directions.WEST], sectionHeight)
+            invalidate(neighbours[Directions.WEST], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
         } else if (inPosition.x == ChunkSize.SECTION_MAX_X) {
-            invalidate(neighbours[Directions.EAST], sectionHeight)
+            invalidate(neighbours[Directions.EAST], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
         }
     }
 
@@ -130,37 +131,37 @@ object ChunkRendererChangeListener {
 
         val neighbours = update.chunk.neighbours
         for ((sectionHeight, neighbourUpdates) in sectionHeights) {
-            invalidate(update.chunk, sectionHeight)
+            invalidate(update.chunk, sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
 
             if (neighbourUpdates[0]) {
-                invalidate(update.chunk, sectionHeight - 1)
+                invalidate(update.chunk, sectionHeight - 1, TerrainBuildCause.BLOCK_CHANGE)
             }
             if (neighbourUpdates[1]) {
-                invalidate(update.chunk, sectionHeight + 1)
+                invalidate(update.chunk, sectionHeight + 1, TerrainBuildCause.BLOCK_CHANGE)
             }
             if (neighbourUpdates[2]) {
-                invalidate(neighbours[Directions.NORTH], sectionHeight)
+                invalidate(neighbours[Directions.NORTH], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
             }
             if (neighbourUpdates[3]) {
-                invalidate(neighbours[Directions.SOUTH], sectionHeight)
+                invalidate(neighbours[Directions.SOUTH], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
             }
             if (neighbourUpdates[4]) {
-                invalidate(neighbours[Directions.WEST], sectionHeight)
+                invalidate(neighbours[Directions.WEST], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
             }
             if (neighbourUpdates[5]) {
-                invalidate(neighbours[Directions.EAST], sectionHeight)
+                invalidate(neighbours[Directions.EAST], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
             }
         }
     }
 
     private fun ChunkRenderer.handle(update: BlockEntityDataUpdate) {
-        invalidate(update.chunk, update.position.sectionHeight)
+        invalidate(update.chunk, update.position.sectionHeight, TerrainBuildCause.BLOCK_ENTITY_CHANGE)
     }
 
     private fun ChunkRenderer.handle(update: ChunkLightUpdate) {
         if (update.cause == ChunkLightUpdate.Causes.BLOCK_CHANGE) return // change is already covered
         // TODO: Enqueue neighbour sections (light level from cullface)
-        invalidate(update.section)
+        invalidate(update.section, TerrainBuildCause.LIGHT_CHANGE)
     }
 
 
@@ -169,12 +170,12 @@ object ChunkRendererChangeListener {
     }
 
     private fun ChunkRenderer.handle(update: NeighbourSetUpdate) {
-        invalidate(update.chunk)
+        invalidate(update.chunk, TerrainBuildCause.NEIGHBOUR_CHANGE)
     }
 
     private fun ChunkRenderer.handle(update: ChunkDataUpdate) {
         for (section in update.sections) {
-            invalidate(section)
+            invalidate(section, TerrainBuildCause.CHUNK_DATA)
         }
     }
 

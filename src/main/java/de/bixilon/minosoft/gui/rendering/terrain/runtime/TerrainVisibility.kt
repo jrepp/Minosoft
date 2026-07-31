@@ -31,6 +31,8 @@ import java.util.ArrayDeque
  */
 @JvmInline
 value class TerrainDirectionalVisibility private constructor(private val bits: Long) {
+    val encodedBits: Long get() = bits
+
     fun connects(from: Directions, to: Directions): Boolean {
         if (from == to) return true
         return bits and bit(from, to) != 0L

@@ -48,7 +48,9 @@ import de.bixilon.minosoft.gui.rendering.light.terrain.SmoothTerrainLighting
 import de.bixilon.minosoft.gui.rendering.models.block.state.render.WorldRenderProps
 import de.bixilon.minosoft.gui.rendering.tint.sampler.SingleTintSampler
 import de.bixilon.minosoft.gui.rendering.tint.sampler.TerrainTintCache
-import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainCancellationToken
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainSnapshotTintSampler
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainCancellationToken
 import java.util.*
 
 class SolidSectionMesher(
@@ -72,6 +74,126 @@ class SolidSectionMesher(
 
             && (if (position.x > 0) blocks.fullOpaque[position.minusX().index] else (neighbours[Directions.O_WEST]?.blocks?.fullOpaque?.get(position.with(x = ChunkSize.SECTION_MAX_X).index) == true))
             && (if (position.x < ChunkSize.SECTION_MAX_X) blocks.fullOpaque[position.plusX().index] else (neighbours[Directions.O_EAST]?.blocks?.fullOpaque?.get(position.with(x = 0).index) == true))
+    }
+
+    private fun areAllNeighboursFullOpaque(
+        position: InSectionPosition,
+        snapshot: TerrainBuildSnapshot,
+    ): Boolean = Directions.VALUES.all { direction ->
+        snapshot.isOpaque(
+            position.x + direction.x,
+            position.y + direction.y,
+            position.z + direction.z,
+        )
+    }
+
+    /**
+     * Production detached-input path. All block, light, biome, opacity and
+     * block-entity discovery reads are served by [snapshot]. Concrete block
+     * entity renderers are attached only after the build identity is accepted
+     * on the render thread.
+     */
+    fun mesh(
+        snapshot: TerrainBuildSnapshot,
+        mesh: ChunkMeshesBuilder,
+        cancellation: TerrainCancellationToken = TerrainCancellationToken(),
+    ) {
+        val details = mesh.details
+        val random = if (profile.antiMoirePattern && ChunkMeshDetails.ANTI_MOIRE_PATTERN in details) Random(0L) else null
+        val biomeSampling = ChunkMeshDetails.BIOME_SAMPLING in details
+        val blending = context.session.profiles.rendering.biome.blending
+        val sampler = TerrainSnapshotTintSampler(
+            snapshot,
+            enabled = biomeSampling && blending.enabled,
+            algorithm = blending.algorithm,
+            radius = if (biomeSampling) blending.radius else 0,
+        )
+        var tints = RGBArray(1)
+        val neighbourBlocks: Array<BlockState?> = arrayOfNulls(Directions.SIZE)
+        val light = ByteArray(Directions.SIZE + 1)
+        val cameraOffset = context.camera.offset.offset
+        val sectionOrigin = BlockPosition.of(snapshot.position)
+        val floatOffset = MVec3f()
+        val useAmbientOcclusion = ambientOcclusion && ChunkMeshDetails.AMBIENT_OCCLUSION in details
+        val ao = if (useAmbientOcclusion) AmbientOcclusion(snapshot) else null
+        val smoothLight = if (useAmbientOcclusion) SmoothTerrainLighting(snapshot) else null
+        val tintCache = if (biomeSampling) TerrainTintCache(snapshot, sampler) else null
+        val props = WorldRenderProps(
+            floatOffset.unsafe,
+            mesh,
+            random,
+            neighbourBlocks,
+            light,
+            details,
+            ao,
+            smoothLight,
+            tintCache,
+        )
+        val entityPositions = ArrayList<InSectionPosition>(snapshot.entities.size)
+
+        for (y in 0 until ChunkSize.SECTION_LENGTH) {
+            if (cancellation.isCancelled) return
+            for (x in 0 until ChunkSize.SECTION_LENGTH) {
+                for (z in 0 until ChunkSize.SECTION_LENGTH) {
+                    if (cancellation.isCancelled) return
+                    val inSection = InSectionPosition(x, y, z)
+                    val state = snapshot.state(x, y, z) ?: continue
+                    if (state.block is FluidBlock) continue
+                    if (ChunkMeshDetails.NON_FULL_BLOCKS !in details && BlockStateFlags.FULL_OUTLINE !in state.flags) continue
+                    if (ChunkMeshDetails.MINOR_VISUAL_IMPACT !in details && BlockStateFlags.MINOR_VISUAL_IMPACT in state.flags) continue
+                    if (ChunkMeshDetails.CULL_FULL_OPAQUE in details && areAllNeighboursFullOpaque(inSection, snapshot)) continue
+
+                    val model = state.block.model ?: state.model
+                    val hasBlockEntity = ChunkMeshDetails.ENTITIES in details && snapshot.hasBlockEntity(inSection)
+                    if (model == null && !hasBlockEntity) continue
+
+                    val position = sectionOrigin + inSection
+                    floatOffset.x = (position.x - cameraOffset.x).toFloat()
+                    floatOffset.y = (position.y - cameraOffset.y).toFloat()
+                    floatOffset.z = (position.z - cameraOffset.z).toFloat()
+                    mesh.material(
+                        state,
+                        floatOffset.x + 0.5f,
+                        floatOffset.y + 0.5f,
+                        floatOffset.z + 0.5f,
+                    )
+
+                    for (direction in Directions.VALUES) {
+                        neighbourBlocks[direction.ordinal] = snapshot.stateOrNull(
+                            x + direction.x,
+                            y + direction.y,
+                            z + direction.z,
+                        )
+                        light[direction.ordinal] = snapshot.lightOrZero(
+                            x + direction.x,
+                            y + direction.y,
+                            z + direction.z,
+                        ).toByte()
+                    }
+                    light[SELF_LIGHT_INDEX] = snapshot.light(x, y, z).toByte()
+
+                    if (ChunkMeshDetails.RANDOM_OFFSET in details && BlockStateFlags.OFFSET in state.flags && state.block is OffsetBlock) {
+                        val randomOffset = state.block.getModelOffset(position)
+                        floatOffset.x += randomOffset.x
+                        floatOffset.y += randomOffset.y
+                        floatOffset.z += randomOffset.z
+                    }
+
+                    ao?.clear()
+                    val providedTints = sampler.getBlockTint(state, position, tints)
+                    if (providedTints != null) tints = providedTints
+                    val entity = if (hasBlockEntity && model != null) {
+                        snapshot.createBlockEntity(context.session, inSection)
+                    } else {
+                        null
+                    }
+                    val renderedModel = model?.render(props, position, state, entity, providedTints) == true
+                    if (hasBlockEntity) entityPositions += inSection
+                    if (renderedModel || hasBlockEntity) mesh.addBlock(x, y, z)
+                }
+            }
+        }
+        mesh.entityPositions = entityPositions
     }
 
     fun mesh(section: ChunkSection, cache: ChunkMeshCache, neighbourChunks: ChunkNeighbours, neighbours: Array<ChunkSection?>, mesh: ChunkMeshesBuilder, cancellation: TerrainCancellationToken = TerrainCancellationToken()) {

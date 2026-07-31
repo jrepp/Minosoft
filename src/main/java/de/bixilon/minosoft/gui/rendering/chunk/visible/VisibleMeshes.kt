@@ -38,6 +38,7 @@ class VisibleMeshes(
         ArrayList(previous?.meshes?.getOrNull(ordinal)?.size ?: defaultCapacity)
     }
     val entities: ArrayList<BlockEntityRenderer> = ArrayList(previous?.entities?.size ?: 128)
+    val sections: ArrayList<ChunkMeshes> = ArrayList(previous?.sections?.size ?: 128)
 
     val sizeString: String
         get() = "${meshes.joinToString("|") { it.size.format().legacy }}|${entities.size.format()}"
@@ -48,10 +49,14 @@ class VisibleMeshes(
     private fun add(mesh: ChunkMeshes, frustum: FrustumResults) {
         mesh.update(camera, frustum)
 
-        mesh.meshes.forEach { type, mesh ->
-            if (mesh.occlusion == ChunkMesh.OcclusionStates.INVISIBLE) return@forEach
+        if (mesh.regionBacked) {
+            sections += mesh
+        } else {
+            mesh.meshes.forEach { type, mesh ->
+                if (mesh.occlusion == ChunkMesh.OcclusionStates.INVISIBLE) return@forEach
 
-            this.meshes[type.ordinal] += mesh
+                this.meshes[type.ordinal] += mesh
+            }
         }
 
         mesh.entities?.let { entities += it }
@@ -72,8 +77,12 @@ class VisibleMeshes(
     }
 
     operator fun minusAssign(mesh: ChunkMeshes): Unit = lock.locked {
-        mesh.meshes.forEach { type, mesh ->
-            this.meshes[type.ordinal] -= mesh
+        if (mesh.regionBacked) {
+            sections -= mesh
+        } else {
+            mesh.meshes.forEach { type, mesh ->
+                this.meshes[type.ordinal] -= mesh
+            }
         }
         mesh.entities?.let { entities -= it }
 
@@ -82,6 +91,7 @@ class VisibleMeshes(
 
     fun clear() = lock.locked {
         this.meshes.forEach { it.clear() }
+        sections.clear()
         entities.clear()
 
         visibility.invalidate(VisibilityGraphInvalidReason.MESH_UPDATE)

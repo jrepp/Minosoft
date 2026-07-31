@@ -27,12 +27,16 @@ import de.bixilon.minosoft.data.world.chunk.ChunkSection
 import de.bixilon.minosoft.data.world.chunk.chunk.Chunk
 import de.bixilon.minosoft.data.world.chunk.light.section.ChunkLight
 import de.bixilon.minosoft.data.world.container.block.BlockSectionDataProvider
+import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.data.world.positions.InSectionPosition
 import de.bixilon.minosoft.gui.rendering.chunk.mesher.fluid.FluidCornerHeightUtil.updateCornerHeights
 import de.bixilon.minosoft.gui.rendering.chunk.mesher.fluid.FluidCornerHeightUtil.updateFluidHeights
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
+import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil
 import de.bixilon.minosoft.test.IT
 import de.bixilon.minosoft.test.ITUtil.allocate
 import org.testng.Assert.assertEquals
+import org.testng.Assert.assertFalse
 import org.testng.annotations.Test
 
 @Test(groups = ["mesher"], dependsOnGroups = ["block", "fluid"])
@@ -118,6 +122,26 @@ class FluidCornerHeightUtilTest {
 
         val corners = section.cornerHeight()
         assertEquals(corners, floatArrayOf(1.0f, 1.0f, 1.0f, 1.0f))
+    }
+
+    fun `detached fluid heights do not observe later world mutation`() {
+        val session = SessionTestUtil.createSession(worldSize = 2)
+        val origin = BlockPosition(1, 0, 1)
+        session.world[origin] = water
+        val section = requireNotNull(session.world.chunks[0, 0]?.sections?.get(0))
+        val snapshot = TerrainBuildSnapshot.capture(section)
+        val position = origin.inSectionPosition
+        val before = FloatArray(9)
+        updateFluidHeights(snapshot, position, fluid, before)
+
+        session.world[origin.plusY()] = water
+        val after = FloatArray(9)
+        updateFluidHeights(snapshot, position, fluid, after)
+        val live = FloatArray(9)
+        updateFluidHeights(section, position, fluid, live)
+
+        assertEquals(after, before)
+        assertFalse(live.contentEquals(before))
     }
 
     fun `water next to level 2 south`() {

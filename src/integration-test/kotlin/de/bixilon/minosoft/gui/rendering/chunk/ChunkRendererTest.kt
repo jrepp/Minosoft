@@ -63,6 +63,7 @@ import de.bixilon.minosoft.gui.rendering.terrain.BuiltInTerrainVertexLayout
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendDescriptor
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainProductionPhase
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 import de.bixilon.minosoft.gui.rendering.tint.TintManager
 import de.bixilon.minosoft.modding.event.master.EventMaster
 import de.bixilon.minosoft.physics.entities.living.player.PlayerPhysics
@@ -84,6 +85,21 @@ class ChunkRendererTest {
 
 
     private val OCCLUSION = WorldOcclusionManager::class.java.getFieldOrNull("graph")!!.field
+
+    fun `identical in-flight terrain inputs are suppressed by cause`() {
+        val renderer = create()
+        val chunk = renderer.create(ChunkPosition(2, 2), true, true)
+        val section = chunk.sections.create(1)!!.apply { blocks[1, 2, 3] = TestBlockStates.MODEL1 }
+
+        renderer.invalidate(section, TerrainBuildCause.BLOCK_CHANGE)
+        renderer.meshingQueue.add(section, TerrainBuildCause.LEVEL_OF_DETAIL_UPDATE)
+
+        val snapshot = renderer.terrainPerformance.snapshot()
+        assert(snapshot.requestedByCause.getValue(TerrainBuildCause.BLOCK_CHANGE) == 1L)
+        assert(snapshot.requestedByCause.getValue(TerrainBuildCause.LEVEL_OF_DETAIL_UPDATE) == 1L)
+        assert(snapshot.suppressedByCause.getValue(TerrainBuildCause.LEVEL_OF_DETAIL_UPDATE) == 1L)
+        assert(renderer.meshingQueue.size == 1)
+    }
 
     private fun ChunkRenderer.create(position: ChunkPosition, visible: Boolean, neighbours: Boolean): Chunk {
         val chunk = world.chunks.update(position, ChunkData(), true)

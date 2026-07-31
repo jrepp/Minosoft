@@ -16,6 +16,8 @@ import de.bixilon.minosoft.data.world.chunk.light.types.LightLevel
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.data.world.positions.InSectionPosition
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
+import org.testng.Assert.assertFalse
 import org.testng.Assert.assertNotEquals
 import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
@@ -62,6 +64,43 @@ class SmoothTerrainLightingTest {
         val inset = pipeline.calculate(BlockPosition(8, 8, 8), Directions.UP, INSET_TOP, fallback.index, false)
 
         assertTrue(LightLevel(inset.light[0].toByte()).block > LightLevel(boundary.light[0].toByte()).block)
+    }
+
+    @Test
+    fun `detached snapshot lighting does not observe later section mutation`() {
+        val chunk = LightTestingUtil.createChunkWithNeighbours()
+        val section = requireNotNull(chunk.sections.create(0, light = false))
+        val sampled = InSectionPosition(9, 9, 9)
+        section.light.light[sampled] = LightLevel(block = 13, sky = 0)
+        val snapshot = TerrainBuildSnapshot.capture(section)
+        val position = BlockPosition(8, 8, 8)
+
+        val before = SmoothTerrainLighting(snapshot).calculate(
+            position,
+            Directions.UP,
+            WATER_TOP,
+            LightLevel.EMPTY.index,
+            ambientOcclusion = false,
+        )
+        section.light.light[sampled] = LightLevel.EMPTY
+        val after = SmoothTerrainLighting(snapshot).calculate(
+            position,
+            Directions.UP,
+            WATER_TOP,
+            LightLevel.EMPTY.index,
+            ambientOcclusion = false,
+        )
+
+        assertTrue(after.light.contentEquals(before.light))
+        assertTrue(after.brightness.contentEquals(before.brightness))
+        val current = SmoothTerrainLighting(chunk).calculate(
+            position,
+            Directions.UP,
+            WATER_TOP,
+            LightLevel.EMPTY.index,
+            ambientOcclusion = false,
+        )
+        assertFalse(current.light.contentEquals(before.light))
     }
 
     private companion object {

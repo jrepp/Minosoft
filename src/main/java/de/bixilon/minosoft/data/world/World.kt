@@ -83,6 +83,10 @@ class World(
     var blockRevision = 0
         internal set
 
+    @Volatile
+    var terrainEpoch: Long = 0L
+        private set
+
 
     operator fun get(position: BlockPosition): BlockState? {
         return chunks[position.chunkPosition]?.get(position.inChunkPosition)
@@ -97,6 +101,7 @@ class World(
         val cleared: Int
         lock.lock()
         try {
+            terrainEpoch = Math.incrementExact(terrainEpoch)
             cleared = chunks.clear()
             time = WorldTime()
             weather = WorldWeather.SUNNY

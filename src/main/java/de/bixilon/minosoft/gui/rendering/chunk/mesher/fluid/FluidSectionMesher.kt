@@ -30,7 +30,7 @@ import de.bixilon.minosoft.data.registries.fluid.Fluid
 import de.bixilon.minosoft.data.registries.fluid.fluids.WaterFluid
 import de.bixilon.minosoft.data.registries.fluid.fluids.WaterFluid.Companion.isWaterlogged
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor
-import de.bixilon.minosoft.data.world.chunk.ChunkSection
+import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.data.world.chunk.light.types.LightLevel
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.data.world.positions.InSectionPosition
@@ -49,7 +49,9 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTextur
 import de.bixilon.minosoft.gui.rendering.tint.TintUtil
 import de.bixilon.minosoft.gui.rendering.tint.sampler.SingleTintSampler
 import de.bixilon.minosoft.gui.rendering.tint.sampler.TerrainTintCache
-import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainCancellationToken
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainSnapshotTintSampler
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainCancellationToken
 import de.bixilon.minosoft.gui.rendering.util.mesh.builder.quad.QuadConsumer.Companion.iterate
 import de.bixilon.minosoft.gui.rendering.util.mesh.uv.PackedUV
 import de.bixilon.minosoft.gui.rendering.util.mesh.uv.array.PackedUVArray
@@ -234,12 +236,11 @@ class FluidSectionMesher(
         addSmoothQuad(mesh, offset, positions, transformed, texture, position, direction, light, tint, shade, smoothLight, tintCache, fluid, applyAo, true, backface)
     }
 
-    fun mesh(section: ChunkSection, builder: ChunkMeshesBuilder, cancellation: TerrainCancellationToken = TerrainCancellationToken()) {
-        val blocks = section.blocks
-        val chunk = section.chunk
-
-        context.camera.offset.offset
-
+    fun mesh(
+        snapshot: TerrainBuildSnapshot,
+        builder: ChunkMeshesBuilder,
+        cancellation: TerrainCancellationToken = TerrainCancellationToken(),
+    ) {
         val cameraOffset = context.camera.offset.offset
 
 
@@ -250,18 +251,25 @@ class FluidSectionMesher(
         val positions = FloatArray(4 * Vec3f.LENGTH)
         val offsetPosition = MVec3f()
 
-        val sampler = if (ChunkMeshDetails.BIOME_SAMPLING in builder.details) context.tints.createSampler() else SingleTintSampler
-        val tintCache = if (ChunkMeshDetails.BIOME_SAMPLING in builder.details) TerrainTintCache(chunk, sampler) else null
-        val smoothLight = SmoothTerrainLighting(chunk)
+        val biomeSampling = ChunkMeshDetails.BIOME_SAMPLING in builder.details
+        val blending = context.session.profiles.rendering.biome.blending
+        val sampler = TerrainSnapshotTintSampler(
+            snapshot,
+            enabled = biomeSampling && blending.enabled,
+            algorithm = blending.algorithm,
+            radius = if (biomeSampling) blending.radius else 0,
+        )
+        val tintCache = if (biomeSampling) TerrainTintCache(snapshot, sampler) else null
+        val smoothLight = SmoothTerrainLighting(snapshot)
         val applyAo = ambientOcclusion && ChunkMeshDetails.AMBIENT_OCCLUSION in builder.details
 
-        for (y in blocks.minPosition.y..blocks.maxPosition.y) {
+        for (y in 0 until ChunkSize.SECTION_LENGTH) {
             if (cancellation.isCancelled) return
-            for (z in blocks.minPosition.z..blocks.maxPosition.z) {
-                for (x in blocks.minPosition.x..blocks.maxPosition.x) {
+            for (z in 0 until ChunkSize.SECTION_LENGTH) {
+                for (x in 0 until ChunkSize.SECTION_LENGTH) {
                     if (cancellation.isCancelled) return
                     val inSection = InSectionPosition(x, y, z)
-                    val state = blocks[inSection] ?: continue
+                    val state = snapshot.state(x, y, z) ?: continue
                     val fluid = state.getFluid() ?: continue
 
                     val model = fluid.model ?: continue
@@ -269,22 +277,19 @@ class FluidSectionMesher(
                     val height = fluid.getHeight(state)
                     if (height <= 0.0f) continue
 
-                    val position = BlockPosition.of(chunk.position, section.height, inSection)
+                    val position = BlockPosition.of(snapshot.position, inSection)
 
-                    var light = section.light[inSection]
-                    if (position.y >= chunk.light.heightmap[inSection.xz]) {
-                        light = light.with(sky = LightLevel.MAX_LEVEL)
-                    }
+                    val light = LightLevel(snapshot.light(x, y, z).toByte())
                     if (BlockStateFlags.CAVE_SURFACE in state.flags && ChunkMeshDetails.DARK_CAVE_SURFACE !in builder.details && light == LightLevel.EMPTY) continue // TODO: only check sky light?
 
 
-                    val up = !fluid.matches(section.traceBlock(inSection, Directions.UP))
+                    val up = !fluid.matches(snapshot.stateOrNull(x, y + 1, z))
                     // TODO: height depends on the corners. Do the culling twice?
-                    val down = canFluidCull(section, inSection, Directions.DOWN, fluid, 1.0f)
-                    val north = canFluidCull(section, inSection, Directions.NORTH, fluid, 1.0f)
-                    val south = canFluidCull(section, inSection, Directions.SOUTH, fluid, 1.0f)
-                    val west = canFluidCull(section, inSection, Directions.WEST, fluid, 1.0f)
-                    val east = canFluidCull(section, inSection, Directions.EAST, fluid, 1.0f)
+                    val down = canFluidCull(snapshot, inSection, Directions.DOWN, fluid, 1.0f)
+                    val north = canFluidCull(snapshot, inSection, Directions.NORTH, fluid, 1.0f)
+                    val south = canFluidCull(snapshot, inSection, Directions.SOUTH, fluid, 1.0f)
+                    val west = canFluidCull(snapshot, inSection, Directions.WEST, fluid, 1.0f)
+                    val east = canFluidCull(snapshot, inSection, Directions.EAST, fluid, 1.0f)
 
 
                     val sides = north != FluidCull.CULLED || south != FluidCull.CULLED || west != FluidCull.CULLED || east != FluidCull.CULLED
@@ -294,7 +299,7 @@ class FluidSectionMesher(
                     }
 
                     if (ChunkMeshDetails.FLUID_HEIGHTS in builder.details) {
-                        updateFluidHeights(section, inSection, fluid, heights)
+                        updateFluidHeights(snapshot, inSection, fluid, heights)
                         updateCornerHeights(heights, corners)
                     } else {
                         val height = if (up) 0.88888896f else 1.0f
@@ -312,10 +317,10 @@ class FluidSectionMesher(
                     )
 
 
-                    val tint = sampler.getFluidTint(chunk, fluid, position)
+                    val tint = sampler.getFluidTint(fluid, position)
                     if (up) {
                         if (ChunkMeshDetails.FLOWING_FLUID in builder.details) {
-                            fluid.updateVelocity(state, position, chunk, velocity)
+                            updateVelocity(snapshot, state, position, fluid, velocity)
                         }
                         renderUp(
                             model,
@@ -355,6 +360,28 @@ class FluidSectionMesher(
                 }
             }
         }
+    }
+
+    private fun updateVelocity(
+        snapshot: TerrainBuildSnapshot,
+        state: BlockState,
+        position: BlockPosition,
+        fluid: Fluid,
+        velocity: MVec3d,
+    ) {
+        velocity.clear()
+        if (!fluid.matches(state)) return
+        val fluidHeight = fluid.getHeight(state)
+        for (direction in Directions.SIDES) {
+            val neighbour = snapshot.state(position + direction) ?: continue
+            if (!fluid.matches(neighbour)) continue
+            val height = fluid.getHeight(neighbour)
+            if (height != 0.0f) {
+                val delta = fluidHeight - height
+                if (delta != 0.0f) velocity += direction.vectord * delta
+            }
+        }
+        if (!velocity.isEmpty()) velocity.normalizeAssign()
     }
 
 

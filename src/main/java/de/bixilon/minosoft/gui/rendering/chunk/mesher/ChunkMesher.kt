@@ -25,8 +25,13 @@ import de.bixilon.minosoft.gui.rendering.chunk.mesh.cache.ChunkMeshCache
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.details.ChunkMeshDetails
 import de.bixilon.minosoft.gui.rendering.chunk.mesher.fluid.FluidSectionMesher
 import de.bixilon.minosoft.gui.rendering.terrain.IrisTerrainMaterialResolver
+import de.bixilon.minosoft.gui.rendering.terrain.near.buildSemanticArtifact
+import de.bixilon.minosoft.gui.rendering.terrain.near.NearTerrainArtifactCapture
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
-import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainCancellationToken
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainSnapshotTintSampler
+import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentity
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainCancellationToken
 
 class ChunkMesher(
     private val renderer: ChunkRenderer,
@@ -58,10 +63,16 @@ class ChunkMesher(
 
         if (details == this.details) return
 
-        renderer.invalidate(renderer.world)
+        renderer.invalidate(renderer.world, TerrainBuildCause.RENDER_SETTING_CHANGE)
     }
 
     fun createWorkerContext() = WorkerContext()
+
+    val snapshotHalo: Int
+        get() {
+            val blending = renderer.context.session.profiles.rendering.biome.blending
+            return TerrainSnapshotTintSampler.requiredHalo(blending.enabled, blending.radius)
+        }
 
     inner class WorkerContext : AutoCloseable {
         private val solid = SolidSectionMesher(renderer.context)
@@ -71,17 +82,13 @@ class ChunkMesher(
             cache: ChunkMeshCache,
             section: ChunkSection,
             snapshot: TerrainBuildSnapshot,
+            identity: TerrainBuildIdentity,
             cancellation: TerrainCancellationToken,
         ): ChunkMeshes? {
-            if (cancellation.isCancelled || section.blocks.isEmpty) return null
+            if (cancellation.isCancelled || snapshot.isEmpty) return null
+            if (!snapshot.completeHorizontalNeighbours) return null
 
-            val neighbours = section.chunk.neighbours
-            val sectionNeighbours = section.neighbours
-            if (!neighbours.complete) return null // TODO: Requeue the chunk? (But on a neighbour update the chunk gets queued again?)
-
-            cache.unmark()
-
-            val position = SectionPosition.of(section)
+            val position = snapshot.position
 
             // TODO: This disables LOD completely
             // val details = ChunkMeshDetails.of(position, renderer.visibility.sectionPosition) + this@ChunkMesher.details
@@ -94,28 +101,41 @@ class ChunkMesher(
                 section,
                 details,
                 IrisTerrainMaterialResolver.capture(renderer.context),
+                snapshot,
             )
             try {
-                solid.mesh(section, cache, neighbours, sectionNeighbours, mesh, cancellation)
+                solid.mesh(snapshot, mesh, cancellation)
                 if (cancellation.isCancelled) {
                     mesh.drop()
                     return null
                 }
 
-                if (section.blocks.fluidCount > 0) {
-                    fluid.mesh(section, mesh, cancellation)
+                if (snapshot.fluidCount > 0) {
+                    fluid.mesh(snapshot, mesh, cancellation)
                 }
                 if (cancellation.isCancelled) {
                     mesh.drop()
                     return null
                 }
-                cache.cleanup()
             } catch (error: Throwable) {
                 mesh.drop()
                 throw error
             }
 
-            return mesh.build(position, snapshot.modelRevision, snapshot.connectivity())
+            val connectivity = snapshot.connectivity()
+            val artifact = if (NearTerrainArtifactCapture.enabled) {
+                mesh.buildSemanticArtifact(identity, connectivity)
+            } else {
+                null
+            }
+            return try {
+                mesh.build(position, snapshot.modelRevision, connectivity, artifact).also { built ->
+                    if (built == null) artifact?.close()
+                }
+            } catch (failure: Throwable) {
+                artifact?.close()
+                throw failure
+            }
         }
 
         override fun close() = Unit

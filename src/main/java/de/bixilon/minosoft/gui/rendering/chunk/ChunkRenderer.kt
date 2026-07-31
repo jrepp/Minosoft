@@ -62,6 +62,8 @@ import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendRegistry
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainPerformanceTelemetry
+import de.bixilon.minosoft.gui.rendering.terrain.near.OpenGlNearTerrainRegionRuntime
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
@@ -86,6 +88,7 @@ class ChunkRenderer(
     val loaded = LoadedMeshes(this)
     val cache = ChunkCacheManager(this)
     val terrain = TerrainBackendRegistry(BuiltInChunkTerrainBackend(this))
+    val regionTerrain = OpenGlNearTerrainRegionRuntime.create(context)
 
 
     var limitChunkTransferTime = true
@@ -98,7 +101,17 @@ class ChunkRenderer(
             semantic = material.semantic,
             owner = { terrain.selection().owner },
             passId = material.passId,
-            skip = { visibility.meshes.meshes[type.ordinal].isEmpty() },
+            skip = {
+                val visible = visibility.meshes
+                visible.lock.locked {
+                    if (regionTerrain != null) {
+                        !regionTerrain.hasVisibleMaterial(material, visible.sections) &&
+                            visible.meshes[type.ordinal].isEmpty()
+                    } else {
+                        visible.meshes[type.ordinal].isEmpty()
+                    }
+                }
+            },
         )
     }
 
@@ -147,27 +160,30 @@ class ChunkRenderer(
                 unload(world)
                 paused = true
             } else if (paused) {
-                invalidate(world)
+                invalidate(world, TerrainBuildCause.WORLD_RESUME)
                 paused = false
             }
         }
-        context.camera.offset::offset.observe(this) { unload(world); invalidate(world) }
+        context.camera.offset::offset.observe(this) {
+            unload(world)
+            invalidate(world, TerrainBuildCause.CAMERA_OFFSET)
+        }
 
         context.input.bindings.register(minosoft("clear_chunk_cache"), KeyBinding(
             KeyActions.MODIFIER to setOf(KeyCodes.KEY_F3),
             KeyActions.PRESS to setOf(KeyCodes.KEY_A),
         )) {
-            unload(world); invalidate(world)
+            unload(world); invalidate(world, TerrainBuildCause.MANUAL_RELOAD)
             session.util.sendDebugMessage("Chunk cache invalidated!")
         }
 
-        profile.rendering::antiMoirePattern.observe(this) { invalidate(world) }
+        profile.rendering::antiMoirePattern.observe(this) { invalidate(world, TerrainBuildCause.RENDER_SETTING_CHANGE) }
 
         val profile = session.profiles.rendering
-        profile.light::ambientOcclusion.observe(this) { invalidate(world) }
-        profile.biome.blending::enabled.observe(this) { invalidate(world) }
-        profile.biome.blending::radius.observe(this) { invalidate(world) }
-        profile.biome.blending::algorithm.observe(this) { invalidate(world) }
+        profile.light::ambientOcclusion.observe(this) { invalidate(world, TerrainBuildCause.RENDER_SETTING_CHANGE) }
+        profile.biome.blending::enabled.observe(this) { invalidate(world, TerrainBuildCause.RENDER_SETTING_CHANGE) }
+        profile.biome.blending::radius.observe(this) { invalidate(world, TerrainBuildCause.RENDER_SETTING_CHANGE) }
+        profile.biome.blending::algorithm.observe(this) { invalidate(world, TerrainBuildCause.RENDER_SETTING_CHANGE) }
         profile.performance::limitChunkTransferTime.observe(this) { this.limitChunkTransferTime = it }
     }
 
@@ -206,19 +222,19 @@ class ChunkRenderer(
         // TODO: potential race condition (what if section is between two stages?)
     }
 
-    fun invalidate(world: World) = world.lock.acquired {
+    fun invalidate(world: World, cause: TerrainBuildCause = TerrainBuildCause.UNKNOWN) = world.lock.acquired {
         for (chunk in world.chunks.chunks.unsafe.values) {
-            invalidate(chunk)
+            invalidate(chunk, cause)
         }
     }
 
-    fun invalidate(chunk: Chunk) {
+    fun invalidate(chunk: Chunk, cause: TerrainBuildCause = TerrainBuildCause.UNKNOWN) {
         if (!chunk.neighbours.complete) {
             unload(chunk)
             return
         }
         if (chunk.position in visibility) {
-            chunk.sections.forEach { invalidate(it) }
+            chunk.sections.forEach { invalidate(it, cause) }
             // no need to unload any other sections, sections can only be created but never deleted
             return
         }
@@ -226,8 +242,10 @@ class ChunkRenderer(
         culledQueue += chunk
     }
 
-    fun invalidate(section: ChunkSection) {
-        section.terrainRevision.incrementAndGet()
+    fun invalidate(section: ChunkSection) = invalidate(section, TerrainBuildCause.UNKNOWN, true)
+
+    fun invalidate(section: ChunkSection, cause: TerrainBuildCause, advanceRevision: Boolean = true) {
+        if (advanceRevision) section.terrainRevision.updateAndGet(Math::incrementExact)
         val position = SectionPosition.of(section)
         if (context.state == RenderingStates.PAUSED || context.state == RenderingStates.STOPPED || context.state == RenderingStates.QUITTING) return
         if (section.blocks.isEmpty || !section.chunk.neighbours.complete) {
@@ -237,20 +255,20 @@ class ChunkRenderer(
         meshingQueue.tasks.interrupt(position)
 
         if (section in visibility) {
-            meshingQueue += section
+            meshingQueue.add(section, cause)
         } else {
             unload(section) // TODO: don't remove from culled queue
             culledQueue += section
         }
     }
 
-    fun invalidate(chunk: Chunk?, height: SectionHeight) {
+    fun invalidate(chunk: Chunk?, height: SectionHeight, cause: TerrainBuildCause = TerrainBuildCause.UNKNOWN) {
         val section = chunk?.get(height) ?: return
-        invalidate(section)
+        invalidate(section, cause)
     }
 
-    fun invalidate(position: SectionPosition) {
-        invalidate(world.chunks[position.chunkPosition], position.y)
+    fun invalidate(position: SectionPosition, cause: TerrainBuildCause = TerrainBuildCause.UNKNOWN) {
+        invalidate(world.chunks[position.chunkPosition], position.y, cause)
     }
 
     override fun prepareDrawAsync() {
@@ -258,6 +276,7 @@ class ChunkRenderer(
     }
 
     internal fun prepareTerrainCore() {
+        regionTerrain?.prepareFrame()
         visibility.update()
         meshingQueue.work()
     }
@@ -278,6 +297,7 @@ class ChunkRenderer(
     }
 
     internal fun finishTerrainFrameCore() {
+        regionTerrain?.finishFrame()
         val meshes = visibility.meshes
         meshes.lock.locked { meshes.meshes[ChunkMeshTypes.OPAQUE.ordinal].firstOrNull() }?.updateOcclusion() // don't lock all meshes, updateOcclusion is a blocking operation
 
@@ -303,7 +323,46 @@ class ChunkRenderer(
             } else {
                 null
             }
-            if (shadow != null) {
+            if (regionTerrain != null) {
+                val selected = ArrayList<de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshes>()
+                val conventional = ArrayList<de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMesh>()
+                if (shadow != null) {
+                    val culling = context.shaderPipeline.shadowCulling()
+                    val camera = context.session.camera.entity.physics.positionInfo.eyePosition
+                    loaded.forEachLoaded { section ->
+                        val allowed = culling?.allowsTerrainSection(
+                            section.position.x,
+                            section.position.y,
+                            section.position.z,
+                        ) ?: run {
+                            val delta = camera - section.center
+                            shadow.allowsTerrainSection(delta.x, delta.y, delta.z)
+                        }
+                        if (allowed) {
+                            if (section.regionBacked) {
+                                selected += section
+                            } else {
+                                section.meshes[type]?.let(conventional::add)
+                            }
+                        }
+                    }
+                } else {
+                    meshes.lock.locked { selected += meshes.sections }
+                }
+                regionTerrain.submit(
+                    view,
+                    material,
+                    selected,
+                    context.shaderPipeline.selection().generation,
+                )
+                if (shadow != null) {
+                    conventional.forEach { it.drawShadow() }
+                } else {
+                    meshes.lock.locked {
+                        meshes.meshes[type.ordinal].forEach { it.draw() }
+                    }
+                }
+            } else if (shadow != null) {
                 val culling = context.shaderPipeline.shadowCulling()
                 val camera = context.session.camera.entity.physics.positionInfo.eyePosition
                 loaded.forEachLoaded { section ->
@@ -392,6 +451,7 @@ class ChunkRenderer(
         meshingQueue.tasks.interrupt(false)
         meshingQueue.close()
         loadingQueue.clear()
+        regionTerrain?.close()
     }
 
     private object TextLayer : RenderLayer {

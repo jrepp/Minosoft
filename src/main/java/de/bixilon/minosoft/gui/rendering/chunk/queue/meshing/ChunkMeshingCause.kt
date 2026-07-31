@@ -13,8 +13,4 @@
 
 package de.bixilon.minosoft.gui.rendering.chunk.queue.meshing
 
-enum class ChunkMeshingCause {
-    UNKNOWN,
-    CULLED,
-    LEVEL_OF_DETAIL_UPDATE,
-}
+typealias ChunkMeshingCause = de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause

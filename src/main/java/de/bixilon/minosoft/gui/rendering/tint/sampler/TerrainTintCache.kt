@@ -25,6 +25,12 @@ import de.bixilon.minosoft.data.text.formatting.color.RGBColor
 import de.bixilon.minosoft.data.world.chunk.chunk.Chunk
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.gui.rendering.models.block.element.FaceVertexData
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainSnapshotTintSampler
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet
+import java.util.IdentityHashMap
 import kotlin.math.floor
 
 /**
@@ -32,24 +38,53 @@ import kotlin.math.floor
  * sampling. The underlying radius sampler remains responsible for biome blur.
  */
 class TerrainTintCache(
-    private val chunk: Chunk,
-    private val sampler: TintSampler,
+    private val blockSampler: (BlockState, BlockPosition) -> RGBArray?,
+    private val fluidSampler: (Fluid, BlockPosition) -> RGBColor,
 ) {
-    private data class BlockKey(val state: BlockState, val position: BlockPosition)
-    private data class FluidKey(val fluid: Fluid, val position: BlockPosition)
+    constructor(chunk: Chunk, sampler: TintSampler) : this(
+        blockSampler = { state, position ->
+            sampler.getBlockTint(chunk, state, position, null)?.let { RGBArray(it.array.copyOf()) }
+        },
+        fluidSampler = { fluid, position -> sampler.getFluidTint(chunk, fluid, position) },
+    )
 
-    private val blocks = HashMap<BlockKey, RGBArray?>()
-    private val fluids = HashMap<FluidKey, RGBColor>()
+    constructor(snapshot: TerrainBuildSnapshot, sampler: TerrainSnapshotTintSampler) : this(
+        blockSampler = { state, position ->
+            sampler.getBlockTint(state, position, null)?.let { RGBArray(it.array.copyOf()) }
+        },
+        fluidSampler = sampler::getFluidTint,
+    )
+
+    private class BlockEntries {
+        val colors = Long2ObjectOpenHashMap<RGBArray>()
+        val missing = LongOpenHashSet()
+    }
+
+    private val blocks = IdentityHashMap<BlockState, BlockEntries>()
+    private val fluids = IdentityHashMap<Fluid, Long2IntOpenHashMap>()
 
     private fun block(state: BlockState, position: BlockPosition, tintIndex: Int, fallback: RGBColor): RGBColor {
-        val colors = blocks.getOrPut(BlockKey(state, position)) {
-            sampler.getBlockTint(chunk, state, position, null)?.let { RGBArray(it.array.copyOf()) }
+        val entries = blocks.getOrPut(state, ::BlockEntries)
+        val key = position.raw
+        var colors = entries.colors[key]
+        if (colors == null && key !in entries.missing) {
+            colors = blockSampler(state, position)
+            if (colors == null) {
+                entries.missing += key
+            } else {
+                entries.colors[key] = colors
+            }
         }
         return colors?.getOrNull(tintIndex) ?: fallback
     }
 
     private fun fluid(fluid: Fluid, position: BlockPosition): RGBColor {
-        return fluids.getOrPut(FluidKey(fluid, position)) { sampler.getFluidTint(chunk, fluid, position) }
+        val entries = fluids.getOrPut(fluid) {
+            Long2IntOpenHashMap()
+        }
+        val key = position.raw
+        if (entries.containsKey(key)) return RGBColor(entries.get(key))
+        return fluidSampler(fluid, position).also { entries.put(key, it.rgb) }
     }
 
     fun block(
@@ -75,7 +110,7 @@ class TerrainTintCache(
     }
 
     companion object {
-        internal fun bilinear(x: Double, z: Double, sample: (Int, Int) -> RGBColor): RGBColor {
+        internal inline fun bilinear(x: Double, z: Double, sample: (Int, Int) -> RGBColor): RGBColor {
             val x0 = floor(x).toInt()
             val z0 = floor(z).toInt()
             val dx = (x - x0).toFloat()

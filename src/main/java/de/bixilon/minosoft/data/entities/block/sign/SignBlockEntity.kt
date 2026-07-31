@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -39,6 +40,12 @@ class SignBlockEntity(session: PlaySession, position: BlockPosition, state: Bloc
         val front = nbt["front_text"]?.toJsonObject() ?: return updateLegacy(nbt)
         this.front.update(front, session)
         nbt["back_text"]?.toJsonObject()?.let { this.back.update(it, session) }
+    }
+
+    override fun toNbt(nbt: MutableMap<String, Any>) {
+        nbt["is_waxed"] = waxed
+        nbt["front_text"] = front.toNbt()
+        nbt["back_text"] = back.toNbt()
     }
 
     private fun updateLegacy(nbt: JsonObject) {
@@ -82,6 +89,12 @@ class SignBlockEntity(session: PlaySession, position: BlockPosition, state: Bloc
             this.color = color?.toString()?.lowercase()?.let { ChatColors.NAME_MAP[it] }
             this.glowing = glowing?.toBoolean() ?: false
         }
+
+        fun toNbt(): Map<String, Any> = mapOf(
+            "color" to (color?.let { ChatColors.NAME_MAP.getKey(it) ?: it.toString() } ?: "black"),
+            "has_glowing_text" to glowing,
+            "messages" to text.map(ChatComponent::toNbt),
+        )
     }
 
     companion object : BlockEntityFactory<SignBlockEntity> {

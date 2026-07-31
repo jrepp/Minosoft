@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -25,7 +26,10 @@ import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.registries.blocks.state.BlockStateFlags
 import de.bixilon.minosoft.data.registries.blocks.types.Block
 import de.bixilon.minosoft.data.registries.blocks.types.entity.BlockWithEntity
+import de.bixilon.minosoft.data.registries.blocks.types.fluid.FluidBlock
 import de.bixilon.minosoft.data.registries.dimension.DimensionProperties
+import de.bixilon.minosoft.data.registries.fluid.fluids.LavaFluid
+import de.bixilon.minosoft.data.registries.fluid.fluids.WaterFluid
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.data.text.formatting.color.RGBArray
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor
@@ -38,10 +42,12 @@ import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.camera.Camera
 import de.bixilon.minosoft.gui.rendering.chunk.entities.BlockEntityRenderer
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.BlockVertexConsumer
+import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshBuilder
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshes
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshesBuilder
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.cache.ChunkMeshCache
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.details.ChunkMeshDetails
+import de.bixilon.minosoft.gui.rendering.chunk.mesher.fluid.FluidSectionMesher
 import de.bixilon.minosoft.gui.rendering.gui.GUIRenderer
 import de.bixilon.minosoft.gui.rendering.gui.mesh.GUIVertexOptions
 import de.bixilon.minosoft.gui.rendering.gui.mesh.consumer.GuiVertexConsumer
@@ -49,17 +55,33 @@ import de.bixilon.minosoft.gui.rendering.models.block.state.baked.cull.side.Face
 import de.bixilon.minosoft.gui.rendering.models.block.state.baked.cull.side.SideProperties
 import de.bixilon.minosoft.gui.rendering.models.block.state.render.BlockRender
 import de.bixilon.minosoft.gui.rendering.models.block.state.render.WorldRenderProps
+import de.bixilon.minosoft.gui.rendering.models.fluid.FluidModel
+import de.bixilon.minosoft.gui.rendering.models.fluid.fluids.LavaFluidModel
+import de.bixilon.minosoft.gui.rendering.models.fluid.fluids.WaterFluidModel
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureTransparencies
+import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.TextureRenderData
 import de.bixilon.minosoft.gui.rendering.system.dummy.DummyRenderSystem
+import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTexture
 import de.bixilon.minosoft.gui.rendering.tint.TintManager
 import de.bixilon.minosoft.gui.rendering.tint.TintedBlock
 import de.bixilon.minosoft.gui.rendering.tint.tints.StaticTintProvider
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainSnapshotTintSampler
+import de.bixilon.minosoft.gui.rendering.terrain.near.buildSemanticArtifact
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil
 import de.bixilon.minosoft.protocol.versions.TestVersions
 import de.bixilon.minosoft.test.IT
 import de.bixilon.minosoft.test.ITUtil.allocate
+import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentity
+import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
+import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
+import de.bixilon.minosoft.terrain.model.mesh.compareSemantic
+import de.bixilon.minosoft.terrain.model.mesh.TerrainPrimitiveTopology
+import de.bixilon.minosoft.gui.rendering.util.mesh.uv.PackedUV
 import org.testng.Assert.assertEquals
+import org.testng.Assert.assertNotEquals
+import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
 
 @Test(groups = ["mesher"], dependsOnGroups = ["rendering", "block"])
@@ -76,8 +98,11 @@ class SolidSectionMesherTest {
         return context
     }
 
-    private fun createSession(blocks: Map<BlockPosition, BlockState?>): PlaySession {
-        val session = SessionTestUtil.createSession(worldSize = 2)
+    private fun createSession(
+        blocks: Map<BlockPosition, BlockState?>,
+        version: String? = null,
+    ): PlaySession {
+        val session = SessionTestUtil.createSession(worldSize = 2, version = version)
         for ((position, block) in blocks) {
             session.world[position] = block!!
         }
@@ -85,17 +110,35 @@ class SolidSectionMesherTest {
         return session
     }
 
-    private fun PlaySession.mesh(): ChunkMeshes? {
+    private fun PlaySession.mesh(afterCapture: (TerrainBuildSnapshot) -> Unit = {}): ChunkMeshes? {
         val context = createContext(this)
         val mesher = SolidSectionMesher(context)
 
         val chunk = world.chunks[0, 0]!!
         val section = chunk.sections[0]!!
-        val meshes = ChunkMeshesBuilder(context, section, ChunkMeshDetails.ALL + ChunkMeshDetails.CULL_FULL_OPAQUE)
+        val blending = profiles.rendering.biome.blending
+        val snapshot = TerrainBuildSnapshot.capture(
+            section,
+            TerrainSnapshotTintSampler.requiredHalo(blending.enabled, blending.radius),
+        )
+        check(snapshot.entities.size == section.entities.count)
+        afterCapture(snapshot)
+        val meshes = ChunkMeshesBuilder(
+            context,
+            section,
+            ChunkMeshDetails.ALL + ChunkMeshDetails.CULL_FULL_OPAQUE,
+            snapshot = snapshot,
+        )
+        val cache = ChunkMeshCache(context, contentModels = null)
 
-        mesher.mesh(section, ChunkMeshCache(context, contentModels = null), chunk.neighbours, section.neighbours, meshes)
+        mesher.mesh(snapshot, meshes)
 
-        return meshes.build(SectionPosition.of(chunk.position, 0))
+        val built = meshes.build(SectionPosition.of(chunk.position, 0)) ?: return null
+        val renderers = built.entityPositions.mapNotNull { position ->
+            section.entities[position]?.let { cache.createEntity(position, it) }
+        }
+        built.attachEntities(renderers.takeIf { it.isNotEmpty() }?.toTypedArray())
+        return built
     }
 
 
@@ -116,6 +159,227 @@ class SolidSectionMesherTest {
 
         assertEquals(meshes.min, InSectionPosition(2, 2, 2))
         assertEquals(meshes.max, InSectionPosition(2, 2, 2))
+    }
+
+    fun `solid meshing does not observe mutation after snapshot capture`() {
+        val queue = TestQueue()
+        val stone = queue.fullOpaque()
+        val position = BlockPosition(2, 2, 2)
+        val session = createSession(mapOf(position to stone))
+
+        val meshes = session.mesh { session.world[position] = null }!!
+
+        queue.assert(TestQueue.RenderedBlock(position, stone))
+        assertEquals(meshes.min, InSectionPosition(2, 2, 2))
+        assertEquals(meshes.max, InSectionPosition(2, 2, 2))
+    }
+
+    @Test(enabled = false)
+    fun assertDetachedAndLegacySemanticMatrix() {
+        check(IT.VERSION.name.isNotBlank())
+        for (version in SEMANTIC_VERSIONS) {
+            for (fixture in SemanticFixture.entries) {
+                val legacy = buildSemanticFixture(snapshotPath = false, version, fixture)
+                val detached = buildSemanticFixture(snapshotPath = true, version, fixture)
+                try {
+                    val comparison = legacy.compareSemantic(detached)
+
+                    assertTrue(
+                        comparison.equivalent,
+                        "version=$version fixture=$fixture comparison=$comparison " +
+                            "legacyBounds=${legacy.bounds} detachedBounds=${detached.bounds} " +
+                            "legacyEntities=${legacy.entityPositions} detachedEntities=${detached.entityPositions}",
+                    )
+                    assertTrue(legacy.streams.all { it.topology == TerrainPrimitiveTopology.QUADS })
+                    assertTrue(detached.streams.all { it.topology == TerrainPrimitiveTopology.QUADS })
+                } finally {
+                    legacy.close()
+                    detached.close()
+                }
+            }
+        }
+        assertDetachedFluidMaterialMatrix()
+    }
+
+    private fun assertDetachedFluidMaterialMatrix() {
+        val assets = semanticFluidAssets()
+        for (version in SEMANTIC_VERSIONS) {
+            val signatures = FluidSemanticFixture.entries.associateWith { fixture ->
+                val first = buildFluidSemanticFixture(version, fixture, assets)
+                val second = buildFluidSemanticFixture(version, fixture, assets)
+                try {
+                    val comparison = first.compareSemantic(second)
+                    assertTrue(
+                        comparison.equivalent,
+                        "version=$version fixture=$fixture comparison=$comparison",
+                    )
+                    assertEquals(first.streams.map { it.partitionId }, listOf("near:translucent"))
+                    assertEquals(
+                        first.streams.map { it.material.value },
+                        listOf("minosoft:terrain/translucent"),
+                    )
+                    assertTrue(first.streams.all { it.topology == TerrainPrimitiveTopology.QUADS })
+                    FluidSemanticSignature.from(first)
+                } finally {
+                    first.close()
+                    second.close()
+                }
+            }
+            assertNotEquals(
+                signatures.getValue(FluidSemanticFixture.WATER_STILL).contentDigest,
+                signatures.getValue(FluidSemanticFixture.WATER_FLOWING).contentDigest,
+                "version=$version still and flowing water must preserve distinct model asset roles/geometry",
+            )
+            assertNotEquals(
+                signatures.getValue(FluidSemanticFixture.WATER_STILL).contentDigest,
+                signatures.getValue(FluidSemanticFixture.LAVA_STILL).contentDigest,
+                "version=$version water and lava must preserve distinct model asset roles/material inputs",
+            )
+            assertEquals(
+                signatures,
+                EXPECTED_FLUID_SIGNATURES,
+                "version=$version normalized fluid semantics changed",
+            )
+        }
+    }
+
+    private fun buildFluidSemanticFixture(
+        version: String,
+        fixture: FluidSemanticFixture,
+        assets: FluidSemanticAssets,
+    ): de.bixilon.minosoft.terrain.model.mesh.TerrainMeshArtifact {
+        val session = createSession(emptyMap(), version)
+        val center = BlockPosition(6, 7, 9)
+        val (block, model) = when (fixture) {
+            FluidSemanticFixture.WATER_STILL,
+            FluidSemanticFixture.WATER_FLOWING ->
+                requireNotNull(session.registries.block[WaterFluid]) { "Missing water block for $version" } to
+                    assets.water
+
+            FluidSemanticFixture.LAVA_STILL ->
+                requireNotNull(session.registries.block[LavaFluid]) { "Missing lava block for $version" } to
+                    assets.lava
+        }
+        val fluid = when (fixture) {
+            FluidSemanticFixture.WATER_STILL,
+            FluidSemanticFixture.WATER_FLOWING -> requireNotNull(session.registries.fluid[WaterFluid])
+            FluidSemanticFixture.LAVA_STILL -> requireNotNull(session.registries.fluid[LavaFluid])
+        }
+        fluid.model = model
+        val level = if (fixture == FluidSemanticFixture.WATER_FLOWING) 3 else 0
+        session.world[center] = block.states.withProperties(FluidBlock.LEVEL to level)
+
+        val context = createContext(session)
+        val section = session.world.chunks[0, 0]!!.sections[0]!!
+        val blending = session.profiles.rendering.biome.blending
+        val snapshot = TerrainBuildSnapshot.capture(
+            section,
+            TerrainSnapshotTintSampler.requiredHalo(blending.enabled, blending.radius),
+        )
+        val builder = ChunkMeshesBuilder(
+            context,
+            section,
+            ChunkMeshDetails.ALL + ChunkMeshDetails.CULL_FULL_OPAQUE,
+            snapshot = snapshot,
+        )
+        FluidSectionMesher(context).mesh(snapshot, builder)
+        return try {
+            builder.buildSemanticArtifact(SEMANTIC_IDENTITY, snapshot.connectivity())
+        } finally {
+            builder.drop()
+        }
+    }
+
+    private fun semanticFluidAssets(): FluidSemanticAssets {
+        // Keep the production model/tint branches while pinning physical texture slots so this
+        // headless cross-version digest is independent of atlas packing and OpenGL realization.
+        val waterStill = fluidTexture(1)
+        val waterFlowing = fluidTexture(2)
+        val waterOverlay = fluidTexture(3)
+        val lavaStill = fluidTexture(4)
+        val lavaFlowing = fluidTexture(5)
+        return FluidSemanticAssets(
+            water = WaterFluidModel().apply {
+                still = waterStill
+                flowing = waterFlowing
+                overlay = waterOverlay
+            },
+            lava = LavaFluidModel().apply {
+                still = lavaStill
+                flowing = lavaFlowing
+            },
+        )
+    }
+
+    private fun fluidTexture(shaderId: Int) = DummyTexture().apply {
+        transparency = TextureTransparencies.TRANSLUCENT
+        renderData = FluidSemanticTextureRenderData(shaderId)
+    }
+
+    private fun buildSemanticFixture(
+        snapshotPath: Boolean,
+        version: String,
+        fixture: SemanticFixture,
+    ): de.bixilon.minosoft.terrain.model.mesh.TerrainMeshArtifact {
+        val queue = TestQueue()
+        val center = BlockPosition(6, 7, 9)
+        val blocks = when (fixture) {
+            SemanticFixture.OPAQUE_MODEL -> mapOf(center to queue.fullOpaque())
+            SemanticFixture.TINTED_MODEL -> mapOf(center to queue.tinted())
+            SemanticFixture.LIGHTED_MODEL -> mapOf(center to queue.lighted())
+            SemanticFixture.MESHED_ENTITY -> mapOf(center to queue.meshedOnlyEntity())
+            SemanticFixture.RENDERER_ENTITY -> mapOf(center to queue.blockEntity())
+            SemanticFixture.NEIGHBOUR_CULLING -> {
+                val neighbours = Array(6) { queue.nonTouching(it) }
+                mapOf(
+                    center + Directions.DOWN to neighbours[0],
+                    center + Directions.UP to neighbours[1],
+                    center + Directions.NORTH to neighbours[2],
+                    center + Directions.SOUTH to neighbours[3],
+                    center + Directions.WEST to neighbours[4],
+                    center + Directions.EAST to neighbours[5],
+                    center to queue.neighbours(neighbours),
+                )
+            }
+        }
+        val session = createSession(blocks, version)
+        if (fixture == SemanticFixture.LIGHTED_MODEL) {
+            session.world.dimension = DimensionProperties()
+            val section = session.world.chunks[0, 0]!!.sections[0]!!
+            section.light.light[InSectionPosition(6, 6, 9)] = LightLevel(block = 1, sky = 0)
+            section.light.light[InSectionPosition(6, 8, 9)] = LightLevel(block = 2, sky = 0)
+            section.light.light[InSectionPosition(6, 7, 8)] = LightLevel(block = 3, sky = 0)
+            section.light.light[InSectionPosition(6, 7, 10)] = LightLevel(block = 4, sky = 0)
+            section.light.light[InSectionPosition(5, 7, 9)] = LightLevel(block = 5, sky = 0)
+            section.light.light[InSectionPosition(7, 7, 9)] = LightLevel(block = 6, sky = 0)
+            section.light.light[InSectionPosition(6, 7, 9)] = LightLevel(block = 7, sky = 0)
+        }
+        val context = createContext(session)
+        val mesher = SolidSectionMesher(context)
+        val chunk = session.world.chunks[0, 0]!!
+        val section = chunk.sections[0]!!
+        val blending = session.profiles.rendering.biome.blending
+        val snapshot = TerrainBuildSnapshot.capture(
+            section,
+            TerrainSnapshotTintSampler.requiredHalo(blending.enabled, blending.radius),
+        )
+        val builder = ChunkMeshesBuilder(
+            context,
+            section,
+            ChunkMeshDetails.ALL + ChunkMeshDetails.CULL_FULL_OPAQUE,
+            snapshot = snapshot.takeIf { snapshotPath },
+        )
+        if (snapshotPath) {
+            mesher.mesh(snapshot, builder)
+        } else {
+            mesher.mesh(section, ChunkMeshCache(context, null), chunk.neighbours, section.neighbours, builder)
+            builder.entityPositions = snapshot.entities.map { it.position }
+        }
+        return try {
+            builder.buildSemanticArtifact(SEMANTIC_IDENTITY, snapshot.connectivity())
+        } finally {
+            builder.drop()
+        }
     }
 
     fun `tinted and untinted block`() {
@@ -487,12 +751,24 @@ class SolidSectionMesherTest {
         val block = object : Block(minosoft("test4"), BlockSettings.of(IT.VERSION, IT.REGISTRIES, emptyMap())), BlockWithEntity<BlockEntity> {
             override val hardness get() = 0.0f
             override fun createBlockEntity(session: PlaySession, position: BlockPosition, state: BlockState) = object : BlockEntity(session, position, state) {
+                private var marker = "captured"
+
+                override fun toNbt(nbt: MutableMap<String, Any>) {
+                    nbt["marker"] = marker
+                }
+
+                override fun updateNBT(nbt: Map<String, Any>) {
+                    marker = nbt["marker"]?.toString() ?: error("Missing detached marker")
+                }
             }
 
             init {
                 this.model = object : BlockRender {
 
                     override fun render(props: WorldRenderProps, position: BlockPosition, state: BlockState, entity: BlockEntity?, tints: RGBArray?): Boolean {
+                        assertEquals(entity?.toNbt()?.get("marker"), "captured")
+                        val data = (props.mesh as ChunkMeshesBuilder).opaque.data
+                        repeat(ChunkMeshBuilder.ChunkMeshStruct.floats) { data.add(if (it == 0) 1f else 0f) }
                         entities.add(TestQueue.RenderedEntity(position, state, true)).let { if (!it) throw IllegalArgumentException("Twice!!!") }
 
                         return true
@@ -519,9 +795,99 @@ class SolidSectionMesherTest {
         override fun getProperties(direction: Directions) = this.properties
 
         override fun render(props: WorldRenderProps, position: BlockPosition, state: BlockState, entity: BlockEntity?, tints: RGBArray?): Boolean {
-            (props.mesh as ChunkMeshesBuilder).opaque.data.add(1f)
+            val data = (props.mesh as ChunkMeshesBuilder).opaque.data
+            repeat(ChunkMeshBuilder.ChunkMeshStruct.floats) { data.add(if (it == 0) 1f else 0f) }
             queue.blocks.add(TestQueue.RenderedBlock(position, state, tints?.getOrNull(0))).let { if (!it) throw IllegalArgumentException("Twice!!!") }
             return true
         }
+    }
+
+    private companion object {
+        enum class SemanticFixture {
+            OPAQUE_MODEL,
+            TINTED_MODEL,
+            LIGHTED_MODEL,
+            MESHED_ENTITY,
+            RENDERER_ENTITY,
+            NEIGHBOUR_CULLING,
+        }
+
+        enum class FluidSemanticFixture {
+            WATER_STILL,
+            WATER_FLOWING,
+            LAVA_STILL,
+        }
+
+        data class FluidSemanticAssets(
+            val water: FluidModel,
+            val lava: FluidModel,
+        )
+
+        private class FluidSemanticTextureRenderData(
+            override val shaderTextureId: Int,
+        ) : TextureRenderData {
+            override fun transformUV(uv: Vec2f) = uv
+            override fun transformUV(u: Float, v: Float) = PackedUV(u, v)
+            override fun transformU(u: Float) = u
+            override fun transformV(v: Float) = v
+            override fun transformUV(uv: PackedUV) = uv
+        }
+
+        data class FluidSemanticSignature(
+            val bounds: String,
+            val vertexBytes: Int,
+            val indexBytes: Int,
+            val contentDigest: String,
+        ) {
+            companion object {
+                fun from(artifact: de.bixilon.minosoft.terrain.model.mesh.TerrainMeshArtifact): FluidSemanticSignature {
+                    val stream = artifact.streams.single()
+                    return FluidSemanticSignature(
+                        bounds = artifact.bounds.toString(),
+                        vertexBytes = stream.vertices.size,
+                        indexBytes = stream.indices.size,
+                        contentDigest = artifact.digest.encodedValue,
+                    )
+                }
+            }
+        }
+
+        val SEMANTIC_VERSIONS = listOf("1.7.10", "1.12.2", "1.19.3")
+
+        private const val FLUID_BOUNDS =
+            "TerrainArtifactBounds(minimum=TerrainArtifactCoordinate(x=6, y=7, z=9), " +
+                "maximumInclusive=TerrainArtifactCoordinate(x=6, y=7, z=9))"
+
+        val EXPECTED_FLUID_SIGNATURES = mapOf(
+            FluidSemanticFixture.WATER_STILL to FluidSemanticSignature(
+                bounds = FLUID_BOUNDS,
+                vertexBytes = 2_016,
+                indexBytes = 176,
+                contentDigest = "291010e83525ef6b3bcc2b9e7b6e20cbbc24df1681d158a76199516f0190a3c0",
+            ),
+            FluidSemanticFixture.WATER_FLOWING to FluidSemanticSignature(
+                bounds = FLUID_BOUNDS,
+                vertexBytes = 2_016,
+                indexBytes = 176,
+                contentDigest = "e44add9230b92c3a52766512d7f91c93e96c9aff34f67b9bf6650c0e3a4a690f",
+            ),
+            FluidSemanticFixture.LAVA_STILL to FluidSemanticSignature(
+                bounds = FLUID_BOUNDS,
+                vertexBytes = 2_016,
+                indexBytes = 176,
+                contentDigest = "7208c5fd2b3c1333bd46ae688182b4182147c80dc6b5b27cafae13bf78d836bd",
+            ),
+        )
+
+        val SEMANTIC_IDENTITY = TerrainBuildIdentity(
+            page = TerrainPageKey(TerrainDomain.NEAR, 0, 0L, 0L, 0L, 1L),
+            requestRevision = 1L,
+            capturedModelRevision = 1L,
+            providerGeneration = 1L,
+            layoutGeneration = 1L,
+            materialGeneration = 1L,
+            coverageGeneration = 0L,
+            prioritySequence = 1L,
+        )
     }
 }

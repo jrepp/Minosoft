@@ -17,7 +17,13 @@
 
 package de.bixilon.minosoft.gui.rendering.terrain.runtime
 
-import de.bixilon.minosoft.data.world.positions.SectionPosition
+import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentity
+import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
+import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildCompletion
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildOutcome
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildRuntime
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainSchedulerTenantId
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -32,6 +38,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class TerrainBuildRuntimeTest {
+    private val tenant = TerrainSchedulerTenantId("test:near")
+
     @Test
     fun `cancelled work cannot complete successfully`() {
         val started = CountDownLatch(1)
@@ -43,7 +51,7 @@ class TerrainBuildRuntimeTest {
         )
         val identity = identity(1L)
 
-        val cancellation = runtime.submit(identity) { _, _ ->
+        val cancellation = runtime.submit(tenant, identity) { _, _ ->
             started.countDown()
             assertTrue(release.await(5, TimeUnit.SECONDS))
             "discard me"
@@ -70,8 +78,8 @@ class TerrainBuildRuntimeTest {
             contextFactory = { Context(created, closed) },
         )
 
-        assertNotNull(runtime.submit(identity(1L)) { context, _ -> context.calls.incrementAndGet() })
-        assertNotNull(runtime.submit(identity(2L)) { context, _ -> context.calls.incrementAndGet() })
+        assertNotNull(runtime.submit(tenant, identity(1L)) { context, _ -> context.calls.incrementAndGet() })
+        assertNotNull(runtime.submit(tenant, identity(2L)) { context, _ -> context.calls.incrementAndGet() })
         val completions = awaitCompletions(runtime, 2)
 
         assertEquals(1, created.get())
@@ -92,16 +100,16 @@ class TerrainBuildRuntimeTest {
             contextFactory = ::Context,
         )
 
-        assertNotNull(runtime.submit(identity(1L)) { _, cancellation ->
+        assertNotNull(runtime.submit(tenant, identity(1L)) { _, cancellation ->
             started.countDown()
             assertTrue(release.await(5, TimeUnit.SECONDS))
             assertTrue(cancellation.isCancelled)
             1
         })
         assertTrue(started.await(5, TimeUnit.SECONDS))
-        assertNotNull(runtime.submit(identity(2L)) { _, _ -> 2 })
-        assertNotNull(runtime.submit(identity(3L)) { _, _ -> 3 })
-        assertNull(runtime.submit(identity(4L)) { _, _ -> 4 })
+        assertNotNull(runtime.submit(tenant, identity(2L)) { _, _ -> 2 })
+        assertNotNull(runtime.submit(tenant, identity(3L)) { _, _ -> 3 })
+        assertNull(runtime.submit(tenant, identity(4L)) { _, _ -> 4 })
 
         val closer = Thread(runtime::close)
         closer.start()
@@ -110,10 +118,10 @@ class TerrainBuildRuntimeTest {
         assertFalse(closer.isAlive)
 
         val completions = mutableListOf<TerrainBuildCompletion<Int>>()
-        runtime.drain(completions::add)
+        runtime.drain(Int.MAX_VALUE, completions::add)
         assertEquals(3, completions.size)
         assertTrue(completions.all { it.outcome is TerrainBuildOutcome.Cancelled })
-        assertNull(runtime.submit(identity(5L)) { _, _ -> 5 })
+        assertNull(runtime.submit(tenant, identity(5L)) { _, _ -> 5 })
     }
 
     @Test
@@ -140,7 +148,7 @@ class TerrainBuildRuntimeTest {
             queueCapacity = 1,
             contextFactory = { AutoCloseable(contextClosed::countDown) },
         )
-        assertNotNull(runtime.submit(identity(1L)) { _, _ ->
+        assertNotNull(runtime.submit(tenant, identity(1L)) { _, _ ->
             started.countDown()
             assertTrue(release.await(5, TimeUnit.SECONDS))
         })
@@ -179,7 +187,7 @@ class TerrainBuildRuntimeTest {
     ): List<TerrainBuildCompletion<T>> {
         val completions = mutableListOf<TerrainBuildCompletion<T>>()
         repeat(500) {
-            runtime.drain(completions::add)
+            runtime.drain(Int.MAX_VALUE, completions::add)
             if (completions.size >= count) return completions
             Thread.sleep(10L)
         }
@@ -187,11 +195,14 @@ class TerrainBuildRuntimeTest {
     }
 
     private fun identity(revision: Long) = TerrainBuildIdentity(
-        position = SectionPosition(1, 2, 3),
+        page = TerrainPageKey(TerrainDomain.NEAR, 0, 1L, 2L, 3L, 7L),
         requestRevision = revision,
-        modelRevision = revision,
-        backendGeneration = 4L,
-        materialGeneration = "material",
+        capturedModelRevision = revision,
+        providerGeneration = 4L,
+        layoutGeneration = 5L,
+        materialGeneration = 6L,
+        coverageGeneration = 0L,
+        prioritySequence = revision,
     )
 
     private class Context(
