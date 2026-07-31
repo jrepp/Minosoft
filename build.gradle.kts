@@ -620,6 +620,14 @@ application {
     applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
+// The play supervisor stages hot-reload candidates away from the active
+// distribution so the old JVM never observes a JAR being replaced in place.
+providers.gradleProperty("minosoft.installDestination").orNull?.let { destination ->
+    tasks.named<Sync>("installDist") {
+        destinationDir = file(destination)
+    }
+}
+
 // Development-only native mod fixture. Its source and manifest are tracked, but
 // the play parent publishes each built JAR into the out-of-source artifact store.
 val canaryMod = sourceSets.create("canaryMod") {

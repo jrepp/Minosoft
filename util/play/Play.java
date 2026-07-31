@@ -120,6 +120,8 @@ public final class Play {
     private final Path clientLog;
     private final Path serverLog;
     private final Path eventLog;
+    private final Path defaultClientDistribution;
+    private final Path hotReloadDistributionRoot;
     private final Path modpacksDirectory;
     private final Path modpackStore;
     private final Path modpackCache;
@@ -135,6 +137,7 @@ public final class Play {
     private long worldSeed;
     private String worldGenerator;
     private int clientGeneration = 1;
+    private volatile Path activeClientDistribution;
     private String sessionId;
     private volatile Process supervisedClient;
     private volatile Process supervisedServer;
@@ -167,6 +170,9 @@ public final class Play {
         clientLog = runDirectory.resolve("minosoft-client.log");
         serverLog = serverDirectory.resolve("server-console.log");
         eventLog = runDirectory.resolve("play-events.jsonl");
+        defaultClientDistribution = project.resolve("build/install/minosoft");
+        hotReloadDistributionRoot = project.resolve("build/install/minosoft-hot-reload");
+        activeClientDistribution = defaultClientDistribution;
         modpackName = environment.getOrDefault("MINOSOFT_MODPACK", "");
         serverModpackName = environment.getOrDefault("MINOSOFT_SERVER_MODPACK", "fabric-stack");
         trajectory = environment.getOrDefault("MINOSOFT_TRAJECTORY", "default");
@@ -2849,7 +2855,7 @@ public final class Play {
     }
 
     private List<String> clientCommand(PreparedPack pack, PreparedCanary canary) {
-        Path launcher = project.resolve(isWindows() ? "build/install/minosoft/bin/minosoft.bat" : "build/install/minosoft/bin/minosoft");
+        Path launcher = activeClientDistribution.resolve(isWindows() ? "bin/minosoft.bat" : "bin/minosoft");
         List<String> command = new ArrayList<>();
         command.add(launcher.toString());
         command.add("--no-eros");
@@ -3057,21 +3063,37 @@ public final class Play {
                 String reloadKind = isCanaryOnlyChange(changes) ? "canary" : "base";
                 System.out.printf("%s change detected; building candidate client generation...%n", reloadKind.equals("canary") ? "Canary mod" : "Base-game");
                 emitEvent("candidate_detected", "changes", Integer.toString(changes.size()), "reloadKind", reloadKind);
+                Path candidateDistribution = activeClientDistribution;
                 try {
-                    if (reloadKind.equals("base")) installDistribution();
+                    if (reloadKind.equals("base")) {
+                        candidateDistribution = hotReloadDistributionRoot.resolve("generation-" + (clientGeneration + 1));
+                        deleteTree(candidateDistribution);
+                        installDistribution(candidateDistribution);
+                    }
                     PreparedPack candidate = modpackName.isBlank() ? null : prepareModpack(modpackName, trajectory);
                     PreparedCanary candidateCanary = canaryEnabled ? prepareCanary() : null;
                     emitEvent("candidate_ready", "reloadKind", reloadKind, "canaryHash", candidateCanary == null ? "" : candidateCanary.hash);
                     if (!stopSupervisedClient()) {
                         System.err.println("Candidate is ready, but the active client did not stop cleanly; keeping the current process boundary.");
                         emitEvent("candidate_swap_blocked", "reason", "active client did not stop cleanly");
+                        if (reloadKind.equals("base")) deleteTree(candidateDistribution);
                         continue;
                     }
+                    Path previousDistribution = activeClientDistribution;
+                    activeClientDistribution = candidateDistribution;
                     clientGeneration++;
                     supervisedClient = launchSupervisedClient(candidate, candidateCanary);
+                    if (previousDistribution.startsWith(hotReloadDistributionRoot)) deleteTree(previousDistribution);
                     System.out.printf("Activated new client generation (PID %d).%n", supervisedClient.pid());
                     emitEvent("candidate_activated", "clientPid", Long.toString(supervisedClient.pid()), "reloadKind", reloadKind, "canaryHash", candidateCanary == null ? "" : candidateCanary.hash);
                 } catch (Exception error) {
+                    if (reloadKind.equals("base") && !candidateDistribution.equals(activeClientDistribution)) {
+                        try {
+                            deleteTree(candidateDistribution);
+                        } catch (IOException cleanupError) {
+                            error.addSuppressed(cleanupError);
+                        }
+                    }
                     System.err.println("Candidate reload failed; the active generation was left running when possible: " + error.getMessage());
                     emitEvent("candidate_failed", "reason", String.valueOf(error.getMessage()), "reloadKind", reloadKind);
                 }
@@ -3216,6 +3238,14 @@ public final class Play {
         try {
             Files.deleteIfExists(supervisorPidFile);
         } catch (IOException ignored) {
+        }
+        if (activeClientDistribution.startsWith(hotReloadDistributionRoot)) {
+            try {
+                deleteTree(activeClientDistribution);
+                activeClientDistribution = defaultClientDistribution;
+            } catch (IOException error) {
+                System.err.println("Could not remove hot-reload client distribution: " + error.getMessage());
+            }
         }
         emitEvent("parent_stopped");
     }
@@ -4042,6 +4072,18 @@ public final class Play {
 
     private void installDistribution() throws Exception {
         runInherited(List.of(project.resolve(isWindows() ? "gradlew.bat" : "gradlew").toString(), "--quiet", "installDist"), project);
+    }
+
+    private void installDistribution(Path destination) throws Exception {
+        Path normalized = destination.toAbsolutePath().normalize();
+        require(normalized.startsWith(hotReloadDistributionRoot.toAbsolutePath().normalize()),
+            "Hot-reload distribution must remain under " + hotReloadDistributionRoot + ".");
+        runInherited(List.of(
+            project.resolve(isWindows() ? "gradlew.bat" : "gradlew").toString(),
+            "--quiet",
+            "-Pminosoft.installDestination=" + normalized,
+            "installDist"
+        ), project);
     }
 
     private void runInherited(List<String> command, Path directory) throws Exception {
