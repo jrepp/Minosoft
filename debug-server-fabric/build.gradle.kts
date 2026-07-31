@@ -35,6 +35,9 @@ dependencies {
 
     implementation(project(":debug-core"))
     include(project(":debug-core"))
+    implementation(project(":render-contracts"))
+    include(project(":render-contracts"))
+    include(implementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.0")!!)
     // Jackson annotations intentionally versions itself as 2.22 (without a patch component).
     include(implementation("com.fasterxml.jackson.core:jackson-annotations:2.22")!!)
     include(implementation("com.fasterxml.jackson.core:jackson-core:2.22.0")!!)

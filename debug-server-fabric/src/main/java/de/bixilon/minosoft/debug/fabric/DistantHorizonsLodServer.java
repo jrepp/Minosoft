@@ -10,6 +10,17 @@
 
 package de.bixilon.minosoft.debug.fabric;
 
+import com.mojang.datafixers.util.Either;
+import de.bixilon.minosoft.terrain.distant.DistantSourceCompleteness;
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantVerticalJavaInterop;
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantVerticalPage;
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantVerticalSampler;
+import de.bixilon.minosoft.terrain.distant.network.DistantProtocolWorld;
+import de.bixilon.minosoft.terrain.distant.network.DistantRequestedPage;
+import de.bixilon.minosoft.terrain.distant.network.DistantTerrainMessageV2;
+import de.bixilon.minosoft.terrain.distant.network.DistantTerrainProtocolV2;
+import de.bixilon.minosoft.terrain.model.identity.TerrainDomain;
+import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -24,6 +35,9 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.Heightmap;
+import net.minecraft.world.LightType;
+import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.ChunkStatus;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -37,14 +51,16 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Optional managed-server producer for Minosoft's source-native DH channel.
  *
  * Requests are explicit, radius checked, queue bounded, and processed at a
- * small per-tick budget. Calling {@code getChunk} is the intentional
- * authoritative unexplored-generation boundary.
+ * small per-tick budget. FULL-chunk futures are the explicit authoritative
+ * unexplored-generation boundary; the normal server tick never blocks on a
+ * synchronous chunk lookup for production v2 work.
  */
 final class DistantHorizonsLodServer {
     private static final Identifier CHANNEL = new Identifier("minosoft", "distant_horizons_lod");
@@ -59,11 +75,18 @@ final class DistantHorizonsLodServer {
     private static final int MAX_QUEUED_TILES = 128;
     private static final int TILES_PER_PLAYER_INTERVAL = 1;
     private static final int GENERATION_INTERVAL_TICKS = 20;
+    private static final int MAX_IN_FLIGHT_PAGES = 16;
     private static final int MAX_PALETTE_SIZE = 1_024;
     private static final int MAX_STRING_BYTES = 512;
+    private static final boolean ALLOW_V1_REQUESTS = false;
     private static final Map<UUID, ArrayDeque<TileRequest>> REQUESTS = new LinkedHashMap<>();
+    private static final Map<UUID, PlayerWorldState> PLAYER_WORLDS = new LinkedHashMap<>();
+    private static final Map<PageWorkKey, CompletableFuture<DistantVerticalPage>> IN_FLIGHT = new LinkedHashMap<>();
+    private static final Map<PlayerRequestKey, Integer> V2_REMAINING = new LinkedHashMap<>();
     private static final AtomicLong REQUEST_COUNT = new AtomicLong();
     private static final AtomicLong TILE_COUNT = new AtomicLong();
+    private static final AtomicLong CONNECTION_EPOCH = new AtomicLong();
+    private static final AtomicLong SOURCE_REVISION = new AtomicLong();
     private static long tickCount;
 
     private DistantHorizonsLodServer() {
@@ -77,12 +100,22 @@ final class DistantHorizonsLodServer {
         if (!registered) {
             throw new IllegalStateException("Distant Horizons LOD server channel is already registered");
         }
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-            send(handler.player, hello())
-        );
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            PlayerWorldState state = new PlayerWorldState(
+                CONNECTION_EPOCH.updateAndGet(Math::incrementExact),
+                0L,
+                levelKey(handler.player.getServerWorld())
+            );
+            synchronized (REQUESTS) {
+                PLAYER_WORLDS.put(handler.player.getUuid(), state);
+            }
+            send(handler.player, helloV2(state));
+        });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             synchronized (REQUESTS) {
                 REQUESTS.remove(handler.player.getUuid());
+                PLAYER_WORLDS.remove(handler.player.getUuid());
+                V2_REMAINING.keySet().removeIf(key -> key.playerId.equals(handler.player.getUuid()));
             }
         });
         ServerTickEvents.END_SERVER_TICK.register(DistantHorizonsLodServer::tick);
@@ -99,14 +132,69 @@ final class DistantHorizonsLodServer {
         if (size <= 0 || size > MAX_PAYLOAD_BYTES) return;
         byte[] payload = new byte[size];
         buffer.readBytes(payload);
-        Request request;
         try {
-            request = decodeRequest(payload);
+            if (DistantTerrainProtocolV2.INSTANCE.isV2(payload)) {
+                DistantTerrainMessageV2 message = DistantTerrainProtocolV2.INSTANCE.decode(payload);
+                server.execute(() -> {
+                    try {
+                        receiveV2(player, message);
+                    } catch (RuntimeException error) {
+                        System.err.println("Rejected Minosoft distant v2 request: " + error.getMessage());
+                    }
+                });
+            } else {
+                require(ALLOW_V1_REQUESTS, "legacy distant requests are disabled after v2 negotiation");
+                Request request = decodeRequest(payload);
+                server.execute(() -> enqueue(player, request));
+            }
         } catch (RuntimeException | IOException error) {
             System.err.println("Rejected malformed Minosoft distant LOD request: " + error.getMessage());
+        }
+    }
+
+    private static void receiveV2(ServerPlayerEntity player, DistantTerrainMessageV2 message) {
+        if (message instanceof DistantTerrainMessageV2.Cancel cancel) {
+            synchronized (REQUESTS) {
+                PlayerWorldState state = PLAYER_WORLDS.get(player.getUuid());
+                require(state != null && state.protocolWorld().equals(cancel.getWorld()), "cancel world/epoch is stale");
+                ArrayDeque<TileRequest> queue = REQUESTS.get(player.getUuid());
+                if (queue != null) queue.removeIf(request ->
+                    request.v2 && request.requestId == cancel.getRequestId() && request.worldState.equals(state)
+                );
+                V2_REMAINING.remove(new PlayerRequestKey(player.getUuid(), cancel.getRequestId(), cancel.getWorld()));
+            }
             return;
         }
-        server.execute(() -> enqueue(player, request));
+        if (!(message instanceof DistantTerrainMessageV2.Request request)) {
+            throw new IllegalArgumentException("unexpected client v2 message");
+        }
+        require(request.getPages().size() <= MAX_TILES_PER_REQUEST, "page count is out of bounds");
+        ChunkPos center = player.getChunkPos();
+        List<TileRequest> admitted = new ArrayList<>(request.getPages().size());
+        for (DistantRequestedPage page : request.getPages()) {
+            TerrainPageKey key = page.getKey();
+            require(key.getDetailLevel() == 0, "server currently supports base pages only");
+            ChunkPos position = new ChunkPos(Math.toIntExact(key.getX()), Math.toIntExact(key.getZ()));
+            require(withinRadius(position, center), "requested page is outside negotiated radius");
+            admitted.add(new TileRequest(
+                request.getRequestId(), position, true, key, null, page.getMinimumSourceRevision()
+            ));
+        }
+        synchronized (REQUESTS) {
+            PlayerWorldState state = PLAYER_WORLDS.get(player.getUuid());
+            require(state != null && state.protocolWorld().equals(request.getWorld()), "request world/epoch is stale");
+            PlayerRequestKey requestKey = new PlayerRequestKey(player.getUuid(), request.getRequestId(), request.getWorld());
+            require(!V2_REMAINING.containsKey(requestKey), "request ID is already active");
+            ArrayDeque<TileRequest> queue = REQUESTS.computeIfAbsent(player.getUuid(), ignored -> new ArrayDeque<>());
+            require(queue.size() + request.getPages().size() <= MAX_QUEUED_TILES, "player page queue is saturated");
+            for (TileRequest page : admitted) {
+                queue.addLast(new TileRequest(
+                    page.requestId, page.position, true, page.pageKey, state, page.minimumSourceRevision
+                ));
+            }
+            V2_REMAINING.put(requestKey, request.getPages().size());
+        }
+        incrementSaturating(REQUEST_COUNT);
     }
 
     static Request decodeRequest(byte[] payload) throws IOException {
@@ -128,18 +216,19 @@ final class DistantHorizonsLodServer {
 
     private static void enqueue(ServerPlayerEntity player, Request request) {
         ChunkPos center = player.getChunkPos();
-        REQUEST_COUNT.incrementAndGet();
+        incrementSaturating(REQUEST_COUNT);
         synchronized (REQUESTS) {
             ArrayDeque<TileRequest> queue = REQUESTS.computeIfAbsent(player.getUuid(), ignored -> new ArrayDeque<>());
             for (ChunkPos position : request.positions) {
                 if (queue.size() >= MAX_QUEUED_TILES) break;
                 if (!withinRadius(position, center)) continue;
-                queue.addLast(new TileRequest(request.requestId, position));
+                queue.addLast(new TileRequest(request.requestId, position, false, null, null, 0L));
             }
         }
     }
 
     private static void tick(MinecraftServer server) {
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) refreshWorld(player);
         if (++tickCount % GENERATION_INTERVAL_TICKS != 0L) return;
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             for (int index = 0; index < TILES_PER_PLAYER_INTERVAL; index++) {
@@ -151,15 +240,135 @@ final class DistantHorizonsLodServer {
                 }
                 if (request == null) break;
                 ChunkPos center = player.getChunkPos();
-                if (!withinRadius(request.position, center)) continue;
+                if (!withinRadius(request.position, center)) {
+                    if (request.v2) completeV2Page(player.getUuid(), request);
+                    continue;
+                }
+                if (request.v2) {
+                    if (!beginV2(server, player, request)) {
+                        synchronized (REQUESTS) {
+                            REQUESTS.computeIfAbsent(player.getUuid(), ignored -> new ArrayDeque<>()).addFirst(request);
+                        }
+                    }
+                    continue;
+                }
                 try {
-                    send(player, response(request.requestId, capture(player.getServerWorld(), request.position)));
-                    TILE_COUNT.incrementAndGet();
+                    send(player, response(Math.toIntExact(request.requestId), capture(player.getServerWorld(), request.position)));
+                    incrementSaturating(TILE_COUNT);
                 } catch (RuntimeException | IOException error) {
                     System.err.println("Could not produce Minosoft distant LOD tile " + request.position + ": " + error);
                 }
             }
         }
+    }
+
+    private static void refreshWorld(ServerPlayerEntity player) {
+        String level = levelKey(player.getServerWorld());
+        PlayerWorldState next = null;
+        synchronized (REQUESTS) {
+            PlayerWorldState current = PLAYER_WORLDS.get(player.getUuid());
+            if (current == null) return;
+            if (!current.levelKey.equals(level)) {
+                next = new PlayerWorldState(current.connectionEpoch, Math.addExact(current.worldEpoch, 1L), level);
+                PLAYER_WORLDS.put(player.getUuid(), next);
+                REQUESTS.remove(player.getUuid());
+                V2_REMAINING.keySet().removeIf(key -> key.playerId.equals(player.getUuid()));
+            }
+        }
+        if (next != null) send(player, helloV2(next));
+    }
+
+    private static boolean beginV2(MinecraftServer server, ServerPlayerEntity player, TileRequest request) {
+        PlayerWorldState current;
+        synchronized (REQUESTS) {
+            current = PLAYER_WORLDS.get(player.getUuid());
+        }
+        if (current == null || !current.equals(request.worldState) ||
+            !levelKey(player.getServerWorld()).equals(request.worldState.levelKey)) {
+            completeV2Page(player.getUuid(), request);
+            return true;
+        }
+        ServerWorld world = player.getServerWorld();
+        PageWorkKey workKey = new PageWorkKey(
+            world,
+            request.worldState.levelKey,
+            request.pageKey.getDetailLevel(),
+            request.pageKey.getX(),
+            request.pageKey.getY(),
+            request.pageKey.getZ()
+        );
+        CompletableFuture<DistantVerticalPage> future;
+        synchronized (IN_FLIGHT) {
+            future = IN_FLIGHT.get(workKey);
+            if (future == null) {
+                if (IN_FLIGHT.size() >= MAX_IN_FLIGHT_PAGES) return false;
+                CompletableFuture<DistantVerticalPage> created = world.getChunkManager()
+                    .getChunkFutureSyncOnMainThread(request.position.x, request.position.z, ChunkStatus.FULL, true)
+                    .thenApplyAsync(result -> captureV2(world, request.pageKey, requireChunk(result)), server);
+                future = created;
+                IN_FLIGHT.put(workKey, future);
+                created.whenComplete((page, error) -> {
+                    synchronized (IN_FLIGHT) {
+                        IN_FLIGHT.remove(workKey, created);
+                    }
+                });
+            }
+        }
+        future.whenCompleteAsync((page, error) -> {
+            try {
+                if (error != null) {
+                    System.err.println("Could not produce Minosoft distant v2 page " + request.position + ": " + error);
+                    return;
+                }
+                PlayerWorldState active;
+                boolean requested;
+                synchronized (REQUESTS) {
+                    active = PLAYER_WORLDS.get(player.getUuid());
+                    requested = V2_REMAINING.containsKey(
+                        new PlayerRequestKey(player.getUuid(), request.requestId, request.worldState.protocolWorld())
+                    );
+                }
+                if (!request.worldState.equals(active) || !requested || player.isDisconnected()) return;
+                send(player, DistantTerrainProtocolV2.INSTANCE.encode(
+                    new DistantTerrainMessageV2.Response(
+                        request.worldState.protocolWorld(), request.requestId,
+                        List.of(rekey(page, request.pageKey, request.minimumSourceRevision))
+                    )
+                ));
+                incrementSaturating(TILE_COUNT);
+            } catch (RuntimeException sendError) {
+                System.err.println("Could not publish Minosoft distant v2 page " + request.position + ": " + sendError);
+            } finally {
+                completeV2Page(player.getUuid(), request);
+            }
+        }, server);
+        return true;
+    }
+
+    private static void completeV2Page(UUID playerId, TileRequest request) {
+        synchronized (REQUESTS) {
+            PlayerRequestKey key = new PlayerRequestKey(playerId, request.requestId, request.worldState.protocolWorld());
+            V2_REMAINING.computeIfPresent(key, (ignored, remaining) -> remaining <= 1 ? null : remaining - 1);
+        }
+    }
+
+    private static DistantVerticalPage rekey(
+        DistantVerticalPage page,
+        TerrainPageKey key,
+        long minimumSourceRevision
+    ) {
+        return new DistantVerticalPage(
+            key,
+            page.getWidth(),
+            page.getOriginY(),
+            Math.max(page.getSourceRevision(), minimumSourceRevision),
+            page.getCompleteness(),
+            page.getColumns()
+        );
+    }
+
+    private static Chunk requireChunk(Either<Chunk, net.minecraft.server.world.ChunkHolder.Unloaded> result) {
+        return result.left().orElseThrow(() -> new IllegalStateException("generated chunk remained unloaded"));
     }
 
     static boolean withinRadius(ChunkPos position, ChunkPos center) {
@@ -209,6 +418,73 @@ final class DistantHorizonsLodServer {
             }
         }
         return new Tile(position, columns);
+    }
+
+    private static DistantVerticalPage captureV2(ServerWorld world, TerrainPageKey key, Chunk chunk) {
+        ChunkPos position = chunk.getPos();
+        BlockPos.Mutable mutable = new BlockPos.Mutable();
+        return DistantVerticalSampler.INSTANCE.capture(
+            key,
+            16,
+            world.getBottomY(),
+            world.getTopY(),
+            SOURCE_REVISION.updateAndGet(Math::incrementExact),
+            DistantSourceCompleteness.COMPLETE,
+            (x, y, z) -> {
+                BlockPos blockPosition = mutable.set(position.getStartX() + x, y, position.getStartZ() + z);
+                BlockState state = chunk.getBlockState(blockPosition);
+                int blockLight = world.getLightLevel(LightType.BLOCK, blockPosition);
+                int skyLight = world.getLightLevel(LightType.SKY, blockPosition);
+                if (state.isAir()) {
+                    return DistantVerticalJavaInterop.voxel(
+                        null, null, 0, null, blockLight, skyLight, null, false, false, true, 100
+                    );
+                }
+                String materialId = Registries.BLOCK.getId(state.getBlock()).toString();
+                var fluidState = state.getFluidState();
+                String fluidId = null;
+                int fluidLevel = 0;
+                if (!fluidState.isEmpty()) {
+                    fluidId = Registries.FLUID.getId(fluidState.getFluid()).toString();
+                    fluidLevel = Math.max(0, Math.min(15, fluidState.getLevel()));
+                }
+                String biome = world.getBiome(blockPosition).getKey()
+                    .map(registryKey -> registryKey.getValue().toString())
+                    .orElse(null);
+                return DistantVerticalJavaInterop.voxel(
+                    materialId,
+                    fluidId,
+                    fluidLevel,
+                    fluidId,
+                    blockLight,
+                    skyLight,
+                    biome,
+                    state.isOpaque(),
+                    state.getLuminance() > 0,
+                    true,
+                    100
+                );
+            }
+        );
+    }
+
+    private static byte[] helloV2(PlayerWorldState state) {
+        return helloV2(state.connectionEpoch, state.worldEpoch, state.levelKey);
+    }
+
+    static byte[] helloV2(long connectionEpoch, long worldEpoch, String levelKey) {
+        return DistantTerrainProtocolV2.INSTANCE.encode(
+            new DistantTerrainMessageV2.Hello(
+                new DistantProtocolWorld(connectionEpoch, worldEpoch, levelKey),
+                MAX_TILES_PER_REQUEST,
+                MAX_RADIUS_CHUNKS,
+                0
+            )
+        );
+    }
+
+    private static String levelKey(ServerWorld world) {
+        return world.getRegistryKey().getValue().toString();
     }
 
     static byte[] hello() {
@@ -286,16 +562,51 @@ final class DistantHorizonsLodServer {
         return TILE_COUNT.get();
     }
 
+    private static void incrementSaturating(AtomicLong counter) {
+        counter.updateAndGet(value -> value == Long.MAX_VALUE ? value : value + 1L);
+    }
+
     static int queuedTiles() {
         synchronized (REQUESTS) {
             return REQUESTS.values().stream().mapToInt(ArrayDeque::size).sum();
         }
     }
 
+    static int inFlightPages() {
+        synchronized (IN_FLIGHT) {
+            return IN_FLIGHT.size();
+        }
+    }
+
+    static int activeV2Requests() {
+        synchronized (REQUESTS) {
+            return V2_REMAINING.size();
+        }
+    }
+
     record Request(int requestId, List<ChunkPos> positions) {
     }
 
-    private record TileRequest(int requestId, ChunkPos position) {
+    private record TileRequest(
+        long requestId,
+        ChunkPos position,
+        boolean v2,
+        TerrainPageKey pageKey,
+        PlayerWorldState worldState,
+        long minimumSourceRevision
+    ) {
+    }
+
+    private record PlayerWorldState(long connectionEpoch, long worldEpoch, String levelKey) {
+        DistantProtocolWorld protocolWorld() {
+            return new DistantProtocolWorld(connectionEpoch, worldEpoch, levelKey);
+        }
+    }
+
+    private record PageWorkKey(ServerWorld world, String levelKey, int detailLevel, long x, long y, long z) {
+    }
+
+    private record PlayerRequestKey(UUID playerId, long requestId, DistantProtocolWorld world) {
     }
 
     record Tile(ChunkPos position, Column[] columns) {

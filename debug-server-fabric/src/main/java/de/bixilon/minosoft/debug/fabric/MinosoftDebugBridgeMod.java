@@ -105,7 +105,9 @@ public final class MinosoftDebugBridgeMod implements ModInitializer {
             .put("worlds", current.worldCount)
             .put("distantLodRequests", DistantHorizonsLodServer.requestCount())
             .put("distantLodTiles", DistantHorizonsLodServer.tileCount())
-            .put("distantLodQueued", DistantHorizonsLodServer.queuedTiles());
+            .put("distantLodQueued", DistantHorizonsLodServer.queuedTiles())
+            .put("distantLodInFlight", DistantHorizonsLodServer.inFlightPages())
+            .put("distantLodActiveV2Requests", DistantHorizonsLodServer.activeV2Requests());
     }
 
     private DebugOperationResult sampleState(JsonNode body) {

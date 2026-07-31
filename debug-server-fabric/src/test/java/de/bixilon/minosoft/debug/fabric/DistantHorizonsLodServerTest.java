@@ -10,6 +10,8 @@
 
 package de.bixilon.minosoft.debug.fabric;
 
+import de.bixilon.minosoft.terrain.distant.network.DistantTerrainMessageV2;
+import de.bixilon.minosoft.terrain.distant.network.DistantTerrainProtocolV2;
 import net.minecraft.util.math.ChunkPos;
 import org.junit.jupiter.api.Test;
 
@@ -79,6 +81,19 @@ final class DistantHorizonsLodServerTest {
         );
         assertEquals(0x4D, response[0] & 0xFF);
         assertEquals(2, response[5] & 0xFF);
+    }
+
+    @Test
+    void productionHelloNegotiatesWorldTaggedProtocolV2() {
+        byte[] payload = DistantHorizonsLodServer.helloV2(17L, 4L, "minecraft:the_nether");
+        assertTrue(DistantTerrainProtocolV2.INSTANCE.isV2(payload));
+        DistantTerrainMessageV2.Hello hello = (DistantTerrainMessageV2.Hello)
+            DistantTerrainProtocolV2.INSTANCE.decode(payload);
+
+        assertEquals(17L, hello.getWorld().getConnectionEpoch());
+        assertEquals(4L, hello.getWorld().getWorldEpoch());
+        assertEquals("minecraft:the_nether", hello.getWorld().getLevelKey());
+        assertEquals(0, hello.getMaximumDetailLevel());
     }
 
     private static byte[] request(int requestId, List<ChunkPos> positions) throws IOException {
