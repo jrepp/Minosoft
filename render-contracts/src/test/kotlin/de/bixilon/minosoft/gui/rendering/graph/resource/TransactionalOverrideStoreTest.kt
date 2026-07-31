@@ -35,9 +35,9 @@ class TransactionalOverrideStoreTest {
 
         second.close()
         assertEquals("fallback", store.acquire().use { it.value })
-        assertEquals(listOf("fallback", "first", "second"), retired)
+        assertEquals(listOf("first", "second"), retired)
         store.close()
-        assertEquals(listOf("fallback", "first", "second", "fallback"), retired)
+        assertEquals(listOf("first", "second", "fallback"), retired)
     }
 
     @Test
@@ -54,6 +54,35 @@ class TransactionalOverrideStoreTest {
         lease.close()
         assertTrue("override" in retired)
         assertEquals(0, store.stats().retiredAwaitingLeases)
+        store.close()
+    }
+
+    @Test
+    fun `fallback retirement waits for every fallback lease`() {
+        val retired = mutableListOf<Any>()
+        val fallback = Any()
+        val store = TransactionalOverrideStore(fallback, retired::add)
+        val lease = store.acquire()
+        val registration = store.replace { Any() }
+
+        store.close()
+        assertFalse(fallback in retired)
+
+        lease.close()
+        assertEquals(2, retired.size)
+        assertTrue(fallback in retired)
+        registration.close()
+    }
+
+    @Test
+    fun `override cannot reuse retained fallback instance`() {
+        val fallback = Any()
+        val store = TransactionalOverrideStore(fallback) {}
+
+        kotlin.test.assertFailsWith<IllegalArgumentException> {
+            store.replace { fallback }
+        }
+        assertEquals(fallback, store.acquire().use { it.value })
         store.close()
     }
 }

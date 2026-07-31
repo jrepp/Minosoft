@@ -71,6 +71,19 @@ class TerrainBackendRegistryTest {
     }
 
     @Test
+    fun `registry close waits for outstanding built in lease`() {
+        val builtIn = backend("minosoft:built-in")
+        val registry = TerrainBackendRegistry(builtIn)
+        val lease = registry.acquire()
+
+        registry.close()
+        assertFalse(builtIn.closed)
+
+        lease.close()
+        assertTrue(builtIn.closed)
+    }
+
+    @Test
     fun `one backend generation owns the complete prepared frame`() {
         val builtIn = backend("minosoft:built-in")
         val registry = TerrainBackendRegistry(builtIn)

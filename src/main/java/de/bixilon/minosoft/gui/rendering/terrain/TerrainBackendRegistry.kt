@@ -63,7 +63,7 @@ class TerrainBackendRegistry(
 
     private val lock = Any()
     private val builtInDescriptor = snapshot(builtIn.descriptor)
-    private val store = TransactionalOverrideStore(Generation(builtIn, builtInDescriptor, false)) { generation ->
+    private val store = TransactionalOverrideStore(Generation(builtIn, builtInDescriptor, true)) { generation ->
         if (generation.closeOnRetire) generation.backend.close()
     }
     private var closed = false
@@ -221,6 +221,5 @@ class TerrainBackendRegistry(
         }
         activeFrame?.close()
         store.close()
-        builtIn.close()
     }
 }

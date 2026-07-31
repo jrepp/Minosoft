@@ -165,7 +165,7 @@ class ShaderPipelineRegistry : AutoCloseable {
     )
 
     private val lock = Any()
-    private val store = TransactionalOverrideStore(Generation(BuiltInWorldShaderPipeline, false)) { generation ->
+    private val store = TransactionalOverrideStore(Generation(BuiltInWorldShaderPipeline, true)) { generation ->
         if (generation.closeOnRetire) generation.pipeline.close()
     }
     private val framePipeline = ThreadLocal<WorldShaderPipeline?>()

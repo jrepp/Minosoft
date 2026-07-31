@@ -28,13 +28,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class TransactionalOverrideStore<T : Any>(
     private val fallback: T,
-    retire: (T) -> Unit,
+    private val retire: (T) -> Unit,
 ) : AutoCloseable {
     private val lock = Any()
-    private val generations = TransactionalGenerationStore(fallback, retire)
+    private var fallbackGenerations = 1
+    private var fallbackRetired = false
     private var nextToken = 1L
     private var activeToken: Long? = null
     private var closed = false
+    private val generations = TransactionalGenerationStore(fallback, ::retireGeneration)
 
     fun acquire(): TransactionalGenerationStore.Lease<T> = generations.acquire()
 
@@ -42,7 +44,11 @@ class TransactionalOverrideStore<T : Any>(
         val token = synchronized(lock) {
             check(!closed) { "Override store is closed" }
             val token = nextToken++
-            generations.replace(prepare)
+            generations.replace {
+                prepare().also { candidate ->
+                    require(candidate !== fallback) { "An override must not reuse the fallback instance" }
+                }
+            }
             activeToken = token
             token
         }
@@ -54,7 +60,13 @@ class TransactionalOverrideStore<T : Any>(
     private fun remove(token: Long) {
         synchronized(lock) {
             if (closed || activeToken != token) return
-            generations.replace { fallback }
+            fallbackGenerations++
+            try {
+                generations.replace { fallback }
+            } catch (failure: Throwable) {
+                fallbackGenerations--
+                throw failure
+            }
             activeToken = null
         }
     }
@@ -66,6 +78,26 @@ class TransactionalOverrideStore<T : Any>(
             activeToken = null
         }
         generations.close()
+        synchronized(lock) { retireFallbackIfReady() }?.let(retire)
+    }
+
+    private fun retireGeneration(value: T) {
+        val retired = synchronized(lock) {
+            if (value !== fallback) {
+                value
+            } else {
+                check(fallbackGenerations > 0) { "Fallback generation underflow" }
+                fallbackGenerations--
+                retireFallbackIfReady()
+            }
+        }
+        retired?.let(retire)
+    }
+
+    private fun retireFallbackIfReady(): T? {
+        if (!closed || fallbackRetired || fallbackGenerations != 0) return null
+        fallbackRetired = true
+        return fallback
     }
 
     private inner class Registration(
