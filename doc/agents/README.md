@@ -7,9 +7,9 @@ where the evidence lives, which boundaries are intentional, and what trajectory
 should guide the next change. It complements human-facing documentation in
 `doc/`; it does not duplicate it.
 
-The order below is an investigation order, not a claim that the current
-single-module codebase already has a clean dependency graph. Start at the first
-layer affected by a task and follow references upward.
+The order below is an investigation order, not a claim that the
+application-heavy codebase already has a fully clean dependency graph. Start at
+the first layer affected by a task and follow references upward.
 
 ## Evidence language
 
@@ -60,10 +60,14 @@ instructions that differ from the root contract.
 - [Java 25 build baseline](evidence/2026-07-30-java-25-baseline.md) records the
   repository-wide runtime/bytecode decision, compatible build stack, class-file
   inspection, complete test gate, and CI packaging checks.
+- [Architecture and trajectory checkpoint](evidence/2026-07-30-architecture-trajectory.md)
+  records centralized JVM conventions, the first four trajectory primitives,
+  the headless render-contract boundary, shared generation ownership, Java 25
+  native-access/Gradle 10 cleanup, and the preferred OpenGL 4.3 tier.
 - [Agent trajectory tooling backlog](backlog/agent-trajectory-tooling.md)
   prioritizes runtime leases, atomic diagnosis bundles, safe world snapshots,
   compare-and-restore checkpoints, visual A/B automation, and isolated
-  world/server creation. It is target guidance, not implemented behavior.
+  world/server creation. It labels implemented slices and remaining targets.
 - [Blockbench producer-integration protocol](acceptance/blockbench.md) defines
   the isolated desktop export boundary, captured-output contract, automated
   Minosoft fixture gate, and the separate real-render and remote-server gates.

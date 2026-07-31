@@ -111,6 +111,22 @@ and tests remain the behavioral authority.
   sizes. Convert once at the boundary and keep the internal representation
   consistent.
 
+## Preserve dependency and generation boundaries
+
+- Put GUI-independent render graph/resource declarations, generation ownership,
+  and fixed-storage telemetry in `render-contracts`. That module must not depend
+  on the application, Minecraft state, windowing, LWJGL, or OpenGL.
+- Keep concrete world adapters and GPU realization in the application module.
+  Translate application-owned objects into immutable contract values at the
+  boundary instead of adding an upward dependency.
+- Use `TransactionalGenerationStore` for leased candidate/publish/retire state
+  and `TransactionalOverrideStore` when one fallback has at most one active
+  replaceable owner. Do not duplicate tokens, stale-registration checks, or
+  deferred-retirement bookkeeping in each registry.
+- Prepare and validate a complete candidate before publication. A registration
+  closes only the generation it installed; closing a stale handle must not
+  remove a newer generation.
+
 ## Verification checklist
 
 - Add a focused test for the behavior and at least one failure, boundary, or

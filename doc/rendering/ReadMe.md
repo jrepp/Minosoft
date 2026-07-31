@@ -4,7 +4,13 @@
 
 ## General
 
-Minosoft uses OpenGL 3.3+ for rendering. The whole rendering system is abstract, so a port to opengl es or vulkan should be *easily* possible.
+Minosoft keeps OpenGL 3.3 as its compatibility floor. On non-Apple platforms
+it first requests an OpenGL 4.3 core context, which enables the compute-shader
+and shader-storage paths used by advanced shader packs when the actual driver
+capabilities and limits pass validation. GLFW may return a newer compatible
+context. macOS requests OpenGL 4.1 because Apple does not expose 4.3, so 4.3-only
+features remain disabled there. The rendering system stays abstract and
+headless planning does not require OpenGL.
 
 Everything is working in shaders (written in glsl), some things even have multiple shaders.
 

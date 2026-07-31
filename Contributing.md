@@ -99,6 +99,7 @@ Common verification commands are:
 
 ```sh
 ./gradlew compileKotlin
+./gradlew :render-contracts:test
 ./gradlew test
 ./gradlew integrationTest
 ./gradlew assemble

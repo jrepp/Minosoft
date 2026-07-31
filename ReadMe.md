@@ -43,7 +43,9 @@ Don't expect too much from me. I am still happy to receive feedback and contribu
 - CPU: Multiple (4+) cores, high clock speed (2+ GHz)
 - RAM: Minimum 500 MiB, 1 GiB recommended
 - Disk space: 80 MiB + assets (~ 300 MiB per version)
-- GPU: OpenGL 3.3+. Every modern GPU works and is recommended.
+- GPU: OpenGL 3.3 minimum; OpenGL 4.3+ recommended for compute shaders,
+  shader-storage buffers, and full advanced shader-pack paths. macOS uses its
+  OpenGL 4.1 ceiling and disables 4.3-only features.
 - Java 25. Older and newer Java releases are not supported until they pass the
   repository's complete build and runtime gates.
 - ~~A minecraft server (local or online)~~ (there is a flat world single player for testing purposes)
