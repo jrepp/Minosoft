@@ -310,11 +310,12 @@ object ClientDebugChannel : AutoCloseable {
                 put("fps", it.renderStats.smoothAvgFPS)
                 put("averageFrameNanos", it.renderStats.avgFrameTime.avg.inWholeNanoseconds)
                 put("averageDrawNanos", it.renderStats.avgDrawTime.avg.inWholeNanoseconds)
-                put("timingSamples", it.renderStats.timingSamples)
-                put("medianFrameNanos", it.renderStats.medianFrameNanos)
-                put("p95FrameNanos", it.renderStats.p95FrameNanos)
-                put("medianDrawNanos", it.renderStats.medianDrawNanos)
-                put("p95DrawNanos", it.renderStats.p95DrawNanos)
+                val timing = it.renderStats.timingSnapshot
+                put("timingSamples", timing.samples)
+                put("medianFrameNanos", timing.medianFrameNanos)
+                put("p95FrameNanos", timing.p95FrameNanos)
+                put("medianDrawNanos", timing.medianDrawNanos)
+                put("p95DrawNanos", timing.p95DrawNanos)
             }
             active?.let {
                 put("sessionId", it.sessionId.toString())

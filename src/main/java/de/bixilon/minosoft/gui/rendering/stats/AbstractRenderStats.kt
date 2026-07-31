@@ -15,6 +15,14 @@ package de.bixilon.minosoft.gui.rendering.stats
 
 import de.bixilon.kutil.avg.duration.DurationAverage
 
+data class RenderTimingSnapshot(
+    val samples: Int = 0,
+    val medianFrameNanos: Long = 0L,
+    val p95FrameNanos: Long = 0L,
+    val medianDrawNanos: Long = 0L,
+    val p95DrawNanos: Long = 0L,
+)
+
 interface AbstractRenderStats {
     val avgDrawTime: DurationAverage
     val avgFrameTime: DurationAverage
@@ -23,11 +31,7 @@ interface AbstractRenderStats {
     val smoothAvgFPS: Double
 
     val totalFrames: Long
-    val timingSamples: Int get() = 0
-    val medianFrameNanos: Long get() = 0L
-    val p95FrameNanos: Long get() = 0L
-    val medianDrawNanos: Long get() = 0L
-    val p95DrawNanos: Long get() = 0L
+    val timingSnapshot: RenderTimingSnapshot get() = RenderTimingSnapshot()
 
 
     fun startFrame() = Unit

@@ -68,6 +68,8 @@ class ExperimentalRenderStats : AbstractRenderStats {
 
     override val totalFrames: Long
         get() = renderStats.totalFrames
+    override val timingSnapshot: RenderTimingSnapshot
+        get() = renderStats.timingSnapshot
 
     override fun startFrame() {
         renderStats.startFrame()

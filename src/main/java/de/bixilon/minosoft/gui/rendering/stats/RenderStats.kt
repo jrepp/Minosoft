@@ -32,11 +32,18 @@ class RenderStats : AbstractRenderStats {
     private val frameTimings = RenderTimingWindow()
     private val drawTimings = RenderTimingWindow()
 
-    override val timingSamples: Int get() = frameTimings.samples
-    override val medianFrameNanos: Long get() = frameTimings.percentile(0.5)
-    override val p95FrameNanos: Long get() = frameTimings.percentile(0.95)
-    override val medianDrawNanos: Long get() = drawTimings.percentile(0.5)
-    override val p95DrawNanos: Long get() = drawTimings.percentile(0.95)
+    override val timingSnapshot: RenderTimingSnapshot
+        get() {
+            val frames = frameTimings.snapshot()
+            val draws = drawTimings.snapshot()
+            return RenderTimingSnapshot(
+                samples = frames.samples,
+                medianFrameNanos = frames.medianNanos,
+                p95FrameNanos = frames.p95Nanos,
+                medianDrawNanos = draws.medianNanos,
+                p95DrawNanos = draws.p95Nanos,
+            )
+        }
 
     override var smoothAvgFPS: Double = 0.0
         get() {
