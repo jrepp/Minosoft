@@ -44,6 +44,8 @@ import de.bixilon.minosoft.data.world.border.area.BorderArea
 import de.bixilon.minosoft.data.world.border.area.StaticBorderArea
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.data.world.weather.WorldWeather
+import de.bixilon.minosoft.debug.terrain.TerrainDiagnosticDebugOperation
+import de.bixilon.minosoft.debug.terrain.TerrainDiagnosticProviderCapture
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.RenderingStates
 import de.bixilon.minosoft.gui.rendering.camera.arm.ArmRenderer
@@ -83,6 +85,7 @@ import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceSn
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureManager
 import de.bixilon.minosoft.gui.rendering.system.window.KeyChangeTypes
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainPerformanceSnapshot
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainRuntimeSelection
 import de.bixilon.minosoft.local.LocalConnection
 import de.bixilon.minosoft.modding.loader.ModOptions
 import de.bixilon.minosoft.modding.loader.fabric.FabricModDiagnostics
@@ -221,6 +224,9 @@ object ClientDebugChannel : AutoCloseable {
         server.operations().register("client", "world.aoi") { _, body -> completed(sampleBlocks(body)) }
         server.operations().register("client", "mods.debug") { _, _ -> completed(modDiagnostics()) }
         server.operations().register("client", "render.substrate") { _, _ -> onRender(::renderSubstrate) }
+        TerrainDiagnosticDebugOperation.register(server.operations()) { _, body ->
+            onRender { terrainDiagnostics(it, body) }
+        }
         server.operations().register("client", "render.terrain-telemetry") { _, body ->
             onRender { configureTerrainTelemetry(it, body) }
         }
@@ -2777,6 +2783,20 @@ object ClientDebugChannel : AutoCloseable {
         return DebugOperationResult.json(result)
     }
 
+    private fun terrainDiagnostics(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val diagnosticGeneration = context.frameNumber
+        val renderer = context.renderer[ChunkRenderer]
+            ?: return TerrainDiagnosticDebugOperation.unavailableProvider(diagnosticGeneration)
+        val source = renderer.terrain.acquire().use { lease ->
+            TerrainDiagnosticProviderCapture.capture(
+                diagnosticGeneration = diagnosticGeneration,
+                providerGeneration = lease.generation,
+                descriptor = lease.descriptor,
+            )
+        }
+        return TerrainDiagnosticDebugOperation.execute(source, body)
+    }
+
     private fun renderSubstrate(context: RenderContext): DebugOperationResult {
         val graph = context.renderer.pipeline.generation
         val shader = context.shaderPipeline.selection()
@@ -3057,7 +3077,12 @@ object ClientDebugChannel : AutoCloseable {
             val terrain = chunks.terrain.selection()
             val descriptor = chunks.terrain.descriptor()
             val terrainStats = chunks.terrain.stats()
+            val runtimeSelection = TerrainRuntimeSelection.process
             result.putObject("terrain").apply {
+                put("runtimeMode", runtimeSelection.mode.name.lowercase())
+                put("semanticArtifacts", runtimeSelection.semanticArtifacts)
+                put("regionStorageSelected", runtimeSelection.regionStorage)
+                put("distantHierarchySelected", runtimeSelection.distantHierarchy)
                 put("generation", terrain.generation)
                 put("owner", terrain.owner.value)
                 put("implementation", terrain.implementation)
@@ -3081,6 +3106,64 @@ object ClientDebugChannel : AutoCloseable {
                     snapshot = chunks.terrainPerformance.snapshot(),
                     includeBuckets = true,
                 )
+                val nearOwnership = chunks.loaded.ownershipSnapshot()
+                nearOwnership.lifecycle?.let { coverage ->
+                    putObject("nearCoverage").apply {
+                        put("revision", nearOwnership.revision)
+                        put("lifecycleRevision", coverage.lifecycleRevision)
+                        put("worldEpoch", coverage.worldEpoch)
+                        put("providerGeneration", coverage.providerGeneration)
+                        put("coveredChunks", nearOwnership.chunks.size)
+                        putObject("states").apply {
+                            coverage.cells.groupingBy { it.state.name.lowercase() }
+                                .eachCount()
+                                .toSortedMap()
+                                .forEach { (state, count) -> put(state, count) }
+                        }
+                        putArray("cells").also { cells ->
+                            coverage.cells.forEach { cell ->
+                                cells.addObject().apply {
+                                    put("x", cell.page.x)
+                                    put("y", cell.page.y)
+                                    put("z", cell.page.z)
+                                    put("detailLevel", cell.page.detailLevel)
+                                    put("state", cell.state.name.lowercase())
+                                    put("surfaceRelevant", cell.surfaceRelevant)
+                                    put("contributesCoverage", cell.contributesCoverage)
+                                    put("transitionAgeFrames", cell.transitionAgeFrames)
+                                    put("coverageAgeFrames", cell.coverageAgeFrames)
+                                }
+                            }
+                        }
+                    }
+                }
+                chunks.regionTerrain?.metrics()?.let { region ->
+                    putObject("regionStorage").apply {
+                        put("regions", region.regions)
+                        put("activePages", region.activePages)
+                        put("retiredPages", region.retiredPages)
+                        put("residentBytes", region.residentBytes)
+                        put("retiredBytes", region.retiredBytes)
+                        put("vertexAllocatedBytes", region.vertexAllocatedBytes)
+                        put("indexAllocatedBytes", region.indexAllocatedBytes)
+                        put("vertexHighWaterBytes", region.vertexHighWaterBytes)
+                        put("indexHighWaterBytes", region.indexHighWaterBytes)
+                        put("stagingCapacityBytes", region.stagingCapacityBytes)
+                        put("uploadedBytes", region.uploadedBytes)
+                        put("uploadNanos", region.uploadNanos)
+                        put("publications", region.publications)
+                        put("allocationFailures", region.allocationFailures)
+                        put("uploadFailures", region.uploadFailures)
+                        put("batchCacheEntries", region.batchCacheEntries)
+                        put("batchBuilds", region.batchBuilds)
+                        put("batchHits", region.batchHits)
+                        put("batchEvictions", region.batchEvictions)
+                        put("drawBatches", region.drawBatches)
+                        put("drawCommands", region.drawCommands)
+                        put("drawVertices", region.drawVertices)
+                        put("pendingSubmissionFences", region.pendingSubmissionFences)
+                    }
+                }
                 val visibleMeshes = chunks.visibility.meshes
                 visibleMeshes.lock.locked {
                     putObject("visibleMeshes").apply {
@@ -3184,6 +3267,15 @@ object ClientDebugChannel : AutoCloseable {
             put("outputBytes", snapshot.outputBytes)
             put("uploadedBytes", snapshot.uploadedBytes)
             put("visibleSections", snapshot.visibleSections)
+            putObject("buildCauses").apply {
+                snapshot.requestedByCause.forEach { (cause, requested) ->
+                    putObject(cause.wireName).apply {
+                        put("requested", requested)
+                        put("started", snapshot.startedByCause.getValue(cause))
+                        put("suppressed", snapshot.suppressedByCause.getValue(cause))
+                    }
+                }
+            }
             putObject("phases").apply {
                 snapshot.phases.forEach { (phase, latency) ->
                     putObject(phase.wireName).apply {
