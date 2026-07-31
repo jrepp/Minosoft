@@ -69,6 +69,22 @@ MINOSOFT_JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-25.jdk/Contents/Home \
   ./play.sh help
 ```
 
+The managed Minecraft 1.20.4 server requires a Java 25-capable loader runtime.
+Fabric Loader 0.15.11's bundled ASM/Mixin stack rejected the bridge's
+class-file major version 69 and then failed mixin metadata resolution. The
+server launcher is therefore pinned to Fabric Loader 0.19.3 and Fabric
+Installer 1.1.2 while the bridge and pack metadata retain 0.15.11 as their
+minimum compile-time compatibility boundary. A live `./play.sh start server`
+run downloaded that launcher, reached debug-ready and game-ready on Java 25,
+and then shut down cleanly:
+
+```text
+fabricloader 0.19.3
+sponge-mixin 0.17.3+mixin.0.8.7
+MixinExtras 0.5.4
+Minecraft server is game-ready
+```
+
 The repository gate passed:
 
 ```sh
@@ -97,6 +113,8 @@ performance protocol; the focused rerun and complete gate then passed.
 
 - GitHub Actions and GitLab CI both select Azul Zulu Java 25. The remote matrix
   was not executed locally.
+- The managed Fabric 1.20.4 lane is verified with Loader 0.19.3. Other external
+  server loaders and versions require their own Java 25 compatibility evidence.
 - This build gate does not replace a live OpenGL or hot-reload trajectory.
 - Gradle reports existing Gradle 10 deprecations, and Java 25 warns when LWJGL
   calls restricted native loading without an explicit native-access option.

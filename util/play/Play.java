@@ -89,6 +89,8 @@ public final class Play {
     private static final Pattern MINECRAFT_VERSION_ID = Pattern.compile("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
     private static final String MINOSOFT_MAIN = "de.bixilon.minosoft.Minosoft";
     private static final String FABRIC_PREFLIGHT = "de.bixilon.minosoft.modding.loader.fabric.FabricPackPreflightCli";
+    private static final String FABRIC_SERVER_LOADER_VERSION = "0.19.3";
+    private static final String FABRIC_SERVER_INSTALLER_VERSION = "1.1.2";
     private static final int MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
     private static final int MAX_SCENARIO_BYTES = 4 * 1024 * 1024;
     private static final long MAX_SCREENSHOT_PIXELS = 16_777_216L;
@@ -148,7 +150,7 @@ public final class Play {
         javaBin = javaHome.resolve("bin").resolve(isWindows() ? "java.exe" : "java");
         serverJar = resolveProjectPath(env("MINECRAFT_SERVER_JAR", "server/server.jar"));
         serverDirectory = resolveProjectPath(env("MINECRAFT_SERVER_DIR", serverJar.getParent().toString()));
-        fabricServerJar = serverDirectory.resolve("fabric-server-mc.1.20.4-loader.0.15.11-launcher.1.0.1.jar");
+        fabricServerJar = serverDirectory.resolve(fabricServerLauncherFileName());
         serverModsDirectory = serverDirectory.resolve("mods");
         serverManagedModsFile = serverDirectory.resolve(".minosoft-managed-mods");
         serverFlavor = env("MINECRAFT_SERVER_FLAVOR", "fabric").toLowerCase(Locale.ROOT);
@@ -2724,8 +2726,12 @@ public final class Play {
         Files.createDirectories(serverDirectory);
         if (!Files.isRegularFile(fabricServerJar)) {
             Path partial = serverDirectory.resolve("." + fabricServerJar.getFileName() + ".part." + ProcessHandle.current().pid());
-            URI launcher = URI.create("https://meta.fabricmc.net/v2/versions/loader/1.20.4/0.15.11/1.0.1/server/jar");
-            System.out.println("Downloading pinned Fabric 1.20.4 server launcher...");
+            URI launcher = fabricServerLauncherUri();
+            System.out.printf(
+                "Downloading pinned Fabric 1.20.4 loader %s server launcher %s...%n",
+                FABRIC_SERVER_LOADER_VERSION,
+                FABRIC_SERVER_INSTALLER_VERSION
+            );
             download(launcher, partial);
             verifyFabricServerLauncher(partial);
             try {
@@ -2774,6 +2780,18 @@ public final class Play {
         );
         System.out.printf("Prepared Fabric server with debug bridge and %d managed support mod(s).%n", serverSupport.size());
         return fabricServerJar;
+    }
+
+    static String fabricServerLauncherFileName() {
+        return "fabric-server-mc.1.20.4-loader." + FABRIC_SERVER_LOADER_VERSION +
+            "-launcher." + FABRIC_SERVER_INSTALLER_VERSION + ".jar";
+    }
+
+    static URI fabricServerLauncherUri() {
+        return URI.create(
+            "https://meta.fabricmc.net/v2/versions/loader/1.20.4/" +
+                FABRIC_SERVER_LOADER_VERSION + "/" + FABRIC_SERVER_INSTALLER_VERSION + "/server/jar"
+        );
     }
 
     private void verifyFabricServerLauncher(Path launcher) throws IOException {
