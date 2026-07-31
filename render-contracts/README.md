@@ -7,7 +7,7 @@ Minosoft application, Minecraft state, a window, LWJGL, or OpenGL:
 
 - immutable render graph descriptions and owner-scoped publication;
 - typed render target and vertex-layout declarations;
-- leased candidate/publish/retire generation ownership; and
+- leased candidate/publish/retire generation and single-override ownership; and
 - fixed-storage terrain performance telemetry.
 
 The application module consumes these contracts and owns concrete world,

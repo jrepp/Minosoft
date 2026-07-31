@@ -20,8 +20,8 @@ package de.bixilon.minosoft.gui.rendering.terrain
 import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
 import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
 import de.bixilon.minosoft.gui.rendering.graph.resource.TransactionalGenerationStore
+import de.bixilon.minosoft.gui.rendering.graph.resource.TransactionalOverrideStore
 import de.bixilon.minosoft.gui.rendering.stats.RenderTimingWindow
-import java.util.concurrent.atomic.AtomicBoolean
 
 class TerrainBackendRegistry(
     private val builtIn: TerrainBackend,
@@ -63,11 +63,9 @@ class TerrainBackendRegistry(
 
     private val lock = Any()
     private val builtInDescriptor = snapshot(builtIn.descriptor)
-    private val store = TransactionalGenerationStore(Generation(builtIn, builtInDescriptor, false)) { generation ->
+    private val store = TransactionalOverrideStore(Generation(builtIn, builtInDescriptor, false)) { generation ->
         if (generation.closeOnRetire) generation.backend.close()
     }
-    private var nextToken = 1L
-    private var overrideToken: Long? = null
     private var closed = false
     private var frameOpen = false
     private var frameLease: Lease? = null
@@ -93,15 +91,12 @@ class TerrainBackendRegistry(
     fun replace(candidate: () -> TerrainBackend): AutoCloseable {
         val backend = candidate()
 
-        val token: Long
         try {
             val descriptor = snapshot(backend.descriptor)
             require(backend !== builtIn) { "A provider can not replace terrain with the built-in backend instance" }
-            synchronized(lock) {
+            return synchronized(lock) {
                 check(!closed) { "Terrain backend registry is closed" }
-                token = nextToken++
                 store.replace { Generation(backend, descriptor, true) }
-                overrideToken = token
             }
         } catch (failure: Throwable) {
             try {
@@ -111,7 +106,6 @@ class TerrainBackendRegistry(
             }
             throw failure
         }
-        return Registration(token)
     }
 
     inline fun <T> withBackend(action: (TerrainBackend) -> T): T =
@@ -215,14 +209,6 @@ class TerrainBackendRegistry(
         checkNotNull(frameLease) { "Terrain frame has no selected backend generation" }.backend
     }
 
-    private fun remove(token: Long) {
-        synchronized(lock) {
-            if (closed || overrideToken != token) return
-            store.replace { Generation(builtIn, builtInDescriptor, false) }
-            overrideToken = null
-        }
-    }
-
     override fun close() {
         val activeFrame: Lease?
         synchronized(lock) {
@@ -232,20 +218,9 @@ class TerrainBackendRegistry(
             preparationStartedNanos = 0L
             activeFrame = frameLease
             frameLease = null
-            overrideToken = null
         }
         activeFrame?.close()
         store.close()
         builtIn.close()
-    }
-
-    private inner class Registration(
-        private val token: Long,
-    ) : AutoCloseable {
-        private val closed = AtomicBoolean()
-
-        override fun close() {
-            if (closed.compareAndSet(false, true)) remove(token)
-        }
     }
 }

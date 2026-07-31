@@ -21,13 +21,13 @@ import de.bixilon.minosoft.gui.rendering.framebuffer.FramebufferShader
 import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
 import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
 import de.bixilon.minosoft.gui.rendering.graph.resource.TransactionalGenerationStore
+import de.bixilon.minosoft.gui.rendering.graph.resource.TransactionalOverrideStore
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.ShaderPipelineScope
 import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendDescriptor
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
-import java.util.concurrent.atomic.AtomicBoolean
 
 data class WorldShaderPipelineDiagnostics(
     val selectedProfile: String? = null,
@@ -165,7 +165,7 @@ class ShaderPipelineRegistry : AutoCloseable {
     )
 
     private val lock = Any()
-    private val store = TransactionalGenerationStore(Generation(BuiltInWorldShaderPipeline, false)) { generation ->
+    private val store = TransactionalOverrideStore(Generation(BuiltInWorldShaderPipeline, false)) { generation ->
         if (generation.closeOnRetire) generation.pipeline.close()
     }
     private val framePipeline = ThreadLocal<WorldShaderPipeline?>()
@@ -177,8 +177,6 @@ class ShaderPipelineRegistry : AutoCloseable {
     private val frameStateClock = IrisFrameStateClock()
     @Volatile
     private var activeFrame: ActiveFrame? = null
-    private var nextToken = 1L
-    private var overrideToken: Long? = null
     private var closed = false
 
     fun replace(
@@ -188,14 +186,10 @@ class ShaderPipelineRegistry : AutoCloseable {
         val candidate = prepare()
         try {
             validate(candidate, terrain)
-            val token: Long
-            synchronized(lock) {
+            return synchronized(lock) {
                 check(!closed) { "Shader pipeline registry is closed" }
-                token = nextToken++
                 store.replace { Generation(candidate, true) }
-                overrideToken = token
             }
-            return Registration(token)
         } catch (failure: Throwable) {
             try {
                 candidate.close()
@@ -463,30 +457,11 @@ class ShaderPipelineRegistry : AutoCloseable {
         }
     }
 
-    private fun remove(token: Long) {
-        synchronized(lock) {
-            if (closed || overrideToken != token) return
-            store.replace { Generation(BuiltInWorldShaderPipeline, false) }
-            overrideToken = null
-        }
-    }
-
     override fun close() {
         synchronized(lock) {
             if (closed) return
             closed = true
-            overrideToken = null
             store.close()
-        }
-    }
-
-    private inner class Registration(
-        private val token: Long,
-    ) : AutoCloseable {
-        private val closed = AtomicBoolean()
-
-        override fun close() {
-            if (closed.compareAndSet(false, true)) remove(token)
         }
     }
 }
