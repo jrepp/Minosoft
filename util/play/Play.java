@@ -236,6 +236,10 @@ public final class Play {
             runLease(arguments.subList(1, arguments.size()));
             return;
         }
+        if (!arguments.isEmpty() && arguments.get(0).equals("diagnose")) {
+            runDiagnose(arguments.subList(1, arguments.size()));
+            return;
+        }
 
         String action = arguments.isEmpty() || arguments.get(0).startsWith("--") ? "dev" : arguments.remove(0);
         if (action.equals("help") || action.equals("--help") || action.equals("-h")) {
@@ -283,6 +287,49 @@ public final class Play {
                 clientStatus();
             }
             default -> throw failure("Unsupported command.");
+        }
+    }
+
+    private void runDiagnose(List<String> rawArguments) throws IOException {
+        List<String> arguments = new ArrayList<>(rawArguments);
+        require(!arguments.isEmpty() && arguments.remove(0).equals("capture"),
+            "Usage: ./play.sh diagnose capture [--trajectory NAME] [--output PATH] [--visual] [--json]");
+        boolean visual = false;
+        Path output = null;
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            if (option.equals("--trajectory")) {
+                require(!arguments.isEmpty(), "--trajectory requires a name.");
+                trajectory = arguments.remove(0);
+            } else if (option.startsWith("--trajectory=")) {
+                trajectory = option.substring("--trajectory=".length());
+            } else if (option.equals("--output")) {
+                require(!arguments.isEmpty(), "--output requires a path.");
+                output = resolveProjectPath(arguments.remove(0));
+            } else if (option.startsWith("--output=")) {
+                output = resolveProjectPath(option.substring("--output=".length()));
+            } else if (option.equals("--visual")) {
+                visual = true;
+            } else if (!option.equals("--json")) {
+                throw failure("Unknown diagnose capture option: " + option);
+            }
+        }
+        validateName("trajectory", trajectory);
+        if (output == null) {
+            String runId = Instant.now().toString().replace(':', '-') + "-" + safeFileName(trajectory);
+            output = runDirectory.resolve("diagnostics").resolve(runId);
+        }
+        TrajectoryDiagnostics diagnostics = new TrajectoryDiagnostics(
+            eventLog,
+            clientLog,
+            serverLog,
+            modpackStore,
+            modpackName
+        );
+        try {
+            printDebugJson(diagnostics.capture(trajectory, output, visual, buildStatusJson("both")), true);
+        } catch (IllegalArgumentException error) {
+            throw failure(error.getMessage());
         }
     }
 
@@ -2967,6 +3014,10 @@ public final class Play {
     }
 
     private void statusJson(String target) throws IOException {
+        System.out.println(DebugJson.MAPPER.writeValueAsString(buildStatusJson(target)));
+    }
+
+    private ObjectNode buildStatusJson(String target) throws IOException {
         Optional<Long> parent = managedPid(supervisorPidFile, this::isPlayParentCommand);
         Optional<Long> server = managedPid(serverPidFile, this::isServerCommand);
         Optional<Long> client = managedPid(clientPidFile, command -> command.contains(MINOSOFT_MAIN));
@@ -2989,7 +3040,7 @@ public final class Play {
         result.put("clientRenderReady", clientDebug.map(value -> value.path("renderReady").asBoolean(false)).orElse(false));
         ArrayNode external = result.putArray("externalClientPids");
         externalClients.forEach(external::add);
-        System.out.println(DebugJson.MAPPER.writeValueAsString(result));
+        return result;
     }
 
     private Optional<Long> managedPid(Path pidFile, Predicate<String> commandMatcher) throws IOException {
@@ -3887,6 +3938,7 @@ public final class Play {
               ./play.sh lease acquire --scope SCOPE [--trajectory NAME] [--ttl 20m]
               ./play.sh lease status --json
               ./play.sh lease release TOKEN
+              ./play.sh diagnose capture [--trajectory NAME] [--output PATH] [--visual] [--json]
 
               ACTION  dev, start, stop, or status (default: dev)
               TARGET  server or client (default: both)
@@ -3920,6 +3972,7 @@ public final class Play {
               worldgen compare Require deterministic terrain equality for same-seed A/B worlds
               screenshot       Crop reference regions or compare PNGs with bounded thresholds
               lease            Acquire, inspect, or release bounded trajectory mutation ownership
+              diagnose capture Capture one bounded status, endpoint, state, render, fixture, and log bundle
 
             Lifecycle predicates:
               server.port-open, server.debug-ready, server.game-ready

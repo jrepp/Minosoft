@@ -31,6 +31,7 @@ sourceSets {
         java.setSrcDirs(listOf("."))
         java.include("Play.java")
         java.include("MotionNoiseAnalyzer.java")
+        java.include("TrajectoryDiagnostics.java")
         java.include("TrajectoryLeaseStore.java")
     }
     test {
