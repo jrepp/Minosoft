@@ -254,6 +254,7 @@ testing {
 
             dependencies {
                 implementation(project())
+                implementation(project(":render-contracts"))
 
                 implementation("org.objenesis:objenesis:3.5")
 
