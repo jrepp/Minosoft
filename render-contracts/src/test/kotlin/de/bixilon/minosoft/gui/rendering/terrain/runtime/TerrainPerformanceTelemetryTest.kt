@@ -34,8 +34,9 @@ class TerrainPerformanceTelemetryTest {
         telemetry.outstandingBuilds(2)
         telemetry.pendingUploads(2)
         telemetry.visible(7)
-        telemetry.requested()
-        telemetry.started()
+        telemetry.requested(TerrainBuildCause.BLOCK_CHANGE)
+        telemetry.started(TerrainBuildCause.BLOCK_CHANGE)
+        telemetry.suppressed(TerrainBuildCause.LEVEL_OF_DETAIL_UPDATE)
         telemetry.succeeded()
         telemetry.cancelled()
         telemetry.stale()
@@ -73,6 +74,9 @@ class TerrainPerformanceTelemetryTest {
         assertEquals(1L, snapshot.failedUploads)
         assertEquals(4_096L, snapshot.outputBytes)
         assertEquals(2_048L, snapshot.uploadedBytes)
+        assertEquals(1L, snapshot.requestedByCause.getValue(TerrainBuildCause.BLOCK_CHANGE))
+        assertEquals(1L, snapshot.startedByCause.getValue(TerrainBuildCause.BLOCK_CHANGE))
+        assertEquals(1L, snapshot.suppressedByCause.getValue(TerrainBuildCause.LEVEL_OF_DETAIL_UPDATE))
         assertEquals(1L, snapshot.phases.getValue(TerrainProductionPhase.QUEUE_WAIT).samples)
         assertEquals(1_000_000L, snapshot.phases.getValue(TerrainProductionPhase.QUEUE_WAIT).p95Nanos)
         assertEquals(1L, snapshot.phases.getValue(TerrainProductionPhase.WORKER_BUSY).samples)
@@ -151,6 +155,24 @@ class TerrainPerformanceTelemetryTest {
 
         assertEquals(Int.MAX_VALUE, snapshot.queuedBuilds)
         assertEquals(Int.MAX_VALUE, snapshot.queueHighWater)
+    }
+
+    @Test
+    fun `latency snapshots do not expose mutable histogram storage`() {
+        val now = AtomicLong()
+        val telemetry = TerrainPerformanceTelemetry(LongSupplier(now::get))
+        val started = telemetry.begin(TerrainProductionPhase.MESH_BUILD)
+        now.set(75_000L)
+        telemetry.finish(TerrainProductionPhase.MESH_BUILD, started)
+
+        val latency = telemetry.snapshot().phases.getValue(TerrainProductionPhase.MESH_BUILD)
+        latency.buckets.fill(0L)
+        latency.bucketUpperBoundsNanos.fill(0L)
+        TerrainPerformanceTelemetry.LATENCY_BUCKET_UPPER_BOUNDS_NANOS.fill(0L)
+
+        assertEquals(1L, latency.buckets.sum())
+        assertEquals(50_000L, latency.bucketUpperBoundsNanos.first())
+        assertEquals(50_000L, TerrainPerformanceTelemetry.LATENCY_BUCKET_UPPER_BOUNDS_NANOS.first())
     }
 
     @Test

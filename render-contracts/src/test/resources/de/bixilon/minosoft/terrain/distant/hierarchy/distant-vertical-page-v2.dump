@@ -1,0 +1,7 @@
+schema=2
+key=distant/0/-19/0/27 epoch=44
+width=1 originY=-64 sourceRevision=91 completeness=partial
+semanticDigest=a7b7dcdfb3380edf75e54f0ac2f2ea1daea57e1b7904ebc930fbc781689d8583
+column[0] digest=1241735ae8655f9fd485f7cc260d07682880f7786461cad10f21498dd69ee94c runs=2
+  run[0] y=8 height=4 material=mod:waterlogged_lamp fluid=mod:brine fluidLevel=6 fluidClass=mod:brine light=13/7 tintRgb=1193046 tintBiome=mod:violet_marsh tintGeneration=18 flags=emissive,generated confidence=72
+  run[1] y=0 height=3 material=- fluid=- fluidLevel=-1 fluidClass=- light=0/0 tintRgb=-1 tintBiome=- tintGeneration=-1 flags=cave confidence=100

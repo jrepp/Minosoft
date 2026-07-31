@@ -31,17 +31,47 @@ enum class TerrainProductionPhase(val wireName: String) {
     UPLOAD("upload"),
 }
 
-data class TerrainLatencySnapshot(
+/** Fixed-cardinality reasons for near-terrain build requests. */
+enum class TerrainBuildCause(val wireName: String) {
+    UNKNOWN("unknown"),
+    CULLED("becameVisible"),
+    LEVEL_OF_DETAIL_UPDATE("levelOfDetail"),
+    WORLD_RESUME("worldResume"),
+    WORLD_UNLOAD("worldUnload"),
+    CAMERA_OFFSET("cameraOffset"),
+    MANUAL_RELOAD("manualReload"),
+    RENDER_SETTING_CHANGE("renderSetting"),
+    BLOCK_CHANGE("blockChange"),
+    BLOCK_ENTITY_CHANGE("blockEntityChange"),
+    LIGHT_CHANGE("lightChange"),
+    CHUNK_DATA("chunkData"),
+    NEIGHBOUR_CHANGE("neighbourChange"),
+    RESOURCE_GENERATION_CHANGE("resourceGeneration"),
+    STALE_RETRY("staleRetry"),
+    UPLOAD_RETRY("uploadRetry"),
+    TASK_RETRY("taskRetry"),
+}
+
+class TerrainLatencySnapshot(
     val samples: Long,
     val totalNanos: Long,
     val maximumNanos: Long,
     val medianNanos: Long,
     val p95Nanos: Long,
-    val bucketUpperBoundsNanos: LongArray,
-    val buckets: LongArray,
-)
+    bucketUpperBoundsNanos: LongArray,
+    buckets: LongArray,
+) {
+    private val bucketUpperBounds = bucketUpperBoundsNanos.copyOf()
+    private val bucketCounts = buckets.copyOf()
 
-data class TerrainPerformanceSnapshot(
+    val bucketUpperBoundsNanos: LongArray
+        get() = bucketUpperBounds.copyOf()
+
+    val buckets: LongArray
+        get() = bucketCounts.copyOf()
+}
+
+class TerrainPerformanceSnapshot(
     val enabled: Boolean,
     val configuredWorkers: Int,
     val queuedBuilds: Int,
@@ -64,8 +94,19 @@ data class TerrainPerformanceSnapshot(
     val outputBytes: Long,
     val uploadedBytes: Long,
     val visibleSections: Int,
-    val phases: Map<TerrainProductionPhase, TerrainLatencySnapshot>,
-)
+    requestedByCause: Map<TerrainBuildCause, Long>,
+    startedByCause: Map<TerrainBuildCause, Long>,
+    suppressedByCause: Map<TerrainBuildCause, Long>,
+    phases: Map<TerrainProductionPhase, TerrainLatencySnapshot>,
+) {
+    val requestedByCause: Map<TerrainBuildCause, Long> = immutableMap(requestedByCause)
+    val startedByCause: Map<TerrainBuildCause, Long> = immutableMap(startedByCause)
+    val suppressedByCause: Map<TerrainBuildCause, Long> = immutableMap(suppressedByCause)
+    val phases: Map<TerrainProductionPhase, TerrainLatencySnapshot> = immutableMap(phases)
+
+    private fun <K, V> immutableMap(source: Map<K, V>): Map<K, V> =
+        java.util.Collections.unmodifiableMap(LinkedHashMap(source))
+}
 
 /**
  * Allocation-free production terrain recording with bounded primitive storage.
@@ -117,6 +158,9 @@ class TerrainPerformanceTelemetry(
         }
 
     private val counters = AtomicLongArray(Counter.entries.size)
+    private val requestedCauses = AtomicLongArray(TerrainBuildCause.entries.size)
+    private val startedCauses = AtomicLongArray(TerrainBuildCause.entries.size)
+    private val suppressedCauses = AtomicLongArray(TerrainBuildCause.entries.size)
     private val histograms = Array(TerrainProductionPhase.entries.size) { FixedTerrainLatencyHistogram() }
     private val configuredWorkers = AtomicInteger()
     private val outerQueuedBuilds = AtomicInteger()
@@ -150,8 +194,18 @@ class TerrainPerformanceTelemetry(
         histograms[phase.ordinal].record(elapsed)
     }
 
-    fun requested() = increment(Counter.REQUESTED)
-    fun started() = increment(Counter.STARTED)
+    fun requested(cause: TerrainBuildCause = TerrainBuildCause.UNKNOWN) {
+        increment(Counter.REQUESTED)
+        increment(requestedCauses, cause.ordinal)
+    }
+
+    fun started(cause: TerrainBuildCause = TerrainBuildCause.UNKNOWN) {
+        increment(Counter.STARTED)
+        increment(startedCauses, cause.ordinal)
+    }
+
+    fun suppressed(cause: TerrainBuildCause = TerrainBuildCause.UNKNOWN) =
+        increment(suppressedCauses, cause.ordinal)
     fun succeeded() = increment(Counter.SUCCEEDED)
     fun cancelled() = increment(Counter.CANCELLED)
     fun stale() = increment(Counter.STALE)
@@ -245,12 +299,19 @@ class TerrainPerformanceTelemetry(
             outputBytes = counter(Counter.OUTPUT_BYTES),
             uploadedBytes = counter(Counter.UPLOADED_BYTES),
             visibleSections = visibleSections.get(),
+            requestedByCause = TerrainBuildCause.entries.associateWith { requestedCauses.get(it.ordinal) },
+            startedByCause = TerrainBuildCause.entries.associateWith { startedCauses.get(it.ordinal) },
+            suppressedByCause = TerrainBuildCause.entries.associateWith { suppressedCauses.get(it.ordinal) },
             phases = phaseSnapshots,
         )
     }
 
     private fun increment(counter: Counter) {
         if (enabled) addSaturating(counters, counter.ordinal, 1L)
+    }
+
+    private fun increment(counters: AtomicLongArray, index: Int) {
+        if (enabled) addSaturating(counters, index, 1L)
     }
 
     private fun add(counter: Counter, value: Long) {
@@ -304,7 +365,7 @@ class TerrainPerformanceTelemetry(
     }
 
     private class FixedTerrainLatencyHistogram {
-        private val buckets = AtomicLongArray(LATENCY_BUCKET_UPPER_BOUNDS_NANOS.size + 1)
+        private val buckets = AtomicLongArray(LATENCY_BUCKETS.size + 1)
         private val totalNanos = AtomicLong()
         private val maximumNanos = AtomicLong()
 
@@ -314,8 +375,8 @@ class TerrainPerformanceTelemetry(
             updateMaximum(maximumNanos, nanoseconds)
             var bucket = 0
             while (
-                bucket < LATENCY_BUCKET_UPPER_BOUNDS_NANOS.size &&
-                nanoseconds > LATENCY_BUCKET_UPPER_BOUNDS_NANOS[bucket]
+                bucket < LATENCY_BUCKETS.size &&
+                nanoseconds > LATENCY_BUCKETS[bucket]
             ) {
                 bucket++
             }
@@ -333,7 +394,7 @@ class TerrainPerformanceTelemetry(
                 maximumNanos = maximumNanos.get(),
                 medianNanos = percentile(bucketSnapshot, sampleCount, 50L),
                 p95Nanos = percentile(bucketSnapshot, sampleCount, 95L),
-                bucketUpperBoundsNanos = LATENCY_BUCKET_UPPER_BOUNDS_NANOS.copyOf(),
+                bucketUpperBoundsNanos = LATENCY_BUCKETS,
                 buckets = bucketSnapshot,
             )
         }
@@ -350,7 +411,7 @@ class TerrainPerformanceTelemetry(
                     cumulative += count
                     continue
                 }
-                return LATENCY_BUCKET_UPPER_BOUNDS_NANOS.getOrElse(index) { Long.MAX_VALUE }
+                return LATENCY_BUCKETS.getOrElse(index) { Long.MAX_VALUE }
             }
             return Long.MAX_VALUE
         }
@@ -382,7 +443,7 @@ class TerrainPerformanceTelemetry(
     companion object {
         private const val DISABLED_TIMESTAMP = Long.MIN_VALUE
 
-        val LATENCY_BUCKET_UPPER_BOUNDS_NANOS = longArrayOf(
+        private val LATENCY_BUCKETS = longArrayOf(
             50_000L,
             100_000L,
             250_000L,
@@ -400,5 +461,8 @@ class TerrainPerformanceTelemetry(
             2_500_000_000L,
             5_000_000_000L,
         )
+
+        val LATENCY_BUCKET_UPPER_BOUNDS_NANOS: LongArray
+            get() = LATENCY_BUCKETS.copyOf()
     }
 }
