@@ -197,8 +197,8 @@ class TerrainPerformanceTelemetry(
 
     fun workerFinished(startedNanos: Long) {
         if (startedNanos == DISABLED_TIMESTAMP) return
+        decrementPositive(activeWorkers, "Terrain active-worker telemetry underflow")
         finish(TerrainProductionPhase.WORKER_BUSY, startedNanos)
-        check(activeWorkers.decrementAndGet() >= 0) { "Terrain active-worker telemetry underflow" }
     }
 
     fun snapshot(): TerrainPerformanceSnapshot {
@@ -208,7 +208,7 @@ class TerrainPerformanceTelemetry(
         val workers = configuredWorkers.get()
         val active = activeWorkers.get()
         val outstanding = outstandingBuilds.get()
-        val queued = Math.addExact(outerQueuedBuilds.get(), (outstanding - active).coerceAtLeast(0))
+        val queued = addSaturating(outerQueuedBuilds.get(), (outstanding - active).coerceAtLeast(0))
         val completedObservation = completedObservationNanos.get()
         val observationNanos = if (enabled) {
             val current = (clock.asLong - observationIntervalStartedNanos).coerceAtLeast(0L)
@@ -269,11 +269,22 @@ class TerrainPerformanceTelemetry(
 
     private fun updateQueueHighWater() {
         val active = activeWorkers.get()
-        val queued = Math.addExact(
+        val queued = addSaturating(
             outerQueuedBuilds.get(),
             (outstandingBuilds.get() - active).coerceAtLeast(0),
         )
         updateMaximum(queueHighWater, queued)
+    }
+
+    private fun addSaturating(first: Int, second: Int): Int =
+        if (Int.MAX_VALUE - first < second) Int.MAX_VALUE else first + second
+
+    private fun decrementPositive(target: AtomicInteger, message: String) {
+        while (true) {
+            val current = target.get()
+            check(current > 0) { message }
+            if (target.compareAndSet(current, current - 1)) return
+        }
     }
 
     private fun addSaturating(target: AtomicLongArray, index: Int, value: Long) {

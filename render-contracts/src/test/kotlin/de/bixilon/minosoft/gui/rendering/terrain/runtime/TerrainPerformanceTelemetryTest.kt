@@ -19,6 +19,7 @@ package de.bixilon.minosoft.gui.rendering.terrain.runtime
 
 import java.util.concurrent.atomic.AtomicLong
 import java.util.function.LongSupplier
+import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -126,6 +127,30 @@ class TerrainPerformanceTelemetryTest {
         assertEquals(1L, snapshot.phases.getValue(TerrainProductionPhase.UPLOAD).samples)
         assertEquals(10L, snapshot.phases.getValue(TerrainProductionPhase.UPLOAD).totalNanos)
         assertEquals(30L, snapshot.observationNanos)
+    }
+
+    @Test
+    fun `invalid worker completion does not corrupt active count`() {
+        val telemetry = TerrainPerformanceTelemetry(LongSupplier { 1L })
+
+        assertThrows<IllegalStateException> {
+            telemetry.workerFinished(0L)
+        }
+
+        assertEquals(0, telemetry.snapshot().activeWorkers)
+        assertEquals(0L, telemetry.snapshot().phases.getValue(TerrainProductionPhase.WORKER_BUSY).samples)
+    }
+
+    @Test
+    fun `combined queue depth saturates without breaking telemetry`() {
+        val telemetry = TerrainPerformanceTelemetry(LongSupplier { 1L })
+        telemetry.queueDepth(Int.MAX_VALUE)
+        telemetry.outstandingBuilds(Int.MAX_VALUE)
+
+        val snapshot = telemetry.snapshot()
+
+        assertEquals(Int.MAX_VALUE, snapshot.queuedBuilds)
+        assertEquals(Int.MAX_VALUE, snapshot.queueHighWater)
     }
 
     @Test
