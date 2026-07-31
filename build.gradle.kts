@@ -27,6 +27,7 @@ import de.bixilon.kutil.string.WhitespaceUtil.removeMultipleWhitespaces
 import de.bixilon.kutil.string.WhitespaceUtil.trimWhitespaces
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.api.tasks.testing.logging.TestLogEvent
+import org.gradle.api.tasks.testing.Test
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.jvm.tasks.Jar
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -69,6 +70,9 @@ allprojects {
         tasks.withType<JavaCompile>().configureEach {
             options.encoding = StandardCharsets.UTF_8.name()
             options.release.set(minosoftJavaVersion.asInt())
+        }
+        tasks.withType<Test>().configureEach {
+            jvmArgs("--enable-native-access=ALL-UNNAMED")
         }
     }
     pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
@@ -362,27 +366,27 @@ testing {
 fun DependencyHandler.javafx(name: String) {
     if (javafxNatives == "") {
         logger.error("JavaFX does not have natives for windows. You must use a JRE that bundles these or disable eros.")
-        compileOnly("org.openjfx", "javafx-$name", javafxVersion, classifier = "win") {
+        compileOnly("org.openjfx:javafx-$name:$javafxVersion:win") {
             version { strictly(javafxVersion) }
         }
     } else {
-        implementation("org.openjfx", "javafx-$name", javafxVersion, classifier = javafxNatives) {
+        implementation("org.openjfx:javafx-$name:$javafxVersion:$javafxNatives") {
             version { strictly(javafxVersion) }
         }
     }
 }
 
 fun DependencyHandler.ikonli(name: String) {
-    implementation("org.kordamp.ikonli", "ikonli-$name", ikonliVersion)
+    implementation("org.kordamp.ikonli:ikonli-$name:$ikonliVersion")
 }
 
 fun DependencyHandler.jacksonCore(name: String) {
-    implementation("com.fasterxml.jackson.core", "jackson-$name", jacksonVersion)
+    implementation("com.fasterxml.jackson.core:jackson-$name:$jacksonVersion")
 }
 
 
 fun DependencyHandler.jackson(group: String, name: String) {
-    implementation("com.fasterxml.jackson.$group", "jackson-$group-$name", jacksonVersion)
+    implementation("com.fasterxml.jackson.$group:jackson-$group-$name:$jacksonVersion")
 }
 
 fun JvmComponentDependencies.jacksonCore(name: String) {
@@ -398,7 +402,7 @@ fun JvmComponentDependencies.netty(name: String) {
 }
 
 fun DependencyHandler.netty(name: String) {
-    implementation("io.netty", "netty-$name", nettyVersion)
+    implementation("io.netty:netty-$name:$nettyVersion")
 }
 
 fun DependencyHandler.lwjgl(name: String? = null, classpath: Boolean = true) {
@@ -407,31 +411,31 @@ fun DependencyHandler.lwjgl(name: String? = null, classpath: Boolean = true) {
         artifactId += "-$name"
     }
     if (classpath) {
-        implementation("org.lwjgl", artifactId, lwjglVersion)
-        runtimeOnly("org.lwjgl", artifactId, lwjglVersion, classifier = "natives-$lwjglNatives")
+        implementation("org.lwjgl:$artifactId:$lwjglVersion")
+        runtimeOnly("org.lwjgl:$artifactId:$lwjglVersion:natives-$lwjglNatives")
     } else {
-        compileOnly("org.lwjgl", artifactId, lwjglVersion)
+        compileOnly("org.lwjgl:$artifactId:$lwjglVersion")
     }
 }
 
 dependencies {
     implementation(project(":render-contracts"))
     implementation(project(":debug-core"))
-    implementation("org.slf4j", "slf4j-api", "2.0.18")
-    implementation("dnsjava", "dnsjava", "3.6.5")
-    implementation("com.github.ajalt.clikt", "clikt", "5.1.0")
-    implementation("org.jline", "jline", "4.1.3")
-    implementation("org.l33tlabs.twl", "pngdecoder", "1.0")
-    implementation("com.github.oshi", "oshi-core", "7.2.1")
-    implementation("com.github.luben", "zstd-jni", "1.5.7-10", classifier = zstdNatives)
-    implementation("org.kamranzafar", "jtar", "2.3")
-    implementation("it.unimi.dsi", "fastutil-core", "8.5.18")
-    implementation("org.xeustechnologies", "jcl-core", "2.8")
-    implementation("net.fabricmc", "fabric-loader", fabricLoaderVersion) {
+    implementation("org.slf4j:slf4j-api:2.0.18")
+    implementation("dnsjava:dnsjava:3.6.5")
+    implementation("com.github.ajalt.clikt:clikt:5.1.0")
+    implementation("org.jline:jline:4.1.3")
+    implementation("org.l33tlabs.twl:pngdecoder:1.0")
+    implementation("com.github.oshi:oshi-core:7.2.1")
+    implementation("com.github.luben:zstd-jni:1.5.7-10:$zstdNatives")
+    implementation("org.kamranzafar:jtar:2.3")
+    implementation("it.unimi.dsi:fastutil-core:8.5.18")
+    implementation("org.xeustechnologies:jcl-core:2.8")
+    implementation("net.fabricmc:fabric-loader:$fabricLoaderVersion") {
         isTransitive = false
     }
 
-    compileOnly("org.jspecify", "jspecify", "1.0.0")
+    compileOnly("org.jspecify:jspecify:1.0.0")
 
 
     // ikonli
@@ -446,10 +450,10 @@ dependencies {
 
 
     // de.bixilon
-    implementation("de.bixilon", "kutil", kutilVersion)
-    implementation("de.bixilon", "jiibles", "1.2")
-    implementation("de.bixilon", "mbf-kotlin", "1.0.3") { exclude("com.github.luben", "zstd-jni") }
-    implementation("de.bixilon.javafx", "javafx-svg", "0.3.1") { exclude("org.openjfx", "javafx-controls") } // TODO: remove this, it is really large
+    implementation("de.bixilon:kutil:$kutilVersion")
+    implementation("de.bixilon:jiibles:1.2")
+    implementation("de.bixilon:mbf-kotlin:1.0.3") { exclude("com.github.luben", "zstd-jni") }
+    implementation("de.bixilon.javafx:javafx-svg:0.3.1") { exclude("org.openjfx", "javafx-controls") } // TODO: remove this, it is really large
 
     // netty
     netty("buffer")
@@ -478,9 +482,9 @@ dependencies {
             Architectures.ARM, Architectures.AARCH64 -> "aarch_64"
             else -> throw IllegalArgumentException("Can not determinate netty natives for $architecture")
         }
-        implementation("io.netty", "netty-transport-native-epoll", nettyVersion, classifier = "linux-$nettyNatives")
+        implementation("io.netty:netty-transport-native-epoll:$nettyVersion:linux-$nettyNatives")
     } else {
-        compileOnly("io.netty", "netty-transport-native-epoll", nettyVersion)
+        compileOnly("io.netty:netty-transport-native-epoll:$nettyVersion")
     }
 
     // javafx
@@ -560,9 +564,11 @@ fun loadGit() {
 }
 loadGit()
 
-
+val configuredVersion = version.toString()
+val versionJsonFile = layout.buildDirectory.file("resources/main/assets/minosoft/version.json")
 val versionJsonTask = tasks.register("versionJson") {
     outputs.upToDateWhen { false }
+    outputs.file(versionJsonFile)
 
     doFirst {
         fun generateGit(git: GitStatus): Map<String, Any> {
@@ -576,14 +582,14 @@ val versionJsonTask = tasks.register("versionJson") {
 
         val versionInfo: MutableMap<String, Any> = mutableMapOf(
             "general" to mutableMapOf(
-                "name" to project.version,
+                "name" to configuredVersion,
                 "date" to Instant.now().toEpochMilli() / 1000,
                 "stable" to stable,
                 "updates" to updates,
             )
         )
         git?.let { versionInfo["git"] = generateGit(it) }
-        val file = project.layout.buildDirectory.get().asFile.resolve("resources/main/assets/minosoft/version.json")
+        val file = versionJsonFile.get().asFile
         file.writeText(groovy.json.JsonOutput.toJson(versionInfo))
     }
 }
@@ -591,6 +597,9 @@ val versionJsonTask = tasks.register("versionJson") {
 tasks.getByName("processResources") {
     finalizedBy(versionJsonTask)
     // ToDo: verify and minify jsons
+}
+tasks.named<Jar>("jar") {
+    dependsOn(versionJsonTask)
 }
 
 kotlin {
@@ -604,6 +613,7 @@ kotlin {
 
 application {
     mainClass.set("de.bixilon.minosoft.Minosoft")
+    applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
 // Development-only native mod fixture. Its source and manifest are tracked, but
