@@ -180,19 +180,23 @@ class TerrainBackendRegistry(
         }
     }
 
-    fun stats(): RuntimeStats = synchronized(lock) {
-        RuntimeStats(
-            resources = store.stats(),
-            preparedFrames = preparedFrames,
-            submittedBatches = submittedBatches,
-            preparationTimingSamples = preparationTimings.samples,
-            medianPreparationNanos = preparationTimings.percentile(0.5),
-            p95PreparationNanos = preparationTimings.percentile(0.95),
-            submissionTimingSamples = submissionTimings.samples,
-            medianSubmissionNanos = submissionTimings.percentile(0.5),
-            p95SubmissionNanos = submissionTimings.percentile(0.95),
-            currentFrameSubmissions = frameSubmissions.toSet(),
-        )
+    fun stats(): RuntimeStats {
+        val preparation = preparationTimings.snapshot()
+        val submission = submissionTimings.snapshot()
+        return synchronized(lock) {
+            RuntimeStats(
+                resources = store.stats(),
+                preparedFrames = preparedFrames,
+                submittedBatches = submittedBatches,
+                preparationTimingSamples = preparation.samples,
+                medianPreparationNanos = preparation.medianNanos,
+                p95PreparationNanos = preparation.p95Nanos,
+                submissionTimingSamples = submission.samples,
+                medianSubmissionNanos = submission.medianNanos,
+                p95SubmissionNanos = submission.p95Nanos,
+                currentFrameSubmissions = frameSubmissions.toSet(),
+            )
+        }
     }
 
     private fun snapshot(descriptor: TerrainBackendDescriptor) =

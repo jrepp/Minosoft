@@ -22,6 +22,12 @@ import kotlin.math.ceil
 class RenderTimingWindow(
     capacity: Int = 600,
 ) {
+    data class Snapshot(
+        val samples: Int,
+        val medianNanos: Long,
+        val p95Nanos: Long,
+    )
+
     private val values = LongArray(capacity)
     private var next = 0
     private var size = 0
@@ -44,10 +50,26 @@ class RenderTimingWindow(
         if (size == 0) return 0L
         val sorted = values.copyOf(size)
         sorted.sort()
-        val index = (ceil(percentile * size).toInt() - 1).coerceIn(0, size - 1)
-        return sorted[index]
+        return percentile(sorted, percentile)
+    }
+
+    @Synchronized
+    fun snapshot(): Snapshot {
+        if (size == 0) return Snapshot(0, 0L, 0L)
+        val sorted = values.copyOf(size)
+        sorted.sort()
+        return Snapshot(
+            samples = size,
+            medianNanos = percentile(sorted, 0.5),
+            p95Nanos = percentile(sorted, 0.95),
+        )
     }
 
     val samples: Int
         @Synchronized get() = size
+
+    private fun percentile(sorted: LongArray, percentile: Double): Long {
+        val index = (ceil(percentile * sorted.size).toInt() - 1).coerceIn(0, sorted.lastIndex)
+        return sorted[index]
+    }
 }

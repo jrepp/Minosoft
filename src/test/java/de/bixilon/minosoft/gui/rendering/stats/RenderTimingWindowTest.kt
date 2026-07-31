@@ -30,6 +30,7 @@ class RenderTimingWindowTest {
         assertEquals(20, window.samples)
         assertEquals(10L, window.percentile(0.5))
         assertEquals(19L, window.percentile(0.95))
+        assertEquals(RenderTimingWindow.Snapshot(20, 10L, 19L), window.snapshot())
     }
 
     @Test
@@ -40,6 +41,7 @@ class RenderTimingWindowTest {
         assertEquals(3, window.samples)
         assertEquals(4L, window.percentile(0.5))
         assertEquals(5L, window.percentile(0.95))
+        assertEquals(RenderTimingWindow.Snapshot(3, 4L, 5L), window.snapshot())
         assertThrows<IllegalArgumentException> { window.add(-1L) }
     }
 }
