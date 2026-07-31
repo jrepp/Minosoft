@@ -461,7 +461,7 @@ class ShaderPipelineRegistry : AutoCloseable {
         synchronized(lock) {
             if (closed) return
             closed = true
-            store.close()
         }
+        store.close()
     }
 }
