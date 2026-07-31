@@ -105,8 +105,8 @@ code. Repository-wide contribution, review, and commit expectations are in
 
 ## Build and verification
 
-CI runs on Java 17 while emitted bytecode targets Java 11. Prefer a Java 17
-runtime for Gradle.
+CI, Gradle, tests, launch tooling, and emitted bytecode use Java 25. Use a Java
+25 JDK for every repository workflow.
 
 ```sh
 ./gradlew compileKotlin

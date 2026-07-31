@@ -13,7 +13,7 @@ pack preparation, watcher selection, or parent/child shutdown behavior.
 
 ## Preconditions
 
-- Use Java 17 and a disposable local server/world.
+- Use Java 25 and a disposable local server/world.
 - Preserve unrelated work. Make the failure probe as one reversible edit and
   restore it before continuing.
 - Use a unique `--trajectory` and an out-of-source `MINOSOFT_MODPACK_STORE`.

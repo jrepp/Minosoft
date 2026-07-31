@@ -57,6 +57,9 @@ instructions that differ from the root contract.
 
 - [Hot-reload acceptance protocol](acceptance/hot-reload.md) defines the
   repeatable process-generation gates and failure-preservation check.
+- [Java 25 build baseline](evidence/2026-07-30-java-25-baseline.md) records the
+  repository-wide runtime/bytecode decision, compatible build stack, class-file
+  inspection, complete test gate, and CI packaging checks.
 - [Agent trajectory tooling backlog](backlog/agent-trajectory-tooling.md)
   prioritizes runtime leases, atomic diagnosis bundles, safe world snapshots,
   compare-and-restore checkpoints, visual A/B automation, and isolated

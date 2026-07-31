@@ -92,7 +92,8 @@ its required attribution and license information.
 - Update the applicable evidence map when an entry point, invariant, decision,
   or recommended validation changes.
 - Run the smallest relevant check first, then broaden verification in
-  proportion to risk. CI uses Java 17 while emitted bytecode targets Java 11.
+  proportion to risk. CI, Gradle, tests, launch tooling, and emitted bytecode
+  use Java 25.
 
 Common verification commands are:
 

@@ -82,7 +82,7 @@ do not silently replace the fixture.
 
 ## Automated Minosoft gate
 
-Run the captured output through Minosoft with Java 17:
+Run the captured output through Minosoft with Java 25:
 
 ```sh
 ./gradlew integrationTest \
@@ -180,7 +180,7 @@ out-of-source modpack store, preserves user asset entries, and mounts its
 resource and data roots as ordinary session packs. Launch a fixed void world:
 
 ```sh
-MINOSOFT_JAVA_HOME=/opt/homebrew/opt/openjdk@17 \
+MINOSOFT_JAVA_HOME=/opt/homebrew/opt/openjdk@25 \
 ./play.sh dev client --local-world --world-generator void \
   --modpack content-fidelity \
   --trajectory animated-java-render-reference

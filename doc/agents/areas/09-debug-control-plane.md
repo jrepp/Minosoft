@@ -24,7 +24,7 @@ stages. The CLI now composes one-shot operations into checked scenario files.
 | Status | Claim | Evidence |
 | --- | --- | --- |
 | Verified | `debug-core` is a GUI-independent Java library containing discovery, credentials, framing, transports, operation ownership, deadlines, server, and client. | `debug-core/` and `:debug-core:test`. |
-| Verified | The compiled Java play utility is the only CLI protocol consumer; `play.sh` is a thin Java 17 shim. | `util/play/Play.java`, `play.sh`, and `PlayUtilityTest`. |
+| Verified | The compiled Java play utility is the only CLI protocol consumer; `play.sh` is a thin Java 25 shim that rejects other runtime features before Gradle or the CLI starts. | `util/play/Play.java`, `play.sh`, and `PlayUtilityTest`. |
 | Verified | The client publishes an opt-in endpoint and queues visual/input work onto the render path while state/block reads use explicit session/world seams. | `ClientDebugChannel`, live visual/input/AOI acceptance, and the dated evidence below. |
 | Verified | User and agent captures share `ScreenshotTaker`'s final-framebuffer snapshot. `visual.capture` returns PNG dimensions, frame/time, top-left RGBA8 semantics, a suggested vanilla-style filename, the user screenshot directory, and a SHA-256 verified by the CLI after writing. An omitted CLI output chooses a collision-safe `.run/agent-screenshots/<endpoint trajectory>/` artifact; an explicit path remains supported. | `ScreenshotTaker`, `ClientDebugChannel.capture`, `Play.debugVisual`, live F2/debug captures, and [screenshot/terrain evidence](../evidence/2026-07-28-screenshot-and-terrain-stability.md). |
 | Verified | `debug visual motion-noise` measures camera-induced temporal residuals at an exact returned pose rather than comparing different views. It pairs each yaw-away/return capture with a stationary control at the same elapsed render-frame delta, reports whole-region luma/RGB errors plus a low-gradient speckle ratio, records requested and actual checkpoints, and writes bounded representative crops plus `report.json`. A compare-and-set `visual.background-throttle` override keeps terminal-owned probes at normal cadence without persisting a rendering-profile change, then restores only the state the command acquired. | `MotionNoiseAnalyzer`, `Play.debugMotionNoise`, `RenderContext.backgroundThrottleOverride`, `ClientDebugChannel.configureBackgroundThrottle`, focused utility tests, and [camera-motion noise evidence](../evidence/2026-07-28-camera-motion-noise-measurement.md). |
@@ -160,7 +160,7 @@ Primary shared types:
 - `DebugClient`, `DebugResponse`, `DebugClientException`
 - `ModDebugProvider`, `ModDebugRegistrar`
 
-The emitted core API targets Java 11 and depends on no Minosoft GUI, OpenGL,
+The emitted core API targets Java 25 and depends on no Minosoft GUI, OpenGL,
 session, world, Netty, or Fabric implementation type. JNA is transport-only for
 Windows named pipes.
 
@@ -451,7 +451,7 @@ weaken loader/API ownership and compatibility evidence.
 | Exact Animated Java local function, entity inspection, capture, reload, removal, and GPU loop | Verified live for default pose across four content generations |
 | Base and shared-debug source hot reload with stable parent/server | Verified live |
 | Scenario lifecycle/metrics JSON+JUnit, matrix, screenshot failure, and JFR disposition | Verified live |
-| Full repository unit and integration suites | Verified on Java 17: 1,787 main unit tests, 2,077 integration tests, and 9 `debug-core` tests, zero failures/errors |
+| Full repository unit and integration suites | Historical Java 17 gate: 1,787 main unit tests, 2,077 integration tests, and 9 `debug-core` tests, zero failures/errors. The current Java 25 gate is recorded in the [Java 25 baseline](../evidence/2026-07-30-java-25-baseline.md). |
 | Linux and Windows runtime transport/ACL behavior | Not run in this macOS pass; Windows compiles |
 | Streaming/backpressure and advanced AOI/provider layers | Deferred; not advertised in version one |
 

@@ -25,7 +25,7 @@ In scope:
   empty binary responses;
 - token handling and crash-report redaction;
 - opt-in behavior and separation from boot, assets, rendering, and mod loading;
-- Java 17 execution with Java 11-compatible emitted bytecode.
+- Java 25 execution with Java 25 emitted bytecode.
 
 Out of scope:
 
@@ -173,7 +173,7 @@ submit copied Minecraft text, artwork, or third-party personal data.
 Focused deterministic gate:
 
 ```sh
-JAVA_HOME=/path/to/java17 ./gradlew :test -x :debug-core:test \
+JAVA_HOME=/path/to/java25 ./gradlew :test -x :debug-core:test \
   --tests de.bixilon.minosoft.integrations.crafty.CraftyApiClientTest \
   --tests de.bixilon.minosoft.util.crash.section.EnvironmentSanitizerTest
 ```
@@ -181,7 +181,7 @@ JAVA_HOME=/path/to/java17 ./gradlew :test -x :debug-core:test \
 Broad release gate:
 
 ```sh
-JAVA_HOME=/path/to/java17 ./gradlew \
+JAVA_HOME=/path/to/java25 ./gradlew \
   test integrationTest assemble \
   :debug-core:test :play-util:installDist :debug-server-fabric:remapJar
 ```

@@ -44,7 +44,8 @@ Don't expect too much from me. I am still happy to receive feedback and contribu
 - RAM: Minimum 500 MiB, 1 GiB recommended
 - Disk space: 80 MiB + assets (~ 300 MiB per version)
 - GPU: OpenGL 3.3+. Every modern GPU works and is recommended.
-- Java 11+ (Java 8 is **not** supported).
+- Java 25. Older and newer Java releases are not supported until they pass the
+  repository's complete build and runtime gates.
 - ~~A minecraft server (local or online)~~ (there is a flat world single player for testing purposes)
 
 ## Rendering
@@ -128,7 +129,7 @@ Thanks to @jugendhacker you can get minosoft directly from the arch user reposit
 
 ## Building
 
-1. Install Java 11+ (e.g. `sudo apt install openjdk-11-jdk`). Windows users [download](https://www.azul.com/downloads/?package=jdk#zulu) and install java.
+1. Install Java 25. Windows users can [download a Java 25 JDK](https://www.azul.com/downloads/?package=jdk#zulu).
 2. Clone this repository (`git clone --depth=1 https://gitlab.bixilon.de/bixilon/minosoft.git`) or click on download master and extract the archive.
 3. Change directory (`cd minosoft`)
 4. Optional: Checkout a current feature branch (Warning: might be unstable; might not even build) (`git checkout <branch>`)

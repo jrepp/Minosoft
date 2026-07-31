@@ -713,7 +713,7 @@ resource invariant fails.
 
 ### CI lanes
 
-- Pull request: Java 17 L0-L3 focused and headless gates.
+- Pull request: Java 25 L0-L3 focused and headless gates.
 - Rendering integration: affected L4 dummy/real-GL gates on supported hosts.
 - Nightly: multi-version fixture matrix, deterministic seeded properties, and
   selected live L5 scenarios.

@@ -195,4 +195,4 @@ prove runtime claims from prose.
 
 Each rung needs focused tests, `core.capabilities`/cleanup validation where the
 debug surface changes, and one live acceptance record. Tooling must preserve
-headless operation and Java 11 `debug-core` compatibility.
+headless operation and Java 25 `debug-core` compatibility.

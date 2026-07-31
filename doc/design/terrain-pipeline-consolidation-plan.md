@@ -851,13 +851,13 @@ Default command shape:
 
 ```sh
 # L0-L2: focused contracts, models, runtime, and fault paths
-JAVA_HOME=/path/to/java17 ./gradlew :test --tests '<focused-class>'
+JAVA_HOME=/path/to/java25 ./gradlew :test --tests '<focused-class>'
 
 # L3: headless end-to-end terrain pipeline
-JAVA_HOME=/path/to/java17 ./gradlew :test --tests '*Terrain*Pipeline*'
+JAVA_HOME=/path/to/java25 ./gradlew :test --tests '*Terrain*Pipeline*'
 
 # L4: dummy/real graphics integration
-JAVA_HOME=/path/to/java17 ./gradlew integrationTest
+JAVA_HOME=/path/to/java25 ./gradlew integrationTest
 
 # L5-L6: exact live trajectory and retained artifacts
 ./play.sh status --json

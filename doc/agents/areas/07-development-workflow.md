@@ -14,14 +14,14 @@ map.
 | Status | Claim | Evidence |
 | --- | --- | --- |
 | Verified | Gradle provides compile, unit, integration, run, assemble, and fat-jar workflows. | `build.gradle.kts` and both CI definitions. |
-| Verified | CI runs Java 17 across Linux, Windows, and macOS; output targets JVM 11. | CI setup and Gradle Java/Kotlin targets. |
+| Verified | CI runs Java 25 across Linux, Windows, and macOS; every output targets JVM 25. | CI setup, Gradle Java/Kotlin targets, and the [Java 25 baseline](../evidence/2026-07-30-java-25-baseline.md). |
 | Observed | Main/test Kotlin paths are unconventional. | Main is under `src/main/java`; unit tests are under `src/test/java`; integration tests are under `src/integration-test/kotlin`. |
 | Observed | Standard JVM redefinition preserves existing instances/static values and does not rerun initializers. | Java Instrumentation API contract. |
-| Target | JetBrains Runtime 17 enhanced class redefinition is the preferred open-source structural hot-swap runtime for the first spike. | JBR documents DCEVM-based redefinition enabled by `-XX:+AllowEnhancedClassRedefinition`. |
+| Target | JetBrains Runtime 25 enhanced class redefinition is the preferred open-source structural hot-swap runtime for the first spike. | JBR 25 documents DCEVM-based redefinition enabled by `-XX:+AllowEnhancedClassRedefinition`. |
 | Target | Clean reload is based on disposable classloader generations, not accumulated in-place mutation. | Required by the client/mod lifecycle maps; not implemented today. |
 | Verified | The Java play utility resolves a named Packwiz/Fabric pack into an out-of-source content store and isolates mutable state by trajectory. | `util/play/Play.java`, `modpacks/`, and `./play.sh modpack inspect sodium`. |
 | Verified | The same manifest can carry non-executable resource-pack ZIPs: the parent verifies/stages them, writes trajectory profile entries immediately before launch, and treats manifest changes as a client-generation reload. | `Play.resolveClientArtifact`, `materializeResourcePackProfile`, and [resource-pack evidence](../evidence/2026-07-22-resource-pack-stack.md). |
-| Verified | `play.sh` is a thin shim over the incrementally compiled Java 17 utility; the utility remains the parent, keeps the server stable, builds a candidate, and replaces its client child after relevant changes. | `play.sh`, `:play-util:installDist`, `util/play/Play.java`, and the default `./play.sh` development command. |
+| Verified | `play.sh` is a thin shim over the incrementally compiled Java 25 utility; the utility remains the parent, keeps the server stable, builds a candidate, and replaces its client child after relevant changes. | `play.sh`, `:play-util:installDist`, `util/play/Play.java`, and the default `./play.sh` development command. |
 | Verified | A failed candidate build does not stop the active client or server; restoring valid source permits a later swap. | [2026-07-21 hot-reload evidence](../evidence/2026-07-21-hot-reload.md), session `2026-07-22T07:00:06.678569Z-15381`. |
 | Verified | Launcher state and lifecycle transitions have machine-readable contracts. | `./play.sh status --json`, `.run/play-events.jsonl`, and `PlayUtilityTest`. |
 | Verified | `--canary` separates native-mod recompilation from base-game recompilation: canary edits build only `canaryModJar`, while base edits build `installDist`; both currently replace the client process generation and retain the server. | `dev/canary-mod/`, `util/play/Play.java`, and [canary reload evidence](../evidence/2026-07-21-canary-reload.md). |
@@ -30,7 +30,7 @@ map.
 | Verified | The Java parent can launch a deterministic memory-backed Tech Reborn local world without requiring the external server; repeated seed launches regenerate the same first logged chunk and `stop` leaves both process roles stopped. | `--local-world`, `--world-seed`, and [Tech Reborn world-generation evidence](../evidence/2026-07-21-tech-reborn-worldgen.md). |
 | Verified | The Java play utility exposes `debug` commands through one shared typed client library, replacing AppleScript visual/input automation and adding client/server state, bounded AOI comparison, and generation-owned mod tooling. | [Debug control-plane design](09-debug-control-plane.md) and [acceptance evidence](../evidence/2026-07-22-debug-control-plane.md). |
 | Verified | Dedicated-server lifecycle now publishes port-open, debug-ready, and game-ready separately. Owned Fabric readiness requires the exact PID's `core.status.ready`; external servers use a Minecraft status handshake. Client debug/join/render predicates and all states are machine-readable. | `Play`, session `2026-07-24T05:43:52.606871Z-66555`, and [automation evidence](../evidence/2026-07-23-automation-observability.md). |
-| Verified | `play.sh scenario run` executes checked JSON steps through `DebugClient`, expands matrix/repeat/soak cases, evaluates JSON-Pointer assertions and framebuffer baselines, and always emits JSON/JUnit plus final endpoint metrics. Optional outcome-driven JFR uses the selected Java 17 runtime's `jcmd`. | `Play`, `acceptance/scenarios/`, [scenario protocol](../acceptance/scenarios.md), and live smoke/matrix/failure evidence. |
+| Verified | `play.sh scenario run` executes checked JSON steps through `DebugClient`, expands matrix/repeat/soak cases, evaluates JSON-Pointer assertions and framebuffer baselines, and always emits JSON/JUnit plus final endpoint metrics. Optional outcome-driven JFR uses the selected Java 25 runtime's `jcmd`. | `Play`, `acceptance/scenarios/`, [scenario protocol](../acceptance/scenarios.md), and live smoke/matrix/failure evidence. |
 | Verified | A Blockbench plugin producer can be tested locally through an isolated exact desktop host, official plugin artifact, normal project codec, and public export action. Generated bytes are pinned separately from Minosoft's automated headless ingestion gate; neither is presented as real-render acceptance. | [Blockbench producer-integration protocol](../acceptance/blockbench.md), [Animated Java export evidence](../evidence/2026-07-24-animated-java-blockbench-export.md), and `AnimatedJavaExportFixtureTest`. |
 | Target | Agent trajectories should acquire explicit mutation leases, capture one atomic diagnosis bundle, snapshot live worlds before Anvil inspection, and restore checkpointed state with compare-and-set semantics. | [Agent trajectory tooling backlog](../backlog/agent-trajectory-tooling.md). |
 
@@ -43,8 +43,8 @@ map.
 ./gradlew assemble
 ```
 
-Use a Java 17 runtime. A newer machine default may not configure this Gradle/
-Kotlin build successfully even though emitted code targets Java 11.
+Use a Java 25 JDK. `play.sh` rejects other feature releases, and every emitted
+artifact requires JVM 25.
 
 ## Reload domains
 
@@ -184,7 +184,7 @@ may contain machine-specific paths and grow across sessions.
 
 Use this convenience loop while the generation boundary is being built:
 
-1. Install a JBRSDK 17 distribution and use it as both the Gradle and project SDK.
+1. Install a JBRSDK 25 distribution and use it as both the Gradle and project SDK.
 2. Start the existing Gradle `run` task under a debugger with
    `-XX:+AllowEnhancedClassRedefinition`. With Gradle CLI, `--debug-jvm` exposes
    the `JavaExec` debug port; configure the IDE to attach and compile changed
@@ -199,7 +199,7 @@ Use this convenience loop while the generation boundary is being built:
 Example launch shape (replace the JBR path; this suspends for a debugger):
 
 ```sh
-JAVA_HOME=/path/to/jbrsdk-17 \
+JAVA_HOME=/path/to/jbrsdk-25 \
 JAVA_TOOL_OPTIONS=-XX:+AllowEnhancedClassRedefinition \
 ./gradlew run --debug-jvm
 ```

@@ -143,7 +143,7 @@ warnings, and JFR disposition. JUnit has one test case per expanded/repeated
 case. Metrics are final `metrics.snapshot` responses from both endpoints.
 
 JFR modes are `off`, `always`, `on-failure`, and `slow`. A requested recording
-starts through the Java 17 `jcmd` adjacent to the play runtime. It is always
+starts through the Java 25 `jcmd` adjacent to the play runtime. It is always
 stopped; only the selected outcome retains `.jfr` files. Attach/dump failures
 are explicit report warnings rather than hidden scenario transport fallbacks.
 
