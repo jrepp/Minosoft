@@ -42,6 +42,9 @@ Terrain and shader registries now share `TransactionalOverrideStore`. The common
 state machine makes current-registration removal, stale-handle no-op behavior,
 fallback republication, frame leases, and deferred retirement one tested
 contract. Candidate validation and GPU cleanup stay with their concrete owners.
+The application and integration-test suites declare the module explicitly so
+the application dependency does not become a transitive public API. Integration
+suite wiring follow-up: `4c3c32c6b`.
 
 ### 4. Java 25 runtime and Gradle 10 readiness
 
@@ -88,6 +91,8 @@ Passed checks:
 ./gradlew :test --tests '*OpenGlContextRequestTest'
 MINOSOFT_OPENGL_IRIS_COMPUTE_TEST=true \
   ./gradlew :test --tests '*OpenGlIrisCustomResourceComputeTest'
+./gradlew compileKotlin :render-contracts:test test integrationTest assemble \
+  :debug-core:test :play-util:installDist :debug-server-fabric:remapJar
 ```
 
 The opt-in compute/resource test created a hidden OpenGL 4.1 context but skipped
