@@ -12,7 +12,7 @@
  */
 
 plugins {
-    id("fabric-loom") version "1.9.2"
+    id("fabric-loom") version "1.17.17"
 }
 
 group = "de.bixilon.minosoft"
@@ -48,10 +48,12 @@ dependencies {
 }
 
 java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(17))
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
+
+tasks.withType<JavaCompile>().configureEach { options.release.set(25) }
 
 tasks.processResources {
     inputs.property("version", project.version)

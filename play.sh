@@ -17,17 +17,24 @@ project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ -n "${MINOSOFT_JAVA_HOME:-}" ]]; then
     java_bin="$MINOSOFT_JAVA_HOME/bin/java"
-elif [[ -x /opt/homebrew/opt/openjdk@17/bin/java ]]; then
-    java_bin=/opt/homebrew/opt/openjdk@17/bin/java
+elif [[ -x /opt/homebrew/opt/openjdk@25/bin/java ]]; then
+    java_bin=/opt/homebrew/opt/openjdk@25/bin/java
 elif [[ "$(uname -s)" == Darwin ]] && command -v /usr/libexec/java_home >/dev/null 2>&1; then
-    java_home="$(/usr/libexec/java_home -v 17 2>/dev/null || true)"
+    java_home="$(/usr/libexec/java_home -v 25 2>/dev/null || true)"
     java_bin="${java_home:+$java_home/bin/java}"
 else
     java_bin="$(command -v java || true)"
 fi
 
 if [[ -z "${java_bin:-}" || ! -x "$java_bin" ]]; then
-    printf 'Error: Java 17 is required. Set MINOSOFT_JAVA_HOME.\n' >&2
+    printf 'Error: Java 25 is required. Set MINOSOFT_JAVA_HOME.\n' >&2
+    exit 1
+fi
+
+java_feature="$("$java_bin" -XshowSettings:properties -version 2>&1 |
+    awk -F'= ' '/^[[:space:]]*java.specification.version = / { print $2; exit }')"
+if [[ "$java_feature" != 25 ]]; then
+    printf 'Error: Java 25 is required, but %s reports Java %s.\n' "$java_bin" "${java_feature:-unknown}" >&2
     exit 1
 fi
 

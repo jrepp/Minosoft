@@ -42,8 +42,10 @@ application {
 }
 
 java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(17))
+    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
 }
+
+tasks.withType<JavaCompile>().configureEach { options.release.set(25) }
 
 tasks.test {
     useJUnitPlatform()

@@ -139,8 +139,8 @@ public final class Play {
     private final AtomicBoolean supervisorCleanup = new AtomicBoolean();
 
     private Play() {
-        if (Runtime.version().feature() != 17) {
-            throw failure("Java 17 is required; the play shim launched Java " + Runtime.version().feature() + ". Set MINOSOFT_JAVA_HOME.");
+        if (Runtime.version().feature() != 25) {
+            throw failure("Java 25 is required; the play shim launched Java " + Runtime.version().feature() + ". Set MINOSOFT_JAVA_HOME.");
         }
         project = Path.of(System.getProperty("minosoft.project", ".")).toAbsolutePath().normalize();
         javaHome = Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
