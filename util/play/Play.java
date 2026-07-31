@@ -232,6 +232,10 @@ public final class Play {
             runScreenshot(arguments.subList(1, arguments.size()));
             return;
         }
+        if (!arguments.isEmpty() && arguments.get(0).equals("lease")) {
+            runLease(arguments.subList(1, arguments.size()));
+            return;
+        }
 
         String action = arguments.isEmpty() || arguments.get(0).startsWith("--") ? "dev" : arguments.remove(0);
         if (action.equals("help") || action.equals("--help") || action.equals("-h")) {
@@ -279,6 +283,67 @@ public final class Play {
                 clientStatus();
             }
             default -> throw failure("Unsupported command.");
+        }
+    }
+
+    private void runLease(List<String> rawArguments) throws IOException {
+        List<String> arguments = new ArrayList<>(rawArguments);
+        String action = arguments.isEmpty() ? "status" : arguments.remove(0);
+        TrajectoryLeaseStore leases = new TrajectoryLeaseStore(runDirectory);
+        try {
+            switch (action) {
+                case "acquire" -> {
+                    String scope = null;
+                    Duration ttl = Duration.ofMinutes(20);
+                    String owner = environment.getOrDefault(
+                        "MINOSOFT_LEASE_OWNER",
+                        "pid-" + ProcessHandle.current().pid()
+                    );
+                    while (!arguments.isEmpty()) {
+                        String option = arguments.remove(0);
+                        if (option.equals("--scope")) {
+                            require(!arguments.isEmpty(), "--scope requires a lease scope.");
+                            scope = arguments.remove(0);
+                        } else if (option.startsWith("--scope=")) {
+                            scope = option.substring("--scope=".length());
+                        } else if (option.equals("--trajectory")) {
+                            require(!arguments.isEmpty(), "--trajectory requires a name.");
+                            trajectory = arguments.remove(0);
+                        } else if (option.startsWith("--trajectory=")) {
+                            trajectory = option.substring("--trajectory=".length());
+                        } else if (option.equals("--ttl")) {
+                            require(!arguments.isEmpty(), "--ttl requires a duration.");
+                            ttl = parseDuration(arguments.remove(0), "--ttl");
+                        } else if (option.startsWith("--ttl=")) {
+                            ttl = parseDuration(option.substring("--ttl=".length()), "--ttl");
+                        } else if (option.equals("--owner")) {
+                            require(!arguments.isEmpty(), "--owner requires a label.");
+                            owner = arguments.remove(0);
+                        } else if (option.startsWith("--owner=")) {
+                            owner = option.substring("--owner=".length());
+                        } else if (!option.equals("--json")) {
+                            throw failure("Unknown lease acquire option: " + option);
+                        }
+                    }
+                    require(scope != null, "Usage: ./play.sh lease acquire --scope SCOPE [--trajectory NAME] [--ttl 20m] [--owner LABEL]");
+                    validateName("trajectory", trajectory);
+                    require(!owner.isBlank() && owner.length() <= 128, "--owner must contain 1..128 characters.");
+                    printDebugJson(leases.acquire(scope, trajectory, ttl, owner), true);
+                }
+                case "status" -> {
+                    require(arguments.isEmpty() || arguments.equals(List.of("--json")), "lease status accepts only --json.");
+                    printDebugJson(leases.status(), true);
+                }
+                case "release" -> {
+                    require(!arguments.isEmpty(), "Usage: ./play.sh lease release TOKEN");
+                    String token = arguments.remove(0);
+                    require(arguments.isEmpty() || arguments.equals(List.of("--json")), "lease release accepts only --json.");
+                    printDebugJson(leases.release(token), true);
+                }
+                default -> throw failure("Unknown lease action: " + action);
+            }
+        } catch (IllegalArgumentException | IllegalStateException error) {
+            throw failure(error.getMessage());
         }
     }
 
@@ -3819,6 +3884,9 @@ public final class Play {
               ./play.sh worldgen inspect [WORLD] [--max-chunks N] [--json]
               ./play.sh worldgen compare BASELINE CANDIDATE [--max-chunks N] [--json]
               ./play.sh screenshot compare BASELINE ACTUAL [THRESHOLDS] [--json]
+              ./play.sh lease acquire --scope SCOPE [--trajectory NAME] [--ttl 20m]
+              ./play.sh lease status --json
+              ./play.sh lease release TOKEN
 
               ACTION  dev, start, stop, or status (default: dev)
               TARGET  server or client (default: both)
@@ -3851,6 +3919,7 @@ public final class Play {
               worldgen inspect Measure datapacks, biomes, terrain shape, and a canonical terrain hash
               worldgen compare Require deterministic terrain equality for same-seed A/B worlds
               screenshot       Crop reference regions or compare PNGs with bounded thresholds
+              lease            Acquire, inspect, or release bounded trajectory mutation ownership
 
             Lifecycle predicates:
               server.port-open, server.debug-ready, server.game-ready
@@ -3881,6 +3950,7 @@ public final class Play {
               MINOSOFT_CANARY=true (equivalent to --canary)
               MINOSOFT_LOCAL_WORLD=true, MINOSOFT_WORLD_GENERATOR, MINOSOFT_WORLD_SEED
               MINOSOFT_DEBUG_GPU_MEMORY_LEAKS=true
+              MINOSOFT_LEASE_OWNER (optional bounded lease owner label)
               MINOSOFT_HOT_RELOAD_PATHS (platform-separated external source/staging roots)
 
             Logs:
