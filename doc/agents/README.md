@@ -64,6 +64,12 @@ instructions that differ from the root contract.
   records centralized JVM conventions, the first four trajectory primitives,
   the headless render-contract boundary, shared generation ownership, Java 25
   native-access/Gradle 10 cleanup, and the preferred OpenGL 4.3 tier.
+- [Terrain consolidation implementation start](evidence/2026-07-30-terrain-consolidation-start.md)
+  records the initial Phase 0/Phase 1 headless contracts, diagnostic-schema
+  freeze plus provider-only live adoption, package-direction ratchets, neutral
+  near-provider, distant-data, and distant-renderer ownership moves, focused
+  gates, plus the first Phase 2 world-epoch, consolidated-identity, bounded
+  scheduler/mailbox, and near-production adoption boundary.
 - [Agent trajectory tooling backlog](backlog/agent-trajectory-tooling.md)
   prioritizes runtime leases, atomic diagnosis bundles, safe world snapshots,
   compare-and-restore checkpoints, visual A/B automation, and isolated
@@ -209,6 +215,10 @@ instructions that differ from the root contract.
   records typed context-owned GPU name accounting, allocation rollback,
   teardown ownership, render diagnostics, and the remaining repeated-live
   baseline gate.
+- [Render-churn performance correction](evidence/2026-07-31-render-churn-performance.md)
+  records persistent hitbox buffers, replacement cleanup, attributed terrain
+  requests, primitive tint caching, hot draw-state identifiers, focused gates,
+  and the fixed-pose live rerun.
 - [Minecraft 1.20.4 item-model predicate evidence](evidence/2026-07-24-item-model-predicates.md)
   audits the vanilla provider catalog, records complete audited-1.20.4 stack
   and live-context support plus dynamic world/display-item mesh replacement,

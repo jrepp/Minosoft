@@ -199,6 +199,8 @@ Terrain performance is available as a compact `terrain` object in the client
 - queue depth, outstanding builds, pending uploads, and their high-water marks;
 - configured/current workers plus current and cumulative utilization;
 - requested, started, successful, cancelled, stale, rejected, and failed work;
+- requested, started, and duplicate-suppressed counts for every fixed terrain
+  build cause;
 - visible section count and produced/uploaded bytes; and
 - queue-wait, snapshot-capture, mesh-build, worker-busy, visibility, and real
   upload sample counts and median/p95.
