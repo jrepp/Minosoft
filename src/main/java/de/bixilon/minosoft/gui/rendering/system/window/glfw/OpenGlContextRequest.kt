@@ -20,9 +20,10 @@ data class OpenGlContextRequest(
 ) {
     companion object {
         /**
-         * Request the strongest context used by the Iris execution substrate,
-         * then preserve Minosoft's OpenGL 3.3 baseline as a compatibility
-         * fallback. Apple exposes at most OpenGL 4.1.
+         * Request the OpenGL 4.3 compute/storage tier used by the Iris
+         * execution substrate, then preserve Minosoft's OpenGL 3.3 baseline as
+         * a compatibility fallback. GLFW treats the requested version as a
+         * minimum and may return a newer context. Apple exposes at most 4.1.
          */
         fun candidates(isMac: Boolean, preferQuads: Boolean): List<OpenGlContextRequest> {
             if (preferQuads) {
@@ -35,7 +36,6 @@ data class OpenGlContextRequest(
                 )
             }
             return listOf(
-                OpenGlContextRequest(4, 4, coreProfile = true),
                 OpenGlContextRequest(4, 3, coreProfile = true),
                 OpenGlContextRequest(3, 3, coreProfile = true),
             )

@@ -21,7 +21,6 @@ class OpenGlContextRequestTest {
     fun `desktop negotiation requests the full Iris substrate before the baseline`() {
         assertEquals(
             listOf(
-                OpenGlContextRequest(4, 4, coreProfile = true),
                 OpenGlContextRequest(4, 3, coreProfile = true),
                 OpenGlContextRequest(3, 3, coreProfile = true),
             ),
