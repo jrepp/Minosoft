@@ -87,4 +87,23 @@ final class WorldSnapshotTest {
         );
         assertTrue(Files.isRegularFile(world.resolve("level.dat")));
     }
+
+    @Test
+    void snapshotDoesNotReplaceDanglingOutputSymlink() throws IOException {
+        Path world = temporary.resolve("world");
+        Files.createDirectories(world);
+        Files.writeString(world.resolve("level.dat"), "level");
+        Path output = temporary.resolve("snapshot");
+        try {
+            Files.createSymbolicLink(output, temporary.resolve("missing"));
+        } catch (IOException | UnsupportedOperationException unavailable) {
+            assumeTrue(false, "symbolic links are unavailable: " + unavailable.getMessage());
+        }
+
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new WorldSnapshot().create(world, output, "test")
+        );
+        assertTrue(Files.isSymbolicLink(output));
+    }
 }

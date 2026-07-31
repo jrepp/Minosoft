@@ -24,6 +24,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
@@ -52,7 +53,9 @@ final class WorldSnapshot {
         if (!Files.isRegularFile(sourceRoot.resolve("level.dat"))) {
             throw new IllegalArgumentException("world level.dat not found: " + sourceRoot.resolve("level.dat"));
         }
-        if (Files.exists(outputTarget)) throw new IllegalArgumentException("snapshot output already exists: " + outputTarget);
+        if (Files.exists(outputTarget, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("snapshot output already exists: " + outputTarget);
+        }
         if (outputTarget.startsWith(sourceRoot)) throw new IllegalArgumentException("snapshot output must not be inside the source world");
 
         Path candidate = outputTarget.resolveSibling(outputTarget.getFileName() + ".partial-" + UUID.randomUUID());
