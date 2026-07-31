@@ -41,17 +41,20 @@ final class WorldSnapshot {
     private static final long MAX_BYTES = 64L * 1024 * 1024 * 1024;
 
     ObjectNode create(Path source, Path output, String trajectory) throws IOException {
-        Path sourceRoot = source.toAbsolutePath().normalize();
-        Path outputTarget = output.toAbsolutePath().normalize();
-        if (!Files.isDirectory(sourceRoot)) throw new IllegalArgumentException("world directory not found: " + sourceRoot);
+        Path requestedSource = source.toAbsolutePath().normalize();
+        Path requestedOutput = output.toAbsolutePath().normalize();
+        if (!Files.isDirectory(requestedSource)) throw new IllegalArgumentException("world directory not found: " + requestedSource);
+        if (requestedOutput.getParent() == null) throw new IllegalArgumentException("snapshot output requires a parent directory");
+
+        Path sourceRoot = requestedSource.toRealPath();
+        Files.createDirectories(requestedOutput.getParent());
+        Path outputTarget = requestedOutput.getParent().toRealPath().resolve(requestedOutput.getFileName());
         if (!Files.isRegularFile(sourceRoot.resolve("level.dat"))) {
             throw new IllegalArgumentException("world level.dat not found: " + sourceRoot.resolve("level.dat"));
         }
         if (Files.exists(outputTarget)) throw new IllegalArgumentException("snapshot output already exists: " + outputTarget);
         if (outputTarget.startsWith(sourceRoot)) throw new IllegalArgumentException("snapshot output must not be inside the source world");
-        if (outputTarget.getParent() == null) throw new IllegalArgumentException("snapshot output requires a parent directory");
 
-        Files.createDirectories(outputTarget.getParent());
         Path candidate = outputTarget.resolveSibling(outputTarget.getFileName() + ".partial-" + UUID.randomUUID());
         try {
             Files.createDirectory(candidate);
@@ -105,11 +108,13 @@ final class WorldSnapshot {
             );
             Files.move(candidate, outputTarget, StandardCopyOption.ATOMIC_MOVE);
             return manifest;
-        } catch (Throwable error) {
-            deleteTree(candidate);
-            if (error instanceof IOException io) throw io;
-            if (error instanceof RuntimeException runtime) throw runtime;
-            throw new IOException("world snapshot failed", error);
+        } catch (IOException | RuntimeException | Error error) {
+            try {
+                deleteTree(candidate);
+            } catch (IOException cleanup) {
+                error.addSuppressed(cleanup);
+            }
+            throw error;
         }
     }
 

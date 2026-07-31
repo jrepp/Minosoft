@@ -28,6 +28,7 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 final class WorldSnapshotTest {
     @TempDir
@@ -64,6 +65,25 @@ final class WorldSnapshotTest {
         assertThrows(
             IllegalArgumentException.class,
             () -> new WorldSnapshot().create(world, world.resolve("snapshot"), "test")
+        );
+        assertTrue(Files.isRegularFile(world.resolve("level.dat")));
+    }
+
+    @Test
+    void snapshotRejectsTargetRoutedIntoWorldThroughSymlink() throws IOException {
+        Path world = temporary.resolve("world");
+        Files.createDirectories(world);
+        Files.writeString(world.resolve("level.dat"), "level");
+        Path alias = temporary.resolve("world-alias");
+        try {
+            Files.createSymbolicLink(alias, world);
+        } catch (IOException | UnsupportedOperationException unavailable) {
+            assumeTrue(false, "symbolic links are unavailable: " + unavailable.getMessage());
+        }
+
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new WorldSnapshot().create(world, alias.resolve("snapshot"), "test")
         );
         assertTrue(Files.isRegularFile(world.resolve("level.dat")));
     }
