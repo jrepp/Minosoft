@@ -314,6 +314,9 @@ testing {
                 }
             }
             sources {
+                java {
+                    setSrcDirs(listOf("src/integration-test/java"))
+                }
                 kotlin {
                     setSrcDirs(listOf("src/integration-test/kotlin"))
                 }
