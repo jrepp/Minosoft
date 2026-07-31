@@ -14,6 +14,9 @@ code. Repository-wide contribution, review, and commit expectations are in
 3. For Java or Kotlin changes, follow the
    [JVM implementation guidance](doc/agents/guides/java-kotlin.md).
 4. Keep the change scoped and preserve unrelated work already in the tree.
+5. Keep GUI-independent render graph, resource, generation-lifecycle, and
+   telemetry contracts in `render-contracts`; do not add application, Minecraft,
+   window, LWJGL, or OpenGL dependencies to that module.
 
 ## Working contract
 
@@ -110,6 +113,7 @@ CI, Gradle, tests, launch tooling, and emitted bytecode use Java 25. Use a Java
 
 ```sh
 ./gradlew compileKotlin
+./gradlew :render-contracts:test
 ./gradlew test
 ./gradlew integrationTest
 ./gradlew assemble

@@ -4,9 +4,9 @@
 
 ## Status
 
-This document is **Target** guidance. It translates repeated development-run
-failure modes into repository tooling proposals; none is implemented merely
-because it appears here.
+This document mixes implemented checkpoints with remaining **Target** guidance.
+The status column and each workflow distinguish current behavior from the next
+acceptance boundary. Source and focused tests remain authoritative.
 
 ## Objective
 
@@ -18,23 +18,53 @@ creating another automation transport.
 
 ## Priorities
 
-| Priority | Tool | Outcome |
-| --- | --- | --- |
-| P0 | Runtime mutation lease | One named owner coordinates shared client/server/world mutations and concurrent sessions fail clearly or remain read-only. |
-| P0 | Atomic diagnosis bundle | One command captures status, endpoints, pose/world, shader/presentation, render substrate, fixture list, screenshot, and bounded log delta into a manifest. |
-| P0 | Saved-world snapshot | World inspection reads a flushed immutable copy rather than racing live Anvil writes. |
-| P1 | Compare-and-restore checkpoint | A run restores pose/weather/presentation/shader state only when current values still match its own mutation. |
-| P1 | Visual diagnosis/burst | Fixed-pose captures, samples, Iris/presentation A/B, and temporal classification run as one checked scenario. |
-| P1 | Isolated world/server creation | Seed, level, server directory/port, border, safe spawn, pack, backup, start, inspection, and handoff become one recoverable command. |
-| P1 | Explicit fixture overlay | Acceptance fixtures mount by named overlay/trajectory and cannot silently enter ordinary play packs. |
-| P2 | GPU steady-state guard | Warmup/reload/unload samples compare typed resource counts and retain allocation evidence only on threshold failure. |
-| P2 | Trajectory explain/lint | A command reports isolated versus shared paths/processes and checks evidence/fixture/manifest drift. |
+| Priority | Status | Tool | Outcome |
+| --- | --- | --- | --- |
+| P0 | In progress | Runtime mutation lease | Bounded file-backed `client`, `server-world`, `pack`, and `source` leases exist; broader mutating-command enforcement remains. |
+| P0 | In progress | Atomic diagnosis bundle | One bounded bundle exists; prepared-reference pairing and exact process-log deltas remain. |
+| P0 | In progress | Saved-world snapshot | A stopped/saved-world immutable copy exists; live server-thread save/flush remains. |
+| P1 | In progress | Compare-and-restore checkpoint | Player pose has capture/mark/CAS restore; GUI/weather/presentation/shader fields remain. |
+| P1 | In progress | Visual diagnosis/burst | Fixed-pose motion-noise measurement exists; the multi-state Iris/presentation burst remains. |
+| P1 | Target | Isolated world/server creation | Seed, level, server directory/port, border, safe spawn, pack, backup, start, inspection, and handoff become one recoverable command. |
+| P1 | Target | Explicit fixture overlay | Acceptance fixtures mount by named overlay/trajectory and cannot silently enter ordinary play packs. |
+| P2 | Target | GPU steady-state guard | Warmup/reload/unload samples compare typed resource counts and retain allocation evidence only on threshold failure. |
+| P2 | Target | Trajectory explain/lint | A command reports isolated versus shared paths/processes and checks evidence/fixture/manifest drift. |
+
+## Implemented checkpoint
+
+The first four ownership/evidence primitives are repository commands:
+
+```sh
+./play.sh lease acquire --scope server-world --trajectory NAME --ttl 20m
+./play.sh diagnose capture --trajectory NAME --visual --json
+./play.sh worldgen snapshot WORLD --output SNAPSHOT --trajectory NAME
+./play.sh checkpoint capture --trajectory NAME --output CHECKPOINT
+./play.sh checkpoint mark CHECKPOINT
+./play.sh checkpoint restore CHECKPOINT
+```
+
+- Lease records are atomically published under ignored `.run/leases`, expire
+  after a bounded TTL, and use an OS file lock for cross-process conflict
+  checks. `client` conflicts are trajectory-local; other scopes are shared.
+- Diagnosis writes a bounded manifest plus status, endpoint capabilities and
+  metrics, client/server samples, render substrate, fixture inventory, optional
+  framebuffer, bounded log tails, and hashes. Missing endpoints become explicit
+  warnings rather than an internally inconsistent bundle.
+- `worldgen snapshot` refuses a reachable or managed running server, acquires or
+  validates a `server-world` lease, copies into a partial candidate, rejects
+  symlinks/source mutation, hashes the result, and atomically publishes it.
+- Checkpoints cover `player-pose`. Capture records the original pose, `mark`
+  establishes the expected post-mutation value, and restore refuses a mismatch
+  before server-authoritative teleport. Conflict and restored records are
+  terminal and retained for diagnosis.
+
+These slices do not satisfy the remaining target bullets below.
 
 ## P0 acceptance contracts
 
 ### Runtime mutation lease
 
-Proposed shape:
+Implemented shape:
 
 ```sh
 ./play.sh lease acquire --trajectory NAME --scope client
@@ -43,19 +73,20 @@ Proposed shape:
 ./play.sh lease release TOKEN
 ```
 
-- Scopes distinguish client presentation, client gameplay, shared server,
-  shared server world, pack publication, and source/hot reload.
+- Current scopes distinguish trajectory-local client work from shared
+  server-world, pack-publication, and source/hot-reload work.
 - The lease records owner, process identity, trajectory, acquisition time,
   expiry, and intended mutation class without exposing credentials.
 - Read-only status/capture remains available while another owner holds a lease.
-- Mutating CLI/scenario operations require the compatible lease or an explicit
-  user override.
-- Process death/expiry makes the lease stale and recoverable; it never signals
-  an unrelated PID.
+- `worldgen snapshot` and `checkpoint restore` require or automatically acquire
+  the compatible lease. Enforcing leases across every mutating debug/scenario
+  operation remains target work.
+- Expiry makes the current lease stale and recoverable without signaling a
+  process. Early process-death recovery remains target work.
 
 ### Atomic diagnosis bundle
 
-Proposed shape:
+Implemented first slice:
 
 ```sh
 ./play.sh diagnose capture --trajectory NAME --visual --json
@@ -77,27 +108,30 @@ One render/server-bracketed run writes:
 └── logs.json
 ```
 
-The manifest includes endpoint IDs/generations, timestamps/frames, attachment
-SHA-256, command version, and missing-capability warnings. `--visual` captures
-both the unmodified frame and a prepared reference when they differ. Bounded
-log extraction uses the current process/session boundary, not the entire
-accumulated log.
+The manifest includes endpoint identities/generations, timestamps, attachment
+SHA-256, and missing-capability warnings. The current `--visual` captures the
+unmodified framebuffer. Prepared-reference pairing and exact process/session
+log-delta boundaries remain target work; current logs are size-bounded tails.
 
 ### Saved-world snapshot
 
-Proposed shape:
+Implemented stopped-world slice:
 
 ```sh
-./play.sh world snapshot --trajectory NAME --output .run/world-snapshots/RUN
+./play.sh worldgen snapshot --trajectory NAME \
+  --output .run/world-snapshots/RUN
 ./play.sh worldgen inspect .run/world-snapshots/RUN --json
 ```
 
-- A bounded server operation requests save/flush on the server thread.
+- Current code requires the managed/configured server to be stopped and
+  unreachable. A bounded live server save/flush operation remains target work.
 - The launcher copies only the selected level into a new explicit target and
   verifies that source identity did not change during the snapshot boundary.
-- Autosave suspension, if required, is always resumed in `finally`.
-- The snapshot manifest records seed, level name, enabled datapacks, server PID,
-  tick, file count/bytes, and per-file or tree hash.
+- No autosave state is changed in the stopped-world slice. A later live
+  save/flush implementation must resume any suspension in `finally`.
+- The current manifest records source/output, trajectory, file count/bytes,
+  per-file SHA-256, and a tree hash. Live seed, datapack, server PID, and tick
+  identity remain part of the server-thread target.
 - Failure deletes or marks only the incomplete candidate; it never edits the
   active world or promotes a partial snapshot.
 
@@ -105,12 +139,13 @@ Proposed shape:
 
 ### Compare-and-restore checkpoint
 
-`checkpoint capture` returns an opaque record covering only requested fields.
-`checkpoint restore` performs compare-and-set restoration and reports
-`restored`, `already-restored`, or `conflict` per field. Initial coverage should
-include player pose, client GUI/reference suppression, weather canary state,
-world-border canary state, selected Iris pack/options/fingerprint, and prepared
-render canaries. A conflict never overwrites a concurrent user's value.
+`checkpoint capture`, `checkpoint mark`, and `checkpoint restore` implement the
+player-pose slice. Restore compares the live pose with `expectedCurrent`, records
+a terminal conflict without mutation, or restores the original pose through the
+server endpoint and verifies the client result. Next coverage should include
+client GUI/reference suppression, weather canary state, world-border canary
+state, selected Iris pack/options/fingerprint, and prepared render canaries. A
+conflict must never overwrite a concurrent user's value.
 
 ### Visual diagnosis and burst
 
@@ -186,10 +221,12 @@ prove runtime claims from prose.
 
 ## Delivery order
 
-1. Implement leases in `Play` without changing the debug wire.
-2. Build diagnosis bundles from existing read-only operations.
-3. Add the bounded server save/snapshot operation and immutable copy.
-4. Layer checkpoint/restore and visual burst scenarios on those primitives.
+1. ~~Implement leases in `Play` without changing the debug wire.~~ First slice complete.
+2. ~~Build diagnosis bundles from existing read-only operations.~~ First slice complete.
+3. Extend the stopped-world immutable snapshot with a bounded live
+   server-thread save/flush boundary.
+4. Extend pose checkpoints and the existing motion-noise command into
+   multi-field compare/restore and visual burst workflows.
 5. Add isolated server/world allocation and fixture overlays.
 6. Add GPU guards and evidence lint after the primary workflows are stable.
 
