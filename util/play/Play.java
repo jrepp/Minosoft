@@ -2007,8 +2007,12 @@ public final class Play {
 
     private void runWorldgen(List<String> rawArguments) throws Exception {
         List<String> arguments = new ArrayList<>(rawArguments);
-        require(!arguments.isEmpty(), "Usage: ./play.sh worldgen inspect [WORLD] | compare BASELINE CANDIDATE [--json]");
+        require(!arguments.isEmpty(), "Usage: ./play.sh worldgen inspect [WORLD] | compare BASELINE CANDIDATE | snapshot [WORLD] --output PATH");
         String action = arguments.remove(0);
+        if (action.equals("snapshot")) {
+            runWorldSnapshot(arguments);
+            return;
+        }
         boolean json = false;
         boolean allowDifferentSeed = false;
         int maxChunks = 4096;
@@ -2053,6 +2057,65 @@ public final class Play {
         result.put("equal", equal).put("allowDifferentSeed", allowDifferentSeed);
         printDebugJson(result, json);
         require(equal, "World-generation A/B comparison failed.");
+    }
+
+    private void runWorldSnapshot(List<String> arguments) throws Exception {
+        Path output = null;
+        Path source = null;
+        String leaseToken = null;
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            if (option.equals("--output")) {
+                require(!arguments.isEmpty(), "--output requires a path.");
+                output = resolveProjectPath(arguments.remove(0));
+            } else if (option.startsWith("--output=")) {
+                output = resolveProjectPath(option.substring("--output=".length()));
+            } else if (option.equals("--trajectory")) {
+                require(!arguments.isEmpty(), "--trajectory requires a name.");
+                trajectory = arguments.remove(0);
+            } else if (option.startsWith("--trajectory=")) {
+                trajectory = option.substring("--trajectory=".length());
+            } else if (option.equals("--lease")) {
+                require(!arguments.isEmpty(), "--lease requires a token.");
+                leaseToken = arguments.remove(0);
+            } else if (option.startsWith("--lease=")) {
+                leaseToken = option.substring("--lease=".length());
+            } else if (!option.equals("--json")) {
+                require(source == null, "worldgen snapshot accepts at most one world directory.");
+                source = resolveProjectPath(option);
+            }
+        }
+        require(output != null, "worldgen snapshot requires --output PATH.");
+        validateName("trajectory", trajectory);
+        require(managedPid(serverPidFile, this::isServerCommand).isEmpty(),
+            "Stop and save the managed server before taking a world snapshot.");
+        require(!serverPortIsOpen(),
+            "The configured server is reachable; stop it before taking a world snapshot.");
+
+        TrajectoryLeaseStore leases = new TrajectoryLeaseStore(runDirectory);
+        String acquiredToken = null;
+        try {
+            if (leaseToken == null) {
+                ObjectNode acquired = leases.acquire(
+                    "server-world",
+                    trajectory,
+                    Duration.ofMinutes(10),
+                    "world-snapshot-pid-" + ProcessHandle.current().pid()
+                );
+                acquiredToken = acquired.path("token").asText();
+            } else {
+                require(leases.owns(leaseToken, "server-world", trajectory),
+                    "The supplied lease does not own server-world for trajectory " + trajectory + ".");
+            }
+            Path world = source == null ? defaultWorldDirectory() : source;
+            ObjectNode result = new WorldSnapshot().create(world, output, trajectory);
+            result.put("lease", leaseToken == null ? "automatic" : leaseToken);
+            printDebugJson(result, true);
+        } catch (IllegalArgumentException | IllegalStateException error) {
+            throw failure(error.getMessage());
+        } finally {
+            if (acquiredToken != null) leases.release(acquiredToken);
+        }
     }
 
     private Path defaultWorldDirectory() throws IOException {
@@ -3934,6 +3997,7 @@ public final class Play {
               ./play.sh scenario run FILE [--artifacts PATH] [--jfr MODE] [--json]
               ./play.sh worldgen inspect [WORLD] [--max-chunks N] [--json]
               ./play.sh worldgen compare BASELINE CANDIDATE [--max-chunks N] [--json]
+              ./play.sh worldgen snapshot [WORLD] --output PATH [--trajectory NAME] [--lease TOKEN]
               ./play.sh screenshot compare BASELINE ACTUAL [THRESHOLDS] [--json]
               ./play.sh lease acquire --scope SCOPE [--trajectory NAME] [--ttl 20m]
               ./play.sh lease status --json
@@ -3970,6 +4034,7 @@ public final class Play {
               scenario run     Execute JSON acceptance steps and emit report.json plus junit.xml
               worldgen inspect Measure datapacks, biomes, terrain shape, and a canonical terrain hash
               worldgen compare Require deterministic terrain equality for same-seed A/B worlds
+              worldgen snapshot Copy a stopped, saved world into a hashed immutable snapshot
               screenshot       Crop reference regions or compare PNGs with bounded thresholds
               lease            Acquire, inspect, or release bounded trajectory mutation ownership
               diagnose capture Capture one bounded status, endpoint, state, render, fixture, and log bundle

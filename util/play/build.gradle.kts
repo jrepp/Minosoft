@@ -33,6 +33,7 @@ sourceSets {
         java.include("MotionNoiseAnalyzer.java")
         java.include("TrajectoryDiagnostics.java")
         java.include("TrajectoryLeaseStore.java")
+        java.include("WorldSnapshot.java")
     }
     test {
         java.setSrcDirs(listOf("src/test/java"))
