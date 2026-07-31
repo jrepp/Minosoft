@@ -17,6 +17,7 @@ layout (location = 3) in float vinNormalMaterial;
 
 uniform mat4 uViewProjectionMatrix;
 uniform vec3 uCameraPosition;
+uniform vec3 uPageOffset;
 
 out vec4 finColor;
 out float finHorizontalDistance;
@@ -31,7 +32,8 @@ void main() {
     uint normal = normalMaterial & 0x7u;
     float faceShade = normal == 1u ? 1.0 : (normal == 2u || normal == 3u ? 0.82 : 0.68);
     finColor = getRGBAColor(floatBitsToUint(vinTintColor)) * getLight(light & 0xFFu) * vec4(vec3(faceShade), 1.0);
-    finHorizontalDistance = length((vinPosition - uCameraPosition).xz);
+    vec3 pagePosition = vinPosition + uPageOffset;
+    finHorizontalDistance = length((pagePosition - uCameraPosition).xz);
     finSurfaceFlags = normalMaterial >> 11u;
-    gl_Position = uViewProjectionMatrix * vec4(vinPosition, 1.0);
+    gl_Position = uViewProjectionMatrix * vec4(pagePosition, 1.0);
 }

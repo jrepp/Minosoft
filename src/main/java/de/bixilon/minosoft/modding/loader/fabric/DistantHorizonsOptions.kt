@@ -15,6 +15,7 @@ import de.bixilon.minosoft.config.settings.ConfigEntry
 import de.bixilon.minosoft.config.settings.SettingsCategory
 import de.bixilon.minosoft.config.settings.SettingsSchema
 import de.bixilon.minosoft.config.settings.SteppedConfigControl
+import de.bixilon.minosoft.terrain.distant.DistantTerrainRenderConfig
 
 /**
  * Source-native settings for the exact DH compatibility surface.
@@ -24,14 +25,14 @@ import de.bixilon.minosoft.config.settings.SteppedConfigControl
  */
 internal class DistantHorizonsOptions private constructor(
     private val store: FabricAdapterOptionStore?,
-) {
+) : DistantTerrainRenderConfig {
     @Volatile var enabled = boolean(ENABLED, true)
         private set
-    @Volatile var renderDistanceChunks = integer(RENDER_DISTANCE, 128, RENDER_DISTANCES)
+    @Volatile override var renderDistanceChunks = integer(RENDER_DISTANCE, 128, RENDER_DISTANCES)
         private set
     @Volatile var persistenceEnabled = boolean(PERSISTENCE, true)
         private set
-    @Volatile var maximumTiles = integer(MAXIMUM_TILES, 16_384, TILE_LIMITS)
+    @Volatile override var maximumTiles = integer(MAXIMUM_TILES, 16_384, TILE_LIMITS)
         private set
     @Volatile var unexploredGenerationEnabled = boolean(UNEXPLORED_GENERATION, true)
         private set

@@ -13,13 +13,39 @@ package de.bixilon.minosoft.modding.loader.fabric
 import de.bixilon.kutil.concurrent.lock.LockUtil.acquired
 import de.bixilon.minosoft.config.profile.ProfileOptions
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
+import de.bixilon.minosoft.data.registries.blocks.state.BlockStateFlags
+import de.bixilon.minosoft.data.registries.blocks.types.fluid.FluidHolder
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.debug.ClientDebugChannel
-import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.data.world.chunk.chunk.Chunk
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.data.world.positions.InChunkPosition
+import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRendererBuilder
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
+import de.bixilon.minosoft.terrain.distant.DistantLodColumn
+import de.bixilon.minosoft.terrain.distant.DistantLodChanges
+import de.bixilon.minosoft.terrain.distant.DistantLodChangeJournal
+import de.bixilon.minosoft.terrain.distant.DistantLodRenderDiagnostics
+import de.bixilon.minosoft.terrain.distant.DistantLodSnapshot
+import de.bixilon.minosoft.terrain.distant.DistantLodTile
+import de.bixilon.minosoft.terrain.distant.DistantLodTileSource
+import de.bixilon.minosoft.terrain.distant.DistantLodTileStore
+import de.bixilon.minosoft.terrain.distant.DistantLodUpdate
+import de.bixilon.minosoft.terrain.distant.DistantCompatibilityMaterial
+import de.bixilon.minosoft.terrain.distant.DistantCompatibilityMaterialResolver
+import de.bixilon.minosoft.terrain.distant.DistantWorldVerticalSampler
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantFluidSample
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantVerticalPage
+import de.bixilon.minosoft.terrain.distant.migrateTopOnlyTiles
+import de.bixilon.minosoft.terrain.distant.toTopOnlyCompatibilityTile
+import de.bixilon.minosoft.terrain.distant.store.DistantDirectoryTerrainStore
+import de.bixilon.minosoft.terrain.distant.store.DistantTerrainStoreIdentity
+import de.bixilon.minosoft.terrain.distant.store.DistantTerrainStoreWriter
+import de.bixilon.minosoft.terrain.distant.store.DistantTerrainStoreInspection
+import de.bixilon.minosoft.terrain.distant.network.DistantTerrainMessageV2
+import de.bixilon.minosoft.terrain.distant.DistantTerrainRenderSource
+import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
+import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
@@ -93,7 +119,10 @@ object DistantHorizonsCompatibilityAdapter : FabricCompatibilityAdapter {
             ),
         )
         scope.own(
-            FabricRendererRegistry.register(id, DistantHorizonsRendererHookBuilder(controller, options)),
+            FabricRendererRegistry.register(
+                id,
+                DistantTerrainRendererBuilder(options, controller::renderSource),
+            ),
         )
         scope.own(FabricChunkEvents.register(id, controller::onChunk))
         scope.own(FabricBlockMutationEvents.register(id, controller::onBlockMutation))
@@ -113,175 +142,6 @@ object DistantHorizonsCompatibilityAdapter : FabricCompatibilityAdapter {
     }
 }
 
-internal data class DistantLodColumn(
-    val surfaceY: Int,
-    val material: ResourceLocation?,
-    val solidY: Int = surfaceY,
-    val solidMaterial: ResourceLocation? = material,
-) {
-    init {
-        require(surfaceY == Int.MIN_VALUE || surfaceY in -MAXIMUM_WORLD_COORDINATE..MAXIMUM_WORLD_COORDINATE) {
-            "Distant LOD surface height is out of bounds: $surfaceY"
-        }
-        require(solidY == Int.MIN_VALUE || solidY in -MAXIMUM_WORLD_COORDINATE..MAXIMUM_WORLD_COORDINATE) {
-            "Distant LOD solid height is out of bounds: $solidY"
-        }
-    }
-
-    private companion object {
-        const val MAXIMUM_WORLD_COORDINATE = 30_000_000
-    }
-}
-
-/**
- * Immutable 16x16 explored-surface snapshot. Column index is `(z << 4) | x`.
- */
-internal class DistantLodTile private constructor(
-    val position: ChunkPosition,
-    private val heights: IntArray,
-    private val materials: Array<ResourceLocation?>,
-    private val solidHeights: IntArray,
-    private val solidMaterials: Array<ResourceLocation?>,
-) {
-    init {
-        require(position.x in -MAXIMUM_CHUNK_COORDINATE..MAXIMUM_CHUNK_COORDINATE) {
-            "Distant LOD tile x is out of bounds: ${position.x}"
-        }
-        require(position.z in -MAXIMUM_CHUNK_COORDINATE..MAXIMUM_CHUNK_COORDINATE) {
-            "Distant LOD tile z is out of bounds: ${position.z}"
-        }
-        require(heights.size == COLUMN_COUNT) {
-            "Distant LOD tile requires $COLUMN_COUNT heights, found ${heights.size}"
-        }
-        require(materials.size == COLUMN_COUNT) {
-            "Distant LOD tile requires $COLUMN_COUNT materials, found ${materials.size}"
-        }
-        require(solidHeights.size == COLUMN_COUNT) {
-            "Distant LOD tile requires $COLUMN_COUNT solid heights, found ${solidHeights.size}"
-        }
-        require(solidMaterials.size == COLUMN_COUNT) {
-            "Distant LOD tile requires $COLUMN_COUNT solid materials, found ${solidMaterials.size}"
-        }
-    }
-
-    operator fun get(x: Int, z: Int): DistantLodColumn {
-        require(x in 0 until ChunkSize.SECTION_WIDTH_X) { "Distant LOD x is out of bounds: $x" }
-        require(z in 0 until ChunkSize.SECTION_WIDTH_Z) { "Distant LOD z is out of bounds: $z" }
-        val index = index(x, z)
-        return DistantLodColumn(
-            heights[index],
-            materials[index],
-            solidHeights[index],
-            solidMaterials[index],
-        )
-    }
-
-    fun update(
-        columns: Set<Int>,
-        sampler: (x: Int, z: Int) -> DistantLodColumn,
-    ): DistantLodTile {
-        if (columns.isEmpty()) return this
-        val nextHeights = heights.copyOf()
-        val nextMaterials = materials.copyOf()
-        val nextSolidHeights = solidHeights.copyOf()
-        val nextSolidMaterials = solidMaterials.copyOf()
-        for (index in columns) {
-            require(index in 0 until COLUMN_COUNT) { "Distant LOD column is out of bounds: $index" }
-            val column = sampler(index and COLUMN_MASK, index ushr COLUMN_BITS)
-            nextHeights[index] = column.surfaceY
-            nextMaterials[index] = column.material
-            nextSolidHeights[index] = column.solidY
-            nextSolidMaterials[index] = column.solidMaterial
-        }
-        return DistantLodTile(
-            position,
-            nextHeights,
-            nextMaterials,
-            nextSolidHeights,
-            nextSolidMaterials,
-        )
-    }
-
-    companion object {
-        const val COLUMN_COUNT = ChunkSize.SECTION_WIDTH_X * ChunkSize.SECTION_WIDTH_Z
-        private const val COLUMN_BITS = 4
-        private const val COLUMN_MASK = ChunkSize.SECTION_WIDTH_X - 1
-        private const val MAXIMUM_CHUNK_COORDINATE = 30_000_000 / ChunkSize.SECTION_WIDTH_X
-
-        fun capture(
-            position: ChunkPosition,
-            sampler: (x: Int, z: Int) -> DistantLodColumn,
-        ): DistantLodTile {
-            val heights = IntArray(COLUMN_COUNT)
-            val materials = arrayOfNulls<ResourceLocation>(COLUMN_COUNT)
-            val solidHeights = IntArray(COLUMN_COUNT)
-            val solidMaterials = arrayOfNulls<ResourceLocation>(COLUMN_COUNT)
-            for (z in 0 until ChunkSize.SECTION_WIDTH_Z) {
-                for (x in 0 until ChunkSize.SECTION_WIDTH_X) {
-                    val index = index(x, z)
-                    val column = sampler(x, z)
-                    heights[index] = column.surfaceY
-                    materials[index] = column.material
-                    solidHeights[index] = column.solidY
-                    solidMaterials[index] = column.solidMaterial
-                }
-            }
-            return DistantLodTile(
-                position,
-                heights,
-                materials,
-                solidHeights,
-                solidMaterials,
-            )
-        }
-
-        fun index(x: Int, z: Int): Int = (z shl COLUMN_BITS) or x
-    }
-}
-
-/**
- * Bounded access-ordered store. Persistence and coarser aggregation are later
- * integration rungs; eviction prevents explored multiplayer worlds from
- * becoming an unbounded client allocation meanwhile.
- */
-internal class DistantLodTileStore(
-    private val maximumTiles: Int = DEFAULT_MAXIMUM_TILES,
-) {
-    init {
-        require(maximumTiles > 0) { "Distant LOD tile limit must be positive" }
-    }
-
-    private val tiles = LinkedHashMap<ChunkPosition, DistantLodTile>(16, 0.75f, true)
-
-    @Synchronized
-    fun put(tile: DistantLodTile): List<ChunkPosition> {
-        val evicted = ArrayList<ChunkPosition>(1)
-        tiles[tile.position] = tile
-        while (tiles.size > maximumTiles) {
-            val eldest = tiles.entries.firstOrNull() ?: break
-            tiles.remove(eldest.key)
-            evicted += eldest.key
-        }
-        return evicted
-    }
-
-    @Synchronized
-    operator fun get(position: ChunkPosition): DistantLodTile? = tiles[position]
-
-    @Synchronized
-    fun size(): Int = tiles.size
-
-    @Synchronized
-    fun snapshot(): List<DistantLodTile> = tiles.values.toList()
-
-    @Synchronized
-    fun clear() = tiles.clear()
-
-    private companion object {
-        const val DEFAULT_MAXIMUM_TILES = 4_096
-    }
-}
-
 internal class DistantHorizonsLodController(
     private val options: DistantHorizonsOptions = DistantHorizonsOptions.inMemory(),
     private val persistenceRoot: Path? = null,
@@ -291,21 +151,35 @@ internal class DistantHorizonsLodController(
     ) : AutoCloseable {
         val store = DistantLodTileStore(options.maximumTiles)
         val sources = HashMap<ChunkPosition, DistantLodTileSource>()
-        private val persistence = persistenceRoot?.let {
+        val verticalPages = HashMap<ChunkPosition, DistantVerticalPage>()
+        private val changeJournal = DistantLodChangeJournal(MAX_CHANGE_POSITIONS)
+        private val persistence = persistenceRoot?.takeIf { options.persistenceEnabled }?.let {
             DistantLodPersistence(DistantLodPersistence.path(it, session), options.maximumTiles)
         }
-        private val writer = persistence?.let(::DistantLodPersistenceWriter)
+        private val pageStore = persistence?.let {
+            DistantDirectoryTerrainStore(
+                it.path.resolveSibling("${it.path.fileName}.pages"),
+                DistantTerrainStoreIdentity(
+                    worldIdentity = "${session.version.name}\u0000${session.connection.identifier}\u0000${session.world.name}",
+                    normalizedLevelKey = session.world.name?.toString() ?: "minosoft:unknown",
+                ),
+                maximumPages = options.maximumTiles,
+            )
+        }
+        private val pageWriter = pageStore?.let(::DistantTerrainStoreWriter)
         private val generator = DistantUnexploredGenerator(
             session = session,
             options = options,
             contains = { store[it] != null },
-            publish = { publish(it, DistantLodTileSource.LOCAL_GENERATION) },
+            publish = { tile, page -> publish(tile, DistantLodTileSource.LOCAL_GENERATION, page) },
         )
         private val network = DistantLodNetworkClient(
             session = session,
             options = options,
             contains = { store[it] != null },
-            publish = { publish(it, DistantLodTileSource.NETWORK) },
+            localSourceRevision = { verticalPages[it]?.sourceRevision },
+            publishTile = { publish(it, DistantLodTileSource.NETWORK) },
+            publishPage = { tile, page -> publish(tile, DistantLodTileSource.NETWORK, page) },
         )
         private var closed = false
 
@@ -317,9 +191,34 @@ internal class DistantHorizonsLodController(
                         store.put(it).forEach(sources::remove)
                         sources[it.position] = DistantLodTileSource.PERSISTENCE
                     }
+                    pageStore?.load(session.world.terrainEpoch).orEmpty().forEach { page ->
+                        revision.accumulateAndGet(page.sourceRevision) { current, loadedRevision ->
+                            maxOf(current, loadedRevision)
+                        }
+                        val position = ChunkPosition(page.key.x.toInt(), page.key.z.toInt())
+                        store.put(page.toTopOnlyCompatibilityTile()).forEach { evicted ->
+                            sources.remove(evicted)
+                            verticalPages.remove(evicted)
+                        }
+                        verticalPages[position] = page
+                        sources[position] = DistantLodTileSource.PERSISTENCE
+                    }
+                    val migratedPages = migrateTopOnlyTiles(
+                        tiles = store.snapshot(),
+                        existingPositions = verticalPages.keys,
+                        resolver = compatibilityResolver(),
+                        worldEpoch = session.world.terrainEpoch,
+                        originY = session.world.dimension.minY,
+                        nextSourceRevision = revision::incrementAndGet,
+                        persist = { page -> pageStore?.write(page) },
+                    )
+                    for (page in migratedPages) {
+                        val position = ChunkPosition(page.key.x.toInt(), page.key.z.toInt())
+                        verticalPages[position] = page
+                    }
                     if (persistence != null) {
                         Log.log(LogMessageType.MOD_LOADING, LogLevels.INFO) {
-                            "DISTANT_HORIZONS_DATABASE_LOADED tiles=${loaded.size} path=${persistence.path}"
+                            "DISTANT_HORIZONS_DATABASE_LOADED tiles=${loaded.size} migratedPages=${migratedPages.size} path=${persistence.path}"
                         }
                     }
                 } catch (error: Throwable) {
@@ -341,7 +240,7 @@ internal class DistantHorizonsLodController(
                     }
                 }
                 try {
-                    writer?.close()
+                    pageWriter?.close()
                 } catch (cleanup: Throwable) {
                     error.addSuppressed(cleanup)
                 }
@@ -350,11 +249,53 @@ internal class DistantHorizonsLodController(
         }
 
         @Synchronized
-        fun publish(tile: DistantLodTile, source: DistantLodTileSource) {
+        fun publish(
+            tile: DistantLodTile,
+            source: DistantLodTileSource,
+            verticalPage: DistantVerticalPage? = null,
+        ) {
             if (closed) return
-            store.put(tile).forEach(sources::remove)
+            require(verticalPage == null ||
+                verticalPage.key.domain == TerrainDomain.DISTANT &&
+                verticalPage.key.detailLevel == 0 &&
+                verticalPage.key.y == 0L &&
+                verticalPage.key.x == tile.position.x.toLong() &&
+                verticalPage.key.z == tile.position.z.toLong() &&
+                verticalPage.key.worldEpoch == session.world.terrainEpoch
+            ) { "Distant vertical page does not match its compatibility tile and active world" }
+            val publicationRevision = revision.incrementExact()
+            val publishedPage = verticalPage?.let {
+                DistantVerticalPage(
+                    key = it.key,
+                    width = it.width,
+                    originY = it.originY,
+                    sourceRevision = publicationRevision,
+                    completeness = it.completeness,
+                    columns = it.columns,
+                )
+            }
+            session.player.physics.positionInfo.chunkPosition.let { center ->
+                pageStore?.updateRetentionCenter(center.x.toLong(), center.z.toLong())
+            }
+            store.put(tile).forEach { evicted ->
+                sources.remove(evicted)
+                verticalPages.remove(evicted)
+                recordChange(evicted, publicationRevision)
+            }
             sources[tile.position] = source
-            changed()
+            if (publishedPage == null) {
+                verticalPages.remove(tile.position)
+            } else {
+                verticalPages[tile.position] = publishedPage
+                if (options.persistenceEnabled) pageWriter?.let { writer ->
+                    if (!writer.markDirty(publishedPage)) {
+                        Log.log(LogMessageType.MOD_LOADING, LogLevels.WARN) {
+                            "Distant page writer queue is saturated; retaining the page in memory"
+                        }
+                    }
+                }
+            }
+            recordChange(tile.position, publicationRevision)
         }
 
         @Synchronized
@@ -363,9 +304,10 @@ internal class DistantHorizonsLodController(
             network.receive(message)
         }
 
-        private fun changed() {
-            revision.incrementAndGet()
-            if (options.persistenceEnabled) writer?.markDirty(store.snapshot())
+        @Synchronized
+        fun receive(message: DistantTerrainMessageV2) {
+            if (closed) return
+            network.receive(message)
         }
 
         @Synchronized
@@ -373,10 +315,41 @@ internal class DistantHorizonsLodController(
             revision = revision.get(),
             tiles = if (options.enabled) store.snapshot() else emptyList(),
             sources = sources.toMap(),
+            verticalPages = if (options.enabled) verticalPages.toMap() else emptyMap(),
         )
 
         @Synchronized
-        override fun close() {
+        fun changesSince(previousRevision: Long): DistantLodChanges {
+            val currentRevision = revision.get()
+            val window = changeJournal.changesSince(previousRevision, currentRevision)
+            if (!options.enabled || window.reset) {
+                return DistantLodChanges.reset(snapshot())
+            }
+            val updates = ArrayList<DistantLodUpdate>()
+            val removals = linkedSetOf<ChunkPosition>()
+            window.positions.forEach { position ->
+                val tile = store[position]
+                if (tile == null) {
+                    removals += position
+                } else {
+                    updates += DistantLodUpdate(
+                        tile,
+                        sources[position] ?: DistantLodTileSource.NATIVE,
+                        verticalPages[position],
+                    )
+                }
+            }
+            return DistantLodChanges(currentRevision, reset = false, updates, removals)
+        }
+
+        @Synchronized
+        fun storeInspection(): DistantTerrainStoreInspection? = pageStore?.inspect()
+
+        @Synchronized
+        fun networkInspection(): DistantLodNetworkClient.Inspection = network.inspect()
+
+        @Synchronized
+        fun close(sendNetworkCancellation: Boolean) {
             if (closed) return
             closed = true
             var failure: Throwable? = null
@@ -393,13 +366,41 @@ internal class DistantHorizonsLodController(
                 }
             }
 
+            cleanup { network.close(sendNetworkCancellation) }
             cleanup { session.ticker -= generator }
             cleanup { session.ticker -= network }
-            if (options.persistenceEnabled) cleanup { writer?.markDirty(store.snapshot()) }
-            cleanup { writer?.close() }
+            if (options.persistenceEnabled) cleanup { pageWriter?.close() }
             cleanup(store::clear)
             sources.clear()
+            verticalPages.clear()
+            changeJournal.clear()
             failure?.let { throw it }
+        }
+
+        override fun close() = close(sendNetworkCancellation = false)
+
+        private fun recordChange(position: ChunkPosition, publicationRevision: Long) {
+            changeJournal.record(position, publicationRevision)
+        }
+
+        private fun compatibilityResolver() = DistantCompatibilityMaterialResolver { identifier ->
+            if (identifier in AIR_IDENTIFIERS) return@DistantCompatibilityMaterialResolver null
+            val semantic = TerrainSemanticMaterialId(identifier.toString())
+            val block = session.registries.block[identifier]
+                ?: return@DistantCompatibilityMaterialResolver DistantCompatibilityMaterial(semantic, opaque = false)
+            val state = block.states.default
+            val fluid = (block as? FluidHolder)?.fluid?.let { source ->
+                DistantFluidSample(
+                    material = TerrainSemanticMaterialId(source.identifier.toString()),
+                    level = 0,
+                    classification = source.identifier.toString(),
+                )
+            }
+            DistantCompatibilityMaterial(
+                semanticMaterial = semantic,
+                opaque = BlockStateFlags.FULL_OPAQUE in state.flags,
+                fluid = fluid,
+            )
         }
     }
 
@@ -410,16 +411,29 @@ internal class DistantHorizonsLodController(
     @Volatile private var presentationOverride: Boolean? = null
     @Volatile private var closed = false
 
+    private companion object {
+        const val MAX_CHANGE_POSITIONS = 4_096
+        val AIR_IDENTIFIERS = setOf(
+            ResourceLocation.of("minecraft:air"),
+            ResourceLocation.of("minecraft:cave_air"),
+            ResourceLocation.of("minecraft:void_air"),
+        )
+    }
+
     fun onWorldJoined(context: FabricWorldEventContext) {
         if (closed) return
-        synchronized(states) {
-            if (closed) return
-            states.remove(context.session)?.close()
-            states[context.session] = SessionState(context.session).also { state ->
-                networkHello[context.session]?.let(state::receive)
-            }
+        val replacement = SessionState(context.session)
+        val hello = synchronized(states) { networkHello[context.session] }
+        hello?.let(replacement::receive)
+        val previous = synchronized(states) {
+            if (closed) null else states.put(context.session, replacement)
         }
-        revision.incrementAndGet()
+        if (closed && existingState(context.session) !== replacement) {
+            replacement.close(sendNetworkCancellation = false)
+            return
+        }
+        previous?.close(sendNetworkCancellation = true)
+        revision.incrementExact()
     }
 
     fun onChunk(context: FabricChunkEventContext) {
@@ -428,7 +442,8 @@ internal class DistantHorizonsLodController(
             FabricChunkEventPhase.CREATED,
             FabricChunkEventPhase.UPDATED,
             -> context.chunk?.let { chunk ->
-                state(context.session).publish(capture(chunk), DistantLodTileSource.NATIVE)
+                val (tile, page) = captureNative(chunk)
+                state(context.session).publish(tile, DistantLodTileSource.NATIVE, page)
             }
 
             // Retaining an immutable explored tile after native chunk unload is
@@ -445,20 +460,23 @@ internal class DistantHorizonsLodController(
         val store = state.store
         val previous = store[context.chunk.position]
         if (previous == null) {
-            state.publish(capture(context.chunk), DistantLodTileSource.NATIVE)
+            val (tile, page) = captureNative(context.chunk)
+            state.publish(tile, DistantLodTileSource.NATIVE, page)
             return
         }
         val columns = context.changes.mapTo(linkedSetOf()) {
             DistantLodTile.index(it.position.x and 0x0F, it.position.z and 0x0F)
         }
-        state.publish(update(context.chunk, previous, columns), DistantLodTileSource.NATIVE)
+        val previousPage = state.verticalPages[context.chunk.position]
+        val (tile, page) = updateNative(context.chunk, previous, previousPage, columns)
+        state.publish(tile, DistantLodTileSource.NATIVE, page)
     }
 
     fun onNetworkPayload(context: FabricClientPayloadContext) {
         if (closed || !options.networkTransferEnabled) return
         try {
-            val message = DistantLodProtocol.decode(context.copyPayload())
-            synchronized(states) {
+            val message = DistantLodProtocol.decodeNegotiated(context.copyPayload())
+            val current = synchronized(states) {
                 if (closed) return
                 if (message is DistantLodMessage.Hello) {
                     // A server can advertise immediately after login, before a
@@ -467,12 +485,15 @@ internal class DistantHorizonsLodController(
                     // transition so the final world state can begin requests.
                     networkHello[context.session] = message
                 }
-                val current = states[context.session]
-                if (current != null) {
-                    current.receive(message)
-                } else if (message !is DistantLodMessage.Hello) {
-                    states.getOrPut(context.session) { SessionState(context.session) }.receive(message)
+                states[context.session]
+            }
+            when (message) {
+                is DistantLodMessage -> {
+                    if (current != null) current.receive(message)
+                    else if (message !is DistantLodMessage.Hello) state(context.session).receive(message)
                 }
+                is DistantTerrainMessageV2 -> (current ?: state(context.session)).receive(message)
+                else -> error("Unknown distant negotiated message")
             }
         } catch (error: Throwable) {
             Log.log(LogMessageType.MOD_LOADING, LogLevels.WARN, error)
@@ -480,21 +501,23 @@ internal class DistantHorizonsLodController(
     }
 
     fun onWorldLeft(context: FabricWorldEventContext) {
-        synchronized(states) {
-            states.remove(context.session)?.close()
+        val removed = synchronized(states) {
+            val removed = states.remove(context.session)
             renderDiagnostics.remove(context.session)
             if (context.cause == FabricWorldChangeCause.DISCONNECT) {
                 networkHello.remove(context.session)
             }
+            removed
         }
-        revision.incrementAndGet()
+        removed?.close(sendNetworkCancellation = context.cause != FabricWorldChangeCause.DISCONNECT)
+        revision.incrementExact()
     }
 
     internal fun tile(session: PlaySession, position: ChunkPosition): DistantLodTile? =
-        synchronized(states) { states[session]?.store?.get(position) }
+        existingState(session)?.store?.get(position)
 
     internal fun tileCount(session: PlaySession): Int =
-        synchronized(states) { states[session]?.store?.size() ?: 0 }
+        existingState(session)?.store?.size() ?: 0
 
     internal fun revision(): Long = revision.get()
 
@@ -505,7 +528,7 @@ internal class DistantHorizonsLodController(
     internal fun setPresentationOverride(value: Boolean?): Boolean? {
         val previous = presentationOverride
         presentationOverride = value
-        if (previous != value) revision.incrementAndGet()
+        if (previous != value) revision.incrementExact()
         return previous
     }
 
@@ -520,21 +543,75 @@ internal class DistantHorizonsLodController(
     internal fun renderDiagnostics(session: PlaySession): DistantLodRenderDiagnostics? =
         synchronized(states) { renderDiagnostics[session] }
 
-    internal fun snapshot(session: PlaySession): DistantLodSnapshot = synchronized(states) {
-        states[session]?.snapshot() ?: DistantLodSnapshot(
+    internal fun snapshot(session: PlaySession): DistantLodSnapshot =
+        existingState(session)?.snapshot() ?: DistantLodSnapshot(
             revision = revision.get(),
             tiles = emptyList(),
             sources = emptyMap(),
         )
-    }
 
-    private fun state(session: PlaySession): SessionState = synchronized(states) {
-        check(!closed) { "Distant Horizons LOD controller is closed" }
-        states.getOrPut(session) { SessionState(session) }
+    internal fun storeInspection(session: PlaySession): DistantTerrainStoreInspection? =
+        existingState(session)?.storeInspection()
+
+    internal fun networkInspection(session: PlaySession): DistantLodNetworkClient.Inspection? =
+        existingState(session)?.networkInspection()
+
+    internal fun renderSource(session: PlaySession): DistantTerrainRenderSource =
+        object : DistantTerrainRenderSource {
+            override val revision: Long
+                get() = this@DistantHorizonsLodController.revision()
+
+            override val presentationEnabled: Boolean
+                get() = this@DistantHorizonsLodController.presentationEnabled()
+
+            override fun snapshot(): DistantLodSnapshot =
+                this@DistantHorizonsLodController.snapshot(session)
+
+            override fun changesSince(revision: Long): DistantLodChanges =
+                existingState(session)?.changesSince(revision)
+                    ?: DistantLodChanges.reset(this@DistantHorizonsLodController.snapshot(session))
+
+            override fun publishDiagnostics(diagnostics: DistantLodRenderDiagnostics) {
+                this@DistantHorizonsLodController.publishRenderDiagnostics(session, diagnostics)
+            }
+        }
+
+    private fun existingState(session: PlaySession): SessionState? = synchronized(states) { states[session] }
+
+    private fun state(session: PlaySession): SessionState {
+        synchronized(states) {
+            check(!closed) { "Distant Horizons LOD controller is closed" }
+            states[session]?.let { return it }
+        }
+        val created = SessionState(session)
+        val selected = synchronized(states) {
+            if (closed) null else states[session] ?: created.also { states[session] = it }
+        }
+        if (selected !== created) created.close(sendNetworkCancellation = false)
+        return selected ?: throw IllegalStateException("Distant Horizons LOD controller is closed")
     }
 
     private fun capture(chunk: Chunk): DistantLodTile = chunk.lock.acquired {
         DistantLodTile.capture(chunk.position) { x, z -> sample(chunk, x, z) }
+    }
+
+    private fun captureNative(chunk: Chunk): Pair<DistantLodTile, DistantVerticalPage> = chunk.lock.acquired {
+        DistantLodTile.capture(chunk.position) { x, z -> sample(chunk, x, z) } to
+            DistantWorldVerticalSampler.captureObservedLocked(chunk)
+    }
+
+    private fun updateNative(
+        chunk: Chunk,
+        previous: DistantLodTile,
+        previousPage: DistantVerticalPage?,
+        columns: Set<Int>,
+    ): Pair<DistantLodTile, DistantVerticalPage> = chunk.lock.acquired {
+        previous.update(columns) { x, z -> sample(chunk, x, z) } to
+            if (previousPage == null) {
+                DistantWorldVerticalSampler.captureObservedLocked(chunk)
+            } else {
+                DistantWorldVerticalSampler.updateObservedLocked(chunk, previousPage, columns)
+            }
     }
 
     private fun update(
@@ -558,15 +635,16 @@ internal class DistantHorizonsLodController(
         }
         val material = state?.block?.identifier
             ?: return DistantLodColumn(Int.MIN_VALUE, null)
-        if (!material.isDistantWaterMaterial()) {
+        if (!state.isDistantFluidState()) {
             return DistantLodColumn(surfaceY, material)
         }
 
         var solidY = surfaceY - 1
         var solidMaterial: ResourceLocation? = null
         while (solidY >= dimension.minY) {
-            val candidate = chunk[InChunkPosition(x, solidY, z)]?.block?.identifier
-            if (candidate != null && !candidate.isDistantWaterMaterial()) {
+            val candidateState = chunk[InChunkPosition(x, solidY, z)]
+            val candidate = candidateState?.block?.identifier
+            if (candidate != null && !candidateState.isDistantFluidState()) {
                 solidMaterial = candidate
                 break
             }
@@ -576,41 +654,31 @@ internal class DistantHorizonsLodController(
         return DistantLodColumn(surfaceY, material, solidY, solidMaterial)
     }
 
+    private fun de.bixilon.minosoft.data.registries.blocks.state.BlockState?.isDistantFluidState(): Boolean =
+        this != null && (block is FluidHolder || BlockStateFlags.WATERLOGGED in flags)
+
     override fun close() {
-        var failure: Throwable? = null
-        synchronized(states) {
+        val removed = synchronized(states) {
             if (closed) return
             closed = true
-            for (state in states.values) {
-                try {
-                    state.close()
-                } catch (error: Throwable) {
-                    val current = failure
-                    if (current == null) {
-                        failure = error
-                    } else {
-                        current.addSuppressed(error)
-                    }
-                }
-            }
+            val removed = states.values.toList()
             states.clear()
             networkHello.clear()
             renderDiagnostics.clear()
+            removed
         }
-        revision.incrementAndGet()
+        var failure: Throwable? = null
+        for (state in removed) {
+            try {
+                state.close()
+            } catch (error: Throwable) {
+                val current = failure
+                if (current == null) failure = error else current.addSuppressed(error)
+            }
+        }
+        revision.incrementExact()
         failure?.let { throw it }
     }
 }
 
-internal data class DistantLodSnapshot(
-    val revision: Long,
-    val tiles: List<DistantLodTile>,
-    val sources: Map<ChunkPosition, DistantLodTileSource>,
-)
-
-internal enum class DistantLodTileSource(val wireName: String) {
-    NATIVE("native"),
-    PERSISTENCE("persistence"),
-    LOCAL_GENERATION("local-generation"),
-    NETWORK("network"),
-}
+private fun AtomicLong.incrementExact(): Long = updateAndGet { Math.incrementExact(it) }

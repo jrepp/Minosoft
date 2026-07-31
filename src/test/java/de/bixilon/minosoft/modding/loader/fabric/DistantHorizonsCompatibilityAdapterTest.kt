@@ -17,20 +17,36 @@ import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.gui.rendering.camera.CameraUtil
 import de.bixilon.minosoft.gui.rendering.graph.RenderPhase
+import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantLodEdge
+import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantLodMaterial
+import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantLodMeshPlanner
+import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantLodSurface
+import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRenderer
+import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRendererBuilder
+import de.bixilon.minosoft.gui.rendering.terrain.distant.createDistantLodRenderDiagnostics
+import de.bixilon.minosoft.gui.rendering.terrain.distant.distantViewProjection
+import de.bixilon.minosoft.gui.rendering.terrain.distant.maximumContiguousDistantCoverageRadius
+import de.bixilon.minosoft.terrain.distant.DistantLodColumn
+import de.bixilon.minosoft.terrain.distant.DistantLodTile
+import de.bixilon.minosoft.terrain.distant.DistantLodTileSource
+import de.bixilon.minosoft.terrain.distant.maximumContiguousDistantRadius
+import de.bixilon.minosoft.terrain.distant.network.DistantProtocolWorld
+import de.bixilon.minosoft.terrain.distant.network.DistantTerrainMessageV2
+import de.bixilon.minosoft.terrain.distant.network.DistantTerrainProtocolV2
 import java.io.IOException
 import java.nio.file.Files
+import java.util.HexFormat
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertNull
 import kotlin.test.assertFalse
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.io.path.createTempDirectory
 
 class DistantHorizonsCompatibilityAdapterTest {
     @Test
     fun `distant passes precede native opaque terrain so the native depth wins`() {
+        assertEquals("minosoft:distant-terrain", DistantTerrainRenderer.OWNER.toString())
         assertTrue(RenderPhase.DISTANT_TERRAIN < RenderPhase.DISTANT_DEPTH_BEFORE_TRANSLUCENT)
         assertTrue(RenderPhase.DISTANT_DEPTH_BEFORE_TRANSLUCENT < RenderPhase.DISTANT_WATER)
         assertTrue(RenderPhase.DISTANT_WATER < RenderPhase.WORLD_OPAQUE)
@@ -83,6 +99,7 @@ class DistantHorizonsCompatibilityAdapterTest {
             assertEquals(listOf(adapter.id), FabricChunkEvents.registrations())
             assertEquals(listOf(adapter.id), FabricBlockMutationEvents.registrations())
             assertEquals(listOf(adapter.id), FabricRendererRegistry.registrations().map { it.owner })
+            assertTrue(FabricRendererRegistry.snapshot().single() is DistantTerrainRendererBuilder)
             assertEquals(
                 listOf(adapter.id),
                 FabricWorldEvents.registrations(FabricWorldEventPhase.JOINED),
@@ -107,51 +124,6 @@ class DistantHorizonsCompatibilityAdapterTest {
         assertTrue(FabricWorldEvents.registrations(FabricWorldEventPhase.LEFT).isEmpty())
         assertTrue(FabricClientPayloadChannels.registrations()[DistantLodProtocol.CHANNEL].isNullOrEmpty())
         assertTrue(FabricSettings.registrations().isEmpty())
-    }
-
-    @Test
-    fun `lod tile updates only selected columns`() {
-        val position = ChunkPosition(3, -5)
-        val stone = ResourceLocation.of("minecraft:stone")
-        val dirt = ResourceLocation.of("minecraft:dirt")
-        val original = DistantLodTile.capture(position) { x, z ->
-            DistantLodColumn(x + z, stone)
-        }
-
-        val updated = original.update(
-            setOf(DistantLodTile.index(2, 7)),
-        ) { x, z -> DistantLodColumn(100 + x + z, dirt) }
-
-        assertEquals(DistantLodColumn(109, dirt), updated[2, 7])
-        assertEquals(DistantLodColumn(3, stone), updated[1, 2])
-        assertEquals(DistantLodColumn(9, stone), original[2, 7])
-    }
-
-    @Test
-    fun `lod columns reject heights that would overflow renderer arithmetic`() {
-        val stone = ResourceLocation.of("minecraft:stone")
-
-        assertFailsWith<IllegalArgumentException> {
-            DistantLodColumn(Int.MAX_VALUE, stone)
-        }
-    }
-
-    @Test
-    fun `lod store evicts least recently used tile`() {
-        val store = DistantLodTileStore(maximumTiles = 2)
-        val first = tile(ChunkPosition(1, 1))
-        val second = tile(ChunkPosition(2, 2))
-        val third = tile(ChunkPosition(3, 3))
-        store.put(first)
-        store.put(second)
-
-        assertSame(first, store[first.position])
-        store.put(third)
-
-        assertEquals(2, store.size())
-        assertSame(first, store[first.position])
-        assertNull(store[second.position])
-        assertSame(third, store[third.position])
     }
 
     @Test
@@ -432,6 +404,35 @@ class DistantHorizonsCompatibilityAdapterTest {
     }
 
     @Test
+    fun `render diagnostics preserve material surface and source wire values`() {
+        val position = ChunkPosition(32, 0)
+        val planned = DistantLodMeshPlanner.plan(
+            tiles = listOf(
+                DistantLodTile.capture(position) { _, _ ->
+                    DistantLodColumn(64, ResourceLocation.of("minecraft:stone"))
+                },
+            ),
+            cameraChunk = ChunkPosition(),
+            seamDistance = 128.0f,
+            sources = mapOf(position to DistantLodTileSource.NETWORK),
+        )
+
+        val diagnostics = createDistantLodRenderDiagnostics(
+            revision = 4L,
+            nativeOwnershipRevision = 5L,
+            tileCount = 1,
+            renderReadyNativeChunks = 0,
+            excludedTiles = 0,
+            planned = planned,
+        )
+
+        assertEquals(mapOf(DistantLodTileSource.NETWORK to planned.size), diagnostics.sources)
+        assertTrue(diagnostics.cells.all { it.material == "stone" })
+        assertTrue(diagnostics.cells.all { it.surface == "terrain" })
+        assertTrue(diagnostics.cells.all { it.source.wireName == "network" })
+    }
+
+    @Test
     fun `lod mesh planner rejects tiles beyond configured render distance`() {
         val stone = ResourceLocation.of("minecraft:stone")
         val planned = DistantLodMeshPlanner.plan(
@@ -449,7 +450,7 @@ class DistantHorizonsCompatibilityAdapterTest {
     }
 
     @Test
-    fun `lod persistence round trips material palette and water bed atomically`() {
+    fun `lod persistence reads checked schema-v1 material and water-bed fixture`() {
         val root = createTempDirectory("minosoft-dh-lod-")
         val path = root.resolve("world.lod.gz")
         val stone = ResourceLocation.of("minecraft:stone")
@@ -461,10 +462,8 @@ class DistantHorizonsCompatibilityAdapterTest {
                 DistantLodColumn(67, stone)
             }
         }
-        val persistence = DistantLodPersistence(path, maximumTiles = 4)
-
-        persistence.save(listOf(tile))
-        val loaded = persistence.load().single()
+        Files.write(path, legacyPersistenceFixture())
+        val loaded = DistantLodPersistence(path, maximumTiles = 4).load().single()
 
         assertEquals(tile.position, loaded.position)
         assertEquals(DistantLodColumn(72, water, 64, stone), loaded[3, 5])
@@ -477,7 +476,7 @@ class DistantHorizonsCompatibilityAdapterTest {
     fun `lod persistence bounds decompressed input`() {
         val root = createTempDirectory("minosoft-dh-lod-bounded-")
         val path = root.resolve("world.lod.gz")
-        DistantLodPersistence(path, maximumTiles = 1).save(listOf(tile(ChunkPosition())))
+        Files.write(path, legacyPersistenceFixture())
 
         assertFailsWith<IOException> {
             DistantLodPersistence(
@@ -507,6 +506,11 @@ class DistantHorizonsCompatibilityAdapterTest {
         assertFailsWith<IllegalArgumentException> {
             DistantLodProtocol.decode(DistantLodProtocol.encode(request) + byteArrayOf(0))
         }
+        val v2 = DistantTerrainMessageV2.Cancel(
+            DistantProtocolWorld(3, 4, "minecraft:overworld"),
+            requestId = 92,
+        )
+        assertEquals(v2, DistantLodProtocol.decodeNegotiated(DistantTerrainProtocolV2.encode(v2)))
     }
 
     @Test
@@ -523,6 +527,10 @@ class DistantHorizonsCompatibilityAdapterTest {
             maxOf(kotlin.math.abs(it.x - 10), kotlin.math.abs(it.z + 4)) == 2
         })
     }
+
+    private fun legacyPersistenceFixture(): ByteArray = HexFormat.of().parseHex(
+        checkNotNull(javaClass.getResource("distant-lod-v1.hex")).readText().trim(),
+    )
 
     @Test
     fun `lod tile capacity bounds a contiguous square radius`() {

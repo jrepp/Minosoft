@@ -11,10 +11,19 @@
 package de.bixilon.minosoft.modding.loader.fabric
 
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
+import de.bixilon.minosoft.data.world.World
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.local.LocalConnection
 import de.bixilon.minosoft.local.generator.ChunkBuilder
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
+import de.bixilon.minosoft.terrain.distant.DistantLodColumn
+import de.bixilon.minosoft.terrain.distant.DistantLodTile
+import de.bixilon.minosoft.terrain.distant.DistantWorldVerticalSampler
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantVerticalPage
+import de.bixilon.minosoft.data.registries.blocks.state.BlockState
+import de.bixilon.minosoft.data.registries.blocks.state.BlockStateFlags
+import de.bixilon.minosoft.data.registries.blocks.types.fluid.FluidHolder
+import de.bixilon.minosoft.terrain.distant.maximumContiguousDistantRadius
 
 /** Lazily enumerates square rings without allocating a radius-sized queue. */
 internal class DistantChunkSpiral {
@@ -64,17 +73,28 @@ internal class DistantUnexploredGenerator(
     private val session: PlaySession,
     private val options: DistantHorizonsOptions,
     private val contains: (ChunkPosition) -> Boolean,
-    private val publish: (DistantLodTile) -> Unit,
+    private val publish: (DistantLodTile, DistantVerticalPage) -> Unit,
 ) : Runnable {
     private val connection = session.connection as? LocalConnection
     private val spiral = DistantChunkSpiral()
+    private val generatedChunks = DistantGeneratedChunkCache<ChunkBuilder>()
     private var center: ChunkPosition? = null
     private var innerRadius = -1
     private var outerRadius = -1
+    private var worldOwner: World? = null
+    private var worldEpoch = -1L
+    private var pending: ChunkPosition? = null
 
     override fun run() {
         val local = connection ?: return
         if (!options.enabled || !options.unexploredGenerationEnabled) return
+        if (worldOwner !== session.world || worldEpoch != session.world.terrainEpoch) {
+            worldOwner = session.world
+            worldEpoch = session.world.terrainEpoch
+            generatedChunks.clear()
+            pending = null
+            center = null
+        }
         val nextCenter = session.player.physics.positionInfo.chunkPosition
         val nextInner = session.world.view.viewDistance + 1
         val nextOuter = minOf(
@@ -88,15 +108,34 @@ internal class DistantUnexploredGenerator(
             innerRadius = nextInner
             outerRadius = nextOuter
             spiral.reset(nextCenter, nextInner, nextOuter)
+            pending = null
         }
-        repeat(options.generationBudgetPerTick) {
-            var position = spiral.next() ?: return
-            while (contains(position)) {
-                position = spiral.next() ?: return
+        var generated = 0
+        var published = 0
+        while (published < options.generationBudgetPerTick) {
+            val position = pending ?: run {
+                var candidate = spiral.next() ?: return
+                while (contains(candidate)) {
+                    candidate = spiral.next() ?: return
+                }
+                pending = candidate
+                candidate
             }
-            val builder = ChunkBuilder(session.world, position)
-            local.chunks.generator.generate(builder)
-            publish(capture(builder))
+            val preparation = generatedChunks.prepare(
+                center = position,
+                maximumGenerated = options.generationBudgetPerTick - generated,
+            ) { chunkPosition ->
+                ChunkBuilder(session.world, chunkPosition).also(local.chunks.generator::generate)
+            }
+            generated = Math.addExact(generated, preparation.generatedCount)
+            val neighbourhood = preparation.chunks ?: return
+            val builder = checkNotNull(neighbourhood[position])
+            publish(
+                capture(builder),
+                DistantWorldVerticalSampler.captureGenerated(builder, neighbourhood),
+            )
+            pending = null
+            published++
         }
     }
 
@@ -113,14 +152,15 @@ internal class DistantUnexploredGenerator(
             if (material == null) {
                 return@capture DistantLodColumn(Int.MIN_VALUE, null)
             }
-            if (!material.isDistantWaterMaterial()) {
+            if (!builder[x, surfaceY, z].isDistantFluidState()) {
                 return@capture DistantLodColumn(surfaceY, material)
             }
             var solidY = surfaceY - 1
             var solidMaterial: ResourceLocation? = null
             while (solidY >= dimension.minY) {
-                val candidate = builder[x, solidY, z]?.block?.identifier
-                if (candidate != null && !candidate.isDistantWaterMaterial()) {
+                val state = builder[x, solidY, z]
+                val candidate = state?.block?.identifier
+                if (candidate != null && !state.isDistantFluidState()) {
                     solidMaterial = candidate
                     break
                 }
@@ -132,12 +172,66 @@ internal class DistantUnexploredGenerator(
     }
 }
 
-internal fun maximumContiguousDistantRadius(maximumTiles: Int): Int {
-    require(maximumTiles > 0) { "Distant LOD tile capacity must be positive" }
-    var diameter = kotlin.math.sqrt(maximumTiles.toDouble()).toInt()
-    if (diameter % 2 == 0) diameter--
-    return ((diameter - 1) / 2).coerceAtLeast(0)
+/** Bounded LRU used to amortize the one-chunk light halo across adjacent pages. */
+internal class DistantGeneratedChunkCache<T : Any>(
+    private val maximumEntries: Int = MAXIMUM_ENTRIES,
+) {
+    data class Preparation<T>(
+        val generatedCount: Int,
+        val chunks: Map<ChunkPosition, T>?,
+    )
+
+    private val chunks = object : LinkedHashMap<ChunkPosition, T>(maximumEntries, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ChunkPosition, T>?): Boolean =
+            size > maximumEntries
+    }
+
+    init {
+        require(maximumEntries >= NEIGHBOURHOOD_SIZE) {
+            "Generated chunk cache must retain at least one complete neighbourhood"
+        }
+    }
+
+    fun prepare(
+        center: ChunkPosition,
+        maximumGenerated: Int,
+        generate: (ChunkPosition) -> T,
+    ): Preparation<T> {
+        require(maximumGenerated >= 0) { "Generated chunk budget must not be negative" }
+        val positions = neighbourhood(center)
+        positions.forEach(chunks::get)
+        var generated = 0
+        for (position in positions) {
+            if (position in chunks) continue
+            if (generated >= maximumGenerated) return Preparation(generated, null)
+            chunks[position] = generate(position)
+            generated++
+        }
+        return Preparation(
+            generated,
+            java.util.Collections.unmodifiableMap(
+                positions.associateWithTo(LinkedHashMap()) { checkNotNull(chunks[it]) },
+            ),
+        )
+    }
+
+    fun clear() = chunks.clear()
+
+    private fun neighbourhood(center: ChunkPosition): List<ChunkPosition> = buildList(NEIGHBOURHOOD_SIZE) {
+        add(center)
+        for (z in -1..1) {
+            for (x in -1..1) {
+                if (x == 0 && z == 0) continue
+                add(ChunkPosition(center.x + x, center.z + z))
+            }
+        }
+    }
+
+    private companion object {
+        const val NEIGHBOURHOOD_SIZE = 9
+        const val MAXIMUM_ENTRIES = 25
+    }
 }
 
-internal fun ResourceLocation.isDistantWaterMaterial(): Boolean =
-    path == "water" || path.endsWith("_water")
+private fun BlockState?.isDistantFluidState(): Boolean =
+    this != null && (block is FluidHolder || BlockStateFlags.WATERLOGGED in flags)

@@ -14,10 +14,15 @@ import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
+import de.bixilon.minosoft.terrain.distant.DistantLodColumn
+import de.bixilon.minosoft.terrain.distant.DistantLodTile
+import de.bixilon.minosoft.terrain.distant.network.DistantTerrainProtocolV2
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
 internal sealed interface DistantLodMessage {
@@ -136,6 +141,12 @@ internal object DistantLodProtocol {
         }
     }
 
+    fun decodeNegotiated(payload: ByteArray): Any = if (DistantTerrainProtocolV2.isV2(payload)) {
+        DistantTerrainProtocolV2.decode(payload)
+    } else {
+        decode(payload)
+    }
+
     private fun DataInputStream.readTileCount(): Int {
         val count = readUnsignedShort()
         require(count in 1..MAXIMUM_TILES_PER_MESSAGE) {
@@ -200,7 +211,11 @@ internal object DistantLodProtocol {
         }
         val bytes = ByteArray(length)
         readFully(bytes)
-        return bytes.toString(StandardCharsets.UTF_8)
+        return StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes))
+            .toString()
     }
 
     private fun DataInputStream.readPaletteIndex(maximum: Int): Int {

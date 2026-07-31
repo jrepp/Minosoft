@@ -11,34 +11,25 @@
 package de.bixilon.minosoft.modding.loader.fabric
 
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
-import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
-import de.bixilon.minosoft.util.logging.Log
-import de.bixilon.minosoft.util.logging.LogLevels
-import de.bixilon.minosoft.util.logging.LogMessageType
+import de.bixilon.minosoft.terrain.distant.DistantLodColumn
+import de.bixilon.minosoft.terrain.distant.DistantLodTile
 import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
 import java.io.DataInputStream
-import java.io.DataOutputStream
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
-import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.GZIPInputStream
-import java.util.zip.GZIPOutputStream
 
 /**
- * Versioned, bounded, atomic detached-LOD database.
+ * Bounded read-only decoder for the legacy detached-LOD database.
  *
  * The file contains no live world objects or registry IDs. Materials remain
  * resource identifiers so a later session can safely re-resolve them.
@@ -78,61 +69,6 @@ internal class DistantLodPersistence(
         }
     }
 
-    fun save(tiles: List<DistantLodTile>) {
-        require(tiles.size <= maximumTiles) {
-            "Distant LOD database contains ${tiles.size} tiles; maximum is $maximumTiles"
-        }
-        Files.createDirectories(path.parent)
-        val temporary = Files.createTempFile(path.parent, "${path.fileName}.", ".tmp")
-        try {
-            DataOutputStream(BufferedOutputStream(GZIPOutputStream(Files.newOutputStream(temporary)))).use { output ->
-                output.writeInt(MAGIC)
-                output.writeShort(VERSION)
-                output.writeInt(tiles.size)
-                tiles.forEach { writeTile(output, it) }
-            }
-            try {
-                Files.move(
-                    temporary,
-                    path,
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING)
-            }
-        } finally {
-            Files.deleteIfExists(temporary)
-        }
-    }
-
-    private fun writeTile(output: DataOutputStream, tile: DistantLodTile) {
-        output.writeInt(tile.position.x)
-        output.writeInt(tile.position.z)
-        val palette = linkedMapOf<ResourceLocation, Int>()
-        for (z in 0 until ChunkSize.SECTION_WIDTH_Z) {
-            for (x in 0 until ChunkSize.SECTION_WIDTH_X) {
-                val column = tile[x, z]
-                column.material?.let { palette.putIfAbsent(it, palette.size + 1) }
-                column.solidMaterial?.let { palette.putIfAbsent(it, palette.size + 1) }
-            }
-        }
-        require(palette.size <= MAXIMUM_PALETTE_SIZE) {
-            "Distant LOD tile palette exceeds $MAXIMUM_PALETTE_SIZE entries"
-        }
-        output.writeShort(palette.size)
-        palette.keys.forEach { output.writeBoundedString(it.toString()) }
-        for (z in 0 until ChunkSize.SECTION_WIDTH_Z) {
-            for (x in 0 until ChunkSize.SECTION_WIDTH_X) {
-                val column = tile[x, z]
-                output.writeInt(column.surfaceY)
-                output.writeShort(column.material?.let(palette::getValue) ?: 0)
-                output.writeInt(column.solidY)
-                output.writeShort(column.solidMaterial?.let(palette::getValue) ?: 0)
-            }
-        }
-    }
-
     private fun readTile(input: DataInputStream): DistantLodTile {
         val position = ChunkPosition(input.readInt(), input.readInt())
         val paletteSize = input.readUnsignedShort()
@@ -152,15 +88,6 @@ internal class DistantLodPersistence(
         }
     }
 
-    private fun DataOutputStream.writeBoundedString(value: String) {
-        val bytes = value.toByteArray(StandardCharsets.UTF_8)
-        require(bytes.size <= MAXIMUM_STRING_BYTES) {
-            "Distant LOD material identifier exceeds $MAXIMUM_STRING_BYTES bytes"
-        }
-        writeShort(bytes.size)
-        write(bytes)
-    }
-
     private fun DataInputStream.readBoundedString(): String {
         val length = readUnsignedShort()
         require(length <= MAXIMUM_STRING_BYTES) {
@@ -168,7 +95,11 @@ internal class DistantLodPersistence(
         }
         val bytes = ByteArray(length)
         readFully(bytes)
-        return bytes.toString(StandardCharsets.UTF_8)
+        return StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes))
+            .toString()
     }
 
     private fun DataInputStream.readPaletteIndex(maximum: Int): Int {
@@ -238,98 +169,5 @@ private class BoundedInputStream(
         if (consumed > maximumBytes) {
             throw IOException("Distant LOD database exceeds $maximumBytes uncompressed bytes")
         }
-    }
-}
-
-/**
- * Coalesces hot chunk updates into a single immutable database snapshot and
- * keeps compression/file I/O off simulation and rendering threads.
- */
-internal class DistantLodPersistenceWriter(
-    private val persistence: DistantLodPersistence,
-    private val delayMillis: Long = DEFAULT_DELAY_MILLIS,
-) : AutoCloseable {
-    init {
-        require(delayMillis >= 0L) { "Distant LOD persistence delay must not be negative" }
-    }
-
-    private val threadNumber = THREAD_NUMBER.incrementAndGet()
-    private val executor = Executors.newSingleThreadScheduledExecutor { runnable ->
-        Thread(runnable, "DistantLodPersistence-$threadNumber").apply { isDaemon = true }
-    }
-    private var pending: List<DistantLodTile>? = null
-    private var scheduled: ScheduledFuture<*>? = null
-    private var closed = false
-
-    @Synchronized
-    fun markDirty(tiles: List<DistantLodTile>) {
-        if (closed) return
-        pending = tiles.toList()
-        if (scheduled != null) return
-        scheduled = executor.schedule(::flushScheduled, delayMillis, TimeUnit.MILLISECONDS)
-    }
-
-    private fun flushScheduled() {
-        val snapshot = synchronized(this) {
-            scheduled = null
-            pending.also { pending = null }
-        } ?: return
-        save(snapshot)
-        synchronized(this) {
-            if (!closed && pending != null && scheduled == null) {
-                scheduled = executor.schedule(::flushScheduled, delayMillis, TimeUnit.MILLISECONDS)
-            }
-        }
-    }
-
-    private fun save(tiles: List<DistantLodTile>) {
-        try {
-            persistence.save(tiles)
-        } catch (error: Throwable) {
-            Log.log(LogMessageType.MOD_LOADING, LogLevels.WARN, error)
-        }
-    }
-
-    override fun close() {
-        val finalSnapshot = synchronized(this) {
-            if (closed) return
-            closed = true
-            scheduled?.cancel(false)
-            scheduled = null
-            pending.also { pending = null }
-        }
-        if (finalSnapshot != null) executor.execute { save(finalSnapshot) }
-        executor.shutdown()
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(CLOSE_TIMEOUT_SECONDS)
-        var interruption: InterruptedException? = null
-        while (!executor.isTerminated) {
-            val remaining = deadline - System.nanoTime()
-            if (remaining <= 0L) {
-                executor.shutdownNow()
-                break
-            }
-            try {
-                if (!executor.awaitTermination(remaining, TimeUnit.NANOSECONDS)) {
-                    executor.shutdownNow()
-                }
-            } catch (error: InterruptedException) {
-                if (interruption == null) {
-                    interruption = error
-                } else {
-                    interruption.addSuppressed(error)
-                }
-                executor.shutdownNow()
-            }
-        }
-        if (interruption != null) {
-            Thread.currentThread().interrupt()
-            throw interruption
-        }
-    }
-
-    private companion object {
-        const val DEFAULT_DELAY_MILLIS = 2_000L
-        const val CLOSE_TIMEOUT_SECONDS = 10L
-        val THREAD_NUMBER = AtomicInteger()
     }
 }

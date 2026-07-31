@@ -8,7 +8,7 @@
  * version.
  */
 
-package de.bixilon.minosoft.modding.loader.fabric
+package de.bixilon.minosoft.gui.rendering.terrain.distant
 
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
@@ -42,36 +42,70 @@ import de.bixilon.minosoft.gui.rendering.system.base.MeshUtil.buffer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.OpaqueLayer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.TranslucentLayer
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
+import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
+import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
 import de.bixilon.minosoft.gui.rendering.util.mesh.builder.quad.QuadMeshBuilder
 import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
+import de.bixilon.minosoft.terrain.distant.DistantLodColumn
+import de.bixilon.minosoft.terrain.distant.DistantLodRenderCellDiagnostic
+import de.bixilon.minosoft.terrain.distant.DistantLodRenderDiagnostics
+import de.bixilon.minosoft.terrain.distant.DistantLodTile
+import de.bixilon.minosoft.terrain.distant.DistantLodTileSource
+import de.bixilon.minosoft.terrain.distant.DistantTerrainRenderConfig
+import de.bixilon.minosoft.terrain.distant.DistantTerrainRenderSource
+import de.bixilon.minosoft.terrain.distant.DistantTerrainInterop
+import de.bixilon.minosoft.terrain.distant.maximumContiguousDistantRadius
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantFaceDirection
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantMeshQuad
+import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentity
+import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
+import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
+import de.bixilon.minosoft.terrain.model.interop.DistantTerrainProvider
+import de.bixilon.minosoft.terrain.runtime.TerrainProcessBuildService
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildOutcome
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildUrgency
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainCancellationToken
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainSchedulerTenantId
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
-import java.util.concurrent.CancellationException
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionException
-import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.IdentityHashMap
 import java.util.PriorityQueue
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sqrt
 
-internal class DistantHorizonsRendererHook(
+internal class DistantTerrainRenderer(
     override val context: RenderContext,
-    private val controller: DistantHorizonsLodController,
-    private val options: DistantHorizonsOptions,
-) : WorldRenderer {
+    private val source: DistantTerrainRenderSource,
+    private val config: DistantTerrainRenderConfig,
+) : WorldRenderer, DistantTerrainProvider {
+    override val generation = NEXT_PROVIDER_GENERATION.getAndUpdate { Math.incrementExact(it) }
+    override val descriptor = DistantTerrainInterop.descriptor
     override val layers = LayerSettings()
     private val solidShader = context.system.shader.create(minosoft("distant/terrain")) {
         DistantTerrainShader(it, SceneProgramFamily.DISTANT_TERRAIN)
     }
     private val waterShader = context.system.shader.create(minosoft("distant/terrain")) {
         DistantTerrainShader(it, SceneProgramFamily.DISTANT_WATER)
+    }
+    private val hierarchical = if (DistantHierarchicalTerrainRuntime.enabled && context.system is OpenGlRenderSystem) {
+        DistantHierarchicalTerrainRuntime(
+            context,
+            source,
+            config,
+            solidShader,
+            waterShader,
+            generation,
+            DistantTerrainInterop.PHYSICAL_LAYOUT_GENERATION,
+        )
+    } else {
+        null
     }
     private var solid: Mesh? = null
     private var water: Mesh? = null
@@ -82,33 +116,38 @@ internal class DistantHorizonsRendererHook(
     private var renderedDistanceChunks = -1
     private var renderedConfiguredDistanceChunks = -1
     private var renderedNativeOwnershipRevision = Long.MIN_VALUE
-    private val meshExecutor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "Distant LOD mesh").apply { isDaemon = true }
-    }
-    private var pendingBuild: CompletableFuture<DistantMeshBuildResult>? = null
+    private val buildLease = TerrainProcessBuildService.shared.register<AutoCloseable, DistantMeshBuildResult>(
+        ownerId = "distant:${context.session.sessionId}",
+        tenant = TerrainSchedulerTenantId("distant:${context.session.sessionId}"),
+        contextFactory = { AutoCloseable {} },
+        disposer = DistantMeshBuildResult::drop,
+    )
+    private var pendingBuild: TerrainCancellationToken? = null
+    private var pendingIdentity: TerrainBuildIdentity? = null
+    private var completedBuild: DistantMeshBuildResult? = null
     @Volatile private var closed = false
 
     override fun registerLayers() {
         layers.registerSemantic(
             layer = OpaqueLayer,
             shader = solidShader,
-            renderer = { solid?.draw() },
+            renderer = { hierarchical?.drawSolid(shadow = false) ?: solid?.draw() },
             semantic = PipelineSemantic.DISTANT_TERRAIN,
             owner = { OWNER },
-            passId = RenderPassId("minosoft:distant-horizons/terrain"),
+            passId = RenderPassId("minosoft:distant-terrain/solid"),
             auxiliaryRenderers = mapOf(
-                IrisShaderPackPlanner.SHADOW_VIEW to { solid?.draw() },
+                IrisShaderPackPlanner.SHADOW_VIEW to { hierarchical?.drawSolid(shadow = true) ?: solid?.draw() },
             ),
-            skip = { solid == null },
+            skip = { hierarchical?.hasSolid()?.not() ?: (solid == null) },
         )
         layers.registerSemantic(
             layer = TranslucentLayer,
             shader = waterShader,
-            renderer = { water?.draw() },
+            renderer = { hierarchical?.drawWater() ?: water?.draw() },
             semantic = PipelineSemantic.DISTANT_WATER,
             owner = { OWNER },
-            passId = RenderPassId("minosoft:distant-horizons/water"),
-            skip = { water == null },
+            passId = RenderPassId("minosoft:distant-terrain/water"),
+            skip = { hierarchical?.hasWater()?.not() ?: (water == null) },
         )
     }
 
@@ -122,7 +161,7 @@ internal class DistantHorizonsRendererHook(
             hostProjection = context.camera.matrix.projectionMatrix,
             view = context.camera.matrix.viewMatrix,
             near = context.camera.matrix.nearPlane,
-            renderDistanceChunks = options.renderDistanceChunks,
+            renderDistanceChunks = config.renderDistanceChunks,
         )
         solidShader.viewProjectionMatrix = viewProjection
         waterShader.viewProjectionMatrix = viewProjection
@@ -141,34 +180,45 @@ internal class DistantHorizonsRendererHook(
             floor(eye.z / 16.0).toInt(),
         )
         val nativeOwnership = context.renderer[ChunkRenderer]?.loaded?.ownershipSnapshot()
-            ?: NativeTerrainOwnershipSnapshot(Long.MIN_VALUE, emptySet())
-        installCompletedBuild(origin)
+            ?: NativeTerrainOwnershipSnapshot(0L, emptySet())
         val seamDistance = (context.session.world.view.viewDistance + 1) * 16.0f
+        if (hierarchical != null) {
+            hierarchical.prepare(cameraChunk, seamDistance / 16.0f, nativeOwnership)
+            val effectiveDistance = config.renderDistanceChunks * 16.0f
+            solidShader.farFogStart = max(seamDistance, effectiveDistance * FAR_FOG_START_RATIO)
+            waterShader.farFogStart = max(seamDistance, effectiveDistance * FAR_FOG_START_RATIO)
+            solidShader.farFogEnd = effectiveDistance
+            waterShader.farFogEnd = effectiveDistance
+            return
+        }
+        drainBuildCompletions()
+        installCompletedBuild(origin)
         val effectiveDistance = (renderedDistanceChunks.takeIf { it > 0 }
-            ?: options.renderDistanceChunks) * 16.0f
+            ?: config.renderDistanceChunks) * 16.0f
         solidShader.farFogStart = max(seamDistance, effectiveDistance * FAR_FOG_START_RATIO)
         waterShader.farFogStart = max(seamDistance, effectiveDistance * FAR_FOG_START_RATIO)
         solidShader.farFogEnd = effectiveDistance
         waterShader.farFogEnd = effectiveDistance
-        if (!controller.presentationEnabled()) {
+        if (!source.presentationEnabled) {
             clearMeshes()
             renderedEnabled = false
             return
         }
         if (pendingBuild != null) return
-        val snapshotRevision = controller.revision()
+        val snapshotRevision = source.revision
         if (
             snapshotRevision == renderedRevision &&
             origin == renderedOrigin &&
             cameraChunk == renderedCameraChunk &&
             renderedEnabled &&
-            renderedConfiguredDistanceChunks == options.renderDistanceChunks &&
+            renderedConfiguredDistanceChunks == config.renderDistanceChunks &&
             renderedNativeOwnershipRevision == nativeOwnership.revision
         ) {
             return
         }
-        val snapshot = controller.snapshot(context.session)
+        val snapshot = source.snapshot()
         val request = DistantMeshBuildRequest(
+            identity = buildIdentity(snapshot.revision, cameraChunk, nativeOwnership.revision),
             revision = snapshot.revision,
             origin = origin,
             cameraChunk = cameraChunk,
@@ -178,31 +228,46 @@ internal class DistantHorizonsRendererHook(
                 cameraChunk = cameraChunk,
                 seamDistanceChunks = seamDistance / 16.0f,
                 maximumDistanceChunks = minOf(
-                    options.renderDistanceChunks,
-                    maximumContiguousDistantRadius(options.maximumTiles),
+                    config.renderDistanceChunks,
+                    maximumContiguousDistantRadius(config.maximumTiles),
                 ),
                 coveredChunks = nativeOwnership.chunks,
             ),
-            configuredDistanceChunks = options.renderDistanceChunks,
+            configuredDistanceChunks = config.renderDistanceChunks,
             nativeOwnershipRevision = nativeOwnership.revision,
             tiles = snapshot.tiles,
             sources = snapshot.sources,
             nativeChunks = nativeOwnership.chunks,
+            excludedChunks = emptySet(),
         )
-        pendingBuild = CompletableFuture.supplyAsync({ build(request) }, meshExecutor)
-            .whenComplete { result, _ ->
-                if (closed) result?.drop()
-            }
+        val cancellation = TerrainCancellationToken()
+        pendingIdentity = request.identity
+        pendingBuild = buildLease.submit(
+            identity = request.identity,
+            urgency = TerrainBuildUrgency.DEFERRED,
+            cancellation = cancellation,
+        ) { _, token -> build(request, token) }
+        if (pendingBuild == null) pendingIdentity = null
     }
 
-    private fun build(request: DistantMeshBuildRequest): DistantMeshBuildResult {
-        val cancelled = { closed || !controller.presentationEnabled() || Thread.currentThread().isInterrupted }
+    override fun postDraw() {
+        hierarchical?.finishFrame()
+    }
+
+    private fun build(
+        request: DistantMeshBuildRequest,
+        cancellation: TerrainCancellationToken,
+    ): DistantMeshBuildResult {
+        val cancelled = { closed || !source.presentationEnabled || cancellation.isCancelled }
         val planned = DistantLodMeshPlanner.plan(
             tiles = request.tiles,
             cameraChunk = request.cameraChunk,
             seamDistance = request.seamDistance,
             maximumDistanceChunks = request.distanceChunks,
-            excludedChunks = request.nativeChunks,
+            // Conservative Phase 5 rollback: keep distant geometry underneath
+            // ready near terrain. Whole-tile exclusion can expose a hole while
+            // an asynchronous retirement rebuild is still pending.
+            excludedChunks = request.excludedChunks,
             sources = request.sources,
             cancelled = cancelled,
         )
@@ -237,41 +302,72 @@ internal class DistantHorizonsRendererHook(
             request,
             solid,
             water,
-            DistantLodRenderDiagnostics.create(
+            createDistantLodRenderDiagnostics(
                 revision = request.revision,
                 nativeOwnershipRevision = request.nativeOwnershipRevision,
                 tileCount = request.tiles.size,
                 renderReadyNativeChunks = request.nativeChunks.size,
-                excludedTiles = request.tiles.count { it.position in request.nativeChunks },
+                excludedTiles = request.tiles.count { it.position in request.excludedChunks },
                 planned = planned,
             ),
         )
     }
 
-    private fun installCompletedBuild(currentOrigin: BlockPosition) {
-        val future = pendingBuild ?: return
-        if (!future.isDone) return
-        pendingBuild = null
-        val result = try {
-            future.join()
-        } catch (_: CancellationException) {
-            return
-        } catch (error: CompletionException) {
-            Log.log(LogMessageType.RENDERING, LogLevels.WARN, error.cause ?: error)
-            return
+    private fun drainBuildCompletions() {
+        buildLease.drain(MAX_COMPLETIONS_PER_FRAME) { completion ->
+            if (completion.identity == pendingIdentity) {
+                pendingBuild = null
+                pendingIdentity = null
+            }
+            when (val outcome = completion.outcome) {
+                is TerrainBuildOutcome.Success -> {
+                    completedBuild?.drop()
+                    completedBuild = outcome.value
+                }
+                is TerrainBuildOutcome.Cancelled -> outcome.completedValue?.drop()
+                is TerrainBuildOutcome.Failure ->
+                    Log.log(LogMessageType.RENDERING, LogLevels.WARN, outcome.error)
+            }
         }
+    }
+
+    private fun installCompletedBuild(currentOrigin: BlockPosition) {
+        val result = completedBuild ?: return
+        completedBuild = null
+        val currentIdentity = result.request.identity.copy(
+            page = result.request.identity.page.copy(worldEpoch = context.session.world.terrainEpoch),
+            requestRevision = source.revision,
+            capturedModelRevision = source.revision,
+            providerGeneration = generation,
+            layoutGeneration = DistantTerrainInterop.PHYSICAL_LAYOUT_GENERATION,
+            materialGeneration = context.shaderPipeline.selection().generation,
+            sourceDataRevision = source.revision,
+        )
         if (
             result.cancelled ||
             closed ||
-            !controller.presentationEnabled() ||
+            !source.presentationEnabled ||
+            result.request.identity.mismatch(currentIdentity) != null ||
             result.request.origin != currentOrigin ||
-            result.request.configuredDistanceChunks != options.renderDistanceChunks
+            result.request.configuredDistanceChunks != config.renderDistanceChunks
         ) {
             result.drop()
             return
         }
-        solid = replaceMesh(solid, result.solid)
-        water = replaceMesh(water, result.water)
+        try {
+            result.solid?.load()
+            result.water?.load()
+        } catch (error: Throwable) {
+            result.drop()
+            Log.log(LogMessageType.RENDERING, LogLevels.WARN, error)
+            return
+        }
+        val previousSolid = solid
+        val previousWater = water
+        solid = result.solid
+        water = result.water
+        previousSolid?.unload()
+        previousWater?.unload()
         renderedRevision = result.request.revision
         renderedOrigin = result.request.origin
         renderedCameraChunk = result.request.cameraChunk
@@ -279,43 +375,91 @@ internal class DistantHorizonsRendererHook(
         renderedDistanceChunks = result.request.distanceChunks
         renderedConfiguredDistanceChunks = result.request.configuredDistanceChunks
         renderedNativeOwnershipRevision = result.request.nativeOwnershipRevision
-        controller.publishRenderDiagnostics(context.session, result.diagnostics)
-    }
-
-    private fun replaceMesh(previous: Mesh?, next: Mesh?): Mesh? {
-        next?.load()
-        previous?.unload()
-        return next
+        source.publishDiagnostics(result.diagnostics)
     }
 
     private fun clearMeshes() {
-        solid?.unload()
-        water?.unload()
+        var failure: Throwable? = null
+        try {
+            solid?.discardCandidate()
+        } catch (error: Throwable) {
+            failure = error
+        }
+        try {
+            water?.discardCandidate()
+        } catch (error: Throwable) {
+            failure?.addSuppressed(error) ?: run { failure = error }
+        }
         solid = null
         water = null
+        if (failure != null) throw failure
     }
 
     override fun unload() {
+        if (closed) return
         closed = true
-        val pending = pendingBuild
-        pendingBuild = null
-        if (pending?.isDone == true && !pending.isCancelled && !pending.isCompletedExceptionally) {
-            pending.getNow(null)?.drop()
+        var failure: Throwable? = null
+        try {
+            hierarchical?.close()
+        } catch (error: Throwable) {
+            failure = error
         }
-        pending?.cancel(true)
-        meshExecutor.shutdownNow()
-        clearMeshes()
-        solidShader.unload()
-        waterShader.unload()
+        pendingBuild?.cancel()
+        pendingBuild = null
+        pendingIdentity = null
+        try {
+            completedBuild?.drop()
+        } catch (error: Throwable) {
+            failure?.addSuppressed(error) ?: run { failure = error }
+        }
+        completedBuild = null
+        for (cleanup in listOf<() -> Unit>(buildLease::close, ::clearMeshes, solidShader::unload, waterShader::unload)) {
+            try {
+                cleanup()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        if (failure != null) throw failure
     }
 
+    override fun close() = unload()
+
     companion object {
-        val OWNER = RenderOwnerId("minosoft:distant-horizons")
+        val OWNER = RenderOwnerId("minosoft:distant-terrain")
         private const val MAX_FACES_PER_CELL = 5
+        private const val MAX_COMPLETIONS_PER_FRAME = 8
         private const val FAR_FOG_START_RATIO = 0.85f
+        private val NEXT_PROVIDER_GENERATION = AtomicLong(1L)
+    }
+
+    private fun buildIdentity(
+        revision: Long,
+        cameraChunk: ChunkPosition,
+        nativeOwnershipRevision: Long,
+    ): TerrainBuildIdentity {
+        return TerrainBuildIdentity(
+            page = TerrainPageKey(
+                domain = TerrainDomain.DISTANT,
+                detailLevel = 0,
+                x = cameraChunk.x.toLong(),
+                y = 0L,
+                z = cameraChunk.z.toLong(),
+                worldEpoch = context.session.world.terrainEpoch,
+            ),
+            requestRevision = revision,
+            capturedModelRevision = revision,
+            providerGeneration = generation,
+            layoutGeneration = DistantTerrainInterop.PHYSICAL_LAYOUT_GENERATION,
+            materialGeneration = context.shaderPipeline.selection().generation,
+            coverageGeneration = maxOf(nativeOwnershipRevision, 0L),
+            prioritySequence = revision,
+            sourceDataRevision = revision,
+        )
     }
 
     private data class DistantMeshBuildRequest(
+        val identity: TerrainBuildIdentity,
         val revision: Long,
         val origin: BlockPosition,
         val cameraChunk: ChunkPosition,
@@ -326,6 +470,7 @@ internal class DistantHorizonsRendererHook(
         val tiles: List<DistantLodTile>,
         val sources: Map<ChunkPosition, DistantLodTileSource>,
         val nativeChunks: Set<ChunkPosition>,
+        val excludedChunks: Set<ChunkPosition>,
     )
 
     private data class DistantMeshBuildResult(
@@ -339,8 +484,18 @@ internal class DistantHorizonsRendererHook(
 
         fun drop() {
             if (!dropped.compareAndSet(false, true)) return
-            solid?.drop()
-            water?.drop()
+            var failure: Throwable? = null
+            try {
+                solid?.discardCandidate()
+            } catch (error: Throwable) {
+                failure = error
+            }
+            try {
+                water?.discardCandidate()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+            if (failure != null) throw failure
         }
 
         companion object {
@@ -354,7 +509,7 @@ internal class DistantHorizonsRendererHook(
                         nativeOwnershipRevision = request.nativeOwnershipRevision,
                         tileCount = request.tiles.size,
                         renderReadyNativeChunks = request.nativeChunks.size,
-                        excludedTiles = request.tiles.count { it.position in request.nativeChunks },
+                        excludedTiles = request.tiles.count { it.position in request.excludedChunks },
                     ),
                     cancelled = true,
                 )
@@ -362,12 +517,12 @@ internal class DistantHorizonsRendererHook(
     }
 }
 
-internal class DistantHorizonsRendererHookBuilder(
-    private val controller: DistantHorizonsLodController,
-    private val options: DistantHorizonsOptions,
-) : RendererBuilder<DistantHorizonsRendererHook> {
+internal class DistantTerrainRendererBuilder(
+    private val config: DistantTerrainRenderConfig,
+    private val sourceFactory: (PlaySession) -> DistantTerrainRenderSource,
+) : RendererBuilder<DistantTerrainRenderer> {
     override fun build(session: PlaySession, context: RenderContext) =
-        DistantHorizonsRendererHook(context, controller, options)
+        DistantTerrainRenderer(context, sourceFactory(session), config)
 }
 
 internal class DistantTerrainShader(
@@ -388,6 +543,7 @@ internal class DistantTerrainShader(
     override var cameraPosition: Vec3f by cameraPosition()
     override val lightmap: LightmapBuffer by lightmap()
     override var viewProjectionMatrix: Mat4f by viewProjectionMatrix()
+    var pageOffset: Vec3f by uniform("uPageOffset", Vec3f())
     var distantFogEnabled: Boolean by uniform("uDistantFogEnabled", false)
     var distantWater: Boolean by uniform("uDistantWater", family == SceneProgramFamily.DISTANT_WATER)
     var distantFogColor: RGBAColor by uniform("uDistantFogColor", RGBAColor(0, 0, 0))
@@ -983,118 +1139,67 @@ private class DistantCellKey(
     }
 }
 
-internal data class DistantLodRenderCellDiagnostic(
-    val chunk: ChunkPosition,
-    val x: Int,
-    val z: Int,
-    val size: Int,
-    val y: Int,
-    val minimumY: Int,
-    val maximumY: Int,
-    val material: DistantLodMaterial,
-    val surface: DistantLodSurface,
-    val source: DistantLodTileSource,
-    val skirtSegments: Int,
-    val maximumSkirtDrop: Int,
-)
-
-internal data class DistantLodRenderDiagnostics(
-    val revision: Long,
-    val nativeOwnershipRevision: Long,
-    val tileCount: Int,
-    val renderReadyNativeChunks: Int,
-    val excludedTiles: Int,
-    val cellCount: Int,
-    val terrainCells: Int,
-    val waterCells: Int,
-    val waterBedCells: Int,
-    val adaptiveCells: Int,
-    val skirtSegments: Int,
-    val maximumSkirtDrop: Int,
-    val cellSizes: Map<Int, Int>,
-    val sources: Map<DistantLodTileSource, Int>,
-    val cells: List<DistantLodRenderCellDiagnostic>,
-) {
-    companion object {
-        fun create(
-            revision: Long,
-            nativeOwnershipRevision: Long,
-            tileCount: Int,
-            renderReadyNativeChunks: Int,
-            excludedTiles: Int,
-            planned: List<DistantLodQuad>,
-        ): DistantLodRenderDiagnostics {
-            val diagnostics = planned.map { cell ->
-                DistantLodRenderCellDiagnostic(
-                    chunk = cell.chunk,
-                    x = cell.x,
-                    z = cell.z,
-                    size = cell.size,
-                    y = cell.y,
-                    minimumY = cell.minimumY,
-                    maximumY = cell.maximumY,
-                    material = cell.material,
-                    surface = cell.surface,
-                    source = cell.source,
-                    skirtSegments = cell.skirts.size,
-                    maximumSkirtDrop = cell.skirts.maxOfOrNull { cell.y - it.bottomY } ?: 0,
-                )
-            }
-            return DistantLodRenderDiagnostics(
-                revision = revision,
-                nativeOwnershipRevision = nativeOwnershipRevision,
-                tileCount = tileCount,
-                renderReadyNativeChunks = renderReadyNativeChunks,
-                excludedTiles = excludedTiles,
-                cellCount = planned.size,
-                terrainCells = planned.count { it.surface == DistantLodSurface.TERRAIN },
-                waterCells = planned.count { it.surface == DistantLodSurface.WATER },
-                waterBedCells = planned.count { it.surface == DistantLodSurface.WATER_BED },
-                adaptiveCells = planned.count {
-                    it.size < DistantLodMeshPlanner.CELL_SIZE ||
-                        (it.size == DistantLodMeshPlanner.CELL_SIZE && it.maximumY != it.minimumY)
-                },
-                skirtSegments = diagnostics.sumOf(DistantLodRenderCellDiagnostic::skirtSegments),
-                maximumSkirtDrop = diagnostics.maxOfOrNull(DistantLodRenderCellDiagnostic::maximumSkirtDrop) ?: 0,
-                cellSizes = planned.groupingBy(DistantLodQuad::size).eachCount(),
-                sources = planned.groupingBy(DistantLodQuad::source).eachCount(),
-                cells = diagnostics.sortedWith(
-                    compareByDescending<DistantLodRenderCellDiagnostic> {
-                        max(it.maximumY - it.minimumY, it.maximumSkirtDrop)
-                    }.thenBy { it.chunk.x }.thenBy { it.chunk.z }.thenBy { it.x }.thenBy { it.z },
-                ).take(MAX_DIAGNOSTIC_CELLS),
-            )
-        }
-
-        fun empty(
-            revision: Long,
-            nativeOwnershipRevision: Long,
-            tileCount: Int,
-            renderReadyNativeChunks: Int,
-            excludedTiles: Int,
-        ) = DistantLodRenderDiagnostics(
-            revision,
-            nativeOwnershipRevision,
-            tileCount,
-            renderReadyNativeChunks,
-            excludedTiles,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            emptyMap(),
-            emptyMap(),
-            emptyList(),
+internal fun createDistantLodRenderDiagnostics(
+    revision: Long,
+    nativeOwnershipRevision: Long,
+    tileCount: Int,
+    renderReadyNativeChunks: Int,
+    excludedTiles: Int,
+    planned: List<DistantLodQuad>,
+): DistantLodRenderDiagnostics {
+    val diagnostics = planned.map { cell ->
+        DistantLodRenderCellDiagnostic(
+            chunk = cell.chunk,
+            x = cell.x,
+            z = cell.z,
+            size = cell.size,
+            y = cell.y,
+            minimumY = cell.minimumY,
+            maximumY = cell.maximumY,
+            material = cell.material.name.lowercase(),
+            surface = cell.surface.wireName,
+            source = cell.source,
+            skirtSegments = cell.skirts.size,
+            maximumSkirtDrop = cell.skirts.maxOfOrNull { cell.y - it.bottomY } ?: 0,
         )
+    }
+    return DistantLodRenderDiagnostics(
+        revision = revision,
+        nativeOwnershipRevision = nativeOwnershipRevision,
+        tileCount = tileCount,
+        renderReadyNativeChunks = renderReadyNativeChunks,
+        excludedTiles = excludedTiles,
+        cellCount = planned.size,
+        terrainCells = planned.count { it.surface == DistantLodSurface.TERRAIN },
+        waterCells = planned.count { it.surface == DistantLodSurface.WATER },
+        waterBedCells = planned.count { it.surface == DistantLodSurface.WATER_BED },
+        adaptiveCells = planned.count {
+            it.size < DistantLodMeshPlanner.CELL_SIZE ||
+                (it.size == DistantLodMeshPlanner.CELL_SIZE && it.maximumY != it.minimumY)
+        },
+        skirtSegments = diagnostics.sumOf(DistantLodRenderCellDiagnostic::skirtSegments),
+        maximumSkirtDrop = diagnostics.maxOfOrNull(DistantLodRenderCellDiagnostic::maximumSkirtDrop) ?: 0,
+        cellSizes = planned.groupingBy(DistantLodQuad::size).eachCount(),
+        sources = planned.groupingBy(DistantLodQuad::source).eachCount(),
+        cells = diagnostics.sortedWith(
+            compareByDescending<DistantLodRenderCellDiagnostic> {
+                max(it.maximumY - it.minimumY, it.maximumSkirtDrop)
+            }.thenBy { it.chunk.x }.thenBy { it.chunk.z }.thenBy { it.x }.thenBy { it.z },
+        ).take(MAX_DIAGNOSTIC_CELLS),
+    )
+}
 
-        private const val MAX_DIAGNOSTIC_CELLS = 256
+private const val MAX_DIAGNOSTIC_CELLS = 256
+
+private fun Mesh.discardCandidate() {
+    when (state) {
+        MeshStates.PREPARING -> drop()
+        MeshStates.LOADED -> unload()
+        MeshStates.UNLOADED -> Unit
     }
 }
 
-private class DistantTerrainMeshBuilder(
+internal class DistantTerrainMeshBuilder(
     context: RenderContext,
     estimate: Int,
 ) : QuadMeshBuilder(context, DistantTerrainMeshStruct, estimate.coerceAtLeast(1)) {
@@ -1152,6 +1257,77 @@ private class DistantTerrainMeshBuilder(
         }
     }
 
+    fun add(quad: DistantMeshQuad) {
+        val material = DistantLodMaterial.of(ResourceLocation.of(quad.material.value))
+        val color = quad.tint?.resolvedRgb?.let { rgb ->
+            RGBAColor(
+                red = rgb ushr 16 and 0xFF,
+                green = rgb ushr 8 and 0xFF,
+                blue = rgb and 0xFF,
+                alpha = material.color.alpha,
+            )
+        } ?: material.color
+        val light = (quad.skyLight shl 4) or quad.blockLight
+        val normal = when (quad.direction) {
+            DistantFaceDirection.UP -> UP_NORMAL
+            DistantFaceDirection.DOWN -> DOWN_NORMAL
+            DistantFaceDirection.NORTH -> NORTH_NORMAL
+            DistantFaceDirection.SOUTH -> SOUTH_NORMAL
+            DistantFaceDirection.WEST -> WEST_NORMAL
+            DistantFaceDirection.EAST -> EAST_NORMAL
+        }
+        val normalMaterial = (material.dhId shl 3) or normal
+        fun vertex(u: Int, v: Int) {
+            when (quad.direction) {
+                DistantFaceDirection.UP,
+                DistantFaceDirection.DOWN,
+                -> addVertex(u.toFloat(), quad.plane.toFloat(), v.toFloat(), color, light, normalMaterial)
+
+                DistantFaceDirection.NORTH,
+                DistantFaceDirection.SOUTH,
+                -> addVertex(u.toFloat(), v.toFloat(), quad.plane.toFloat(), color, light, normalMaterial)
+
+                DistantFaceDirection.WEST,
+                DistantFaceDirection.EAST,
+                -> addVertex(quad.plane.toFloat(), v.toFloat(), u.toFloat(), color, light, normalMaterial)
+            }
+        }
+        when (quad.direction) {
+            DistantFaceDirection.UP -> {
+                vertex(quad.minimumU, quad.maximumVExclusive)
+                vertex(quad.maximumUExclusive, quad.maximumVExclusive)
+                vertex(quad.maximumUExclusive, quad.minimumV)
+                vertex(quad.minimumU, quad.minimumV)
+            }
+
+            DistantFaceDirection.DOWN -> {
+                vertex(quad.minimumU, quad.minimumV)
+                vertex(quad.maximumUExclusive, quad.minimumV)
+                vertex(quad.maximumUExclusive, quad.maximumVExclusive)
+                vertex(quad.minimumU, quad.maximumVExclusive)
+            }
+
+            DistantFaceDirection.NORTH,
+            DistantFaceDirection.EAST,
+            -> {
+                vertex(quad.minimumU, quad.maximumVExclusive)
+                vertex(quad.maximumUExclusive, quad.maximumVExclusive)
+                vertex(quad.maximumUExclusive, quad.minimumV)
+                vertex(quad.minimumU, quad.minimumV)
+            }
+
+            DistantFaceDirection.SOUTH,
+            DistantFaceDirection.WEST,
+            -> {
+                vertex(quad.maximumUExclusive, quad.maximumVExclusive)
+                vertex(quad.minimumU, quad.maximumVExclusive)
+                vertex(quad.minimumU, quad.minimumV)
+                vertex(quad.maximumUExclusive, quad.minimumV)
+            }
+        }
+        addIndexQuad(front = false, reverse = true)
+    }
+
     private fun addSide(
         firstX: Float,
         firstZ: Float,
@@ -1186,6 +1362,7 @@ private class DistantTerrainMeshBuilder(
 
     private companion object {
         const val UP_NORMAL = 1
+        const val DOWN_NORMAL = 6
         const val WATER_BED_FLAG = 1 shl 11
         const val NORTH_NORMAL = 2
         const val SOUTH_NORMAL = 3
@@ -1195,7 +1372,7 @@ private class DistantTerrainMeshBuilder(
     }
 }
 
-private data class DistantTerrainMeshStruct(
+internal data class DistantTerrainMeshStruct(
     val position: Vec3f,
     val color: Int,
     val light: Int,

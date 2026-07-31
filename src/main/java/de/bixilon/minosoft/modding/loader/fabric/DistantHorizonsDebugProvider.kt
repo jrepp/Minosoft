@@ -17,6 +17,7 @@ import de.bixilon.minosoft.debug.DebugOperationResult
 import de.bixilon.minosoft.debug.ModDebugProvider
 import de.bixilon.minosoft.debug.ModDebugRegistrar
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
+import de.bixilon.minosoft.terrain.distant.DistantLodTileSource
 import java.util.concurrent.CompletableFuture
 
 internal class DistantHorizonsDebugProvider(
@@ -86,12 +87,98 @@ internal class DistantHorizonsDebugProvider(
                             put("size", cell.size); put("y", cell.y)
                             put("minimumY", cell.minimumY); put("maximumY", cell.maximumY)
                             put("heightRange", cell.maximumY - cell.minimumY)
-                            put("material", cell.material.name.lowercase())
-                            put("surface", cell.surface.wireName)
+                            put("material", cell.material)
+                            put("surface", cell.surface)
                             put("source", cell.source.wireName)
                             put("skirtSegments", cell.skirtSegments)
                             put("maximumSkirtDrop", cell.maximumSkirtDrop)
                         }
+                    }
+                }
+                diagnostics.hierarchy?.let { hierarchy ->
+                    putObject("hierarchy").apply {
+                        put("indexRevision", hierarchy.indexRevision)
+                        put("sourcePublicationRevision", hierarchy.sourcePublicationRevision)
+                        put("dirtyRevision", hierarchy.dirtyRevision)
+                        put("indexedPages", hierarchy.indexedPages)
+                        put("dirtyPages", hierarchy.dirtyPages)
+                        put("cpuPages", hierarchy.cpuPages)
+                        put("gpuPages", hierarchy.gpuPages)
+                        put("pendingPages", hierarchy.pendingPages)
+                        put("queuedPages", hierarchy.queuedPages)
+                        put("mainSelectedPages", hierarchy.mainSelectedPages)
+                        put("shadowSelectedPages", hierarchy.shadowSelectedPages)
+                        put("mainMaskedPages", hierarchy.mainMaskedPages)
+                        put("shadowMaskedPages", hierarchy.shadowMaskedPages)
+                        put("coverageRevision", hierarchy.coverageRevision)
+                        put("coverageLifecycleRevision", hierarchy.coverageLifecycleRevision)
+                        put("coverageTransitionFrames", hierarchy.coverageTransitionFrames)
+                        put("regions", hierarchy.regions)
+                        put("residentBytes", hierarchy.residentBytes)
+                        put("retiredBytes", hierarchy.retiredBytes)
+                        put("allocationFailures", hierarchy.allocationFailures)
+                        put("uploadFailures", hierarchy.uploadFailures)
+                        put("drawBatches", hierarchy.drawBatches)
+                        put("drawCommands", hierarchy.drawCommands)
+                        put("drawVertices", hierarchy.drawVertices)
+                        put("pendingSubmissionFences", hierarchy.pendingSubmissionFences)
+                        putObject("detailCounts").also { counts ->
+                            hierarchy.detailCounts.toSortedMap().forEach { (detail, count) ->
+                                counts.put(detail.toString(), count)
+                            }
+                        }
+                        putArray("pages").also { pages ->
+                            hierarchy.pages.forEach { page ->
+                                pages.addObject().apply {
+                                    put("detailLevel", page.detailLevel)
+                                    put("x", page.x); put("z", page.z)
+                                    put("sourceRevision", page.sourceRevision)
+                                    put("dirtyRevision", page.dirtyRevision)
+                                    put("renderRevision", page.renderRevision)
+                                    put("dirty", page.dirty)
+                                    put("derived", page.derived)
+                                    put("buildState", page.buildState.name.lowercase())
+                                    put("mergedFaces", page.mergedFaces)
+                                    put("fallbackFaces", page.fallbackFaces)
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+        }
+        registrar.operation("store-network-inspection") { _, _ ->
+            val session = activeSession()
+            val store = controller.storeInspection(session)
+            val network = controller.networkInspection(session)
+                ?: throw DebugOperationException("not_ready", "distant network state is not initialized")
+            completed(DebugJson.MAPPER.createObjectNode().apply {
+                put("schemaVersion", 1)
+                putObject("store").apply {
+                    if (store == null) {
+                        put("enabled", false)
+                    } else {
+                        put("enabled", true)
+                        put("pageSchemaVersion", store.schemaVersion)
+                        put("recordCount", store.recordCount)
+                        put("totalBytes", store.totalBytes)
+                        put("ignoredTemporaryRecords", store.ignoredTemporaryRecords)
+                        put("pinnedRecords", store.pinnedRecords)
+                        put("evictionCount", store.evictionCount)
+                    }
+                }
+                putObject("network").apply {
+                    put("protocolVersion", network.protocolVersion)
+                    put("serverMaximumPages", network.serverMaximumPages)
+                    put("serverMaximumRadius", network.serverMaximumRadius)
+                    put("pendingPages", network.pendingPages)
+                    put("requestsSent", network.requestsSent)
+                    put("receivedPages", network.receivedPages)
+                    put("cancellationsSent", network.cancellationsSent)
+                    put("cancellationFailures", network.cancellationFailures)
+                    put("worldResets", network.worldResets)
+                    putArray("outstandingRequestIds").also { ids ->
+                        network.outstandingRequestIds.forEach(ids::add)
                     }
                 }
             })
