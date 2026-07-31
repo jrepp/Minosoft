@@ -415,6 +415,7 @@ fun DependencyHandler.lwjgl(name: String? = null, classpath: Boolean = true) {
 }
 
 dependencies {
+    implementation(project(":render-contracts"))
     implementation(project(":debug-core"))
     implementation("org.slf4j", "slf4j-api", "2.0.18")
     implementation("dnsjava", "dnsjava", "3.6.5")

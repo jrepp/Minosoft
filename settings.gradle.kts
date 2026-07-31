@@ -12,6 +12,7 @@
  */
 
 rootProject.name = "minosoft"
+include("render-contracts")
 include("debug-core")
 include("play-util")
 project(":play-util").projectDir = file("util/play")
