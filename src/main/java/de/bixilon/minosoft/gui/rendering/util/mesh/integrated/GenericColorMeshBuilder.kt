@@ -14,6 +14,8 @@
 package de.bixilon.minosoft.gui.rendering.util.mesh.integrated
 
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.kutil.collections.primitive.floats.FloatList
+import de.bixilon.kutil.collections.primitive.ints.IntList
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor
@@ -23,7 +25,12 @@ import de.bixilon.minosoft.gui.rendering.system.base.MeshUtil.buffer
 import de.bixilon.minosoft.gui.rendering.util.mesh.builder.quad.QuadMeshBuilder
 import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
 
-open class GenericColorMeshBuilder(context: RenderContext, estimate: Int = 100) : QuadMeshBuilder(context, GenericColorMeshStruct, estimate) {
+open class GenericColorMeshBuilder(
+    context: RenderContext,
+    estimate: Int = 100,
+    data: FloatList? = null,
+    index: IntList? = null,
+) : QuadMeshBuilder(context, GenericColorMeshStruct, estimate, data, index) {
 
     inline fun addVertex(x: Float, y: Float, z: Float, color: RGBAColor) = data.add(
         x, y, z,

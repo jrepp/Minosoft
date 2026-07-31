@@ -27,6 +27,7 @@ import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
 import org.lwjgl.opengl.GL30.*
 import org.lwjgl.opengl.GL40.GL_PATCHES
+import java.nio.FloatBuffer
 
 class OpenGlVertexBuffer(
     private val system: OpenGlRenderSystem,
@@ -95,6 +96,11 @@ class OpenGlVertexBuffer(
         }
 
         vao.unbind()
+    }
+
+    override fun updateVertices(data: FloatBuffer) {
+        check(state == GpuBufferStates.INITIALIZED) { "Vertex buffer is not uploaded: $state" }
+        this.data.update(data)
     }
 
     override fun drop() {

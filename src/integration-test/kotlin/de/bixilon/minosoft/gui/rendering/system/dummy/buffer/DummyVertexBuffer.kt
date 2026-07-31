@@ -17,6 +17,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.buffer.GpuBufferStates
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.vertex.PrimitiveTypes
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.vertex.VertexBuffer
 import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
+import java.nio.FloatBuffer
 
 class DummyVertexBuffer(
     override val struct: MeshStruct,
@@ -33,6 +34,8 @@ class DummyVertexBuffer(
     }
 
     override fun draw() = Unit
+
+    override fun updateVertices(data: FloatBuffer) = Unit
 
     override fun drop() = Unit
 }

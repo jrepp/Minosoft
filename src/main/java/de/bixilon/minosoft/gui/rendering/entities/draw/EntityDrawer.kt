@@ -39,6 +39,10 @@ import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import java.util.Collections
 import java.util.IdentityHashMap
 
+private val IRIS_ENTITY_SHADOW = minecraft("entity_shadow")
+private val IRIS_NAME_TAG = minecraft("name_tag")
+private val IRIS_ENTITY_FLAME = minecraft("entity_flame")
+
 class EntityDrawer(
     val renderer: EntitiesRenderer,
 ) {
@@ -204,9 +208,9 @@ fun FeatureDrawable.irisDrawState(): IrisDrawState {
     val feature = this as? EntityRenderFeature ?: return IrisDrawState.EMPTY
     val special = this is EntityShadowFeature || this is EntityNameFeature || this is EntityFlameFeature
     val identifier = when (this) {
-        is EntityShadowFeature -> minecraft("entity_shadow")
-        is EntityNameFeature -> minecraft("name_tag")
-        is EntityFlameFeature -> minecraft("entity_flame")
+        is EntityShadowFeature -> IRIS_ENTITY_SHADOW
+        is EntityNameFeature -> IRIS_NAME_TAG
+        is EntityFlameFeature -> IRIS_ENTITY_FLAME
         else -> feature.renderer.entity.type.identifier
     }
     val overlay = if (!special && feature.renderer is LivingEntityRenderer<*>) {

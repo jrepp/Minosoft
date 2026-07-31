@@ -19,7 +19,7 @@ import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
 import org.lwjgl.opengl.GL15.*
 import org.lwjgl.opengl.GL15C
-import org.lwjgl.system.MemoryUtil.memAddress0
+import org.lwjgl.system.MemoryUtil.memAddress
 import org.lwjgl.system.MemoryUtil.memFree
 import java.nio.FloatBuffer
 
@@ -28,13 +28,31 @@ class FloatOpenGlBuffer(
     val data: FloatBuffer,
     val free: Boolean,
 ) : OpenGlGpuBuffer(system) {
+    private val floats = data.remaining()
 
     override val glType get() = GL_ARRAY_BUFFER
 
 
     override fun initialUpload() {
-        gl { nglBufferData(glType, data, if (EMPTY_BUFFERS) 0 else data.limit(), GL_STATIC_DRAW) }
+        gl { nglBufferData(glType, data, if (EMPTY_BUFFERS) 0 else floats, GL_STATIC_DRAW) }
         unsafeDrop()
+    }
+
+    fun update(data: FloatBuffer) {
+        check(state == de.bixilon.minosoft.gui.rendering.system.base.buffer.GpuBufferStates.INITIALIZED) {
+            "Cannot update a vertex buffer in state $state"
+        }
+        require(data.remaining() == floats) {
+            "Dynamic vertex update has ${data.remaining()} floats, expected $floats"
+        }
+        bind()
+        if (!EMPTY_BUFFERS) {
+            if (data.isDirect) {
+                gl { GL15C.nglBufferSubData(glType, 0L, Integer.toUnsignedLong(floats) * Float.SIZE_BYTES, memAddress(data)) }
+            } else {
+                gl { glBufferSubData(glType, 0L, data.copyRemaining(floats)) }
+            }
+        }
     }
 
     override fun unsafeDrop() {
@@ -45,10 +63,16 @@ class FloatOpenGlBuffer(
 
     private fun nglBufferData(target: Int, buffer: FloatBuffer, length: Int, usage: Int) {
         if (buffer.isDirect) {
-            gl { GL15C.nglBufferData(target, Integer.toUnsignedLong(length) * Float.SIZE_BYTES, memAddress0(buffer), usage) }
+            gl { GL15C.nglBufferData(target, Integer.toUnsignedLong(length) * Float.SIZE_BYTES, memAddress(buffer), usage) }
         } else {
-            val array = if (length == 0) FloatArray(0) else buffer.array() // TODO: support length
+            val array = buffer.copyRemaining(length)
             gl { glBufferData(target, array, usage) }
         }
+    }
+
+    private fun FloatBuffer.copyRemaining(length: Int): FloatArray {
+        if (length == 0) return FloatArray(0)
+        require(remaining() >= length) { "Float buffer has fewer than $length remaining elements" }
+        return FloatArray(length).also { duplicate().get(it) }
     }
 }

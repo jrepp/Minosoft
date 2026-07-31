@@ -15,6 +15,7 @@ package de.bixilon.minosoft.gui.rendering.system.base.buffer.vertex
 
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.GpuBuffer
 import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
+import java.nio.FloatBuffer
 
 interface VertexBuffer : GpuBuffer {
     val vertices: Int
@@ -22,6 +23,16 @@ interface VertexBuffer : GpuBuffer {
     val struct: MeshStruct
 
     fun draw()
+
+    /**
+     * Replaces vertex contents without changing the GPU buffer or vertex-array
+     * identity. Implementations require the same float count as the original
+     * allocation so callers cannot accidentally turn a sub-data update into
+     * driver-side storage churn.
+     */
+    fun updateVertices(data: FloatBuffer) {
+        throw UnsupportedOperationException("Dynamic vertex updates are not supported by ${this::class.java.name}")
+    }
 
     fun drop()
 }

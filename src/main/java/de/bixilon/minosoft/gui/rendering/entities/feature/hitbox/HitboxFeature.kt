@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -14,6 +15,8 @@
 package de.bixilon.minosoft.gui.rendering.entities.feature.hitbox
 
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.kutil.collections.primitive.floats.FloatList
+import de.bixilon.kutil.collections.primitive.ints.IntList
 import de.bixilon.kutil.math.interpolation.Interpolator
 import de.bixilon.minosoft.data.entities.EntityRotation
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
@@ -26,9 +29,13 @@ import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLev
 import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
+import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
 import de.bixilon.minosoft.gui.rendering.util.mesh.integrated.LineMeshBuilder
+import de.bixilon.minosoft.gui.rendering.util.mesh.integrated.GenericColorMeshBuilder.GenericColorMeshStruct
 import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3fUtil
 import de.bixilon.minosoft.protocol.network.session.play.tick.TickUtil
+import de.bixilon.minosoft.util.collections.floats.FloatListUtil
+import de.bixilon.minosoft.util.collections.ints.IntListUtil
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -41,6 +48,10 @@ class HitboxFeature(renderer: EntityRenderer<*>) : MeshedFeature<Mesh>(renderer)
 
     private var color = Interpolator(renderer.entity.hitboxColor ?: ChatColors.WHITE, ColorInterpolation::interpolateRGBA)
     private var velocity = Interpolator(Vec3f.EMPTY, Vec3fUtil::interpolateLinear)
+    private var meshData: FloatList? = null
+    private var meshIndex: IntList? = null
+    private var builder: ReusableHitboxMeshBuilder? = null
+    private var pendingVertexUpdate = false
 
     // TODO: manager.profile.showInvisible
 
@@ -99,7 +110,7 @@ class HitboxFeature(renderer: EntityRenderer<*>) : MeshedFeature<Mesh>(renderer)
 
     private fun createMesh() {
         val aabb = aabb ?: return
-        val mesh = LineMeshBuilder(renderer.renderer.context)
+        val mesh = resetBuilder()
 
         val color = color.value
         if (manager.profile.lazy) {
@@ -115,8 +126,37 @@ class HitboxFeature(renderer: EntityRenderer<*>) : MeshedFeature<Mesh>(renderer)
         }
 
         mesh.drawLine(eyePosition, eyePosition + rotation.front * 5.0f, color = ChatColors.BLUE)
+        mesh.padToCapacity()
 
-        this.mesh = mesh.bake()
+        val current = this.mesh
+        if (current == null || current.state != MeshStates.LOADED) {
+            this.mesh = mesh.bake()
+        } else {
+            pendingVertexUpdate = true
+        }
+    }
+
+    private fun resetBuilder(): ReusableHitboxMeshBuilder {
+        val data = meshData ?: FloatListUtil.direct(MAX_FLOATS, false).also { meshData = it }
+        val index = meshIndex ?: IntListUtil.direct(MAX_INDICES, false).also { meshIndex = it }
+        data.clear()
+        index.clear()
+        val builder = builder ?: ReusableHitboxMeshBuilder(renderer.renderer.context, data, index).also { builder = it }
+        builder.reset(data, index)
+        return builder
+    }
+
+    override fun prepare() {
+        if (pendingVertexUpdate) {
+            pendingVertexUpdate = false
+            val mesh = this.mesh
+            if (mesh != null && mesh.state == MeshStates.LOADED) {
+                builder?.updateVertices(mesh)
+            } else {
+                this.mesh = builder?.bake()
+            }
+        }
+        super<MeshedFeature>.prepare()
     }
 
     override fun updateVisibility(level: EntityVisibilityLevels) = when {
@@ -138,5 +178,67 @@ class HitboxFeature(renderer: EntityRenderer<*>) : MeshedFeature<Mesh>(renderer)
             system.reset()
         }
         manager.shader.withProgramFamily(SceneProgramFamily.LINE, mesh::draw)
+    }
+
+    override fun unload() {
+        var failure: Throwable? = null
+        try {
+            super.unload()
+        } catch (error: Throwable) {
+            failure = error
+        }
+        pendingVertexUpdate = false
+        try {
+            builder?.drop(free = false)
+        } catch (error: Throwable) {
+            failure?.addSuppressed(error) ?: run { failure = error }
+        }
+        builder = null
+        try {
+            meshData?.free()
+        } catch (error: Throwable) {
+            failure?.addSuppressed(error) ?: run { failure = error }
+        }
+        meshData = null
+        try {
+            meshIndex?.free()
+        } catch (error: Throwable) {
+            failure?.addSuppressed(error) ?: run { failure = error }
+        }
+        meshIndex = null
+        failure?.let { throw it }
+    }
+
+    private class ReusableHitboxMeshBuilder(
+        context: de.bixilon.minosoft.gui.rendering.RenderContext,
+        data: FloatList,
+        index: IntList,
+    ) : LineMeshBuilder(context, MAX_QUADS, data, index) {
+        override val reused: Boolean = true
+
+        fun reset(data: FloatList, index: IntList) {
+            _data = data
+            _index = index
+        }
+
+        fun padToCapacity() {
+            while (data.size < MAX_FLOATS) {
+                repeat(4) { addVertex(0.0f, 0.0f, 0.0f, ChatColors.WHITE) }
+                addIndexQuad()
+            }
+            check(data.size == MAX_FLOATS) { "Hitbox geometry exceeded its fixed vertex capacity" }
+            val expectedIndices = MAX_QUADS * if (remap) TRIANGLE_INDICES_PER_QUAD else QUAD_INDICES_PER_QUAD
+            check(index.size == expectedIndices) {
+                "Hitbox index count ${index.size} does not match the fixed $expectedIndices-index layout"
+            }
+        }
+    }
+
+    companion object {
+        private const val MAX_QUADS = 56
+        private val MAX_FLOATS = MAX_QUADS * 4 * GenericColorMeshStruct.floats
+        private const val QUAD_INDICES_PER_QUAD = 4
+        private const val TRIANGLE_INDICES_PER_QUAD = 6
+        private const val MAX_INDICES = MAX_QUADS * TRIANGLE_INDICES_PER_QUAD
     }
 }

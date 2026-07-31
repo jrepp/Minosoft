@@ -16,6 +16,8 @@ package de.bixilon.minosoft.gui.rendering.util.mesh.integrated
 import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.kmath.vec.vec3.f.MVec3f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.kutil.collections.primitive.floats.FloatList
+import de.bixilon.kutil.collections.primitive.ints.IntList
 import de.bixilon.kutil.exception.Broken
 import de.bixilon.minosoft.data.direction.Directions
 import de.bixilon.minosoft.data.registries.shapes.aabb.AABB
@@ -27,7 +29,12 @@ import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.models.util.CuboidUtil
 import de.bixilon.minosoft.gui.rendering.util.mesh.builder.quad.QuadConsumer.Companion.iterate
 
-open class LineMeshBuilder(context: RenderContext, estimate: Int = 6) : GenericColorMeshBuilder(context, estimate) {
+open class LineMeshBuilder(
+    context: RenderContext,
+    estimate: Int = 6,
+    data: FloatList? = null,
+    index: IntList? = null,
+) : GenericColorMeshBuilder(context, estimate, data, index) {
 
     fun drawLine(start: Vec3f, end: Vec3f, lineWidth: Float = RenderConstants.DEFAULT_LINE_WIDTH, color: RGBAColor) {
         drawLine(start.x, start.y, start.z, end.x, end.y, end.z, lineWidth, color)

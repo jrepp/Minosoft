@@ -19,15 +19,22 @@ import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLevels
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
 import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
+import java.util.Collections
+import java.util.IdentityHashMap
 
 abstract class MeshedFeature<M : Mesh>(
     renderer: EntityRenderer<*>,
 ) : DrawableEntityRenderFeature(renderer) {
     protected var unload = false
     private var suppressMeshUnload = false
+    private val retiredMeshes: MutableSet<M> = Collections.newSetFromMap(IdentityHashMap())
     protected open var mesh: M? = null
         set(value) {
             val old = field
+            if (old === value) {
+                this.unload = false
+                return
+            }
             if (old != null && !suppressMeshUnload) {
                 enqueueUnload(old)
             }
@@ -46,9 +53,24 @@ abstract class MeshedFeature<M : Mesh>(
     private fun enqueueUnload(mesh: M) {
         when (mesh.state) {
             MeshStates.PREPARING -> mesh.drop()
-            MeshStates.LOADED -> renderer.renderer.queue += {
-                if (mesh.state == MeshStates.LOADED) {
-                    mesh.unload()
+            MeshStates.LOADED -> {
+                synchronized(retiredMeshes) { retiredMeshes += mesh }
+                renderer.renderer.queue += {
+                    // Claim ownership before touching the GPU object. Terminal
+                    // teardown clears the same identity set, so a queued task
+                    // and unload() can never both unload this mesh.
+                    if (synchronized(retiredMeshes) { retiredMeshes.remove(mesh) }) {
+                        if (mesh.state == MeshStates.LOADED) {
+                            try {
+                                mesh.unload()
+                            } catch (failure: Throwable) {
+                                if (mesh.state != MeshStates.UNLOADED) {
+                                    synchronized(retiredMeshes) { retiredMeshes += mesh }
+                                }
+                                throw failure
+                            }
+                        }
+                    }
                 }
             }
             MeshStates.UNLOADED -> Unit
@@ -94,14 +116,32 @@ abstract class MeshedFeature<M : Mesh>(
     }
 
     override fun unload() {
-        super.unload()
+        var failure: Throwable? = null
+        try {
+            super.unload()
+        } catch (error: Throwable) {
+            failure = error
+        }
 
-        val mesh = this.mesh ?: return
-        when (mesh.state) {
-            MeshStates.PREPARING -> mesh.drop()
-            MeshStates.LOADED -> mesh.unload()
-            MeshStates.UNLOADED -> Unit
+        val owned: MutableSet<M> = Collections.newSetFromMap(IdentityHashMap())
+        this.mesh?.let(owned::add)
+        synchronized(retiredMeshes) {
+            owned += retiredMeshes
+            retiredMeshes.clear()
         }
         clearMeshWithoutEnqueue()
+
+        for (mesh in owned) {
+            try {
+                when (mesh.state) {
+                    MeshStates.PREPARING -> mesh.drop()
+                    MeshStates.LOADED -> mesh.unload()
+                    MeshStates.UNLOADED -> Unit
+                }
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        failure?.let { throw it }
     }
 }

@@ -20,7 +20,7 @@ class HitboxC(profile: EntityProfile) {
     /**
      * Enables or disables hit-boxes for all entities
      */
-    var enabled by BooleanDelegate(profile, true)
+    var enabled by BooleanDelegate(profile, false)
 
     /**
      * Shows hit-boxes from invisible entities
