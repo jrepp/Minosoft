@@ -27,8 +27,10 @@ import de.bixilon.kutil.string.WhitespaceUtil.removeMultipleWhitespaces
 import de.bixilon.kutil.string.WhitespaceUtil.trimWhitespaces
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.api.tasks.testing.logging.TestLogEvent
+import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.jvm.tasks.Jar
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import java.io.FileInputStream
 import java.io.FileNotFoundException
@@ -53,6 +55,27 @@ plugins {
     `jvm-test-suite`
     application
     id("com.github.ben-manes.versions") version "0.54.0"
+}
+
+val minosoftJavaVersion = JavaLanguageVersion.of(25)
+
+allprojects {
+    pluginManager.withPlugin("java") {
+        extensions.configure<JavaPluginExtension> {
+            toolchain.languageVersion.set(minosoftJavaVersion)
+            sourceCompatibility = JavaVersion.VERSION_25
+            targetCompatibility = JavaVersion.VERSION_25
+        }
+        tasks.withType<JavaCompile>().configureEach {
+            options.encoding = StandardCharsets.UTF_8.name()
+            options.release.set(minosoftJavaVersion.asInt())
+        }
+    }
+    pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
+        extensions.configure<KotlinJvmProjectExtension> {
+            compilerOptions.jvmTarget.set(JvmTarget.JVM_25)
+        }
+    }
 }
 
 fun getProperty(name: String): String {
@@ -569,25 +592,13 @@ tasks.getByName("processResources") {
     // ToDo: verify and minify jsons
 }
 
-java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
-}
-
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_25)
         languageVersion.set(KotlinVersion.KOTLIN_2_4)
         freeCompilerArgs.add("-Xskip-prerelease-check")
         freeCompilerArgs.add("-Xallow-unstable-dependencies")
         freeCompilerArgs.add("-Xwarning-level=NOTHING_TO_INLINE:disabled")
     }
-}
-
-tasks.withType<JavaCompile> {
-    options.encoding = StandardCharsets.UTF_8.name()
-    options.release.set(25)
 }
 
 application {
