@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -40,6 +41,7 @@ import java.util.UUID;
 final class TrajectoryLeaseStore {
     static final Set<String> SCOPES = Set.of("client", "server-world", "pack", "source");
     private static final int SCHEMA_VERSION = 1;
+    private static final Duration MIN_TTL = Duration.ofMillis(1);
     private static final Duration MAX_TTL = Duration.ofHours(24);
 
     private final Path directory;
@@ -58,7 +60,9 @@ final class TrajectoryLeaseStore {
 
     ObjectNode acquire(String scope, String trajectory, Duration ttl, String owner) throws IOException {
         requireScope(scope);
-        if (ttl.isZero() || ttl.isNegative() || ttl.compareTo(MAX_TTL) > 0) {
+        requireText(trajectory, "trajectory", 128);
+        requireText(owner, "owner", 128);
+        if (ttl.compareTo(MIN_TTL) < 0 || ttl.compareTo(MAX_TTL) > 0) {
             throw new IllegalArgumentException("lease ttl must be between 1 millisecond and 24 hours");
         }
         return locked(() -> {
@@ -165,16 +169,25 @@ final class TrajectoryLeaseStore {
             lease.path("schemaVersion").asInt() != SCHEMA_VERSION ||
             !SCOPES.contains(lease.path("scope").asText()) ||
             lease.path("trajectory").asText().isBlank() ||
+            lease.path("owner").asText().isBlank() ||
             lease.path("token").asText().isBlank()) {
             throw new IllegalArgumentException("invalid trajectory lease: " + file);
         }
-        validateToken(lease.path("token").asText());
+        String token = lease.path("token").asText();
+        validateToken(token);
+        if (!file.getFileName().toString().equals(token + ".json")) {
+            throw new IllegalArgumentException("trajectory lease token does not match its filename: " + file);
+        }
         return lease;
     }
 
     private void quarantine(Path file) throws IOException {
         Path invalid = file.resolveSibling(file.getFileName() + ".invalid-" + clock.instant().toEpochMilli());
-        Files.move(file, invalid, StandardCopyOption.ATOMIC_MOVE);
+        try {
+            Files.move(file, invalid, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException unsupported) {
+            Files.move(file, invalid);
+        }
     }
 
     private static boolean conflicts(String requestedScope, String requestedTrajectory, String activeScope, String activeTrajectory) {
@@ -185,6 +198,12 @@ final class TrajectoryLeaseStore {
     private static void requireScope(String scope) {
         if (!SCOPES.contains(scope)) {
             throw new IllegalArgumentException("lease scope must be one of: " + String.join(", ", SCOPES.stream().sorted().toList()));
+        }
+    }
+
+    private static void requireText(String value, String label, int maximumLength) {
+        if (value == null || value.isBlank() || value.length() > maximumLength) {
+            throw new IllegalArgumentException(label + " must contain 1.." + maximumLength + " characters");
         }
     }
 

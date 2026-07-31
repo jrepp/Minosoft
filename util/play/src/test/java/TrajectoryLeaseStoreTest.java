@@ -76,6 +76,24 @@ final class TrajectoryLeaseStoreTest {
         assertEquals(1, later.status().path("leases").size());
     }
 
+    @Test
+    void acquireRejectsStateThatCouldNotBeReadBack() {
+        TrajectoryLeaseStore leases = store(Instant.parse("2026-07-30T12:00:00Z"));
+
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> leases.acquire("client", "", Duration.ofMinutes(1), "owner")
+        );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> leases.acquire("client", "graphics", Duration.ofMinutes(1), " ")
+        );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> leases.acquire("client", "graphics", Duration.ofNanos(1), "owner")
+        );
+    }
+
     private TrajectoryLeaseStore store(Instant now) {
         return new TrajectoryLeaseStore(temporary, Clock.fixed(now, ZoneOffset.UTC));
     }
