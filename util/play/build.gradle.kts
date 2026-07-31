@@ -32,6 +32,7 @@ sourceSets {
         java.include("Play.java")
         java.include("MotionNoiseAnalyzer.java")
         java.include("TrajectoryDiagnostics.java")
+        java.include("TrajectoryCheckpointStore.java")
         java.include("TrajectoryLeaseStore.java")
         java.include("WorldSnapshot.java")
     }

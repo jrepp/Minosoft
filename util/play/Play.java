@@ -66,6 +66,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -240,6 +241,10 @@ public final class Play {
             runDiagnose(arguments.subList(1, arguments.size()));
             return;
         }
+        if (!arguments.isEmpty() && arguments.get(0).equals("checkpoint")) {
+            runCheckpoint(arguments.subList(1, arguments.size()));
+            return;
+        }
 
         String action = arguments.isEmpty() || arguments.get(0).startsWith("--") ? "dev" : arguments.remove(0);
         if (action.equals("help") || action.equals("--help") || action.equals("-h")) {
@@ -392,6 +397,161 @@ public final class Play {
         } catch (IllegalArgumentException | IllegalStateException error) {
             throw failure(error.getMessage());
         }
+    }
+
+    private void runCheckpoint(List<String> rawArguments) throws Exception {
+        List<String> arguments = new ArrayList<>(rawArguments);
+        require(!arguments.isEmpty(),
+            "Usage: ./play.sh checkpoint capture [--trajectory NAME] [--output FILE] | mark FILE | restore FILE [--lease TOKEN]");
+        String action = arguments.remove(0);
+        TrajectoryCheckpointStore checkpoints = new TrajectoryCheckpointStore();
+        try {
+            switch (action) {
+                case "capture" -> captureCheckpoint(checkpoints, arguments);
+                case "mark" -> markCheckpoint(checkpoints, arguments);
+                case "restore" -> restoreCheckpoint(checkpoints, arguments);
+                default -> throw failure("Unknown checkpoint action: " + action);
+            }
+        } catch (IllegalArgumentException | IllegalStateException error) {
+            throw failure(error.getMessage());
+        }
+    }
+
+    private void captureCheckpoint(TrajectoryCheckpointStore checkpoints, List<String> arguments) throws Exception {
+        Path output = null;
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            if (option.equals("--trajectory")) {
+                require(!arguments.isEmpty(), "--trajectory requires a name.");
+                trajectory = arguments.remove(0);
+            } else if (option.startsWith("--trajectory=")) {
+                trajectory = option.substring("--trajectory=".length());
+            } else if (option.equals("--output")) {
+                require(!arguments.isEmpty(), "--output requires a file.");
+                output = resolveProjectPath(arguments.remove(0));
+            } else if (option.startsWith("--output=")) {
+                output = resolveProjectPath(option.substring("--output=".length()));
+            } else if (!option.equals("--json")) {
+                throw failure("Unknown checkpoint capture option: " + option);
+            }
+        }
+        validateName("trajectory", trajectory);
+        if (output == null) {
+            output = runDirectory.resolve("checkpoints").resolve(UUID.randomUUID() + ".json");
+        }
+        DebugEndpointDescriptor endpoint = selectDebugEndpoint(
+            new DebugDiscovery(DebugPaths.system()),
+            exactDebugSelection(trajectory),
+            DebugEndpointRole.CLIENT
+        );
+        ObjectNode checkpoint;
+        try (DebugClient client = DebugClient.connect(DebugPaths.system(), endpoint)) {
+            checkpoint = checkpoints.create(
+                output,
+                trajectory,
+                endpointJson(endpoint),
+                motionPoseJson(sampleClientPose(client))
+            );
+        }
+        checkpoint.put("path", output.toAbsolutePath().normalize().toString());
+        printDebugJson(checkpoint, true);
+    }
+
+    private void markCheckpoint(TrajectoryCheckpointStore checkpoints, List<String> arguments) throws Exception {
+        require(!arguments.isEmpty(), "Usage: ./play.sh checkpoint mark FILE");
+        Path path = resolveProjectPath(arguments.remove(0));
+        require(arguments.isEmpty() || arguments.equals(List.of("--json")), "checkpoint mark accepts only FILE and --json.");
+        ObjectNode stored = checkpoints.read(path);
+        require(stored.path("state").asText().equals("active"),
+            "Checkpoint is not active: " + stored.path("state").asText("unknown") + ".");
+        String checkpointTrajectory = stored.path("trajectory").asText();
+        DebugEndpointDescriptor endpoint = selectDebugEndpoint(
+            new DebugDiscovery(DebugPaths.system()),
+            exactDebugSelection(checkpointTrajectory),
+            DebugEndpointRole.CLIENT
+        );
+        ObjectNode checkpoint;
+        try (DebugClient client = DebugClient.connect(DebugPaths.system(), endpoint)) {
+            checkpoint = checkpoints.mark(
+                path,
+                endpointJson(endpoint),
+                motionPoseJson(sampleClientPose(client))
+            );
+        }
+        checkpoint.put("path", path.toAbsolutePath().normalize().toString());
+        printDebugJson(checkpoint, true);
+    }
+
+    private void restoreCheckpoint(TrajectoryCheckpointStore checkpoints, List<String> arguments) throws Exception {
+        require(!arguments.isEmpty(), "Usage: ./play.sh checkpoint restore FILE [--lease TOKEN]");
+        Path path = resolveProjectPath(arguments.remove(0));
+        String leaseToken = null;
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            if (option.equals("--lease")) {
+                require(!arguments.isEmpty(), "--lease requires a token.");
+                leaseToken = arguments.remove(0);
+            } else if (option.startsWith("--lease=")) {
+                leaseToken = option.substring("--lease=".length());
+            } else if (!option.equals("--json")) {
+                throw failure("Unknown checkpoint restore option: " + option);
+            }
+        }
+
+        ObjectNode stored = checkpoints.read(path);
+        require(stored.path("state").asText().equals("active"),
+            "Checkpoint is not active: " + stored.path("state").asText("unknown") + ".");
+        String checkpointTrajectory = stored.path("trajectory").asText();
+        TrajectoryLeaseStore leases = new TrajectoryLeaseStore(runDirectory);
+        String acquiredToken = null;
+        try {
+            if (leaseToken == null) {
+                acquiredToken = leases.acquire(
+                    "server-world",
+                    checkpointTrajectory,
+                    Duration.ofMinutes(5),
+                    "checkpoint-restore-pid-" + ProcessHandle.current().pid()
+                ).path("token").asText();
+            } else {
+                require(leases.owns(leaseToken, "server-world", checkpointTrajectory),
+                    "The supplied lease does not own server-world for trajectory " + checkpointTrajectory + ".");
+            }
+
+            DebugDiscovery discovery = new DebugDiscovery(DebugPaths.system());
+            DebugSelection selection = exactDebugSelection(checkpointTrajectory);
+            DebugEndpointDescriptor clientEndpoint = selectDebugEndpoint(discovery, selection, DebugEndpointRole.CLIENT);
+            DebugEndpointDescriptor serverEndpoint = selectDebugEndpoint(discovery, selection, DebugEndpointRole.SERVER);
+            try (
+                DebugClient client = DebugClient.connect(DebugPaths.system(), clientEndpoint);
+                DebugClient server = DebugClient.connect(DebugPaths.system(), serverEndpoint)
+            ) {
+                MotionPose current = sampleClientPose(client);
+                if (!checkpoints.matchesExpected(stored, motionPoseJson(current))) {
+                    ObjectNode conflict = checkpoints.recordConflict(path, motionPoseJson(current));
+                    conflict.put("path", path.toAbsolutePath().normalize().toString());
+                    printDebugJson(conflict, true);
+                    throw failure("Checkpoint restore refused because the current player pose changed after the checkpoint boundary.");
+                }
+                MotionPose original = motionPose(stored.path("original"));
+                teleport(server, original);
+                waitForPose(client, original, 10_000);
+                ObjectNode restored = checkpoints.recordRestored(path, motionPoseJson(sampleClientPose(client)));
+                restored.put("path", path.toAbsolutePath().normalize().toString());
+                restored.set("clientEndpoint", endpointJson(clientEndpoint));
+                restored.set("serverEndpoint", endpointJson(serverEndpoint));
+                restored.put("lease", leaseToken == null ? "automatic" : leaseToken);
+                printDebugJson(restored, true);
+            }
+        } finally {
+            if (acquiredToken != null) leases.release(acquiredToken);
+        }
+    }
+
+    private static DebugSelection exactDebugSelection(String selectedTrajectory) {
+        DebugSelection selection = new DebugSelection();
+        selection.trajectory = selectedTrajectory;
+        selection.trajectorySpecified = true;
+        return selection;
     }
 
     private void runDebug(List<String> rawArguments) throws Exception {
@@ -1104,6 +1264,17 @@ public final class Play {
             .put("dimension", pose.dimension)
             .put("x", pose.x).put("y", pose.y).put("z", pose.z)
             .put("yaw", pose.yaw).put("pitch", pose.pitch);
+    }
+
+    private static MotionPose motionPose(JsonNode pose) {
+        return new MotionPose(
+            pose.path("dimension").asText(),
+            pose.path("x").asDouble(),
+            pose.path("y").asDouble(),
+            pose.path("z").asDouble(),
+            pose.path("yaw").asDouble(),
+            pose.path("pitch").asDouble()
+        );
     }
 
     private static ObjectNode motionRegionJson(MotionNoiseAnalyzer.Region region) {
@@ -4003,6 +4174,9 @@ public final class Play {
               ./play.sh lease status --json
               ./play.sh lease release TOKEN
               ./play.sh diagnose capture [--trajectory NAME] [--output PATH] [--visual] [--json]
+              ./play.sh checkpoint capture [--trajectory NAME] [--output FILE]
+              ./play.sh checkpoint mark FILE
+              ./play.sh checkpoint restore FILE [--lease TOKEN]
 
               ACTION  dev, start, stop, or status (default: dev)
               TARGET  server or client (default: both)
@@ -4038,6 +4212,7 @@ public final class Play {
               screenshot       Crop reference regions or compare PNGs with bounded thresholds
               lease            Acquire, inspect, or release bounded trajectory mutation ownership
               diagnose capture Capture one bounded status, endpoint, state, render, fixture, and log bundle
+              checkpoint       Capture, mark, and compare-and-restore a live player pose
 
             Lifecycle predicates:
               server.port-open, server.debug-ready, server.game-ready
