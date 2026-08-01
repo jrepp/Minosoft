@@ -37,15 +37,25 @@ import de.bixilon.minosoft.data.registries.biomes.BiomePrecipitation
 import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.registries.blocks.state.BlockStateFlags
 import de.bixilon.minosoft.data.registries.blocks.MinecraftBlocks
+import de.bixilon.minosoft.data.registries.blocks.properties.BlockProperties
 import de.bixilon.minosoft.data.registries.dimension.effects.minecraft.EndEffects
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.text.ChatComponent
 import de.bixilon.minosoft.data.world.border.area.BorderArea
 import de.bixilon.minosoft.data.world.border.area.StaticBorderArea
 import de.bixilon.minosoft.data.world.positions.BlockPosition
+import de.bixilon.minosoft.data.world.time.WorldTime
 import de.bixilon.minosoft.data.world.weather.WorldWeather
 import de.bixilon.minosoft.debug.terrain.TerrainDiagnosticDebugOperation
-import de.bixilon.minosoft.debug.terrain.TerrainDiagnosticProviderCapture
+import de.bixilon.minosoft.debug.terrain.TerrainFaultAction
+import de.bixilon.minosoft.debug.terrain.TerrainFlushIdleCondition
+import de.bixilon.minosoft.debug.terrain.TerrainIdleState
+import de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCapture
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainDiagnosticOperations
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainDiagnosticRejection
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainDiagnosticRejectionCode
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainAcceptanceFaultScope
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainDualBuildFixtures
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.RenderingStates
 import de.bixilon.minosoft.gui.rendering.camera.arm.ArmRenderer
@@ -85,7 +95,7 @@ import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceSn
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureManager
 import de.bixilon.minosoft.gui.rendering.system.window.KeyChangeTypes
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainPerformanceSnapshot
-import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainRuntimeSelection
+import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRenderer
 import de.bixilon.minosoft.local.LocalConnection
 import de.bixilon.minosoft.modding.loader.ModOptions
 import de.bixilon.minosoft.modding.loader.fabric.FabricModDiagnostics
@@ -94,6 +104,7 @@ import de.bixilon.minosoft.modding.loader.fabric.FabricResourceReloadType
 import de.bixilon.minosoft.modding.event.events.BlockBreakAnimationEvent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.network.session.play.PlaySessionStates
+import de.bixilon.minosoft.terrain.runtime.TerrainProcessBuildService
 import de.bixilon.minosoft.util.KUtil.startInit
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
@@ -103,6 +114,7 @@ import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.imageio.ImageIO
 
@@ -110,6 +122,7 @@ object ClientDebugChannel : AutoCloseable {
     private const val MAX_INPUT_EVENTS = 256
     private const val MAX_PIXEL_SAMPLES = 4096
     private const val MAX_REGION_PIXELS = 65536
+    private const val NEAR_BLACK_LUMINANCE = 5.1
     private const val MAX_BLOCKS = 32768
     private const val MAX_FUNCTION_ARGUMENTS = 16
     private const val MAX_FUNCTION_ARGUMENT_BYTES = 8192
@@ -143,6 +156,7 @@ object ClientDebugChannel : AutoCloseable {
     private var preparedPrimedTnt: PreparedPrimedTnt? = null
     private var preparedItemEntity: PreparedItemEntity? = null
     private var preparedBeacon: PreparedBeacon? = null
+    private var preparedTerrainMaterials: PreparedTerrainMaterials? = null
     private var preparedStorageBlockEntity: PreparedStorageBlockEntity? = null
     private var preparedSignText: PreparedSignText? = null
     private var preparedBlockBreak: PreparedBlockBreak? = null
@@ -227,6 +241,32 @@ object ClientDebugChannel : AutoCloseable {
         TerrainDiagnosticDebugOperation.register(server.operations()) { _, body ->
             onRender { terrainDiagnostics(it, body) }
         }
+        listOf(
+            TerrainDiagnosticOperations.SUMMARY,
+            TerrainDiagnosticOperations.PAGES,
+            TerrainDiagnosticOperations.COVERAGE,
+            TerrainDiagnosticOperations.PAGE,
+        ).forEach { operation ->
+            server.operations().register("client", operation) { request, body ->
+                onRender {
+                    terrainDiagnosticOperation(
+                        context = it,
+                        body = body,
+                        endpointGeneration = request.endpoint().generation,
+                        operation = operation,
+                    )
+                }
+            }
+        }
+        server.operations().register("client", TerrainDiagnosticOperations.FLUSH_IDLE) { request, body ->
+            onRenderAsync { flushTerrainIdle(request, body, it) }
+        }
+        server.operations().register("client", TerrainDiagnosticOperations.COMPARE) { request, body ->
+            onRender { terrainCompare(it, request.endpoint().generation, body) }
+        }
+        server.operations().register("client", TerrainDiagnosticOperations.FAULT) { request, body ->
+            onRender { terrainFault(it, request.endpoint().generation, body) }
+        }
         server.operations().register("client", "render.terrain-telemetry") { _, body ->
             onRender { configureTerrainTelemetry(it, body) }
         }
@@ -284,6 +324,9 @@ object ClientDebugChannel : AutoCloseable {
         }
         server.operations().register("client", "render.prepare-beacon") { _, body ->
             onRender { prepareBeacon(it, body) }
+        }
+        server.operations().register("client", "render.prepare-terrain-materials") { _, body ->
+            onRender { prepareTerrainMaterials(it, body) }
         }
         server.operations().register("client", "render.prepare-storage-block-entity") { _, body ->
             onRender { prepareStorageBlockEntity(it, body) }
@@ -2140,6 +2183,180 @@ object ClientDebugChannel : AutoCloseable {
     )
 
     /**
+     * Publishes a small reversible terrain-material fixture through the normal
+     * client-world mutation path. It is deliberately limited to a local
+     * connection and empty loaded cells so acceptance can cover fluids,
+     * waterlogging, shoreline adjacency, emissive blocks, and day/night
+     * remeshing without exposing a general-purpose block editor.
+     */
+    private fun prepareTerrainMaterials(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val enabledNode = body["enabled"]
+        if (enabledNode != null && !enabledNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "enabled must be boolean")
+        }
+        val phaseNode = body["phase"]
+        if (phaseNode != null && !phaseNode.isTextual) {
+            throw DebugOperationException("invalid_request", "phase must be day or night")
+        }
+        val phase = phaseNode?.asText()?.lowercase() ?: "day"
+        if (phase !in setOf("day", "night")) {
+            throw DebugOperationException("invalid_request", "phase must be day or night")
+        }
+        val enabled = enabledNode?.asBoolean() ?: true
+        val session = context.session
+        if (session.connection !is LocalConnection) {
+            throw DebugOperationException("not_ready", "terrain material fixtures require a local connection")
+        }
+        val world = session.world
+
+        if (!enabled) {
+            val prepared = preparedTerrainMaterials
+                ?: throw DebugOperationException("invalid_request", "no terrain material fixture is prepared")
+            if (prepared.session !== session) {
+                throw DebugOperationException("not_ready", "the prepared terrain material world is no longer active")
+            }
+            val conflicts = prepared.placements.count { world[it.position] != it.fixture }
+            if (conflicts != 0) {
+                throw DebugOperationException(
+                    "state_conflict",
+                    "$conflicts terrain material fixture blocks changed before restoration",
+                )
+            }
+            var restoredPlacements = 0
+            try {
+                for (placement in prepared.placements) {
+                    world[placement.position] = placement.previous
+                    restoredPlacements++
+                }
+                world.time = prepared.previousTime
+            } catch (failure: Throwable) {
+                for (index in restoredPlacements - 1 downTo 0) {
+                    val placement = prepared.placements[index]
+                    try {
+                        world[placement.position] = placement.fixture
+                    } catch (rollback: Throwable) {
+                        failure.addSuppressed(rollback)
+                    }
+                }
+                throw failure
+            }
+            preparedTerrainMaterials = null
+            return terrainMaterialResult(context, enabled = false, phase = "restored", prepared, restored = true)
+        }
+
+        val existing = preparedTerrainMaterials
+        if (existing != null) {
+            if (existing.session !== session) {
+                throw DebugOperationException("not_ready", "the prepared terrain material world is no longer active")
+            }
+            world.time = WorldTime(if (phase == "day") 6_000 else 18_000, world.time.age)
+            return terrainMaterialResult(context, enabled = true, phase, existing, restored = false)
+        }
+
+        fun state(identifier: ResourceLocation): BlockState = session.registries.block[identifier]?.states?.default
+            ?: throw DebugOperationException("not_ready", "terrain fixture block state is unavailable: $identifier")
+
+        val fixtureStates = listOf(
+            state(MinecraftBlocks.WATER),
+            state(MinecraftBlocks.WATER),
+            state(MinecraftBlocks.OAK_SLAB).withProperties(BlockProperties.WATERLOGGED to true),
+            state(MinecraftBlocks.STONE),
+            state(MinecraftBlocks.GLOWSTONE),
+            state(MinecraftBlocks.SEA_LANTERN),
+            state(MinecraftBlocks.LAVA),
+        )
+        val offsets = listOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 0 to 1, 1 to 1, 2 to 1)
+        val origin = session.player.physics.positionInfo.position
+        val anchor = sequence {
+            for (y in origin.y..origin.y + 3) {
+                for (radius in 3..8) {
+                    for (x in -radius..radius) for (z in -radius..radius) {
+                        if (maxOf(kotlin.math.abs(x), kotlin.math.abs(z)) != radius) continue
+                        yield(BlockPosition(origin.x + x, y, origin.z + z))
+                    }
+                }
+            }
+        }.firstOrNull { candidate ->
+            offsets.all { (x, z) ->
+                val position = candidate + BlockPosition(x, 0, z)
+                world.isValidPosition(position) &&
+                    world.chunks[position.chunkPosition] != null &&
+                    world[position] == null &&
+                    world.getBlockEntity(position) == null
+            }
+        } ?: throw DebugOperationException("not_ready", "no empty loaded terrain fixture area is available nearby")
+
+        val placements = offsets.zip(fixtureStates).map { (offset, fixture) ->
+            val position = anchor + BlockPosition(offset.first, 0, offset.second)
+            TerrainMaterialPlacement(position, world[position], fixture)
+        }
+        val prepared = PreparedTerrainMaterials(session, placements, world.time)
+        var appliedPlacements = 0
+        try {
+            for (placement in placements) {
+                world[placement.position] = placement.fixture
+                appliedPlacements++
+            }
+            world.time = WorldTime(if (phase == "day") 6_000 else 18_000, world.time.age)
+        } catch (failure: Throwable) {
+            for (index in appliedPlacements - 1 downTo 0) {
+                val placement = placements[index]
+                try {
+                    world[placement.position] = placement.previous
+                } catch (rollback: Throwable) {
+                    failure.addSuppressed(rollback)
+                }
+            }
+            try {
+                world.time = prepared.previousTime
+            } catch (rollback: Throwable) {
+                failure.addSuppressed(rollback)
+            }
+            throw failure
+        }
+        preparedTerrainMaterials = prepared
+        return terrainMaterialResult(context, enabled = true, phase, prepared, restored = false)
+    }
+
+    private fun terrainMaterialResult(
+        context: RenderContext,
+        enabled: Boolean,
+        phase: String,
+        prepared: PreparedTerrainMaterials,
+        restored: Boolean,
+    ) = DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+        put("enabled", enabled)
+        put("clientOnly", true)
+        put("phase", phase)
+        put("restored", restored)
+        put("frame", context.frameNumber)
+        putArray("blocks").also { blocks ->
+            prepared.placements.forEach { placement ->
+                blocks.addObject().apply {
+                    put("x", placement.position.x)
+                    put("y", placement.position.y)
+                    put("z", placement.position.z)
+                    put("fixture", placement.fixture.block.identifier.toString())
+                    put("waterlogged", BlockStateFlags.WATERLOGGED in placement.fixture.flags)
+                    put("current", context.session.world[placement.position]?.block?.identifier?.toString())
+                }
+            }
+        }
+    })
+
+    private data class PreparedTerrainMaterials(
+        val session: PlaySession,
+        val placements: List<TerrainMaterialPlacement>,
+        val previousTime: WorldTime,
+    )
+
+    private data class TerrainMaterialPlacement(
+        val position: BlockPosition,
+        val previous: BlockState?,
+        val fixture: BlockState,
+    )
+
+    /**
      * Places one bounded storage block entity through the production world
      * mutation path. The retained block-entity renderer, skeletal model,
      * opening animation, chunk collection, and Iris block-entity route remain
@@ -2625,15 +2842,31 @@ object ClientDebugChannel : AutoCloseable {
         }
         val digest = MessageDigest.getInstance("SHA-256")
         var luminance = 0.0
+        var minimumLuminance = Double.POSITIVE_INFINITY
+        var maximumLuminance = Double.NEGATIVE_INFINITY
+        var nearBlackPixels = 0
+        var minimumAlpha = 255
+        var maximumAlpha = 0
         for (py in y until y + height) for (px in x until x + width) {
             val color = buffer.getRGBA(px, size.y - 1 - py)
             digest.update(byteArrayOf(color.red.toByte(), color.green.toByte(), color.blue.toByte(), color.alpha.toByte()))
-            luminance += 0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue
+            val pixelLuminance = 0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue
+            luminance += pixelLuminance
+            minimumLuminance = minOf(minimumLuminance, pixelLuminance)
+            maximumLuminance = maxOf(maximumLuminance, pixelLuminance)
+            if (pixelLuminance <= NEAR_BLACK_LUMINANCE) nearBlackPixels++
+            minimumAlpha = minOf(minimumAlpha, color.alpha)
+            maximumAlpha = maxOf(maximumAlpha, color.alpha)
         }
         result.putObject("region").apply {
             put("x", x); put("y", y); put("width", width); put("height", height)
             put("sha256", digest.digest().joinToString("") { "%02x".format(it) })
             put("averageLuminance", luminance / (width * height) / 255.0)
+            put("minimumLuminance", minimumLuminance / 255.0)
+            put("maximumLuminance", maximumLuminance / 255.0)
+            put("nearBlackPixelCount", nearBlackPixels)
+            put("minimumAlpha", minimumAlpha)
+            put("maximumAlpha", maximumAlpha)
         }
     }
 
@@ -2785,16 +3018,300 @@ object ClientDebugChannel : AutoCloseable {
 
     private fun terrainDiagnostics(context: RenderContext, body: JsonNode): DebugOperationResult {
         val diagnosticGeneration = context.frameNumber
-        val renderer = context.renderer[ChunkRenderer]
-            ?: return TerrainDiagnosticDebugOperation.unavailableProvider(diagnosticGeneration)
-        val source = renderer.terrain.acquire().use { lease ->
-            TerrainDiagnosticProviderCapture.capture(
-                diagnosticGeneration = diagnosticGeneration,
-                providerGeneration = lease.generation,
-                descriptor = lease.descriptor,
+        val request = TerrainDiagnosticDebugOperation.resolveRequest(
+            body = body,
+            diagnosticGeneration = diagnosticGeneration,
+            worldEpoch = context.session.world.terrainEpoch,
+        )
+        if (request is de.bixilon.minosoft.debug.terrain.TerrainDiagnosticRequestResolution.Rejected) {
+            return TerrainDiagnosticDebugOperation.rejectionResult(request.rejection)
+        }
+        request as de.bixilon.minosoft.debug.terrain.TerrainDiagnosticRequestResolution.Accepted
+        return when (val capture = TerrainProductionDiagnosticCapture.capture(context, request.query)) {
+            is de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Captured ->
+                TerrainDiagnosticDebugOperation.execute(capture.snapshot)
+            is de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Rejected ->
+                TerrainDiagnosticDebugOperation.rejectionResult(capture.rejection)
+            de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Unavailable ->
+                TerrainDiagnosticDebugOperation.unavailableProvider(diagnosticGeneration)
+        }
+    }
+
+    private fun terrainDiagnosticOperation(
+        context: RenderContext,
+        body: JsonNode,
+        endpointGeneration: Int,
+        operation: String,
+    ): DebugOperationResult {
+        val diagnosticGeneration = context.frameNumber
+        val resolution = when (operation) {
+            TerrainDiagnosticOperations.PAGE -> TerrainDiagnosticDebugOperation.resolvePageRequest(
+                body,
+                diagnosticGeneration,
+                context.session.world.terrainEpoch,
+            )
+            TerrainDiagnosticOperations.PAGES -> TerrainDiagnosticDebugOperation.resolveRequest(
+                body,
+                diagnosticGeneration,
+                context.session.world.terrainEpoch,
+            )
+            TerrainDiagnosticOperations.SUMMARY,
+            TerrainDiagnosticOperations.COVERAGE -> if (body.isObject && body.isEmpty) {
+                de.bixilon.minosoft.debug.terrain.TerrainDiagnosticRequestResolution.Accepted(null)
+            } else {
+                de.bixilon.minosoft.debug.terrain.TerrainDiagnosticRequestResolution.Rejected(
+                    TerrainDiagnosticRejection(
+                        code = TerrainDiagnosticRejectionCode.INVALID_SELECTOR,
+                        subject = "request",
+                        diagnosticGeneration = diagnosticGeneration,
+                    ),
+                )
+            }
+            else -> throw DebugOperationException("unsupported_operation", "unsupported terrain diagnostic operation")
+        }
+        if (resolution is de.bixilon.minosoft.debug.terrain.TerrainDiagnosticRequestResolution.Rejected) {
+            return TerrainDiagnosticDebugOperation.rejectionResult(resolution.rejection)
+        }
+        resolution as de.bixilon.minosoft.debug.terrain.TerrainDiagnosticRequestResolution.Accepted
+        if (operation == TerrainDiagnosticOperations.PAGES && resolution.query == null) {
+            return TerrainDiagnosticDebugOperation.rejectionResult(
+                TerrainDiagnosticRejection(
+                    code = TerrainDiagnosticRejectionCode.INVALID_SELECTOR,
+                    subject = "pageQuery",
+                    diagnosticGeneration = diagnosticGeneration,
+                ),
             )
         }
-        return TerrainDiagnosticDebugOperation.execute(source, body)
+        return when (val capture = TerrainProductionDiagnosticCapture.capture(context, resolution.query)) {
+            is de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Captured ->
+                TerrainDiagnosticDebugOperation.operationResult(
+                    operation,
+                    endpointGeneration,
+                    capture.snapshot,
+                )
+            is de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Rejected ->
+                TerrainDiagnosticDebugOperation.rejectionResult(capture.rejection)
+            de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Unavailable ->
+                TerrainDiagnosticDebugOperation.unavailableProvider(diagnosticGeneration)
+        }
+    }
+
+    private fun flushTerrainIdle(
+        request: DebugRequestContext,
+        body: JsonNode,
+        context: RenderContext,
+    ): CompletableFuture<DebugOperationResult> {
+        val parsed = TerrainDiagnosticDebugOperation.parseFlushIdleRequest(body)
+            ?: throw DebugOperationException(
+                "invalid_request",
+                "terrain flush-idle requires condition BUILDS, UPLOADS, RETIREMENT, or ALL and timeoutMs 1..30000",
+            )
+        val session = context.session
+        val worldEpoch = session.world.terrainEpoch
+        val pipelineGeneration = context.renderer.pipeline.terrainSelection().generation
+        val startNanos = System.nanoTime()
+        val deadlineNanos = try {
+            Math.addExact(startNanos, TimeUnit.MILLISECONDS.toNanos(parsed.timeoutMillis))
+        } catch (_: ArithmeticException) {
+            Long.MAX_VALUE
+        }
+        val future = CompletableFuture<DebugOperationResult>()
+        lateinit var poll: () -> Unit
+
+        fun enqueuePoll() {
+            CompletableFuture.delayedExecutor(1L, TimeUnit.MILLISECONDS).execute {
+                if (!future.isDone) context.queue += { poll() }
+            }
+        }
+
+        fun completeAtIdle(state: TerrainIdleState) {
+            when (val capture = TerrainProductionDiagnosticCapture.capture(context)) {
+                is de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Captured -> {
+                    val waitedNanos = Math.subtractExact(System.nanoTime(), startNanos).coerceAtLeast(0L)
+                    future.complete(
+                        TerrainDiagnosticDebugOperation.specializedOperationResult(
+                            TerrainDiagnosticOperations.FLUSH_IDLE,
+                            request.endpoint().generation,
+                            capture.snapshot,
+                        ) {
+                            put("condition", parsed.condition.name)
+                            put("waitedNanos", waitedNanos)
+                            putObject("idleState").apply {
+                                put("queuedBuilds", state.queuedBuilds)
+                                put("outstandingBuilds", state.outstandingBuilds)
+                                put("activeBuilds", state.activeBuilds)
+                                put("completionDepth", state.completionDepth)
+                                put("pendingUploads", state.pendingUploads)
+                                put("pendingSubmissions", state.pendingSubmissions)
+                                put("pendingFences", state.pendingFences)
+                                put("retiredPages", state.retiredPages)
+                                put("retiredBytes", state.retiredBytes)
+                            }
+                        },
+                    )
+                }
+                is de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Rejected ->
+                    future.complete(TerrainDiagnosticDebugOperation.rejectionResult(capture.rejection))
+                de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Unavailable ->
+                    future.completeExceptionally(DebugOperationException("not_ready", "terrain runtime is unavailable"))
+            }
+        }
+
+        poll = poll@{
+            if (future.isDone) return@poll
+            if (
+                renderContextOrNull() !== context || context.session !== session ||
+                session.world.terrainEpoch != worldEpoch ||
+                context.renderer.pipeline.terrainSelection().generation != pipelineGeneration
+            ) {
+                future.completeExceptionally(
+                    DebugOperationException("not_ready", "terrain generation changed while waiting for idle"),
+                )
+                return@poll
+            }
+            val state = terrainIdleState(context)
+            if (state.matches(parsed.condition)) {
+                completeAtIdle(state)
+                return@poll
+            }
+            if (System.nanoTime() >= deadlineNanos || request.isExpired) {
+                future.completeExceptionally(
+                    DebugOperationException(
+                        "deadline_exceeded",
+                        "terrain ${parsed.condition.name.lowercase()} did not become idle before the bounded deadline",
+                    ),
+                )
+                return@poll
+            }
+            enqueuePoll()
+        }
+
+        context.queue += { poll() }
+        return future
+    }
+
+    private fun terrainIdleState(context: RenderContext): TerrainIdleState {
+        val chunks = context.renderer[ChunkRenderer]
+            ?: throw DebugOperationException("not_ready", "chunk renderer is not available")
+        val shared = TerrainProcessBuildService.shared.snapshot().runtime
+        val near = chunks.regionTerrain?.metrics()
+        val distant = context.renderer.filterIsInstance<DistantTerrainRenderer>().singleOrNull()?.hierarchyDiagnostics()
+        val distantRetiredPages = distant?.let {
+            Math.addExact(
+                it.retiredCpuLeasedPages,
+                Math.addExact(
+                    it.retiredPendingSubmissionPages,
+                    Math.addExact(it.retiredFailedSubmissionPages, it.retiredDeviceInvalidatedPages),
+                ),
+            )
+        } ?: 0
+        return TerrainIdleState(
+            queuedBuilds = Math.addExact(
+                Math.addExact(chunks.meshingQueue.size, shared.queueDepth),
+                distant?.queuedBuildPages ?: 0,
+            ),
+            outstandingBuilds = shared.outstanding,
+            activeBuilds = shared.active,
+            completionDepth = shared.completionDepth,
+            pendingUploads = Math.addExact(chunks.loadingQueue.size, distant?.pendingUploadPages ?: 0),
+            pendingSubmissions = Math.addExact(
+                near?.pendingSubmissionCount ?: 0,
+                distant?.pendingSubmissionCount ?: 0,
+            ),
+            pendingFences = Math.addExact(
+                near?.pendingSubmissionFences ?: 0,
+                distant?.pendingSubmissionFences ?: 0,
+            ),
+            retiredPages = Math.addExact(near?.retiredPages ?: 0, distantRetiredPages),
+            retiredBytes = Math.addExact(near?.retiredBytes ?: 0L, distant?.retiredBytes ?: 0L),
+        )
+    }
+
+    private fun terrainCompare(
+        context: RenderContext,
+        endpointGeneration: Int,
+        body: JsonNode,
+    ): DebugOperationResult {
+        val fixture = TerrainDiagnosticDebugOperation.parseCompareFixture(body)
+            ?: throw DebugOperationException("invalid_request", "unknown or malformed terrain comparison fixture")
+        val comparison = TerrainDualBuildFixtures.compare(fixture)
+        return when (val capture = TerrainProductionDiagnosticCapture.capture(context)) {
+            is de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Captured ->
+                TerrainDiagnosticDebugOperation.specializedOperationResult(
+                    TerrainDiagnosticOperations.COMPARE,
+                    endpointGeneration,
+                    capture.snapshot,
+                ) {
+                    put("fixture", comparison.fixture.wireName)
+                    put("equivalent", comparison.equivalent)
+                    put("referenceDigest", comparison.referenceDigest)
+                    put("candidateDigest", comparison.candidateDigest)
+                    putArray("differences").apply {
+                        comparison.differences.sortedBy { it.name }.forEach { add(it.name) }
+                    }
+                    put("published", false)
+                }
+            is de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Rejected ->
+                TerrainDiagnosticDebugOperation.rejectionResult(capture.rejection)
+            de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Unavailable ->
+                throw DebugOperationException("not_ready", "terrain runtime is unavailable")
+        }
+    }
+
+    private fun terrainFault(
+        context: RenderContext,
+        endpointGeneration: Int,
+        body: JsonNode,
+    ): DebugOperationResult {
+        val request = TerrainDiagnosticDebugOperation.parseFaultRequest(body)
+            ?: throw DebugOperationException(
+                "invalid_request",
+                "terrain fault requires ARM with fault, RESTORE with restorationToken, or STATUS",
+            )
+        return when (val capture = TerrainProductionDiagnosticCapture.capture(context)) {
+            is de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Captured -> {
+                val snapshot = capture.snapshot
+                val chunks = context.renderer[ChunkRenderer]
+                    ?: throw DebugOperationException("not_ready", "chunk renderer is unavailable")
+                val scope = TerrainAcceptanceFaultScope(
+                    worldEpoch = snapshot.worldIdentity.worldEpoch,
+                    pipelineGeneration = snapshot.pipeline.generation,
+                    shaderGeneration = snapshot.pipeline.shaderPipelineGeneration,
+                    nearLayoutGeneration = snapshot.pipeline.nearLayout.generation,
+                )
+                val fault = try {
+                    when (request.action) {
+                        TerrainFaultAction.ARM -> chunks.terrainFaults.arm(checkNotNull(request.fault), scope)
+                        TerrainFaultAction.RESTORE -> chunks.terrainFaults.restore(
+                            checkNotNull(request.restorationToken),
+                            scope,
+                        )
+                        TerrainFaultAction.STATUS -> chunks.terrainFaults.snapshot(scope)
+                    }
+                } catch (error: IllegalStateException) {
+                    throw DebugOperationException("not_ready", error.message ?: "terrain fault is already armed")
+                } catch (error: IllegalArgumentException) {
+                    throw DebugOperationException("invalid_request", error.message ?: "invalid terrain fault request")
+                }
+                TerrainDiagnosticDebugOperation.specializedOperationResult(
+                    TerrainDiagnosticOperations.FAULT,
+                    endpointGeneration,
+                    snapshot,
+                ) {
+                    put("action", request.action.name)
+                    put("faultGeneration", fault.generation)
+                    put("active", fault.active)
+                    fault.fault?.let { put("fault", it.wireName) } ?: putNull("fault")
+                    fault.restorationToken?.let { put("restorationToken", it) } ?: putNull("restorationToken")
+                    put("consumedCount", fault.consumedCount)
+                    put("invalidatedCount", fault.invalidatedCount)
+                }
+            }
+            is de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Rejected ->
+                TerrainDiagnosticDebugOperation.rejectionResult(capture.rejection)
+            de.bixilon.minosoft.debug.terrain.TerrainProductionDiagnosticCaptureResult.Unavailable ->
+                throw DebugOperationException("not_ready", "terrain runtime is unavailable")
+        }
     }
 
     private fun renderSubstrate(context: RenderContext): DebugOperationResult {
@@ -3077,12 +3594,11 @@ object ClientDebugChannel : AutoCloseable {
             val terrain = chunks.terrain.selection()
             val descriptor = chunks.terrain.descriptor()
             val terrainStats = chunks.terrain.stats()
-            val runtimeSelection = TerrainRuntimeSelection.process
             result.putObject("terrain").apply {
-                put("runtimeMode", runtimeSelection.mode.name.lowercase())
-                put("semanticArtifacts", runtimeSelection.semanticArtifacts)
-                put("regionStorageSelected", runtimeSelection.regionStorage)
-                put("distantHierarchySelected", runtimeSelection.distantHierarchy)
+                put("runtimeMode", "unified")
+                put("semanticArtifacts", true)
+                put("regionStorageSelected", true)
+                put("distantHierarchySelected", true)
                 put("generation", terrain.generation)
                 put("owner", terrain.owner.value)
                 put("implementation", terrain.implementation)
@@ -3139,6 +3655,7 @@ object ClientDebugChannel : AutoCloseable {
                 }
                 chunks.regionTerrain?.metrics()?.let { region ->
                     putObject("regionStorage").apply {
+                        put("deviceCapacityBytes", region.deviceCapacityBytes)
                         put("regions", region.regions)
                         put("activePages", region.activePages)
                         put("retiredPages", region.retiredPages)
@@ -3154,6 +3671,15 @@ object ClientDebugChannel : AutoCloseable {
                         put("publications", region.publications)
                         put("allocationFailures", region.allocationFailures)
                         put("uploadFailures", region.uploadFailures)
+                        put("cpuLeaseCount", region.cpuLeaseCount)
+                        put("pendingSubmissionCount", region.pendingSubmissionCount)
+                        put("failedSubmissionCount", region.failedSubmissionCount)
+                        put("invalidatedSubmissionCount", region.invalidatedSubmissionCount)
+                        put("retiredCpuLeasedPages", region.retiredCpuLeasedPages)
+                        put("retiredPendingSubmissionPages", region.retiredPendingSubmissionPages)
+                        put("retiredFailedSubmissionPages", region.retiredFailedSubmissionPages)
+                        put("retiredDeviceInvalidatedPages", region.retiredDeviceInvalidatedPages)
+                        put("deviceInvalidations", region.deviceInvalidations)
                         put("batchCacheEntries", region.batchCacheEntries)
                         put("batchBuilds", region.batchBuilds)
                         put("batchHits", region.batchHits)
@@ -3485,6 +4011,25 @@ object ClientDebugChannel : AutoCloseable {
         return future
     }
 
+    private fun onRenderAsync(
+        work: (RenderContext) -> CompletableFuture<DebugOperationResult>,
+    ): CompletableFuture<DebugOperationResult> {
+        val context = renderContextOrNull() ?: throw DebugOperationException("not_ready", "no active render context")
+        val future = CompletableFuture<DebugOperationResult>()
+        context.queue += {
+            if (!future.isDone) {
+                try {
+                    work(context).whenComplete { result, error ->
+                        if (error == null) future.complete(result) else future.completeExceptionally(error)
+                    }
+                } catch (error: Throwable) {
+                    future.completeExceptionally(error)
+                }
+            }
+        }
+        return future
+    }
+
     private fun completed(result: DebugOperationResult) = CompletableFuture.completedFuture(result)
 
     private fun selectedSession(): PlaySession = PlaySession.collectSessions().firstOrNull { it.state == PlaySessionStates.PLAYING }
@@ -3552,6 +4097,10 @@ object ClientDebugChannel : AutoCloseable {
     override fun close() {
         val current = channel ?: return
         channel = null
+        PlaySession.collectSessions().asSequence()
+            .mapNotNull { it.rendering?.context }
+            .mapNotNull { runCatching { it.renderer[ChunkRenderer] }.getOrNull() }
+            .forEach { it.terrainFaults.invalidate() }
         try { current.close() } catch (error: Throwable) { error.printStackTrace() }
     }
 }

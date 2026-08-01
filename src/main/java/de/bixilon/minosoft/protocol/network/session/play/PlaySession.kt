@@ -88,6 +88,7 @@ import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 
 class PlaySession(
@@ -97,6 +98,7 @@ class PlaySession(
     val profiles: SelectedProfiles = SelectedProfiles(),
 ) : Session() {
     val sessionId = KUtil.secureRandomUUID()
+    val terrainSessionGeneration = TERRAIN_SESSION_GENERATIONS.getAndUpdate { Math.incrementExact(it) }
     val settingsManager = ClientSettingsManager(this)
     val registries = Registries(version = version)
     val world = World(this)
@@ -380,6 +382,7 @@ class PlaySession(
     }
 
     companion object {
+        private val TERRAIN_SESSION_GENERATIONS = AtomicLong(1L)
         // TODO: heavy memory leak
         val ACTIVE_CONNECTIONS: MutableSet<PlaySession> = synchronizedSetOf()
         val ERRORED_CONNECTIONS: MutableSet<PlaySession> = synchronizedSetOf()

@@ -11,14 +11,30 @@
 package de.bixilon.minosoft.debug.terrain
 
 import de.bixilon.minosoft.gui.rendering.chunk.BuiltInChunkTerrainBackend
+import de.bixilon.minosoft.gui.rendering.chunk.NearLoadedPageRegistrySnapshot
+import de.bixilon.minosoft.gui.rendering.chunk.queue.loading.NearUploadPageRegistrySnapshot
+import de.bixilon.minosoft.gui.rendering.chunk.queue.meshing.NearMeshingPageRegistryEntry
+import de.bixilon.minosoft.gui.rendering.chunk.queue.meshing.NearMeshingPageRegistrySnapshot
 import de.bixilon.minosoft.gui.rendering.terrain.BuiltInTerrainVertexLayout
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendDescriptor
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
+import de.bixilon.minosoft.gui.rendering.terrain.near.NearTerrainPagePublicationDiagnostic
 import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageState
+import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentity
+import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import de.bixilon.minosoft.terrain.model.interop.TerrainProviderCapability
+import de.bixilon.minosoft.terrain.runtime.TerrainFailureCategory
+import de.bixilon.minosoft.terrain.runtime.TerrainFailurePhase
+import de.bixilon.minosoft.terrain.runtime.TerrainFailureSnapshot
+import de.bixilon.minosoft.terrain.runtime.TerrainRetryEligibility
 import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainDiagnosticCanonicalJson
 import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainDiagnosticCapability
 import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainDiagnosticRejectionCode
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPagePrefixSelector
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPageQuery
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPageRangeDiagnosticSnapshot
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPageVisibilityDiagnosticSnapshot
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -85,6 +101,87 @@ class TerrainDiagnosticAssemblerTest {
             },
         )
     }
+
+    @Test
+    fun `page cursor generation follows only the queried terrain domain`() {
+        assertEquals(
+            7L,
+            TerrainProductionDiagnosticCapture.pageRegistryGeneration(TerrainDomain.NEAR, 7L, 11L),
+        )
+        assertEquals(
+            11L,
+            TerrainProductionDiagnosticCapture.pageRegistryGeneration(TerrainDomain.DISTANT, 7L, 11L),
+        )
+        assertEquals(
+            18L,
+            TerrainProductionDiagnosticCapture.pageRegistryGeneration(null, 7L, 11L),
+        )
+    }
+
+    @Test
+    fun `near page diagnostics project section failures without seam-column aliases`() {
+        val installed = identity(y = 0L, requestRevision = 1L)
+        val replacement = identity(y = 0L, requestRevision = 2L)
+        val failed = identity(y = 5L, requestRevision = 3L)
+        val failure = TerrainFailureSnapshot(
+            category = TerrainFailureCategory.TRANSIENT,
+            phase = TerrainFailurePhase.BUILD,
+            generation = 4L,
+            retryEligibility = TerrainRetryEligibility.AfterBackoff(1, 3, 100L),
+        )
+        val pages = TerrainProductionDiagnosticCapture.nearPageDiagnostics(
+            loaded = NearLoadedPageRegistrySnapshot(1L, listOf(installed)),
+            uploads = NearUploadPageRegistrySnapshot(0L, emptyList()),
+            meshing = NearMeshingPageRegistrySnapshot(
+                2L,
+                listOf(
+                    NearMeshingPageRegistryEntry(replacement, TerrainCoverageState.REQUESTED, failure),
+                    NearMeshingPageRegistryEntry(failed, TerrainCoverageState.ABSENT, failure),
+                ),
+            ),
+            providerId = "minosoft:test-near",
+            query = TerrainPageQuery(
+                worldEpoch = 7L,
+                selector = TerrainPagePrefixSelector(TerrainDomain.NEAR, detailLevel = 0),
+                maximumCount = 8,
+            ),
+            afterPage = null,
+            publications = mapOf(
+                installed.page to NearTerrainPagePublicationDiagnostic(
+                    publicationRevision = 9L,
+                    artifactDigest = "sha256:installed",
+                    ranges = listOf(TerrainPageRangeDiagnosticSnapshot("opaque", 0, 64, 0, 12)),
+                    visibility = listOf(
+                        TerrainPageVisibilityDiagnosticSnapshot("minosoft:main", true, false),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(listOf(0L, 5L), pages.map { it.page.y })
+        assertEquals(TerrainCoverageState.READY, pages[0].coverageState)
+        assertEquals(replacement, pages[0].buildIdentity)
+        assertEquals(failure, pages[0].failure)
+        assertEquals("near-snapshot", pages[0].source)
+        assertEquals(9L, pages[0].revisions.publicationRevision)
+        assertEquals("sha256:installed", pages[0].artifactDigest)
+        assertEquals("opaque", pages[0].ranges.single().partitionId)
+        assertTrue(pages[0].visibility.single().selected)
+        assertEquals(TerrainCoverageState.ABSENT, pages[1].coverageState)
+        assertEquals(failed, pages[1].buildIdentity)
+        assertEquals(failure, pages[1].failure)
+    }
+
+    private fun identity(y: Long, requestRevision: Long) = TerrainBuildIdentity(
+        page = TerrainPageKey(TerrainDomain.NEAR, 0, 2L, y, 3L, 7L),
+        requestRevision = requestRevision,
+        capturedModelRevision = requestRevision,
+        providerGeneration = 1L,
+        layoutGeneration = 1L,
+        materialGeneration = 1L,
+        coverageGeneration = 0L,
+        prioritySequence = requestRevision,
+    )
 
     private fun descriptor() = TerrainBackendDescriptor(
         owner = BuiltInChunkTerrainBackend.OWNER,

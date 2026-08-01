@@ -32,6 +32,7 @@ import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainDiagnosticRejection
 import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainDiagnosticRejectionCode
 import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainDiagnosticResponse
 import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainDiagnosticSchema
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainDiagnosticSnapshot
 import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainProviderDiagnosticSnapshot
 
 class TerrainDiagnosticProviderCapture(
@@ -65,6 +66,35 @@ class TerrainDiagnosticProviderCapture(
         }
     }
 
+    fun snapshot(): TerrainProviderDiagnosticSnapshot {
+        val providerCapabilities = if (supportsAuxiliaryViews) {
+            setOf(TerrainProviderCapability.AUXILIARY_VIEWS)
+        } else {
+            emptySet()
+        }
+        val views = if (supportsAuxiliaryViews) {
+            setOf("minosoft:main", "minosoft:shadow")
+        } else {
+            setOf("minosoft:main")
+        }
+        val descriptor = TerrainInteropDescriptor(
+            providerId = providerId,
+            domains = setOf(TerrainDomain.NEAR),
+            capabilities = providerCapabilities,
+            materials = materials.mapTo(linkedSetOf()) {
+                TerrainMaterialClass.valueOf(it.name)
+            },
+            semanticVertexLayoutId = physicalLayoutId,
+            physicalLayoutIds = setOf(physicalLayoutId),
+            supportedViews = views,
+            uploadCapabilities = emptySet(),
+            shaderInputs = vertexSemantics,
+            lightingSemantics = TerrainLightingSemantics.BLOCK_AND_SKY,
+            tintSemantics = TerrainTintSemantics.RESOLVED_COLOR,
+        )
+        return TerrainProviderDiagnosticSnapshot(providerId, providerGeneration, descriptor)
+    }
+
     companion object {
         fun capture(
             diagnosticGeneration: Long,
@@ -89,33 +119,10 @@ object TerrainDiagnosticAssembler {
         TerrainDiagnosticCapability.PROVIDER_DESCRIPTOR,
         TerrainDiagnosticCapability.STRUCTURED_REJECTION,
     )
+    val COMPLETE_CAPABILITIES: Set<TerrainDiagnosticCapability> =
+        TerrainDiagnosticCapability.entries.toCollection(linkedSetOf())
 
     fun assemble(source: TerrainDiagnosticProviderCapture): TerrainDiagnosticResponse {
-        val providerCapabilities = if (source.supportsAuxiliaryViews) {
-            setOf(TerrainProviderCapability.AUXILIARY_VIEWS)
-        } else {
-            emptySet()
-        }
-        val views = if (source.supportsAuxiliaryViews) {
-            setOf("main", "shadow")
-        } else {
-            setOf("main")
-        }
-        val descriptor = TerrainInteropDescriptor(
-            providerId = source.providerId,
-            domains = setOf(TerrainDomain.NEAR),
-            capabilities = providerCapabilities,
-            materials = source.materials.mapTo(linkedSetOf()) {
-                TerrainMaterialClass.valueOf(it.name)
-            },
-            semanticVertexLayoutId = source.physicalLayoutId,
-            physicalLayoutIds = setOf(source.physicalLayoutId),
-            supportedViews = views,
-            uploadCapabilities = emptySet(),
-            shaderInputs = source.vertexSemantics,
-            lightingSemantics = TerrainLightingSemantics.BLOCK_AND_SKY,
-            tintSemantics = TerrainTintSemantics.RESOLVED_COLOR,
-        )
         val capabilities = TerrainDiagnosticCapabilities(
             schemaVersion = TerrainDiagnosticSchema.VERSION,
             capabilities = AVAILABLE_CAPABILITIES,
@@ -139,14 +146,32 @@ object TerrainDiagnosticAssembler {
                 schemaVersion = TerrainDiagnosticSchema.VERSION,
                 diagnosticGeneration = source.diagnosticGeneration,
                 providers = listOf(
-                    TerrainProviderDiagnosticSnapshot(
-                        providerId = source.providerId,
-                        generation = source.providerGeneration,
-                        descriptor = descriptor,
-                    ),
+                    source.snapshot(),
                 ),
             ),
             unavailable = unavailable,
         )
     }
+
+    fun assemble(snapshot: TerrainDiagnosticSnapshot): TerrainDiagnosticResponse =
+        TerrainDiagnosticResponse(
+            schemaVersion = TerrainDiagnosticSchema.VERSION,
+            capabilities = TerrainDiagnosticCapabilities(
+                schemaVersion = TerrainDiagnosticSchema.VERSION,
+                capabilities = COMPLETE_CAPABILITIES,
+                maximumPageCount = TerrainDiagnosticSchema.MAXIMUM_PAGE_COUNT,
+                cursorSchemaVersion = TerrainDiagnosticSchema.CURSOR_VERSION,
+                rejectionSchemaVersion = TerrainDiagnosticSchema.REJECTION_VERSION,
+            ),
+            snapshot = snapshot,
+            unavailable = TerrainDiagnosticCapability.entries
+                .filterNot(COMPLETE_CAPABILITIES::contains)
+                .map {
+                    TerrainDiagnosticRejection(
+                        code = TerrainDiagnosticRejectionCode.MISSING_CAPABILITY,
+                        subject = it.name,
+                        diagnosticGeneration = snapshot.diagnosticGeneration,
+                    )
+                },
+        )
 }
