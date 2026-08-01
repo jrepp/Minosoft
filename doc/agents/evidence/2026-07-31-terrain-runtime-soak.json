@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-01T02:26:48Z",
+  "trajectory": "terrain-consolidation-phase9-soak-2026-07-31",
+  "scenario": {
+    "name": "runtime-soak",
+    "runId": "runtime-soak-2026-08-01T02-11-19-596174Z-40427",
+    "passed": true,
+    "cases": 180,
+    "durationMs": 904123,
+    "warnings": 0
+  },
+  "runtime": {
+    "java": "25.0.1",
+    "minecraft": "1.20.4",
+    "modpack": "distant-horizons-bliss",
+    "shaderPack": "Bliss_v2.1.0_(Chocapic13_Shaders_edit).zip",
+    "shaderFingerprint": "0d08296d769374f7e8991c2fa4cd2e591b18b11a213f62908f825f23542262da",
+    "driver": {
+      "vendor": "Apple",
+      "renderer": "Apple M4 Max",
+      "version": "4.1 Metal - 90.5"
+    },
+    "clientEndpoint": "client-40041-1-dc7c880b",
+    "serverEndpoint": "server-39959-1-4bd67e80",
+    "clientGeneration": 1,
+    "serverGeneration": 1,
+    "pose": {
+      "dimension": "minecraft:overworld",
+      "x": 102.5,
+      "y": 72.0,
+      "z": 9.5,
+      "yaw": 0.0,
+      "pitch": 0.0
+    }
+  },
+  "terrain": {
+    "runtimeMode": "unified",
+    "semanticArtifacts": true,
+    "regionStorageSelected": true,
+    "distantHierarchySelected": true,
+    "finalFrame": 28619,
+    "finalWorldEpoch": 1,
+    "finalSharedRuntime": {
+      "requested": 4825,
+      "started": 4825,
+      "completed": 4825,
+      "failed": 0,
+      "cancelled": 0,
+      "rejected": 0,
+      "active": 0,
+      "outstanding": 0,
+      "queueDepth": 0,
+      "completionDepth": 0
+    },
+    "finalNearRuntime": {
+      "queuedBuilds": 0,
+      "outstandingBuilds": 0,
+      "activeWorkers": 0,
+      "pendingUploads": 0,
+      "successfulBuilds": 674,
+      "failedBuilds": 0,
+      "failedUploads": 0,
+      "cancelledBuilds": 0,
+      "staleBuilds": 0,
+      "rejectedBuilds": 0
+    },
+    "finalPublication": {
+      "nearMainDrawPages": 244,
+      "nearShadowDrawPages": 246,
+      "nearMissingPages": 0,
+      "distantMainDrawPages": 338,
+      "distantShadowDrawPages": 338,
+      "distantMaskedPages": 115,
+      "distantMissingPages": 0
+    },
+    "finalResidency": {
+      "residentBytes": 210021600,
+      "retiredBytes": 0,
+      "pinnedBytes": 0,
+      "evictionCount": 0,
+      "deferralCount": 0
+    }
+  },
+  "resourceObservation": {
+    "classification": "active-streaming-boundary-not-idle-leak-comparison",
+    "reason": "The server continued replacing distant pages throughout the interval; shared completions rose from 1035 to 4825 and distant storage generation rose from 487 to 5782.",
+    "initialLiveGpuNames": 2349,
+    "finalLiveGpuNames": 2580,
+    "liveGpuNameDelta": 231,
+    "createdGpuNameDelta": 204980,
+    "deletedGpuNameDelta": 204749,
+    "finalRetiredPages": 0,
+    "finalRetiredBytes": 0,
+    "finalUploadFailures": 0,
+    "finalFailedSubmissions": 0,
+    "finalMissingPages": 0,
+    "cleanup": {
+      "clientRunning": false,
+      "serverRunning": false,
+      "serverPortOpen": false,
+      "externalClientPids": 0,
+      "activeLeases": 0
+    }
+  },
+  "followUp": {
+    "lateShutdownPages": "Epoch-stale pages received while the supervised client was stopping were rejected with warning traces by the original combined identity assertion.",
+    "resolution": "The publication boundary now drops an otherwise structurally valid page when its world epoch is stale, while malformed tile/page identity still throws.",
+    "tests": [
+      "DistantHorizonsCompatibilityAdapterTest.late network page is rejected after the active world epoch advances",
+      "DistantLodNetworkLifecycleTest"
+    ]
+  }
+}

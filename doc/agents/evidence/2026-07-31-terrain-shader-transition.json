@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "claim": "populated terrain survives Bliss to built-in to Bliss material-generation transitions",
+  "measuredAt": "2026-07-31",
+  "java": "25.0.1",
+  "device": {
+    "renderer": "Apple OpenGL",
+    "api": "OpenGL 4.1"
+  },
+  "workload": {
+    "trajectory": "terrain-consolidation-final-2026-07-31",
+    "minecraftVersion": "1.20.4",
+    "worldGenerator": "debug",
+    "worldSeed": 6072333650475958863,
+    "loadedChunks": 441,
+    "shaderPack": "Bliss 2.1.0"
+  },
+  "initialBliss": {
+    "terrainPipelineGeneration": 0,
+    "shaderGeneration": 1,
+    "renderGraphGeneration": 17
+  },
+  "builtIn": {
+    "terrainPipelineGeneration": 1,
+    "shaderGeneration": 2,
+    "renderGraphGeneration": 18,
+    "resourceGenerationRequests": 68,
+    "resourceGenerationBuildsStarted": 66,
+    "nearResidentPages": 66,
+    "nearMainDrawnPages": 66,
+    "nearMissingPages": 0,
+    "allocationFailures": 0,
+    "uploadFailures": 0,
+    "framebufferSha256": "1973f785b024ad006ca010d423ae62a3bc52bfa761e1aff7d53f9d0b94b72209"
+  },
+  "restoredBliss": {
+    "terrainPipelineGeneration": 2,
+    "shaderGeneration": 3,
+    "renderGraphGeneration": 19,
+    "nearResidentPages": 66,
+    "nearMainDrawnPages": 66,
+    "nearShadowDrawnPages": 66,
+    "nearMissingPages": 0,
+    "nearDeviceBatches": 24,
+    "nearDrawCommands": 348,
+    "nearDrawVertices": 626064,
+    "nearAllocationFailures": 0,
+    "nearUploadFailures": 0,
+    "distantSelectedPages": 2976,
+    "distantPhysicalRegionShards": 3,
+    "distantResidentBytes": 18003360,
+    "distantAllocationFailures": 0,
+    "distantUploadFailures": 0,
+    "framebufferSha256": "eb9205be63d7b02fe0a08e32489f6353ed23f261f136a0c3789e9f4c418d1d2b"
+  },
+  "shutdown": {
+    "clientRunning": false,
+    "serverRunning": false,
+    "leaseReleased": true,
+    "transientPresentationRestored": true,
+    "fatalOrContextOwnershipFailure": false
+  },
+  "limitations": [
+    "Framebuffers were visually inspected but are not checked-pixel baselines.",
+    "Only the Apple OpenGL 4.1 driver was exercised."
+  ]
+}

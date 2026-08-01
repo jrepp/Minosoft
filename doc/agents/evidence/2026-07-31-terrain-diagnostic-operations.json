@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-01T05:38:13Z",
+  "sourceRevision": "34e970fbded7baa152e4ec76310e6eddff6f9d0f",
+  "dirtyWorktree": true,
+  "trajectory": "terrain-diagnostics-phase9-2026-07-31",
+  "scenario": {
+    "definition": "acceptance/scenarios/terrain-diagnostics-and-upload-fault.json",
+    "runId": "terrain-diagnostics-and-upload-fault-2026-08-01T05-37-48-644301Z-69213",
+    "passed": true,
+    "cases": 1,
+    "durationMs": 340,
+    "retainedReport": ".run/acceptance/terrain-diagnostics-and-upload-fault-fourth-2026-07-31/report.json",
+    "warnings": [
+      "The isolated local-world run intentionally had no server endpoint, so server JFR and final server metrics were unavailable."
+    ]
+  },
+  "runtime": {
+    "java": "25.0.1",
+    "minecraft": "1.20.4",
+    "modpack": "distant-horizons-bliss",
+    "endpointGeneration": 1,
+    "worldEpoch": 1,
+    "nearProviderGeneration": 1,
+    "distantProviderGeneration": 1,
+    "shaderGeneration": 1,
+    "nearLayoutGeneration": 1,
+    "distantLayoutGeneration": 1,
+    "driver": {
+      "vendor": "Apple",
+      "renderer": "Apple M4 Max",
+      "version": "4.1 Metal - 90.5"
+    }
+  },
+  "operations": {
+    "advertisedSchemaVersion": 1,
+    "names": [
+      "render.terrain.summary",
+      "render.terrain.pages",
+      "render.terrain.coverage",
+      "render.terrain.page",
+      "render.terrain.flush-idle",
+      "render.terrain.compare",
+      "render.terrain.fault"
+    ],
+    "boundedPageMaximum": 8,
+    "pageDetail": {
+      "page": "NEAR/0/-1/0/-1@1",
+      "source": "near-snapshot",
+      "publicationRevision": 1,
+      "vertexLengthBytes": 172032,
+      "indexLengthBytes": 12288,
+      "views": [
+        "minosoft:main",
+        "minosoft:shadow"
+      ],
+      "artifactDigest": "969e33d6fee550a69acf3994f38a01f5663cdeb1ee282fb8bf956f2058808b3e"
+    },
+    "comparison": {
+      "fixture": "near-solid-quad",
+      "equivalent": true,
+      "published": false
+    },
+    "fault": {
+      "type": "reject-next-near-upload",
+      "restorationTokenReturned": true,
+      "consumedCount": 1,
+      "activeAfterConsumption": false,
+      "restoredClientMutation": true
+    },
+    "finalIdle": {
+      "queuedBuilds": 0,
+      "outstandingBuilds": 0,
+      "activeBuilds": 0,
+      "completionDepth": 0,
+      "pendingUploads": 0,
+      "retiredPages": 0,
+      "retiredBytes": 0,
+      "activeDrawSubmissions": 127,
+      "activeDrawFences": 1
+    }
+  },
+  "diagnosticFinding": {
+    "problem": "The first live flush-idle implementation treated every active per-frame draw submission fence as pending upload work, so an ALL boundary could never complete while terrain was rendering.",
+    "resolution": "UPLOADS now waits on the actual upload queue and RETIREMENT waits on retired page/byte debt; active draw submission and fence counts remain reported but do not falsely block idle.",
+    "additionalLifecycleFix": "Disabled distant presentation continues draining cancelled routed completions before clearing content, preventing shared mailbox capacity from being stranded."
+  },
+  "cleanup": {
+    "clientRunning": false,
+    "serverRunning": false,
+    "serverPortOpen": false,
+    "externalClientPids": 0,
+    "endpointDescriptors": 0,
+    "activeLeases": 0,
+    "distantPresentationOverride": null,
+    "faultActive": false
+  }
+}

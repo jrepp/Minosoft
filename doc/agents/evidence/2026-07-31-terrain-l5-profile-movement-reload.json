@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-01T06:36:00Z",
+  "runtime": {
+    "java": "25.0.1",
+    "minecraft": "1.20.4",
+    "driver": {
+      "vendor": "Apple",
+      "renderer": "Apple M4 Max",
+      "version": "4.1 Metal - 90.5"
+    }
+  },
+  "scenarios": [
+    {
+      "name": "terrain-base-near",
+      "trajectory": "terrain-l5-base-near-2026-07-31",
+      "runId": "terrain-base-near-2026-08-01T06-31-16-853581Z-88214",
+      "passed": true,
+      "durationMs": 113,
+      "nearProvider": "minosoft:built-in-terrain",
+      "distantProvider": null
+    },
+    {
+      "name": "terrain-optimized-near",
+      "trajectory": "terrain-l5-optimized-near-2026-07-31",
+      "runId": "terrain-optimized-near-2026-08-01T06-31-48-955312Z-88493",
+      "passed": true,
+      "durationMs": 289,
+      "nearProvider": "minosoft:sodium-compatible-terrain",
+      "distantProvider": null
+    },
+    {
+      "name": "terrain-distant-only",
+      "trajectory": "terrain-l5-combined-transitions-2026-07-31",
+      "runId": "terrain-distant-only-2026-08-01T06-32-20-347526Z-88920",
+      "passed": true,
+      "durationMs": 5303,
+      "cameraX": 512.5,
+      "distantProvider": "minosoft:distant-terrain"
+    },
+    {
+      "name": "terrain-fast-seam-movement",
+      "trajectory": "terrain-l5-combined-transitions-2026-07-31",
+      "runId": "terrain-fast-seam-movement-2026-08-01T06-32-31-312211Z-88990",
+      "passed": true,
+      "durationMs": 2239,
+      "cameraExcursion": [0.5, 512.5, -512.5, 0.5]
+    },
+    {
+      "name": "terrain-shader-resource-view-transition",
+      "trajectory": "terrain-l5-combined-transitions-2026-07-31",
+      "runId": "terrain-shader-resource-view-transition-2026-08-01T06-35-19-060286Z-90199",
+      "passed": true,
+      "durationMs": 21531,
+      "pipelineGeneration": 3,
+      "shaderGeneration": 4,
+      "materialGeneration": 4,
+      "renderGraphGeneration": 20,
+      "nearMainDrawPages": 130,
+      "nearShadowDrawPages": 130,
+      "nearMissingPages": 0,
+      "distantMainDrawPages": 647,
+      "distantShadowDrawPages": 647,
+      "distantMissingPages": 0,
+      "retiredBytes": 0,
+      "failedBuilds": 0,
+      "failedSubmissions": 0
+    }
+  ],
+  "crashRegression": {
+    "reproducingRunId": "terrain-shader-resource-view-transition-2026-08-01T06-32-45-284833Z-89107",
+    "failure": "Native JVM abort in glDeleteProgram because render.terrain.flush-idle captured terrainSelection on minosoft-debug-connection-client after Iris disable retired the old shader generation.",
+    "fix": "The flush-idle operation now enters through onRenderAsync, so pipeline selection, publication, retirement, diagnostic capture, and every poll execute on the render thread with a current OpenGL context.",
+    "regression": "TerrainArchitectureBoundaryTest requires the render-thread entry boundary; the exact live sequence passed after restart."
+  },
+  "packRepair": {
+    "pack": "sodium",
+    "detail": "Refreshed the checked Sodium metadata and index hashes to the same validated metadata used by the other packs. Pack prepare and inspect now pass."
+  },
+  "cleanup": {
+    "presentationEnabledBeforeStop": true,
+    "faultActiveBeforeStop": false,
+    "clientRunning": false,
+    "serverRunning": false,
+    "externalClientPids": [],
+    "debugEndpoints": [],
+    "leases": []
+  },
+  "warnings": [
+    "These were isolated local-world client scenarios, so no server endpoint existed for final server metrics."
+  ]
+}

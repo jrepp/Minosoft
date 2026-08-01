@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-07-31",
+  "platform": {
+    "os": "macOS",
+    "graphics": "Apple OpenGL 4.1",
+    "framebuffer": [3456, 1910],
+    "minecraftVersion": "1.20.4"
+  },
+  "scenarioInputs": [
+    "acceptance/scenarios/terrain-seam-built-in-macos-retina.json",
+    "acceptance/scenarios/terrain-seam-bliss-macos-retina.json"
+  ],
+  "builtIn": {
+    "runId": "terrain-seam-built-in-macos-retina-2026-08-01T01-24-32-244103Z-20215",
+    "passed": true,
+    "readyNearPages": 128,
+    "nearMain": {"desired": 128, "drawn": 128, "missing": 0},
+    "distantMain": {"desired": 2483, "drawn": 2355, "masked": 128, "missing": 0},
+    "distantShadow": {"desired": 2483, "drawn": 2355, "masked": 128, "missing": 0},
+    "stripe": {
+      "region": [600, 176, 2200, 16],
+      "sha256": "4c4c28615159776beabc8af2f76a7caef6429c913eb36b5f3b774e42f81e495b",
+      "points": ["#506831", "#506831", "#4b622e", "#4e6630", "#526b32"],
+      "averageLuminance": 0.3531041054813076,
+      "minimumLuminance": 0.04090823529411765,
+      "maximumLuminance": 0.47473098039215683,
+      "nearBlackPixels": 0,
+      "alpha": [255, 255]
+    }
+  },
+  "bliss": {
+    "runId": "terrain-seam-bliss-macos-retina-2026-08-01T01-25-57-190811Z-20884",
+    "passed": true,
+    "readyNearPages": 128,
+    "nearMain": {"desired": 128, "drawn": 128, "missing": 0},
+    "nearShadow": {"desired": 128, "drawn": 128, "missing": 0},
+    "distantMain": {"desired": 2607, "drawn": 2479, "masked": 128, "missing": 0},
+    "distantShadow": {"desired": 2607, "drawn": 2479, "masked": 128, "missing": 0},
+    "hierarchy": {
+      "indexedPages": 7221,
+      "cpuPages": 6191,
+      "gpuPages": 2606,
+      "detailCounts": {"0": 1710, "1": 896},
+      "regions": 18,
+      "residentBytes": 897600,
+      "retiredBytes": 0,
+      "allocationFailures": 0,
+      "uploadFailures": 0,
+      "drawBatches": 36,
+      "drawCommands": 4956
+    },
+    "animatedStripes": [
+      {
+        "sha256": "c98625ac2ff5d4d6b6b8445f7498be84b531781c769e337ad43047118bac3d53",
+        "minimumLuminance": 0.2929733333333333,
+        "nearBlackPixels": 0,
+        "alpha": [255, 255]
+      },
+      {
+        "sha256": "52b59c3b98fd0ed64ac73b18410ba846ca5213f0ef1c097a661b6da395e22595",
+        "minimumLuminance": 0.29662745098039217,
+        "nearBlackPixels": 0,
+        "alpha": [255, 255]
+      }
+    ]
+  }
+}

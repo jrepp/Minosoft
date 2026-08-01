@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "claim": "unified near streaming upload and distant overflow-shard scaling",
+  "measuredAt": "2026-07-31",
+  "java": "25.0.1",
+  "device": {
+    "renderer": "Apple OpenGL",
+    "api": "OpenGL 4.1"
+  },
+  "workload": {
+    "trajectory": "terrain-consolidation-final-2026-07-31",
+    "minecraftVersion": "1.20.4",
+    "worldGenerator": "debug",
+    "worldSeed": 6072333650475958863,
+    "start": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+    "end": { "x": 0.5, "y": 20.0, "z": 33.136, "yaw": 0.0, "pitch": 0.0 },
+    "movement": "three seconds forward followed by idle drain",
+    "loadedChunks": 441,
+    "shaderPack": "Bliss 2.1.0"
+  },
+  "near": {
+    "uploadSamples": 115,
+    "uploadNanoseconds": {
+      "medianBucketUpperBound": 500000,
+      "p95BucketUpperBound": 1000000,
+      "maximum": 2043542
+    },
+    "uploadedBytes": 30867144,
+    "residentBytes": 22681368,
+    "activePages": 85,
+    "occupiedRegions": 4,
+    "deviceBatches": 21,
+    "drawCommands": 390,
+    "drawVertices": 715674,
+    "submissionSamples": 600,
+    "submissionNanoseconds": {
+      "median": 99416,
+      "p95BucketUpperBound": 246625
+    },
+    "allocationFailures": 0,
+    "uploadFailures": 0
+  },
+  "distant": {
+    "selectedPages": 2380,
+    "mainMaskedPages": 79,
+    "shadowMaskedPages": 79,
+    "physicalRegionShards": 3,
+    "residentBytes": 17772960,
+    "retiredBytes": 0,
+    "deviceBatches": 9,
+    "drawCommands": 931,
+    "drawVertices": 1161540,
+    "detailCounts": { "0": 1757, "1": 623 },
+    "allocationFailures": 0,
+    "uploadFailures": 0
+  },
+  "idleBoundary": {
+    "queuedBuilds": 0,
+    "outstandingBuilds": 0,
+    "pendingUploads": 0
+  }
+}

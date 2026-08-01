@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-01T06:22:24Z",
+  "trajectory": "terrain-consolidation-phase9-resource-soak-30m-2026-07-31",
+  "scenario": {
+    "name": "terrain-resource-soak-30m",
+    "runId": "terrain-resource-soak-30m-2026-08-01T05-52-13-315823Z-74794",
+    "passed": true,
+    "cases": 60,
+    "durationMs": 1811527,
+    "clientJfrRetained": true
+  },
+  "runtime": {
+    "java": "25.0.1",
+    "minecraft": "1.20.4",
+    "modpack": "distant-horizons-bliss",
+    "driver": {
+      "vendor": "Apple",
+      "renderer": "Apple M4 Max",
+      "version": "4.1 Metal - 90.5"
+    },
+    "clientEndpoint": "client-72632-1-e5fe154c",
+    "clientGeneration": 1,
+    "worldEpoch": 1
+  },
+  "terrain": {
+    "pipelineMode": "UNIFIED",
+    "pipelineGeneration": 0,
+    "renderGraphGeneration": 17,
+    "shaderGeneration": 1,
+    "nearResidentPages": 130,
+    "nearMainMissingPages": 0,
+    "nearShadowMissingPages": 0,
+    "initialDistantResidentPages": 2408,
+    "finalDistantResidentPages": 5209,
+    "finalDistantMainDrawPages": 4211,
+    "finalDistantShadowDrawPages": 4211,
+    "finalSharedRequested": 34362,
+    "finalSharedCompleted": 34362,
+    "finalSharedFailed": 0,
+    "finalSharedRejected": 0,
+    "finalResidentBytes": 50736984,
+    "finalRetiredBytes": 0,
+    "finalHardResidencyFailures": 0,
+    "finalFailedSubmissions": 0,
+    "finalNearFailedBuilds": 0,
+    "finalNearFailedUploads": 0
+  },
+  "classification": {
+    "kind": "active-distant-fill-high-view-distance-soak",
+    "quiescentSteadyState": false,
+    "reason": "Distant residency grew from 2,408 to 5,209 pages and shared completions grew throughout the interval. This is valid bounded high-view-distance and resource-lifecycle evidence, but it is not the plan's quiescent steady-state leak baseline.",
+    "transientMissingPages": "A newly desired distant page could be missing during first publication while the active hierarchy fill continued. Near main and shadow remained complete, both distant views remained populated, and no invalid-generation publication or failure was observed."
+  },
+  "warnings": [
+    "The isolated local-world trajectory had no server endpoint, so server JFR and final server metrics were unavailable. Client JFR and client metrics were retained."
+  ],
+  "cleanup": {
+    "faultActiveBeforeStop": false,
+    "presentationOverrideBeforeStop": null,
+    "clientRunning": false,
+    "serverRunning": false,
+    "externalClientPids": [],
+    "debugEndpoints": [],
+    "leases": []
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "claim": "near fixed-camera draw submission scaling",
+  "measuredAt": "2026-07-31",
+  "java": "25.0.1",
+  "device": {
+    "renderer": "Apple OpenGL",
+    "api": "OpenGL 4.1"
+  },
+  "workload": {
+    "trajectory": "terrain-consolidation-final-2026-07-31",
+    "minecraftVersion": "1.20.4",
+    "worldSeed": 6072333650475958863,
+    "player": {
+      "x": 0.5,
+      "y": 20.0,
+      "z": 0.5,
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    "loadedChunks": 441,
+    "shaderPack": "Bliss 2.1.0",
+    "shaderFingerprint": "0d0829fbdc4d1dbf57d6bd7b837972930133314d79ec4f6738b2186a11d962da",
+    "samples": 600
+  },
+  "legacy": {
+    "runtimeMode": "legacy",
+    "submissionNanoseconds": {
+      "median": 95292,
+      "p95BucketUpperBound": 240292
+    },
+    "visibleSections": 66
+  },
+  "unified": {
+    "runtimeMode": "unified",
+    "submissionNanoseconds": {
+      "median": 83292,
+      "p95BucketUpperBound": 233625
+    },
+    "activePages": 66,
+    "occupiedRegions": 4,
+    "materialClasses": 3,
+    "views": 2,
+    "deviceBatches": 24,
+    "drawCommands": 348,
+    "drawVertices": 626064,
+    "publications": 73,
+    "uploadSamples": 73,
+    "uploadedBytes": 19395216,
+    "residentBytes": 17380464,
+    "allocationFailures": 0,
+    "uploadFailures": 0
+  },
+  "limitations": [
+    "Upload latency has fewer than 100 observations, so no p95 claim is made.",
+    "Preparation latency is excluded because its asynchronous interval includes intervening hierarchy work only in the unified run."
+  ]
+}
