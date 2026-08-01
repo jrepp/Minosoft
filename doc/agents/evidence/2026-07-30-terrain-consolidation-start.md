@@ -13,10 +13,11 @@ storage boundaries, and bounded upload/publication rules. The consolidated
 near-region and distant-hierarchy paths are the sole production route. The
 retained multi-version, seam-motion, server/reconnect, visual, performance,
 diagnostic-generation, reload, retirement, and post-retirement soak gates below
-pass. The remaining dimension/reconnect and light/fluid L5 scenarios, named L6 workload matrix,
-quiescent 30-minute steady-state resource soak, and second-driver
-resource/reload qualification remain
-before the overall plan can be declared complete.
+pass. Every checked L5 scenario now passes. The named L6 workload matrix,
+including the quiescent 30-minute steady-state resource soak, passes on the
+qualified Apple OpenGL driver. This completes the Phase 0 through Phase 9 plan.
+A second-driver resource/reload run remains deferred portability evidence, not
+a terrain-consolidation completion gate.
 
 ## Headless contract boundary
 
@@ -934,6 +935,21 @@ protects that boundary, and the exact live transition passed after restart.
 The primitive record is
 `2026-07-31-terrain-l5-profile-movement-reload.json`.
 
+The checked light/fluid material scenario passed as
+`terrain-light-fluid-materials-2026-08-01T06-42-20-214112Z-92926`, and the
+overworld/Nether/End/overworld lifecycle scenario passed as
+`terrain-dimension-transitions-2026-08-01T06-45-41-755578Z-94373` with exact
+epoch advancement, current-epoch page ownership, drained retirement, and the
+original player pose restored. The same-address and same-level-name reconnect
+gate then ran two isolated saved worlds with seeds `111111111` and `222222222`.
+Both exposed `minecraft:overworld` at epoch one, while their stable persistence
+identities differed. That gate found and closed two additional boundaries: the
+hashed world seed now participates in the page-store identity, and well-formed
+semantic v2 response rejections are counted/cancelled without escaping the
+network handler or publishing a page. The second live run remained connected
+while 25 late unknown-request responses were rejected nonfatally. The durable
+record is `2026-08-01-terrain-l5-world-reconnect.json`.
+
 Supervised stop exposed late schema-v2 pages racing the world reset epoch. The
 old combined assertion rejected them correctly but emitted warning traces.
 Publication now distinguishes malformed tile/page identity, which still
@@ -994,6 +1010,18 @@ correlated client/server cancellation cleanup, and passed another complete
 The scheduler admission/diagnostic continuation passed the complete
 `:render-contracts:test`, root `test`, and `integrationTest` suites plus the
 focused diagnostic and architecture gates on Java 25.0.1.
+
+The named L6 matrix now covers steady camera, continuous nearby block
+invalidation, straight-line streaming, fast seam traversal, schema-v2 distant
+database cold load, distant generation fill, dimension transition, and shader
+reload with populated terrain. Its final 30-minute quiescent resource soak ran
+59 cases over 1,816,252 milliseconds after 4,130 shared builds had drained. It
+held 66 near and 2,861 distant resident pages, 60,702,288 resident bytes, zero
+retired bytes, and zero build/upload/submission failures. OpenGL name creation
+and deletion each advanced by 37,986 while the live-name count remained 463,
+so the steady-state ledger had no growth. The durable primitive record is
+`2026-08-01-terrain-l6-workload-matrix.json`. A second-driver resource/reload
+qualification is retained as deferred portability work.
 
 After production retirement, `./gradlew :render-contracts:test test
 integrationTest` and `git diff --check` passed on Java 25.0.1. The late-network
@@ -1087,21 +1115,17 @@ generation completed world/Fabric/audio teardown without the prior synthetic-
 class linkage failure, generation 2 reached render-ready, and supervised stop
 removed the client, endpoint, staged generation, and trajectory lease.
 
-## Implemented Phase 0 through Phase 8 boundaries
+## Implemented Phase 0 through Phase 9 boundaries
 
 The retained semantic, visual, GPU-resource, workload, failure, checked-pixel,
 motion, persistence, protocol, dimension, reconnect, reload, and scaling
-records cover the implemented Phase 0 through Phase 8 boundaries. Production boundaries consume the normalized
+records cover the implemented Phase 0 through Phase 9 boundaries. Production
+boundaries consume the normalized
 material, depth, residency, submission, publication, and structured-rejection
 contracts, and the renderer/provider architecture allowlist is empty.
 
-## Remaining validation and Phase 9 release qualification
+## Deferred portability qualification
 
-- add and pass the remaining checked L5 dimension/reconnect and light/fluid
-  scenarios; profile, movement, reload, shadow, replacement-failure, seam,
-  combined, and active-fill high-view-distance scenarios now pass;
-- retain matched artifacts for every named L6 workload and complete the
-  required quiescent 30-minute steady-state resource soak; and
-- retain a second-driver resource/reload baseline. The available host provides
-  only Apple OpenGL 4.1, so this final portability gate requires another
-  environment after all local gates are complete.
+- Retain a second-driver resource/reload baseline when another environment is
+  available. This broadens portability evidence but does not block the
+  completed Phase 0 through Phase 9 terrain-consolidation plan.

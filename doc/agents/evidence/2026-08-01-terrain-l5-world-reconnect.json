@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-01T09:29:00Z",
+  "claim": "same-address and same-level-name reconnects isolate persistent distant terrain by stable world fingerprint and reject late semantic network responses without disconnecting",
+  "runtime": {
+    "java": "25.0.1",
+    "minecraft": "1.20.4",
+    "modpack": "distant-horizons-bliss",
+    "trajectory": "terrain-l5-same-name-reconnect-2026-08-01",
+    "serverAddress": "127.0.0.1:25575",
+    "levelName": "acceptance-world",
+    "driver": {
+      "vendor": "Apple",
+      "renderer": "Apple M4 Max",
+      "version": "4.1 Metal - 90.5"
+    }
+  },
+  "worlds": [
+    {
+      "seed": 111111111,
+      "runId": "terrain-same-name-different-world-reconnect-2026-08-01T09-00-28-068739Z-13884",
+      "passed": true,
+      "durationMs": 15630,
+      "normalizedWorldKey": "minecraft:overworld",
+      "worldEpoch": 1,
+      "persistenceIdentity": "854d0428a56f79b4d33222fd76ef213e20beee2ab48f69a0f0db9d52997bba4b"
+    },
+    {
+      "seed": 222222222,
+      "runId": "terrain-same-name-different-world-reconnect-2026-08-01T09-28-23-057467Z-37386",
+      "passed": true,
+      "durationMs": 3264,
+      "normalizedWorldKey": "minecraft:overworld",
+      "worldEpoch": 1,
+      "persistenceIdentity": "177094f33335bdc3f42082600d58966de8a1b2542bcf8cd47b742ca2937da4a0",
+      "network": {
+        "protocolVersion": 2,
+        "requestsSent": 283,
+        "receivedPages": 232,
+        "cancellationsSent": 64,
+        "cancellationFailures": 0,
+        "worldResets": 0,
+        "responseRejections": {
+          "WRONG_WORLD": 0,
+          "UNKNOWN_REQUEST": 25,
+          "UNREQUESTED_PAGE": 0,
+          "DUPLICATE_PAGE": 0,
+          "UNSUPPORTED_DETAIL": 0,
+          "STALE_PAGE": 0
+        }
+      }
+    }
+  ],
+  "defects": [
+    {
+      "symptom": "different worlds at the same address and level name selected the same distant persistence store",
+      "resolution": "the modern protocol hashed seed now feeds a stable world-lifecycle persistence fingerprint; the canonical page-store and legacy v1 path identities include that fingerprint while null preserves the historical path"
+    },
+    {
+      "symptom": "a well-formed stale distant v2 response escaped the Netty payload handler as IllegalArgumentException and disconnected the client",
+      "resolution": "semantic response rejection is now nonfatal and nonpublishing, clears the correlated request ledger, sends bounded cancellation, increments fixed primitive reason counters, and rate-limits warnings; malformed wire payloads still fail closed"
+    }
+  ],
+  "validation": [
+    "./gradlew test",
+    "./gradlew integrationTest --tests de.bixilon.minosoft.terrain.runtime.TerrainWorldEpochTest",
+    "./gradlew integrationTest --tests de.bixilon.minosoft.modding.loader.fabric.DistantLodNetworkLifecycleTest",
+    "acceptance/scenarios/terrain-same-name-different-world-reconnect.json against two isolated saved worlds with the same address and level name"
+  ],
+  "cleanup": {
+    "clientRunning": false,
+    "serverRunning": false,
+    "serverPortOpen": false,
+    "externalClientPids": [],
+    "leases": []
+  }
+}

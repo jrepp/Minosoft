@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-01T10:17:00Z",
+  "claim": "the named L6 terrain workload matrix and quiescent resource soak pass on the available Apple OpenGL driver",
+  "runtime": {
+    "java": "25.0.1",
+    "minecraft": "1.20.4",
+    "driver": {
+      "vendor": "Apple",
+      "renderer": "Apple M4 Max",
+      "version": "4.1 Metal - 90.5"
+    }
+  },
+  "workloads": [
+    {
+      "name": "steady camera, warm populated world",
+      "artifact": "2026-07-31-terrain-near-fixed-camera-performance.json",
+      "samples": 600,
+      "legacySubmissionNanoseconds": {
+        "median": 95292,
+        "p95BucketUpperBound": 240292
+      },
+      "unifiedSubmissionNanoseconds": {
+        "median": 83292,
+        "p95BucketUpperBound": 233625
+      },
+      "deviceBatches": 24,
+      "activePages": 66,
+      "failures": 0
+    },
+    {
+      "name": "continuous nearby block invalidation",
+      "runId": "terrain-continuous-block-invalidation-2026-08-01T10-10-28-778153Z-52705",
+      "passed": true,
+      "cases": 50,
+      "durationMs": 42883,
+      "blockMutationEvents": 700,
+      "sharedBuildCompletionDelta": 310,
+      "finalSharedOutstanding": 0,
+      "finalRetiredBytes": 0,
+      "finalLiveGpuNames": 457,
+      "failedBuilds": 0,
+      "failedUploads": 0,
+      "failedSubmissions": 0
+    },
+    {
+      "name": "straight-line chunk streaming",
+      "artifact": "2026-07-31-terrain-streaming-performance.json",
+      "movement": "33 blocks forward followed by an all-terrain idle drain",
+      "nearUploadSamples": 115,
+      "nearUploadNanoseconds": {
+        "medianBucketUpperBound": 500000,
+        "p95BucketUpperBound": 1000000,
+        "maximum": 2043542
+      },
+      "submissionSamples": 600,
+      "submissionP95BucketUpperBound": 246625,
+      "finalQueuedBuilds": 0,
+      "finalOutstandingBuilds": 0,
+      "finalPendingUploads": 0,
+      "failures": 0
+    },
+    {
+      "name": "fast seam traversal",
+      "runId": "terrain-fast-seam-movement-2026-08-01T06-32-31-312211Z-88990",
+      "passed": true,
+      "durationMs": 2239,
+      "cameraExcursion": [0.5, 512.5, -512.5, 0.5],
+      "finalRetiredBytes": 0,
+      "missingNearPages": 0,
+      "missingDistantPages": 0
+    },
+    {
+      "name": "distant database cold load",
+      "runId": "terrain-distant-database-cold-load-2026-08-01T10-15-26-222504Z-54434",
+      "passed": true,
+      "scenarioDurationMs": 5515,
+      "clientProcessStart": "2026-08-01T10:13:52.227Z",
+      "databaseInitializationLog": "2026-08-01T10:14:09.401Z",
+      "store": {
+        "schemaVersion": 2,
+        "recordCount": 3927,
+        "totalBytes": 2745966,
+        "ignoredTemporaryRecords": 0,
+        "pinnedRecords": 0,
+        "evictionCount": 0
+      },
+      "visibleDistantPagesPerView": 1341,
+      "missingDistantPages": 0,
+      "failedBuilds": 0,
+      "failedSubmissions": 0,
+      "retiredBytes": 0
+    },
+    {
+      "name": "distant generation fill",
+      "trajectory": "terrain-l6-quiescent-soak-2026-08-01",
+      "configuredRenderRadiusChunks": 32,
+      "configuredGenerationRadiusChunks": 32,
+      "configuredGenerationBudgetPerTick": 8,
+      "initialStoreRecords": 0,
+      "warmStoreRecords": 3884,
+      "warmStoreBytes": 2695623,
+      "sharedBuildsCompleted": 4130,
+      "residentDistantPages": 2861,
+      "residentDistantBytes": 18156000,
+      "failedBuilds": 0,
+      "rejectedBuilds": 0,
+      "hardResidencyFailures": 0,
+      "retiredBytes": 0
+    },
+    {
+      "name": "dimension transition",
+      "runId": "terrain-dimension-transitions-2026-08-01T06-45-41-755578Z-94373",
+      "passed": true,
+      "durationMs": 38718,
+      "route": ["minecraft:overworld", "minecraft:the_nether", "minecraft:the_end", "minecraft:overworld"],
+      "originalPoseRestored": true,
+      "wrongEpochPublications": 0,
+      "retiredBytes": 0
+    },
+    {
+      "name": "shader reload with populated terrain",
+      "runId": "terrain-shader-resource-view-transition-2026-08-01T06-35-19-060286Z-90199",
+      "passed": true,
+      "durationMs": 21531,
+      "finalPipelineGeneration": 3,
+      "finalShaderGeneration": 4,
+      "finalMaterialGeneration": 4,
+      "finalRenderGraphGeneration": 20,
+      "missingNearPages": 0,
+      "missingDistantPages": 0,
+      "retiredBytes": 0,
+      "failedBuilds": 0,
+      "failedSubmissions": 0
+    },
+    {
+      "name": "30-minute steady-state resource soak",
+      "runId": "terrain-resource-soak-30m-2026-08-01T09-39-13-291177Z-41454",
+      "passed": true,
+      "cases": 59,
+      "durationMs": 1816252,
+      "quiescentSteadyState": true,
+      "initial": {
+        "sharedBuildsCompleted": 4130,
+        "sharedOutstanding": 0,
+        "nearResidentPages": 66,
+        "distantResidentPages": 2861,
+        "residentBytes": 60702288,
+        "retiredBytes": 0,
+        "liveGpuNames": 463,
+        "createdGpuNames": 8207,
+        "deletedGpuNames": 7744
+      },
+      "final": {
+        "sharedBuildsCompleted": 4130,
+        "sharedOutstanding": 0,
+        "nearResidentPages": 66,
+        "distantResidentPages": 2861,
+        "residentBytes": 60702288,
+        "retiredBytes": 0,
+        "liveGpuNames": 463,
+        "createdGpuNames": 46193,
+        "deletedGpuNames": 45730
+      },
+      "createdGpuNameDelta": 37986,
+      "deletedGpuNameDelta": 37986,
+      "liveGpuNameDelta": 0,
+      "failedBuilds": 0,
+      "failedUploads": 0,
+      "failedSubmissions": 0,
+      "clientJfrRetained": true
+    }
+  ],
+  "instrumentation": {
+    "gate": "TerrainPerformanceTelemetryTest.instrumentation does not regress representative workload p95",
+    "interleavedDisabledEnabledSamples": 100,
+    "threshold": "enabled p95 <= disabled p95 * 1.10 + 100000 ns",
+    "disabledP95Nanoseconds": 2532084,
+    "enabledP95Nanoseconds": 2533667,
+    "limitNanoseconds": 2885292,
+    "passed": true,
+    "p95Policy": "Only the 600-sample submission windows and 115-sample streaming upload window above make percentile claims. Other workloads retain counters and lifecycle outcomes without inventing a p95."
+  },
+  "deferredPortabilityQualification": {
+    "name": "second OpenGL driver resource/reload baseline",
+    "blockingPhaseCompletion": false,
+    "reason": "deferred portability coverage; the qualified Apple OpenGL 4.1 environment satisfies the Phase 3-9 live-driver gate"
+  },
+  "cleanup": {
+    "clientRunning": false,
+    "serverRunning": false,
+    "serverPortOpen": false,
+    "externalClientPids": [],
+    "debugEndpoints": [],
+    "leases": []
+  }
+}

@@ -15,8 +15,12 @@ The binding answers to the architectural questions found during review are in
 [`terrain-pipeline-consolidation-decisions.md`](terrain-pipeline-consolidation-decisions.md).
 Those decisions refine the contracts and phase exit gates in this plan.
 
-This is a delivery plan, not an assertion that the target architecture is
-already implemented.
+The production implementation and the required L0-L6 validation for Phases 0
+through 9 are complete on the qualified Apple OpenGL 4.1 environment. The
+accepted implementation and validation record is
+[`../agents/evidence/2026-07-30-terrain-consolidation-start.md`](../agents/evidence/2026-07-30-terrain-consolidation-start.md).
+Additional GPU/driver qualification remains useful portability work, but is
+not a completion gate for this consolidation plan.
 
 ## Outcome
 

@@ -184,10 +184,11 @@ Windows named pipes.
 | `render.terrain.pages` | client | render queue | deterministic spatially filtered 1–1,024 page window with an opaque domain-generation cursor |
 | `render.terrain.coverage` | client | render queue | readiness-aware near coverage and near/distant main/shadow publication summaries |
 | `render.terrain.page` | client | render queue | one exact current-world page with source, revisions, ranges, visibility, coverage, failure, and digest |
-| `render.terrain.flush-idle` | client | render queue | bounded named `BUILDS`, `UPLOADS`, `RETIREMENT`, or `ALL` condition; reports all primitive idle counters |
+| `render.terrain.flush-idle` | client | render queue | bounded named `BUILDS`, `UPLOADS`, `RETIREMENT`, or `ALL` condition; captures the selected generation and executes every poll on the render thread, then reports all primitive idle counters |
 | `render.terrain.compare` | client | render queue | selected deterministic dual build with semantic/digest differences; publishes neither candidate |
 | `render.terrain.fault` | client | render queue | acceptance-only one-shot typed rejection with restoration token, generation scoping, and consumption/invalidation counts |
 | `render.reload-content` | client | render queue | one production content-fidelity reload; optional bounded `rejectAt` rollback checkpoint with generation and typed GPU delta evidence |
+| `render.prepare-terrain-materials` | client | render queue/world mutation | install or exactly restore one bounded local stone/water/emissive material fixture through ordinary block mutation and terrain remeshing; reports fixture/current cells and restoration state |
 | `render.prepare-entity-flame` | client | render queue | toggle one visible retained non-player fire flag, optionally by exact entity ID, and return its previous value for restoration |
 | `render.prepare-billboard-text` | client | render queue/entity tracked data | publish and exactly restore one bounded client-only entity name through the ordinary billboard-text producer |
 | `render.prepare-entity-outline` | client | render queue | toggle one visible retained non-player glowing flag, optionally by exact entity ID, and return its previous value for restoration |
@@ -216,6 +217,7 @@ Windows named pipes.
 | `mods.iris.configure-options` | client | render queue/resource reload | validate and transactionally apply 1–64 authored shader-option values |
 | `mods.distanthorizons.presentation` | client | mod generation | report, enable, disable, or restore the non-persistent detached-terrain presentation override |
 | `mods.distanthorizons.render-diagnostics` | client | mod generation | bounded detached tile/cell/source/native-ownership, adaptive-size, surface, skirt, and maximum-drop snapshot |
+| `mods.distanthorizons.store-network-inspection` | client | mod generation | bounded page-store schema/count/bytes/temp/pinning/eviction state plus negotiated protocol bounds, pending/correlated requests, cancellations, world resets, and fixed semantic response-rejection counts |
 | `metrics.snapshot` | both | transport-safe plus immutable role gauges | capped operation series, fixed latency buckets, counters/totals/max, runtime gauges |
 
 ### Visual and input invariants
