@@ -1,0 +1,57 @@
+{
+  "name": "terrain-continuous-block-invalidation",
+  "repeat": 50,
+  "steps": [
+    {
+      "name": "client remains joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "30s"
+    },
+    {
+      "name": "install nearby fluid and emissive mutations",
+      "type": "request",
+      "role": "client",
+      "operation": "render.prepare-terrain-materials",
+      "body": { "enabled": true, "phase": "day" },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/phase", "equals": "day" }
+      ]
+    },
+    {
+      "name": "switch the installed material fixture to night",
+      "type": "request",
+      "role": "client",
+      "operation": "render.prepare-terrain-materials",
+      "body": { "enabled": true, "phase": "night" },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/phase", "equals": "night" }
+      ]
+    },
+    {
+      "name": "restore the nearby material cells",
+      "type": "request",
+      "role": "client",
+      "operation": "render.prepare-terrain-materials",
+      "body": { "enabled": false },
+      "assert": [
+        { "pointer": "/enabled", "equals": false },
+        { "pointer": "/restored", "equals": true }
+      ]
+    },
+    {
+      "name": "continuous invalidation remains failure-free",
+      "type": "request",
+      "role": "client",
+      "operation": "metrics.snapshot",
+      "body": {},
+      "assert": [
+        { "pointer": "/runtime/renderReady", "equals": true },
+        { "pointer": "/runtime/terrain/failedBuilds", "equals": 0 },
+        { "pointer": "/runtime/terrain/failedUploads", "equals": 0 }
+      ]
+    }
+  ]
+}

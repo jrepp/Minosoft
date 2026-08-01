@@ -1,0 +1,57 @@
+{
+  "name": "terrain-distant-database-cold-load",
+  "steps": [
+    {
+      "name": "fresh client generation has rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "allow restored pages to enter the hierarchy",
+      "type": "sleep",
+      "duration": "5s"
+    },
+    {
+      "name": "schema-v2 pages restored from the existing store",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.store-network-inspection",
+      "body": {},
+      "assert": [
+        { "pointer": "/store/enabled", "equals": true },
+        { "pointer": "/store/pageSchemaVersion", "equals": 2 },
+        { "pointer": "/store/recordCount", "min": 1 },
+        { "pointer": "/store/ignoredTemporaryRecords", "equals": 0 },
+        { "pointer": "/store/pinnedRecords", "equals": 0 }
+      ]
+    },
+    {
+      "name": "restored terrain has no retirement debt",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "RETIREMENT", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "restored terrain is valid and visible",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.summary",
+      "body": {},
+      "assert": [
+        { "pointer": "/snapshot/pipeline/mode", "equals": "UNIFIED" },
+        { "pointer": "/snapshot/publication/1/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/1/views/1/drawPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/1/views/0/missingPageCount", "equals": 0 },
+        { "pointer": "/snapshot/publication/1/views/1/missingPageCount", "equals": 0 },
+        { "pointer": "/snapshot/scheduling/runtime/failed", "equals": 0 },
+        { "pointer": "/snapshot/submission/failedSubmissionCount", "equals": 0 }
+      ]
+    }
+  ]
+}

@@ -58,6 +58,21 @@
       ]
     },
     {
+      "name": "GPU resource ledger remains readable",
+      "type": "request",
+      "role": "client",
+      "operation": "render.substrate",
+      "body": {},
+      "assert": [
+        { "pointer": "/gpuResources/backend", "equals": "opengl" },
+        { "pointer": "/gpuResources/live", "min": 1 },
+        { "pointer": "/terrain/productionRuntime/failedBuilds", "equals": 0 },
+        { "pointer": "/terrain/productionRuntime/failedUploads", "equals": 0 },
+        { "pointer": "/terrain/regionStorage/retiredBytes", "equals": 0 },
+        { "pointer": "/terrain/regionStorage/failedSubmissionCount", "equals": 0 }
+      ]
+    },
+    {
       "name": "resource sample interval",
       "type": "sleep",
       "duration": "30s"

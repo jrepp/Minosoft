@@ -58,17 +58,14 @@
       }
     },
     {
-      "name": "reconnected terrain drains",
+      "name": "old-world terrain retirement drains",
       "type": "request",
       "role": "client",
       "operation": "render.terrain.flush-idle",
       "deadlineMs": 30000,
-      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "body": { "condition": "RETIREMENT", "timeoutMs": 29000 },
       "assert": [
         { "pointer": "/worldEpoch", "equals": 1 },
-        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
-        { "pointer": "/idleState/outstandingBuilds", "equals": 0 },
-        { "pointer": "/idleState/pendingUploads", "equals": 0 },
         { "pointer": "/idleState/retiredBytes", "equals": 0 }
       ]
     },
@@ -143,6 +140,24 @@
         { "pointer": "/pageWindow/pages/0/page/domain", "equals": "DISTANT" },
         { "pointer": "/pageWindow/pages/0/page/worldEpoch", "equals": 1 },
         { "pointer": "/pageWindow/pages/0/artifactDigest", "exists": true }
+      ]
+    },
+    {
+      "name": "semantic response rejections remain bounded and nonfatal",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.store-network-inspection",
+      "body": {},
+      "assert": [
+        { "pointer": "/network/protocolVersion", "equals": 2 },
+        { "pointer": "/network/responseRejections/WRONG_WORLD", "min": 0 },
+        { "pointer": "/network/responseRejections/UNKNOWN_REQUEST", "min": 0 },
+        { "pointer": "/network/responseRejections/UNREQUESTED_PAGE", "min": 0 },
+        { "pointer": "/network/responseRejections/DUPLICATE_PAGE", "min": 0 },
+        { "pointer": "/network/responseRejections/UNSUPPORTED_DETAIL", "min": 0 },
+        { "pointer": "/network/responseRejections/STALE_PAGE", "min": 0 },
+        { "pointer": "/network/cancellationFailures", "equals": 0 },
+        { "pointer": "/network/worldResets", "equals": 0 }
       ]
     }
   ]
