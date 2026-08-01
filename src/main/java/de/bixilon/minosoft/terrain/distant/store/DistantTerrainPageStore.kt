@@ -35,6 +35,47 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
+fun distantTerrainWorldIdentity(
+    versionName: String,
+    connectionIdentifier: String,
+    normalizedLevelKey: String,
+    persistenceFingerprint: String?,
+): String {
+    require(versionName.isNotBlank()) { "Distant world version must not be blank" }
+    require(connectionIdentifier.isNotBlank()) { "Distant world connection must not be blank" }
+    require(normalizedLevelKey.isNotBlank()) { "Distant world level key must not be blank" }
+    require(persistenceFingerprint == null || persistenceFingerprint.isNotBlank()) {
+        "Distant world persistence fingerprint must not be blank"
+    }
+    return buildString {
+        append(versionName)
+        append('\u0000')
+        append(connectionIdentifier)
+        append('\u0000')
+        append(normalizedLevelKey)
+        if (persistenceFingerprint != null) {
+            append('\u0000')
+            append(persistenceFingerprint)
+        }
+    }
+}
+
+fun distantTerrainPersistenceIdentity(
+    versionName: String,
+    connectionIdentifier: String,
+    normalizedLevelKey: String,
+    persistenceFingerprint: String?,
+): String = HexFormat.of().formatHex(
+    MessageDigest.getInstance("SHA-256").digest(
+        distantTerrainWorldIdentity(
+            versionName,
+            connectionIdentifier,
+            normalizedLevelKey,
+            persistenceFingerprint,
+        ).toByteArray(StandardCharsets.UTF_8),
+    ),
+)
+
 data class DistantTerrainStoreIdentity(
     val worldIdentity: String,
     val normalizedLevelKey: String,

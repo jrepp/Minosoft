@@ -56,6 +56,7 @@ import de.bixilon.minosoft.util.logging.LogMessageType
 class LocalConnection(
     val generator: (PlaySession) -> ChunkGenerator,
     val storage: (PlaySession) -> WorldStorage,
+    private val terrainPersistenceFingerprint: String? = null,
 ) : ServerConnection {
     override val identifier = "<local>"
     override var active by observed(false)
@@ -86,6 +87,7 @@ class LocalConnection(
         FabricWorldEvents.change(session, FabricWorldChangeCause.LOCAL_CONNECT, dimension, session.world.name) {
             session.util.resetWorld()
             session.world.dimension = dimension
+            session.world.updateTerrainPersistenceFingerprint(terrainPersistenceFingerprint)
         }
         this.chunks = LocalChunkManager(session, storage.invoke(session), generator)
         session.player.additional.gamemode = Gamemodes.CREATIVE

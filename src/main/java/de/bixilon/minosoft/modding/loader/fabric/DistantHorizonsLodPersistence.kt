@@ -15,6 +15,7 @@ import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.terrain.distant.DistantLodColumn
 import de.bixilon.minosoft.terrain.distant.DistantLodTile
+import de.bixilon.minosoft.terrain.distant.store.distantTerrainPersistenceIdentity
 import java.io.BufferedInputStream
 import java.io.DataInputStream
 import java.io.FilterInputStream
@@ -25,7 +26,6 @@ import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.file.Files
 import java.nio.file.Path
-import java.security.MessageDigest
 import java.util.zip.GZIPInputStream
 
 /**
@@ -118,16 +118,12 @@ internal class DistantLodPersistence(
         private const val MAXIMUM_UNCOMPRESSED_BYTES = 1024L * 1024L * 1024L
 
         fun path(root: Path, session: PlaySession): Path {
-            val identity = buildString {
-                append(session.version.name)
-                append('\u0000')
-                append(session.connection.identifier)
-                append('\u0000')
-                append(session.world.name ?: "unknown")
-            }
-            val digest = MessageDigest.getInstance("SHA-256")
-                .digest(identity.toByteArray(StandardCharsets.UTF_8))
-                .joinToString("") { "%02x".format(it) }
+            val digest = distantTerrainPersistenceIdentity(
+                session.version.name,
+                session.connection.identifier,
+                session.world.name?.toString() ?: "minosoft:unknown",
+                session.world.terrainPersistenceFingerprint,
+            )
             return root.resolve("$digest.lod.gz")
         }
     }

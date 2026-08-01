@@ -27,8 +27,11 @@ class TerrainWorldEpochTest {
         val world = createSession().world
         assertEquals(0L, world.terrainEpoch)
 
+        world.updateTerrainPersistenceFingerprint("seed-hash:17")
+
         world.clear()
         assertEquals(1L, world.terrainEpoch)
+        assertEquals(null, world.terrainPersistenceFingerprint)
 
         world.clear()
         assertEquals(2L, world.terrainEpoch)

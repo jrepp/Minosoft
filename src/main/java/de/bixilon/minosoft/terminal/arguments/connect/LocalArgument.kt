@@ -52,7 +52,11 @@ class LocalArgument : OptionGroup(), AutoConnectFactory {
             else -> generator.factory
         }
         return PlaySession(
-            connection = LocalConnection(generatorFactory, storage.factory),
+            connection = LocalConnection(
+                generatorFactory,
+                storage.factory,
+                terrainPersistenceFingerprint = "local:${generator.name.lowercase()}:$seed",
+            ),
             account = account,
             version = version,
         )

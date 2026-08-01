@@ -87,9 +87,20 @@ class World(
     var terrainEpoch: Long = 0L
         private set
 
+    @Volatile
+    var terrainPersistenceFingerprint: String? = null
+        private set
+
 
     operator fun get(position: BlockPosition): BlockState? {
         return chunks[position.chunkPosition]?.get(position.inChunkPosition)
+    }
+
+    fun updateTerrainPersistenceFingerprint(fingerprint: String?) {
+        require(fingerprint == null || fingerprint.isNotBlank()) {
+            "Terrain persistence fingerprint must not be blank"
+        }
+        terrainPersistenceFingerprint = fingerprint
     }
 
     @Deprecated("chunks[position]", ReplaceWith("chunks[position]"))
@@ -102,6 +113,7 @@ class World(
         lock.lock()
         try {
             terrainEpoch = Math.incrementExact(terrainEpoch)
+            terrainPersistenceFingerprint = null
             cleared = chunks.clear()
             time = WorldTime()
             weather = WorldWeather.SUNNY

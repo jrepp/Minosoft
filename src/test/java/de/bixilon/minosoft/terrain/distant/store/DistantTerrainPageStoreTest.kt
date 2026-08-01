@@ -23,11 +23,38 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class DistantTerrainPageStoreTest {
     @TempDir
     lateinit var temporary: Path
+
+    @Test
+    fun `same named worlds with different persistence fingerprints have distinct identities`() {
+        val first = distantTerrainWorldIdentity(
+            "1.20.4",
+            "server.example:25565",
+            "minecraft:overworld",
+            "seed-hash:11",
+        )
+        val second = distantTerrainWorldIdentity(
+            "1.20.4",
+            "server.example:25565",
+            "minecraft:overworld",
+            "seed-hash:12",
+        )
+
+        assertNotEquals(first, second)
+        assertNotEquals(
+            distantTerrainPersistenceIdentity("1.20.4", "server.example:25565", "minecraft:overworld", "seed-hash:11"),
+            distantTerrainPersistenceIdentity("1.20.4", "server.example:25565", "minecraft:overworld", "seed-hash:12"),
+        )
+        assertEquals(
+            "1.20.4\u0000server.example:25565\u0000minecraft:overworld",
+            distantTerrainWorldIdentity("1.20.4", "server.example:25565", "minecraft:overworld", null),
+        )
+    }
 
     @Test
     fun `store writes only dirty page records and rekeys a restored epoch`() {

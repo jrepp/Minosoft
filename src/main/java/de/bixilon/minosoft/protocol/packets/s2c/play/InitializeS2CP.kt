@@ -179,6 +179,9 @@ class InitializeS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
             session.util.resetWorld()
             session.world.dimension = nextDimension
             session.world.name = world
+            session.world.updateTerrainPersistenceFingerprint(
+                if (session.version >= ProtocolVersions.V_19W36A) "seed-hash:$hashedSeed" else null,
+            )
         }
 
 
