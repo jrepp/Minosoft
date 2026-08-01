@@ -17,7 +17,7 @@
 
 package de.bixilon.minosoft.terrain.distant
 
-import de.bixilon.kutil.concurrent.lock.LockUtil.acquired
+import de.bixilon.kutil.concurrent.lock.LockUtil.locked
 import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.registries.blocks.state.BlockStateFlags
 import de.bixilon.minosoft.data.registries.blocks.types.fluid.FluidBlock
@@ -42,7 +42,7 @@ import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
 
 /** Minecraft-facing adapters for the single dependency-clean vertical sampler. */
 object DistantWorldVerticalSampler {
-    fun captureObserved(chunk: Chunk, sourceRevision: Long = 0L): DistantVerticalPage = chunk.lock.acquired {
+    fun captureObserved(chunk: Chunk, sourceRevision: Long = 0L): DistantVerticalPage = chunk.lock.locked {
         captureObservedLocked(chunk, sourceRevision)
     }
 

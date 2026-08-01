@@ -56,20 +56,44 @@ sealed class TerrainBuildOutcome<out T> {
 data class TerrainBuildCompletion<T>(
     val tenant: TerrainSchedulerTenantId,
     val identity: TerrainBuildIdentity,
+    val estimate: TerrainBuildEstimate,
     val outcome: TerrainBuildOutcome<T>,
 )
+
+data class TerrainBuildEstimate(
+    val cpuNanos: Long,
+    val outputBytes: Long,
+) {
+    init {
+        require(cpuNanos > 0L) { "Terrain build CPU estimate must be positive" }
+        require(outputBytes > 0L) { "Terrain build output estimate must be positive" }
+    }
+
+    companion object {
+        val MINIMUM = TerrainBuildEstimate(cpuNanos = 1L, outputBytes = 1L)
+    }
+}
 
 data class TerrainBuildRuntimeSnapshot(
     val queueDepth: Int,
     val completionDepth: Int,
+    val routedCompletionDepth: Int,
     val outstanding: Int,
+    val outstandingEstimatedCpuNanos: Long,
+    val outstandingEstimatedOutputBytes: Long,
     val active: Int,
     val queueHighWater: Int,
     val completionHighWater: Int,
     val outstandingHighWater: Int,
+    val estimatedCpuHighWaterNanos: Long,
+    val estimatedOutputHighWaterBytes: Long,
+    val estimatedCpuBudgetNanos: Long,
+    val estimatedOutputBudgetBytes: Long,
     val requested: Long,
     val admitted: Long,
     val rejected: Long,
+    val estimatedCpuRejected: Long,
+    val estimatedOutputRejected: Long,
     val started: Long,
     val completed: Long,
     val cancelled: Long,
@@ -88,6 +112,8 @@ class TerrainBuildRuntime<C : AutoCloseable, T>(
     workerCount: Int,
     private val queueCapacity: Int,
     private val nearBurstLimit: Int = 3,
+    private val estimatedCpuBudgetNanos: Long = Long.MAX_VALUE,
+    private val estimatedOutputBudgetBytes: Long = Long.MAX_VALUE,
     threadNamePrefix: String = "Terrain build",
     private val contextFactory: () -> C,
 ) : AutoCloseable {
@@ -95,6 +121,7 @@ class TerrainBuildRuntime<C : AutoCloseable, T>(
         val tenant: TerrainSchedulerTenantId,
         val identity: TerrainBuildIdentity,
         val urgency: TerrainBuildUrgency,
+        val estimate: TerrainBuildEstimate,
         val cancellation: TerrainCancellationToken,
         val build: (C, TerrainCancellationToken) -> T,
     )
@@ -106,6 +133,9 @@ class TerrainBuildRuntime<C : AutoCloseable, T>(
     private val maximumOutstanding: Int
     private val outstanding = AtomicInteger()
     private val completionDepth = AtomicInteger()
+    private val routedCompletionDepth = AtomicInteger()
+    private var outstandingEstimatedCpuNanos = 0L
+    private var outstandingEstimatedOutputBytes = 0L
     private data class ActiveBuild(
         val tenant: TerrainSchedulerTenantId,
         val identity: TerrainBuildIdentity,
@@ -121,9 +151,13 @@ class TerrainBuildRuntime<C : AutoCloseable, T>(
     private val queueHighWater = AtomicInteger()
     private val completionHighWater = AtomicInteger()
     private val outstandingHighWater = AtomicInteger()
+    private var estimatedCpuHighWaterNanos = 0L
+    private var estimatedOutputHighWaterBytes = 0L
     private val requested = AtomicLong()
     private val admitted = AtomicLong()
     private val rejected = AtomicLong()
+    private val estimatedCpuRejected = AtomicLong()
+    private val estimatedOutputRejected = AtomicLong()
     private val started = AtomicLong()
     private val completed = AtomicLong()
     private val cancelled = AtomicLong()
@@ -135,6 +169,8 @@ class TerrainBuildRuntime<C : AutoCloseable, T>(
             "Terrain build queue capacity must be at least the worker count"
         }
         require(nearBurstLimit > 0) { "Terrain near burst limit must be positive" }
+        require(estimatedCpuBudgetNanos > 0L) { "Terrain estimated CPU budget must be positive" }
+        require(estimatedOutputBudgetBytes > 0L) { "Terrain estimated output budget must be positive" }
         require(threadNamePrefix.isNotBlank()) { "Terrain build thread name prefix must not be blank" }
 
         maximumOutstanding = Math.addExact(queueCapacity, workerCount)
@@ -150,6 +186,7 @@ class TerrainBuildRuntime<C : AutoCloseable, T>(
         tenant: TerrainSchedulerTenantId,
         identity: TerrainBuildIdentity,
         urgency: TerrainBuildUrgency = TerrainBuildUrgency.NEXT_FRAME,
+        estimate: TerrainBuildEstimate = TerrainBuildEstimate.MINIMUM,
         cancellation: TerrainCancellationToken = TerrainCancellationToken(),
         build: (C, TerrainCancellationToken) -> T,
     ): TerrainCancellationToken? {
@@ -157,15 +194,39 @@ class TerrainBuildRuntime<C : AutoCloseable, T>(
         incrementSaturating(requested)
         synchronized(lifecycleLock) {
             check(!active.containsKey(cancellation)) { "Terrain build cancellation token is already active" }
-            if (closed.get() || outstanding.get() >= maximumOutstanding || queue.size >= queueCapacity) {
+            val cpuRejected = exceedsBudget(
+                outstandingEstimatedCpuNanos,
+                estimate.cpuNanos,
+                estimatedCpuBudgetNanos,
+            )
+            val outputRejected = exceedsBudget(
+                outstandingEstimatedOutputBytes,
+                estimate.outputBytes,
+                estimatedOutputBudgetBytes,
+            )
+            if (closed.get() || outstanding.get() >= maximumOutstanding || queue.size >= queueCapacity ||
+                cpuRejected || outputRejected
+            ) {
                 incrementSaturating(rejected)
+                if (cpuRejected) incrementSaturating(estimatedCpuRejected)
+                if (outputRejected) incrementSaturating(estimatedOutputRejected)
                 cancellation.cancel()
                 return null
             }
 
-            val job = Job(tenant, identity, urgency, cancellation, build)
+            val job = Job(tenant, identity, urgency, estimate, cancellation, build)
             active[cancellation] = ActiveBuild(tenant, identity)
             queue += job
+            outstandingEstimatedCpuNanos = Math.addExact(outstandingEstimatedCpuNanos, estimate.cpuNanos)
+            outstandingEstimatedOutputBytes = Math.addExact(
+                outstandingEstimatedOutputBytes,
+                estimate.outputBytes,
+            )
+            estimatedCpuHighWaterNanos = maxOf(estimatedCpuHighWaterNanos, outstandingEstimatedCpuNanos)
+            estimatedOutputHighWaterBytes = maxOf(
+                estimatedOutputHighWaterBytes,
+                outstandingEstimatedOutputBytes,
+            )
             updateHighWater(queueHighWater, queue.size)
             updateHighWater(outstandingHighWater, outstanding.incrementAndGet())
             incrementSaturating(admitted)
@@ -191,15 +252,38 @@ class TerrainBuildRuntime<C : AutoCloseable, T>(
     }
 
     fun drain(maxCompletions: Int, consumer: (TerrainBuildCompletion<T>) -> Unit): Int {
+        return drainInternal(maxCompletions, route = false, consumer)
+    }
+
+    internal fun route(maxCompletions: Int, consumer: (TerrainBuildCompletion<T>) -> Unit): Int {
+        return drainInternal(maxCompletions, route = true, consumer)
+    }
+
+    internal fun releaseRouted(estimate: TerrainBuildEstimate) {
+        decrementChecked(routedCompletionDepth, 1, "routed completion")
+        releaseOutstanding(estimate)
+    }
+
+    private fun drainInternal(
+        maxCompletions: Int,
+        route: Boolean,
+        consumer: (TerrainBuildCompletion<T>) -> Unit,
+    ): Int {
         require(maxCompletions > 0) { "Terrain completion drain limit must be positive" }
         var drained = 0
         while (drained < maxCompletions) {
             val completion = completions.poll() ?: break
+            var delivered = false
             try {
                 consumer(completion)
+                delivered = true
             } finally {
                 completionDepth.decrementAndGet()
-                outstanding.decrementAndGet()
+                if (route && delivered) {
+                    routedCompletionDepth.incrementAndGet()
+                } else {
+                    releaseOutstanding(completion.estimate)
+                }
                 drained++
             }
         }
@@ -209,15 +293,24 @@ class TerrainBuildRuntime<C : AutoCloseable, T>(
     fun snapshot(): TerrainBuildRuntimeSnapshot = synchronized(lifecycleLock) {
         TerrainBuildRuntimeSnapshot(
             queueDepth = queue.size,
-            completionDepth = completionDepth.get(),
+            completionDepth = Math.addExact(completionDepth.get(), routedCompletionDepth.get()),
+            routedCompletionDepth = routedCompletionDepth.get(),
             outstanding = outstanding.get(),
+            outstandingEstimatedCpuNanos = outstandingEstimatedCpuNanos,
+            outstandingEstimatedOutputBytes = outstandingEstimatedOutputBytes,
             active = active.size,
             queueHighWater = queueHighWater.get(),
             completionHighWater = completionHighWater.get(),
             outstandingHighWater = outstandingHighWater.get(),
+            estimatedCpuHighWaterNanos = estimatedCpuHighWaterNanos,
+            estimatedOutputHighWaterBytes = estimatedOutputHighWaterBytes,
+            estimatedCpuBudgetNanos = estimatedCpuBudgetNanos,
+            estimatedOutputBudgetBytes = estimatedOutputBudgetBytes,
             requested = requested.get(),
             admitted = admitted.get(),
             rejected = rejected.get(),
+            estimatedCpuRejected = estimatedCpuRejected.get(),
+            estimatedOutputRejected = estimatedOutputRejected.get(),
             started = started.get(),
             completed = completed.get(),
             cancelled = cancelled.get(),
@@ -320,9 +413,9 @@ class TerrainBuildRuntime<C : AutoCloseable, T>(
         }
         active.remove(job.cancellation)
         val depth = completionDepth.incrementAndGet()
-        completions += TerrainBuildCompletion(job.tenant, job.identity, outcome)
+        completions += TerrainBuildCompletion(job.tenant, job.identity, job.estimate, outcome)
         incrementSaturating(completed)
-        updateHighWater(completionHighWater, depth)
+        updateHighWater(completionHighWater, Math.addExact(depth, routedCompletionDepth.get()))
     }
 
     override fun close() {
@@ -338,11 +431,19 @@ class TerrainBuildRuntime<C : AutoCloseable, T>(
             active.remove(job.cancellation)
             job.cancellation.cancel()
             completionDepth.incrementAndGet()
-            completions += TerrainBuildCompletion(job.tenant, job.identity, TerrainBuildOutcome.Cancelled())
+            completions += TerrainBuildCompletion(
+                job.tenant,
+                job.identity,
+                job.estimate,
+                TerrainBuildOutcome.Cancelled(),
+            )
             incrementSaturating(cancelled)
             incrementSaturating(completed)
         }
-        updateHighWater(completionHighWater, completionDepth.get())
+        updateHighWater(
+            completionHighWater,
+            Math.addExact(completionDepth.get(), routedCompletionDepth.get()),
+        )
 
         var failure: Throwable? = null
         for (worker in workers) {
@@ -375,4 +476,26 @@ class TerrainBuildRuntime<C : AutoCloseable, T>(
             if (current == Long.MAX_VALUE || target.compareAndSet(current, current + 1L)) return
         }
     }
+
+    private fun decrementChecked(target: AtomicInteger, count: Int, subject: String) {
+        while (true) {
+            val current = target.get()
+            check(current >= count) { "Terrain $subject count underflow" }
+            if (target.compareAndSet(current, current - count)) return
+        }
+    }
+
+    private fun releaseOutstanding(estimate: TerrainBuildEstimate) = synchronized(lifecycleLock) {
+        decrementChecked(outstanding, 1, "outstanding build")
+        outstandingEstimatedCpuNanos = Math.subtractExact(outstandingEstimatedCpuNanos, estimate.cpuNanos)
+        outstandingEstimatedOutputBytes = Math.subtractExact(
+            outstandingEstimatedOutputBytes,
+            estimate.outputBytes,
+        )
+        check(outstandingEstimatedCpuNanos >= 0L) { "Terrain estimated CPU accounting underflow" }
+        check(outstandingEstimatedOutputBytes >= 0L) { "Terrain estimated output accounting underflow" }
+    }
+
+    private fun exceedsBudget(current: Long, estimate: Long, budget: Long): Boolean =
+        estimate > budget || current > budget - estimate
 }

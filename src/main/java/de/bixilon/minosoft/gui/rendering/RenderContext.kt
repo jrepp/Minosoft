@@ -37,6 +37,7 @@ import de.bixilon.minosoft.gui.rendering.system.window.WindowFactory
 import de.bixilon.minosoft.gui.rendering.tint.TintManager
 import de.bixilon.minosoft.gui.rendering.util.ScreenshotTaker
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
+import de.bixilon.minosoft.terrain.runtime.TerrainProcessBuildService
 
 class RenderContext(
     val session: PlaySession,
@@ -61,6 +62,7 @@ class RenderContext(
     val shaders = ShaderManager(this)
     val framebuffer = FramebufferManager(this)
     val shaderPipeline = ShaderPipelineRegistry()
+    val terrainSubmissions = TerrainProcessBuildService.createDeviceSubmissionSequencer()
     val renderer = RendererManager(this)
     val models = ModelLoader(this)
     val itemPredicates = ItemPredicateRuntime()

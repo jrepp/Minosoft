@@ -137,7 +137,7 @@ internal fun migrateTopOnlyTiles(
     }
 }
 
-/** Low-quality projection retained only for the legacy renderer during migration. */
+/** Low-quality projection retained only as readable top-only migration data. */
 internal fun DistantVerticalPage.toTopOnlyCompatibilityTile(): DistantLodTile =
     DistantLodTile.capture(ChunkPosition(Math.toIntExact(key.x), Math.toIntExact(key.z))) { x, z ->
         val occupied = get(x, z).runs.filter { it.material != null }

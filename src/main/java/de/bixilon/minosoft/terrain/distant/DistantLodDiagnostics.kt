@@ -19,6 +19,7 @@ package de.bixilon.minosoft.terrain.distant
 
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageBuildState
+import de.bixilon.minosoft.terrain.runtime.storage.TerrainSelectionPublicationSnapshot
 
 internal data class DistantLodRenderCellDiagnostic(
     val chunk: ChunkPosition,
@@ -94,7 +95,30 @@ internal data class DistantHierarchyPageDiagnostic(
     val fallbackFaces: Int,
 )
 
+internal data class DistantHierarchyRegionDiagnostic(
+    val detailLevel: Int,
+    val x: Long,
+    val z: Long,
+    val shard: Int,
+    val activePages: Int,
+    val retiredPages: Int,
+    val residentBytes: Long,
+    val vertexAllocatedBytes: Int,
+    val indexAllocatedBytes: Int,
+    val vertexHighWaterBytes: Int,
+    val indexHighWaterBytes: Int,
+    val vertexFragmentation: Double,
+    val indexFragmentation: Double,
+    val allocationFailures: Long,
+    val uploadFailures: Long,
+)
+
 internal data class DistantHierarchyRenderDiagnostics(
+    val deviceCapacityBytes: Long,
+    val storageHighWaterBytes: Long,
+    val stagingCapacityBytes: Int,
+    val storagePublicationGeneration: Long,
+    val selectionPublication: TerrainSelectionPublicationSnapshot,
     val indexRevision: Long,
     val sourcePublicationRevision: Long,
     val dirtyRevision: Long,
@@ -104,6 +128,8 @@ internal data class DistantHierarchyRenderDiagnostics(
     val gpuPages: Int,
     val pendingPages: Int,
     val queuedPages: Int,
+    val queuedBuildPages: Int,
+    val pendingUploadPages: Int,
     val mainSelectedPages: Int,
     val shadowSelectedPages: Int,
     val mainMaskedPages: Int,
@@ -116,10 +142,20 @@ internal data class DistantHierarchyRenderDiagnostics(
     val retiredBytes: Long,
     val allocationFailures: Long,
     val uploadFailures: Long,
+    val cpuLeaseCount: Int,
+    val pendingSubmissionCount: Int,
+    val failedSubmissionCount: Int,
+    val invalidatedSubmissionCount: Int,
+    val retiredCpuLeasedPages: Int,
+    val retiredPendingSubmissionPages: Int,
+    val retiredFailedSubmissionPages: Int,
+    val retiredDeviceInvalidatedPages: Int,
+    val deviceInvalidations: Long,
     val drawBatches: Int,
     val drawCommands: Int,
     val drawVertices: Long,
     val pendingSubmissionFences: Int,
     val detailCounts: Map<Int, Int>,
+    val regionStates: List<DistantHierarchyRegionDiagnostic>,
     val pages: List<DistantHierarchyPageDiagnostic>,
 )

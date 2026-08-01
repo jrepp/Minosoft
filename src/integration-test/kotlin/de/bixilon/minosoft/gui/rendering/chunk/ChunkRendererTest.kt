@@ -50,6 +50,7 @@ import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
 import de.bixilon.minosoft.gui.rendering.graph.resource.RenderResourcePlan
 import de.bixilon.minosoft.gui.rendering.graph.resource.VertexSemantic
 import de.bixilon.minosoft.gui.rendering.light.RenderLight
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererManager
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderPipelinePlan
@@ -65,6 +66,7 @@ import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainProductionPhase
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 import de.bixilon.minosoft.gui.rendering.tint.TintManager
+import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
 import de.bixilon.minosoft.modding.event.master.EventMaster
 import de.bixilon.minosoft.physics.entities.living.player.PlayerPhysics
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
@@ -293,6 +295,86 @@ class ChunkRendererTest {
         assert(telemetry.pendingUploads == 0)
         assert(telemetry.uploadedBytes == telemetry.outputBytes)
         assert(telemetry.phases.getValue(TerrainProductionPhase.UPLOAD).samples == 1L)
+    }
+
+    fun `terrain backend close releases loaded meshes before context destruction`() {
+        val renderer = create()
+        val chunk = renderer.create(ChunkPosition(2, 2), true, true)
+        val section = chunk.sections.create(1)!!.apply { this.blocks[1, 2, 3] = TestBlockStates.MODEL1 }
+
+        renderer.invalidate(section)
+        renderer.meshingQueue.work()
+        for (i in 0 until 100) {
+            sleep(10.milliseconds)
+            renderer.meshingQueue.publishCompleted()
+            if (renderer.isLoading(section)) break
+        }
+        renderer.loadingQueue.work()
+
+        val loaded = renderer.loaded.visibilitySnapshot().candidates.single().first
+        val gpuMeshes = ArrayList<de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMesh>()
+        loaded.meshes.forEach { _, mesh -> gpuMeshes += mesh }
+        assert(gpuMeshes.isNotEmpty())
+        assert(gpuMeshes.all { it.state == MeshStates.LOADED })
+
+        renderer.terrain.close()
+
+        assert(!renderer.isLoaded(section))
+        assert(!renderer.isUnloading(section))
+        assert(gpuMeshes.all { it.state == MeshStates.UNLOADED })
+    }
+
+    fun `complete production pipeline generation owns component retirement`() {
+        val chunks = create()
+        val manager = RendererManager(chunks.context)
+        chunks.context::renderer.forceSet(manager)
+        manager.register(chunks)
+
+        val initial = manager.pipeline.terrainSelection()
+        assert(initial.generation == 0L)
+        assert(initial.identity.nearProviderId == chunks.terrain.selection().owner.value)
+
+        val selected = object : WorldShaderPipeline {
+            override val owner = RenderOwnerId("minosoft:test-complete-pipeline")
+            override val plan = ShaderPipelinePlan(
+                owner = owner,
+                packName = "complete-pipeline-test",
+                fingerprint = "2".repeat(64),
+                views = setOf(RenderViewId.MAIN),
+                resources = RenderResourcePlan(emptyList(), emptyList()),
+                programs = listOf(
+                    ShaderProgramSource(
+                        name = "terrain",
+                        phase = ShaderProgramPhase.TERRAIN,
+                        vertex = "void main() {}",
+                        fragment = "void main() {}",
+                        uniforms = emptySet(),
+                        samplers = emptySet(),
+                    ),
+                ),
+                requiredTerrainSemantics = setOf(VertexSemantic.POSITION),
+            )
+            var closed = false
+            override fun bindTerrain(view: RenderViewId, material: TerrainMaterialClass, fallback: Shader) = Unit
+            override fun composite(fallback: FramebufferShader): FramebufferShader = fallback
+            override fun close() {
+                closed = true
+            }
+        }
+        val registration = chunks.context.shaderPipeline.replace(chunks.terrain.descriptor()) { selected }
+        val installed = manager.pipeline.terrainSelection()
+
+        assert(installed.generation == 1L)
+        assert(installed.identity.shaderPipelineGeneration == chunks.context.shaderPipeline.selection().generation)
+        registration.close()
+        assert(!selected.closed)
+
+        val restored = manager.pipeline.terrainSelection()
+        assert(restored.generation == 2L)
+        assert(selected.closed)
+
+        manager.unload()
+        chunks.context.shaderPipeline.close()
     }
 
     fun `mesh publication rejects a stale snapshot without a visibility gap`() {

@@ -69,6 +69,8 @@ class TerrainBackendRegistry(
     private var closed = false
     private var frameOpen = false
     private var frameLease: Lease? = null
+    private var frameBackend: TerrainBackend? = null
+    private var pinnedBackend: TerrainBackend? = null
     private var preparedFrames = 0L
     private var submittedBatches = 0L
     private var preparationStartedNanos = 0L
@@ -111,27 +113,66 @@ class TerrainBackendRegistry(
     inline fun <T> withBackend(action: (TerrainBackend) -> T): T =
         acquire().use { lease -> action(lease.backend) }
 
+    internal fun <T> withPinnedBackend(backend: TerrainBackend, action: () -> T): T {
+        synchronized(lock) {
+            check(!closed) { "Terrain backend registry is closed" }
+            check(pinnedBackend == null) { "A terrain pipeline frame is already pinned" }
+            check(!frameOpen) { "Terrain pipeline pin started while a frame is open" }
+            pinnedBackend = backend
+        }
+        var failure: Throwable? = null
+        try {
+            return action()
+        } catch (error: Throwable) {
+            failure = error
+            throw error
+        } finally {
+            val unfinished = synchronized(lock) {
+                pinnedBackend = null
+                if (frameOpen) frameBackend else null
+            }
+            if (unfinished != null) {
+                try {
+                    unfinished.finishFrame()
+                } catch (cleanup: Throwable) {
+                    if (failure == null) throw cleanup
+                    failure.addSuppressed(cleanup)
+                } finally {
+                    synchronized(lock) {
+                        frameOpen = false
+                        frameBackend = null
+                        frameLease = null
+                        preparationStartedNanos = 0L
+                    }
+                }
+            }
+        }
+    }
+
     fun prepare() {
-        val lease: Lease
+        var lease: Lease? = null
+        val backend: TerrainBackend
         synchronized(lock) {
             check(!closed) { "Terrain backend registry is closed" }
             check(!frameOpen) { "Terrain frame preparation started before the previous frame finished" }
-            lease = acquire()
+            backend = pinnedBackend ?: acquire().also { lease = it }.backend
             frameLease = lease
+            frameBackend = backend
             frameOpen = true
             frameSubmissions.clear()
             preparedFrames++
             preparationStartedNanos = System.nanoTime()
         }
         try {
-            lease.backend.prepare()
+            backend.prepare()
         } catch (failure: Throwable) {
             synchronized(lock) {
                 frameOpen = false
                 frameLease = null
+                frameBackend = null
                 preparationStartedNanos = 0L
             }
-            lease.close()
+            lease?.close()
             throw failure
         }
     }
@@ -165,18 +206,19 @@ class TerrainBackendRegistry(
     }
 
     fun finishFrame() {
-        val lease = synchronized(lock) {
+        val (backend, lease) = synchronized(lock) {
             check(frameOpen) { "Terrain frame completion requires an open prepared frame" }
-            checkNotNull(frameLease) { "Terrain frame has no selected backend generation" }
+            checkNotNull(frameBackend) { "Terrain frame has no selected backend generation" } to frameLease
         }
         try {
-            lease.backend.finishFrame()
+            backend.finishFrame()
         } finally {
             synchronized(lock) {
                 frameOpen = false
                 frameLease = null
+                frameBackend = null
             }
-            lease.close()
+            lease?.close()
         }
     }
 
@@ -210,7 +252,7 @@ class TerrainBackendRegistry(
 
     private fun currentFrameBackend(): TerrainBackend = synchronized(lock) {
         check(frameOpen) { "Terrain frame operation requires an open prepared frame" }
-        checkNotNull(frameLease) { "Terrain frame has no selected backend generation" }.backend
+        checkNotNull(frameBackend) { "Terrain frame has no selected backend generation" }
     }
 
     override fun close() {
@@ -219,6 +261,8 @@ class TerrainBackendRegistry(
             if (closed) return
             closed = true
             frameOpen = false
+            frameBackend = null
+            pinnedBackend = null
             preparationStartedNanos = 0L
             activeFrame = frameLease
             frameLease = null

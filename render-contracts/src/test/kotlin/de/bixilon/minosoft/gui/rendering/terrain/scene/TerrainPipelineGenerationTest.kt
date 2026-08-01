@@ -84,7 +84,7 @@ class TerrainPipelineGenerationTest {
 
         assertThrows<IllegalArgumentException> {
             TerrainPipelineCandidate.create(
-                mode = TerrainRuntimeMode.UNIFIED_COMPARE,
+                mode = TerrainRuntimeMode.UNIFIED,
                 nearProvider = near,
                 distantProvider = null,
                 materialTable = material,
@@ -178,7 +178,7 @@ class TerrainPipelineGenerationTest {
     }
 
     private fun candidate(prefix: String, closed: MutableList<String>) = TerrainPipelineCandidate.create(
-        mode = TerrainRuntimeMode.UNIFIED_COMPARE,
+        mode = TerrainRuntimeMode.UNIFIED,
         nearProvider = Provider("$prefix-near", TerrainDomain.NEAR, closed),
         distantProvider = Provider("$prefix-distant", TerrainDomain.DISTANT, closed),
         materialTable = Material("$prefix-material", closed),

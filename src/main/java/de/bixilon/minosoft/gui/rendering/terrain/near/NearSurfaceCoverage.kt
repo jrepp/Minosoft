@@ -113,6 +113,17 @@ class NearSurfaceCoverageIndex(
         return changed
     }
 
+    /** Drops lifecycle state without consulting an owner that is already closing. */
+    fun discard(): Boolean {
+        val active = tracker ?: return false
+        val environment = checkNotNull(trackerEnvironment)
+        val changed = active.snapshot(environment.frame).coveredPages.isNotEmpty()
+        tracker = null
+        trackerEnvironment = null
+        if (changed) revision = Math.addExact(revision, 1L)
+        return changed
+    }
+
     fun snapshot(): NearSurfaceCoverageSnapshot {
         val environment = currentEnvironment()
         val lifecycle = ensureTracker(environment).snapshot(environment.frame)

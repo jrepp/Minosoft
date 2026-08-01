@@ -120,6 +120,28 @@ class ShaderPipelineRegistryTest {
     }
 
     @Test
+    fun `composite pipeline lease selects its exact shader generation`() {
+        val registry = ShaderPipelineRegistry()
+        val first = pipeline(required = setOf(VertexSemantic.POSITION))
+        val firstRegistration = registry.replace(terrain) { first }
+        val pipelineLease = registry.acquire()
+        val second = pipeline(required = setOf(VertexSemantic.POSITION))
+
+        registry.replace(terrain) { second }
+        registry.withFramePipeline(pipelineLease.pipeline) { selected ->
+            assertEquals(first, selected)
+            registry.withPipeline { assertEquals(first, it) }
+        }
+
+        assertFalse(first.closed)
+        pipelineLease.close()
+        assertTrue(first.closed)
+        assertFalse(second.closed)
+        firstRegistration.close()
+        registry.close()
+    }
+
+    @Test
     fun `failed frame clears thread binding and releases generation`() {
         val registry = ShaderPipelineRegistry()
         val first = pipeline(required = setOf(VertexSemantic.POSITION))

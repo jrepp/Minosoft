@@ -103,6 +103,65 @@ class TerrainCoverageMaskingTest {
         assertEquals(settled.drawDistant(distant), settled.drawDistant(distant))
     }
 
+    @Test
+    fun `named seam motion lifecycle is deterministic and never exposes a hole`() {
+        val tracker = TerrainCoverageTracker(worldEpoch = 1L, providerGeneration = 1L)
+        val near = page(TerrainDomain.NEAR, x = 3L, z = -2L)
+        val distant = page(TerrainDomain.DISTANT, x = 3L, z = -2L)
+
+        tracker.transition(near, TerrainCoverageState.REQUESTED, true, frame = 0L)
+        tracker.transition(near, TerrainCoverageState.BUILDING, true, frame = 1L)
+        tracker.transition(near, TerrainCoverageState.UPLOAD_PENDING, true, frame = 2L)
+        assertVisiblePair(tracker.snapshot(2L), distant, expectedNear = false, expectedDistant = true)
+
+        tracker.transition(near, TerrainCoverageState.READY, true, frame = 3L)
+        var previousDistant = true
+        for (frame in 3L..11L) {
+            val snapshot = tracker.snapshot(frame)
+            val first = TerrainCoveragePageMask(snapshot, policy).drawDistant(distant)
+            val second = TerrainCoveragePageMask(snapshot, policy).drawDistant(distant)
+            assertEquals(first, second)
+            assertTrue(previousDistant || !first, "Settled coverage re-exposed a distant page")
+            assertTrue(TerrainCoverageMasking.decide(snapshot.cells.single(), policy).drawNear || first)
+            if (frame == 3L) assertTrue(first)
+            if (frame == 11L) assertFalse(first)
+            previousDistant = first
+        }
+
+        // A failed replacement returns to REQUESTED while retaining the exact
+        // settled spatial age, so distant geometry does not flash back in.
+        tracker.transition(near, TerrainCoverageState.REQUESTED, true, frame = 12L)
+        tracker.transition(near, TerrainCoverageState.BUILDING, true, frame = 13L)
+        tracker.transition(near, TerrainCoverageState.REQUESTED, true, frame = 14L)
+        assertVisiblePair(tracker.snapshot(14L), distant, expectedNear = true, expectedDistant = false)
+
+        tracker.transition(near, TerrainCoverageState.BUILDING, true, frame = 15L)
+        tracker.transition(near, TerrainCoverageState.UPLOAD_PENDING, true, frame = 16L)
+        tracker.transition(near, TerrainCoverageState.READY, true, frame = 17L)
+        tracker.transition(near, TerrainCoverageState.RETIRING, true, frame = 18L)
+        for (frame in 18L..26L) {
+            val snapshot = tracker.snapshot(frame)
+            val cell = snapshot.cells.single()
+            val nearDecision = TerrainCoverageMasking.decide(cell, policy)
+            assertTrue(nearDecision.drawNear || TerrainCoveragePageMask(snapshot, policy).drawDistant(distant))
+        }
+        tracker.transition(near, TerrainCoverageState.ABSENT, true, frame = 27L)
+        assertVisiblePair(tracker.snapshot(27L), distant, expectedNear = false, expectedDistant = true)
+    }
+
+    private fun assertVisiblePair(
+        snapshot: TerrainCoverageSnapshot,
+        distant: TerrainPageKey,
+        expectedNear: Boolean,
+        expectedDistant: Boolean,
+    ) {
+        val nearDecision = TerrainCoverageMasking.decide(snapshot.cells.singleOrNull(), policy)
+        val drawDistant = TerrainCoveragePageMask(snapshot, policy).drawDistant(distant)
+        assertEquals(expectedNear, nearDecision.drawNear)
+        assertEquals(expectedDistant, drawDistant)
+        assertTrue(nearDecision.drawNear || drawDistant, "Near/distant seam exposed a hole")
+    }
+
     private fun cell(
         state: TerrainCoverageState,
         transitionAge: Int = 0,

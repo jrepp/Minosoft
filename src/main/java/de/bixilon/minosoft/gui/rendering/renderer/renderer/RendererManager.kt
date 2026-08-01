@@ -118,11 +118,24 @@ class RendererManager(
         }
     }
 
+    private fun finishFrame() {
+        var failure: Throwable? = null
+        for (renderer in list) {
+            try {
+                renderer.postDraw()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        failure?.let { throw it }
+    }
+
     override fun draw() {
         context.profiler("draw") {
-            pipeline.draw {
-                context.profiler("prepare") { prepare() }
-            }
+            pipeline.draw(
+                prepare = { context.profiler("prepare") { prepare() } },
+                complete = { context.profiler("post draw") { finishFrame() } },
+            )
         }
     }
 
@@ -131,6 +144,16 @@ class RendererManager(
     }
 
     fun unload() {
-        list.forEach { it.unload() }
+        var failure: Throwable? = null
+        fun cleanup(action: () -> Unit) {
+            try {
+                action()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        cleanup(pipeline::close)
+        list.forEach { candidate -> cleanup(candidate::unload) }
+        failure?.let { throw it }
     }
 }

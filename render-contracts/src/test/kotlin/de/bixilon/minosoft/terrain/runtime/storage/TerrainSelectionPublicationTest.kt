@@ -74,6 +74,98 @@ class TerrainSelectionPublicationTest {
         assertTrue(publication.retainedPages().isEmpty())
     }
 
+    @Test
+    fun `snapshot is bounded sorted and generationed by state changes`() {
+        val publication = TerrainSelectionPublication()
+        val shadow = TerrainViewKey("minosoft:shadow")
+        val main = TerrainViewKey("minosoft:main")
+        val first = target(1, version = 2L)
+        val second = target(2, version = 3L)
+
+        publication.desire(shadow, listOf(second))
+        publication.desire(main, listOf(first, second))
+        publication.desire(main, listOf(first, second))
+        publication.promote(shadow, mapOf(second.page to 3L))
+
+        val snapshot = publication.snapshot(mapOf(first.page to 1L, second.page to 3L))
+
+        assertEquals(3L, snapshot.generation)
+        assertEquals(2, snapshot.retainedPageCount)
+        assertEquals(listOf(main, shadow), snapshot.views.map { it.view })
+        assertEquals(2, snapshot.views[0].desiredPageCount)
+        assertEquals(0, snapshot.views[0].activePageCount)
+        assertEquals(1, snapshot.views[0].missingPageCount)
+        assertEquals(1, snapshot.views[1].activePageCount)
+    }
+
+    @Test
+    fun `progressive desire never removes an active page without an available target`() {
+        val publication = TerrainSelectionPublication()
+        val view = TerrainViewKey("minosoft:main")
+        val first = target(0, version = 1L)
+        val second = target(1, version = 1L)
+        val third = target(2, version = 1L)
+
+        publication.desire(view, listOf(first, second))
+        assertTrue(publication.promote(view, mapOf(first.page to 1L, second.page to 1L)))
+
+        assertFalse(
+            publication.desireAvailable(
+                view,
+                requestedPages = listOf(first.page, second.page, third.page),
+                availableTargets = listOf(first, third),
+            ),
+        )
+        assertEquals(listOf(first, second), publication.desired(view))
+        assertEquals(listOf(first.page, second.page), publication.active(view))
+
+        assertTrue(
+            publication.desireAvailable(
+                view,
+                requestedPages = listOf(first.page, second.page, third.page),
+                availableTargets = listOf(first, second, third),
+            ),
+        )
+        assertEquals(listOf(first, second, third), publication.desired(view))
+    }
+
+    @Test
+    fun `empty view can publish progressively and replacement removal waits for all targets`() {
+        val publication = TerrainSelectionPublication()
+        val view = TerrainViewKey("minosoft:main")
+        val first = target(0, version = 1L)
+        val second = target(1, version = 1L)
+
+        assertTrue(
+            publication.desireAvailable(
+                view,
+                requestedPages = listOf(first.page, second.page),
+                availableTargets = listOf(first),
+            ),
+        )
+        assertEquals(listOf(first), publication.desired(view))
+        assertTrue(publication.promote(view, mapOf(first.page to 1L)))
+
+        assertFalse(
+            publication.desireAvailable(
+                view,
+                requestedPages = listOf(second.page),
+                availableTargets = emptyList(),
+            ),
+        )
+        assertEquals(listOf(first.page), publication.active(view))
+        assertEquals(listOf(first), publication.desired(view))
+
+        assertTrue(
+            publication.desireAvailable(
+                view,
+                requestedPages = listOf(second.page),
+                availableTargets = listOf(second),
+            ),
+        )
+        assertEquals(listOf(second), publication.desired(view))
+    }
+
     private fun target(x: Long, version: Long) = TerrainResidencyTarget(
         TerrainPageKey(TerrainDomain.DISTANT, detailLevel = 0, x = x, y = 0L, z = 0L, worldEpoch = 1L),
         version,

@@ -25,15 +25,24 @@ import de.bixilon.minosoft.terrain.model.interop.TerrainTintSemantics
 import de.bixilon.minosoft.terrain.model.interop.TerrainUploadCapability
 import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
 import de.bixilon.minosoft.terrain.runtime.TerrainDeviceRuntimeId
+import de.bixilon.minosoft.terrain.runtime.TerrainFailureCategory
+import de.bixilon.minosoft.terrain.runtime.TerrainFailurePhase
+import de.bixilon.minosoft.terrain.runtime.TerrainFailureSnapshot
 import de.bixilon.minosoft.terrain.runtime.TerrainProcessScopeId
 import de.bixilon.minosoft.terrain.runtime.TerrainResidencyCapSnapshot
 import de.bixilon.minosoft.terrain.runtime.TerrainResidencyCategory
 import de.bixilon.minosoft.terrain.runtime.TerrainResidencyCategoryAccounting
 import de.bixilon.minosoft.terrain.runtime.TerrainResidencyScope
 import de.bixilon.minosoft.terrain.runtime.TerrainSubmissionSerial
+import de.bixilon.minosoft.terrain.runtime.TerrainRetryEligibility
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildRuntimeSnapshot
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainSchedulerTenantId
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainSharedBuildServiceSnapshot
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainSharedBuildTenantSnapshot
 
 internal object TerrainDiagnosticFixtures {
     const val DIAGNOSTIC_GENERATION: Long = 101L
+    const val PAGE_REGISTRY_GENERATION: Long = 111L
     const val WORLD_EPOCH: Long = 7L
 
     fun query(maximumCount: Int = 2): TerrainPageQuery = TerrainPageQuery(
@@ -72,6 +81,43 @@ internal object TerrainDiagnosticFixtures {
                 sourceDataRevision = 4L,
             ),
             providerId = "builtin",
+            source = "near-snapshot",
+            revisions = TerrainPageRevisionDiagnosticSnapshot(
+                sourceRevision = 4L,
+                publicationRevision = 72L,
+            ),
+            ranges = listOf(
+                TerrainPageRangeDiagnosticSnapshot(
+                    partitionId = "opaque",
+                    vertexOffsetBytes = 0,
+                    vertexLengthBytes = 64,
+                    indexOffsetBytes = 0,
+                    indexLengthBytes = 12,
+                ),
+            ),
+            visibility = listOf(
+                TerrainPageVisibilityDiagnosticSnapshot("main", selected = true, masked = false),
+                TerrainPageVisibilityDiagnosticSnapshot(
+                    "shadow",
+                    selected = x < 0L,
+                    masked = x < 0L,
+                ),
+            ),
+            artifactDigest = if (x < 0L) "sha256:left" else "sha256:right",
+            failure = if (x < 0L) {
+                TerrainFailureSnapshot(
+                    category = TerrainFailureCategory.TRANSIENT,
+                    phase = TerrainFailurePhase.BUILD,
+                    generation = 5L,
+                    retryEligibility = TerrainRetryEligibility.AfterBackoff(
+                        attemptsUsed = 1,
+                        maximumAttempts = 3,
+                        retryAtNanos = 1_000L,
+                    ),
+                )
+            } else {
+                null
+            },
         )
     }
 
@@ -79,7 +125,7 @@ internal object TerrainDiagnosticFixtures {
         val query = query()
         val pages = listOf(pageSnapshot(1L, 0L), pageSnapshot(-1L, -1L))
         val cursor = TerrainPageCursorCodec.issue(
-            diagnosticGeneration = DIAGNOSTIC_GENERATION,
+            diagnosticGeneration = PAGE_REGISTRY_GENERATION,
             query = query,
             lastPage = pages.first().page,
         )
@@ -117,7 +163,54 @@ internal object TerrainDiagnosticFixtures {
                     TerrainCoverageState.REQUESTED to 1,
                 ),
             ),
-            pageRegistryGeneration = 111L,
+            pageRegistryGeneration = PAGE_REGISTRY_GENERATION,
+            scheduling = TerrainSharedBuildServiceSnapshot(
+                runtime = TerrainBuildRuntimeSnapshot(
+                    queueDepth = 2,
+                    completionDepth = 3,
+                    routedCompletionDepth = 2,
+                    outstanding = 6,
+                    outstandingEstimatedCpuNanos = 600L,
+                    outstandingEstimatedOutputBytes = 6_000L,
+                    active = 4,
+                    queueHighWater = 8,
+                    completionHighWater = 7,
+                    outstandingHighWater = 12,
+                    estimatedCpuHighWaterNanos = 1_200L,
+                    estimatedOutputHighWaterBytes = 12_000L,
+                    estimatedCpuBudgetNanos = 10_000L,
+                    estimatedOutputBudgetBytes = 100_000L,
+                    requested = 20L,
+                    admitted = 18L,
+                    rejected = 2L,
+                    estimatedCpuRejected = 1L,
+                    estimatedOutputRejected = 1L,
+                    started = 16L,
+                    completed = 13L,
+                    cancelled = 1L,
+                    failed = 1L,
+                ),
+                tenants = listOf(
+                    TerrainSharedBuildTenantSnapshot(
+                        ownerId = "minosoft:distant-owner",
+                        tenant = TerrainSchedulerTenantId("distant:world-1"),
+                        accepting = true,
+                        activeBuilds = 2,
+                        outstanding = 3,
+                        completionDepth = 1,
+                        workerContextCount = 2,
+                    ),
+                    TerrainSharedBuildTenantSnapshot(
+                        ownerId = "minosoft:near-owner",
+                        tenant = TerrainSchedulerTenantId("near:world-1"),
+                        accepting = true,
+                        activeBuilds = 2,
+                        outstanding = 3,
+                        completionDepth = 2,
+                        workerContextCount = 3,
+                    ),
+                ),
+            ),
             residency = listOf(
                 TerrainResidencyDiagnosticSnapshot(
                     generation = 82L,
@@ -156,6 +249,32 @@ internal object TerrainDiagnosticFixtures {
                 pendingSubmissionCount = 4,
                 failedSubmissionCount = 5L,
                 completionGeneration = 6L,
+            ),
+            publication = listOf(
+                TerrainPublicationDiagnosticSnapshot(
+                    domain = TerrainDomain.NEAR,
+                    providerId = "builtin",
+                    storageGeneration = 72L,
+                    selectionGeneration = 73L,
+                    residentPageCount = 3,
+                    retainedPageCount = 3,
+                    views = listOf(
+                        TerrainViewVisibilityDiagnosticSnapshot(
+                            viewId = "main",
+                            desiredPageCount = 3,
+                            visiblePageCount = 2,
+                            missingPageCount = 1,
+                            maskedPageCount = 0,
+                        ),
+                        TerrainViewVisibilityDiagnosticSnapshot(
+                            viewId = "shadow",
+                            desiredPageCount = 2,
+                            visiblePageCount = 2,
+                            missingPageCount = 0,
+                            maskedPageCount = 1,
+                        ),
+                    ),
+                ),
             ),
             pageWindow = TerrainPageDiagnosticWindow(query, pages, cursor),
         )

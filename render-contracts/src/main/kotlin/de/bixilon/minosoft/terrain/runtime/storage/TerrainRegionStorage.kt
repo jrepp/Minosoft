@@ -196,6 +196,15 @@ data class TerrainRegionStorageMetrics(
     val publications: Long,
     val allocationFailures: Long,
     val uploadFailures: Long,
+    val cpuLeaseCount: Int,
+    val pendingSubmissionCount: Int,
+    val failedSubmissionCount: Int,
+    val invalidatedSubmissionCount: Int,
+    val retiredCpuLeasedPages: Int,
+    val retiredPendingSubmissionPages: Int,
+    val retiredFailedSubmissionPages: Int,
+    val retiredDeviceInvalidatedPages: Int,
+    val deviceInvalidations: Long,
 )
 
 /**
@@ -215,7 +224,9 @@ class TerrainRegionStorage(
         val indexRanges: List<TerrainBufferRange>,
     ) {
         var cpuLeases = 0
-        val submissions = linkedSetOf<TerrainSubmissionSerial>()
+        val pendingSubmissions = linkedSetOf<TerrainSubmissionSerial>()
+        val failedSubmissions = linkedSetOf<TerrainSubmissionSerial>()
+        val invalidatedSubmissions = linkedSetOf<TerrainSubmissionSerial>()
     }
 
     private val vertexAllocator = TerrainRangeAllocator(device.vertexCapacityBytes)
@@ -229,6 +240,7 @@ class TerrainRegionStorage(
     private var publications = 0L
     private var allocationFailures = 0L
     private var uploadFailures = 0L
+    private var deviceInvalidations = 0L
 
     init {
         require(device.deviceRuntime == completion.deviceRuntime) {
@@ -252,6 +264,25 @@ class TerrainRegionStorage(
     @Synchronized
     fun snapshot(): Map<TerrainPageKey, TerrainPublishedPage> =
         java.util.Collections.unmodifiableMap(active.mapValuesTo(LinkedHashMap()) { it.value.page })
+
+    /** Exact non-mutating allocator admission used before selecting a region shard. */
+    @Synchronized
+    fun canPublish(artifact: TerrainMeshArtifact): Boolean {
+        require(TerrainRegionKey.containing(artifact.identity.page, extent) == key) {
+            "Terrain artifact belongs to another region"
+        }
+        require(artifact.identity.layoutGeneration == device.layoutGeneration) {
+            "Terrain artifact layout generation does not match the device"
+        }
+        check(!artifact.isClosed) { "Terrain artifact is closed" }
+        val vertexPreview = vertexAllocator.copyState()
+        val indexPreview = indexAllocator.copyState()
+        for (stream in artifact.streams) {
+            if (vertexPreview.allocate(stream.vertices.size, stream.vertexStrideBytes) == null) return false
+            if (indexPreview.allocate(stream.indices.size, stream.indexElementBytes) == null) return false
+        }
+        return true
+    }
 
     @Synchronized
     fun publish(artifact: TerrainMeshArtifact): TerrainPublishedPage? {
@@ -330,7 +361,7 @@ class TerrainRegionStorage(
             publicationGeneration = nextPublicationGeneration
             publications = nextPublications
             uploadedBytes = nextUploadedBytes
-            collectRetiredLocked(emptySet())
+            collectRetiredLocked(emptyMap())
             return page
         } finally {
             val elapsed = try {
@@ -349,7 +380,7 @@ class TerrainRegionStorage(
         active.remove(page)
         retired += allocation
         publicationGeneration = nextPublicationGeneration
-        collectRetiredLocked(emptySet())
+        collectRetiredLocked(emptyMap())
         return true
     }
 
@@ -363,12 +394,15 @@ class TerrainRegionStorage(
 
     fun collectRetired(): Int {
         val pending = synchronized(this) {
-            retired.flatMapTo(linkedSetOf()) { it.submissions }
+            (active.values + retired).flatMapTo(linkedSetOf()) { it.pendingSubmissions }
         }
-        val completed = pending.filterTo(hashSetOf()) {
-            completion.state(it) == TerrainSubmissionState.COMPLETE
+        val states = pending.associateWithTo(linkedMapOf()) {
+            completion.state(it)
         }
-        return synchronized(this) { collectRetiredLocked(completed) }
+        return synchronized(this) {
+            (active.values + retired).forEach { collectSubmissionStatesLocked(it, states) }
+            collectRetiredLocked(emptyMap())
+        }
     }
 
     /** Context loss discards every logical device allocation and page entry at once. */
@@ -383,6 +417,7 @@ class TerrainRegionStorage(
         vertexAllocator.reset()
         indexAllocator.reset()
         publicationGeneration = nextPublicationGeneration
+        deviceInvalidations = saturatingIncrement(deviceInvalidations)
     }
 
     @Synchronized
@@ -393,6 +428,7 @@ class TerrainRegionStorage(
         val retiredBytes = retired.fold(0L) { total, allocation ->
             Math.addExact(total, allocation.page.residentBytes)
         }
+        val allocations = active.values + retired
         return TerrainRegionStorageMetrics(
             publicationGeneration = publicationGeneration,
             activePages = active.size,
@@ -410,6 +446,15 @@ class TerrainRegionStorage(
             publications = publications,
             allocationFailures = allocationFailures,
             uploadFailures = uploadFailures,
+            cpuLeaseCount = checkedCount(allocations.map { it.cpuLeases }),
+            pendingSubmissionCount = checkedCount(allocations.map { it.pendingSubmissions.size }),
+            failedSubmissionCount = checkedCount(allocations.map { it.failedSubmissions.size }),
+            invalidatedSubmissionCount = checkedCount(allocations.map { it.invalidatedSubmissions.size }),
+            retiredCpuLeasedPages = retired.count { it.cpuLeases != 0 },
+            retiredPendingSubmissionPages = retired.count { it.pendingSubmissions.isNotEmpty() },
+            retiredFailedSubmissionPages = retired.count { it.failedSubmissions.isNotEmpty() },
+            retiredDeviceInvalidatedPages = retired.count { it.invalidatedSubmissions.isNotEmpty() },
+            deviceInvalidations = deviceInvalidations,
         )
     }
 
@@ -417,7 +462,15 @@ class TerrainRegionStorage(
     internal fun submit(allocations: List<Any>, submission: TerrainSubmission) {
         require(submission.deviceRuntime == device.deviceRuntime) { "Terrain submission uses another device" }
         @Suppress("UNCHECKED_CAST")
-        (allocations as List<Allocation>).forEach { it.submissions += submission.serial }
+        (allocations as List<Allocation>).forEach { allocation ->
+            check(submission.serial !in allocation.failedSubmissions) {
+                "Terrain submission serial was already recorded as failed"
+            }
+            check(submission.serial !in allocation.invalidatedSubmissions) {
+                "Terrain submission serial belongs to an invalidated device"
+            }
+            allocation.pendingSubmissions += submission.serial
+        }
     }
 
     @Synchronized
@@ -427,7 +480,7 @@ class TerrainRegionStorage(
             check(it.cpuLeases > 0) { "Terrain region lease released too many times" }
             it.cpuLeases--
         }
-        collectRetiredLocked(emptySet())
+        collectRetiredLocked(emptyMap())
     }
 
     private fun allocationFailed(
@@ -447,13 +500,18 @@ class TerrainRegionStorage(
         vertexRanges.asReversed().forEach(vertexAllocator::release)
     }
 
-    private fun collectRetiredLocked(completed: Set<TerrainSubmissionSerial>): Int {
+    private fun collectRetiredLocked(states: Map<TerrainSubmissionSerial, TerrainSubmissionState>): Int {
         var released = 0
         val iterator = retired.iterator()
         while (iterator.hasNext()) {
             val allocation = iterator.next()
-            allocation.submissions.removeAll(completed)
-            if (allocation.cpuLeases != 0 || allocation.submissions.isNotEmpty()) continue
+            collectSubmissionStatesLocked(allocation, states)
+            if (
+                allocation.cpuLeases != 0 ||
+                allocation.pendingSubmissions.isNotEmpty() ||
+                allocation.failedSubmissions.isNotEmpty() ||
+                allocation.invalidatedSubmissions.isNotEmpty()
+            ) continue
             releaseCandidate(allocation.vertexRanges, allocation.indexRanges)
             iterator.remove()
             released++
@@ -461,11 +519,40 @@ class TerrainRegionStorage(
         return released
     }
 
+    private fun collectSubmissionStatesLocked(
+        allocation: Allocation,
+        states: Map<TerrainSubmissionSerial, TerrainSubmissionState>,
+    ) {
+        val submissions = allocation.pendingSubmissions.iterator()
+        while (submissions.hasNext()) {
+            val serial = submissions.next()
+            when (states[serial]) {
+                TerrainSubmissionState.COMPLETE -> submissions.remove()
+                TerrainSubmissionState.FAILED -> {
+                    submissions.remove()
+                    allocation.failedSubmissions += serial
+                }
+                TerrainSubmissionState.DEVICE_INVALIDATED -> {
+                    submissions.remove()
+                    allocation.invalidatedSubmissions += serial
+                }
+                TerrainSubmissionState.PENDING,
+                null -> Unit
+            }
+        }
+    }
+
     private fun saturatingIncrement(value: Long): Long =
         if (value == Long.MAX_VALUE) value else value + 1L
 
     private fun saturatingAdd(left: Long, right: Long): Long =
         if (Long.MAX_VALUE - left < right) Long.MAX_VALUE else left + right
+
+    private fun checkedCount(counts: Collection<Int>): Int {
+        var total = 0
+        for (count in counts) total = Math.addExact(total, count)
+        return total
+    }
 }
 
 class TerrainRegionLease internal constructor(
@@ -571,6 +658,15 @@ class TerrainRangeAllocator(val capacity: Int) {
         free.clear()
         free[0] = capacity
         allocatedBytes = 0
+    }
+
+    internal fun copyState(): TerrainRangeAllocator {
+        val copy = TerrainRangeAllocator(capacity)
+        copy.free.clear()
+        copy.free.putAll(free)
+        copy.allocatedBytes = allocatedBytes
+        copy.highWaterBytes = highWaterBytes
+        return copy
     }
 
     val freeBytes: Int get() = capacity - allocatedBytes

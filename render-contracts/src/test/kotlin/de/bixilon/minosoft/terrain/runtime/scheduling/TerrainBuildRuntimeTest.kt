@@ -32,6 +32,52 @@ import kotlin.test.assertTrue
 
 class TerrainBuildRuntimeTest {
     @Test
+    fun `estimated CPU and output budgets reject independently and retire on drain`() {
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val runtime = TerrainBuildRuntime<AutoCloseable, String>(
+            workerCount = 1,
+            queueCapacity = 4,
+            estimatedCpuBudgetNanos = 10L,
+            estimatedOutputBudgetBytes = 100L,
+            contextFactory = { AutoCloseable {} },
+        )
+        val tenant = TerrainSchedulerTenantId("test:estimated-admission")
+        assertNotNull(runtime.submit(
+            tenant,
+            identity(TerrainDomain.NEAR, 1L),
+            estimate = TerrainBuildEstimate(cpuNanos = 6L, outputBytes = 60L),
+        ) { _, _ ->
+            started.countDown()
+            assertTrue(release.await(5L, TimeUnit.SECONDS))
+            "accepted"
+        })
+        assertTrue(started.await(5L, TimeUnit.SECONDS))
+        assertNull(runtime.submit(
+            tenant,
+            identity(TerrainDomain.NEAR, 2L),
+            estimate = TerrainBuildEstimate(cpuNanos = 5L, outputBytes = 1L),
+        ) { _, _ -> "cpu-rejected" })
+        assertNull(runtime.submit(
+            tenant,
+            identity(TerrainDomain.NEAR, 3L),
+            estimate = TerrainBuildEstimate(cpuNanos = 1L, outputBytes = 50L),
+        ) { _, _ -> "output-rejected" })
+
+        val admitted = runtime.snapshot()
+        assertEquals(6L, admitted.outstandingEstimatedCpuNanos)
+        assertEquals(60L, admitted.outstandingEstimatedOutputBytes)
+        assertEquals(1L, admitted.estimatedCpuRejected)
+        assertEquals(1L, admitted.estimatedOutputRejected)
+        release.countDown()
+        assertEquals(listOf("accepted"), awaitValues(runtime, 1))
+        val drained = runtime.snapshot()
+        assertEquals(0L, drained.outstandingEstimatedCpuNanos)
+        assertEquals(0L, drained.outstandingEstimatedOutputBytes)
+        runtime.close()
+    }
+
+    @Test
     fun `distant work receives reserved capacity during near churn`() {
         val firstStarted = CountDownLatch(1)
         val releaseFirst = CountDownLatch(1)

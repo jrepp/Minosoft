@@ -42,6 +42,8 @@ import de.bixilon.minosoft.gui.rendering.system.base.RenderSystem
 import de.bixilon.minosoft.modding.loader.fabric.FabricClientEventPhase
 import de.bixilon.minosoft.modding.loader.fabric.FabricClientEvents
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
+import de.bixilon.minosoft.gui.rendering.terrain.scene.ProductionTerrainPipelineRegistry
+import de.bixilon.minosoft.gui.rendering.terrain.scene.ProductionTerrainPipelineSelection
 
 class RendererPipeline(private val renderer: RendererManager) : Drawable {
     private data class WorldElement(
@@ -55,6 +57,11 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
 
     private var worldElements: Array<PipelineElement> = emptyArray()
     private var graph = RenderGraphGeneration.empty<FrameGraphExecution>()
+    private val terrainPipelines = ProductionTerrainPipelineRegistry(
+        renderer.context,
+        renderer,
+        graphGeneration = { graph.number },
+    )
 
     val generation: RenderGraphGeneration<FrameGraphExecution> get() = graph
     val elements: List<PipelineElement> get() = worldElements.toList()
@@ -279,7 +286,7 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
         graph = builder.build()
     }
 
-    override fun draw() = draw {}
+    override fun draw() = draw({}, {})
 
     /**
      * Runs producer preparation inside the same frame-pinned shader
@@ -287,15 +294,16 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
      * entity/chunk collectors to consume the exact shadow-culling snapshot
      * selected after BEFORE_WORLD_RENDER reload callbacks.
      */
-    fun draw(prepare: () -> Unit) {
+    fun draw(prepare: () -> Unit, complete: () -> Unit) {
         val execution = FrameGraphExecution(renderer.context)
         // Dimension and shader-pack reload consumers must publish a complete
         // candidate before this frame acquires and pins its pipeline lease.
         FabricClientEvents.dispatch(FabricClientEventPhase.BEFORE_WORLD_RENDER, execution.context)
         execution.worldEventOpen = true
         try {
-            renderer.context.shaderPipeline.withFramePipeline(renderer.context, prepare) {
+            terrainPipelines.withFrame(prepare) {
                 graph.execute(execution)
+                complete()
             }
         } catch (failure: Throwable) {
             if (execution.worldEventOpen) {
@@ -316,6 +324,10 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
         }
         rebuild()
     }
+
+    fun terrainSelection(): ProductionTerrainPipelineSelection = terrainPipelines.selection()
+
+    fun close() = terrainPipelines.close()
 
     private fun Renderer.passId(group: String): RenderPassId {
         val producer = this::class.java.name

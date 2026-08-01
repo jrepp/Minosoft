@@ -18,16 +18,118 @@
 package de.bixilon.minosoft.terrain.runtime.scheduling
 
 import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentity
+import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentityMismatch
 import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
 import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.assertThrows
 
 class TerrainSharedBuildServiceTest {
+    @Test
+    fun `near and distant barrier rejects old-world completions before publication`() {
+        val service = TerrainSharedBuildService(workerCount = 2, queueCapacity = 4)
+        val near = service.register<AutoCloseable, String>(
+            ownerId = "test:near-world",
+            tenant = TerrainSchedulerTenantId("test:near-world"),
+            contextFactory = { AutoCloseable {} },
+            disposer = {},
+        )
+        val distant = service.register<AutoCloseable, String>(
+            ownerId = "test:distant-world",
+            tenant = TerrainSchedulerTenantId("test:distant-world"),
+            contextFactory = { AutoCloseable {} },
+            disposer = {},
+        )
+        val started = CountDownLatch(2)
+        val release = CountDownLatch(1)
+
+        fun build(value: String): (AutoCloseable, TerrainCancellationToken) -> String = { _, _ ->
+            started.countDown()
+            check(release.await(5L, TimeUnit.SECONDS)) { "Timed out releasing cross-provider build" }
+            value
+        }
+        assertNotNull(near.submit(identity(TerrainDomain.NEAR, 1L), build = build("near")))
+        assertNotNull(distant.submit(identity(TerrainDomain.DISTANT, 2L), build = build("distant")))
+        assertTrue(started.await(5L, TimeUnit.SECONDS))
+
+        release.countDown()
+        awaitCompleted(near, 2)
+
+        val mismatches = mutableListOf<TerrainBuildIdentityMismatch>()
+        val published = mutableListOf<String>()
+        fun accept(completion: TerrainBuildCompletion<String>) {
+            val expected = completion.identity.copy(
+                page = completion.identity.page.copy(worldEpoch = 2L),
+            )
+            val mismatch = completion.identity.mismatch(expected)
+            if (mismatch == null) {
+                published += (completion.outcome as TerrainBuildOutcome.Success).value
+            } else {
+                mismatches += mismatch
+            }
+        }
+        assertEquals(1, near.drain(2, ::accept))
+        assertEquals(1, distant.drain(2, ::accept))
+        assertTrue(published.isEmpty())
+        assertEquals(
+            listOf(TerrainBuildIdentityMismatch.WORLD_EPOCH, TerrainBuildIdentityMismatch.WORLD_EPOCH),
+            mismatches,
+        )
+        assertEquals(0, service.snapshot().runtime.outstanding)
+
+        near.close()
+        distant.close()
+        service.close()
+    }
+
+    @Test
+    fun `routed tenant completions retain process capacity until owner drain`() {
+        val service = TerrainSharedBuildService(workerCount = 1, queueCapacity = 1)
+        val near = service.register<AutoCloseable, String>(
+            ownerId = "test:near-owner",
+            tenant = TerrainSchedulerTenantId("test:near"),
+            contextFactory = { AutoCloseable {} },
+            disposer = {},
+        )
+        val distant = service.register<AutoCloseable, String>(
+            ownerId = "test:distant-owner",
+            tenant = TerrainSchedulerTenantId("test:distant"),
+            contextFactory = { AutoCloseable {} },
+            disposer = {},
+        )
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+
+        assertNotNull(distant.submit(identity(TerrainDomain.DISTANT, 1L)) { _, _ -> "distant" })
+        awaitCompleted(distant, 1)
+        assertEquals(0, near.drain(1) {})
+        assertEquals(1, service.snapshot().runtime.routedCompletionDepth)
+
+        assertNotNull(near.submit(identity(TerrainDomain.NEAR, 2L)) { _, _ ->
+            started.countDown()
+            check(release.await(5L, TimeUnit.SECONDS)) { "Timed out releasing near build" }
+            "near"
+        })
+        assertTrue(started.await(5L, TimeUnit.SECONDS))
+        assertNull(near.submit(identity(TerrainDomain.NEAR, 3L)) { _, _ -> "rejected" })
+
+        release.countDown()
+        awaitCompleted(near, 2)
+        assertEquals(1, near.drain(1) {})
+        assertEquals(1, distant.drain(1) {})
+        assertEquals(0, service.snapshot().runtime.outstanding)
+        near.close()
+        distant.close()
+        service.close()
+    }
+
     @Test
     fun `typed tenant mailboxes do not publish on another tenant drain`() {
         val service = TerrainSharedBuildService(workerCount = 1, queueCapacity = 4)
@@ -56,6 +158,21 @@ class TerrainSharedBuildServiceTest {
         })
         assertEquals(listOf("near"), nearValues)
         assertTrue(distantValues.isEmpty())
+        val routedSnapshot = service.snapshot()
+        assertEquals(1, routedSnapshot.runtime.outstanding)
+        assertEquals(1, routedSnapshot.runtime.completionDepth)
+        assertEquals(1, routedSnapshot.runtime.routedCompletionDepth)
+        assertEquals(1L, routedSnapshot.runtime.outstandingEstimatedCpuNanos)
+        assertEquals(1L, routedSnapshot.runtime.outstandingEstimatedOutputBytes)
+        assertEquals(
+            listOf(
+                "test:distant" to (1 to 1),
+                "test:near" to (0 to 0),
+            ),
+            routedSnapshot.tenants.map {
+                it.tenant.value to (it.outstanding to it.completionDepth)
+            },
+        )
         assertEquals(1, distant.drain(2) { completion ->
             distantValues += (completion.outcome as TerrainBuildOutcome.Success).value
         })
@@ -75,6 +192,7 @@ class TerrainSharedBuildServiceTest {
             distantValues += (completion.outcome as TerrainBuildOutcome.Success).value
         })
         assertEquals(listOf(42, 43), distantValues)
+        assertEquals(0L, service.snapshot().runtime.outstandingEstimatedOutputBytes)
         distant.close()
         assertEquals(2, closedContexts.get())
         service.close()

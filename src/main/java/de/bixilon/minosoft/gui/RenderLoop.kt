@@ -79,8 +79,6 @@ class RenderLoop(
         context.profiler("draw") { context.renderer.draw() }
 
 
-        context.profiler("post draw") { context.renderer.forEach { it.postDraw() } }
-
         // handle opengl context tasks, but limit it per frame
         context.profiler("queue") {
             FabricFrameHooks.beforeQueueFlush(context)

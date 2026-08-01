@@ -30,10 +30,10 @@ import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Compan
 import de.bixilon.minosoft.gui.rendering.terrain.storage.OpenGlTerrainRegionDevice
 import de.bixilon.minosoft.gui.rendering.terrain.storage.OpenGlTerrainStagingBuffer
 import de.bixilon.minosoft.gui.rendering.terrain.storage.OpenGlTerrainSubmissionCompletion
-import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainRuntimeSelection
 import de.bixilon.minosoft.terrain.distant.DistantCompatibilityMaterial
 import de.bixilon.minosoft.terrain.distant.DistantCompatibilityMaterialResolver
 import de.bixilon.minosoft.terrain.distant.DistantHierarchyPageDiagnostic
+import de.bixilon.minosoft.terrain.distant.DistantHierarchyRegionDiagnostic
 import de.bixilon.minosoft.terrain.distant.DistantHierarchyRenderDiagnostics
 import de.bixilon.minosoft.terrain.distant.DistantLodChanges
 import de.bixilon.minosoft.terrain.distant.DistantLodRenderDiagnostics
@@ -41,9 +41,11 @@ import de.bixilon.minosoft.terrain.distant.DistantLodTile
 import de.bixilon.minosoft.terrain.distant.DistantLodTileSource
 import de.bixilon.minosoft.terrain.distant.DistantTerrainRenderConfig
 import de.bixilon.minosoft.terrain.distant.DistantTerrainRenderSource
+import de.bixilon.minosoft.terrain.distant.DistantTerrainInterop
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantFluidSample
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageHierarchy
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageHierarchyIndex
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageBuildState
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageMeshArtifact
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageMesher
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageNeighbourhood
@@ -64,12 +66,21 @@ import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
 import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
 import de.bixilon.minosoft.terrain.model.coverage.TerrainCoveragePageMask
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageState
 import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageTransitionPolicy
-import de.bixilon.minosoft.terrain.runtime.TerrainDeviceRuntimeId
 import de.bixilon.minosoft.terrain.runtime.TerrainProcessBuildService
-import de.bixilon.minosoft.terrain.runtime.TerrainProcessScopeId
-import de.bixilon.minosoft.terrain.runtime.TerrainSubmissionSerial
+import de.bixilon.minosoft.terrain.runtime.TerrainFailureCategory
+import de.bixilon.minosoft.terrain.runtime.TerrainFailurePhase
+import de.bixilon.minosoft.terrain.runtime.TerrainPageFailureRegistry
+import de.bixilon.minosoft.terrain.runtime.TerrainRetryEligibility
+import de.bixilon.minosoft.terrain.runtime.TerrainRetrySignal
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPageDiagnosticSnapshot
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPageQuery
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPageRangeDiagnosticSnapshot
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPageRevisionDiagnosticSnapshot
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPageVisibilityDiagnosticSnapshot
 import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildOutcome
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildEstimate
 import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildUrgency
 import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainCancellationToken
 import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainSchedulerTenantId
@@ -161,6 +172,7 @@ internal class DistantHierarchicalTerrainRuntime(
         val publicationVersion: Long,
         val digest: String,
         val materialGeneration: Long,
+        val region: Region?,
     )
 
     private data class SelectionInput(
@@ -176,6 +188,8 @@ internal class DistantHierarchicalTerrainRuntime(
     )
 
     private data class Region(
+        val key: TerrainRegionKey,
+        val shard: Int,
         val device: OpenGlTerrainRegionDevice,
         val storage: TerrainRegionStorage,
     )
@@ -187,6 +201,7 @@ internal class DistantHierarchicalTerrainRuntime(
         disposer = {},
     )
     private val requestSequence = AtomicLong()
+    private val failureClockOrigin = System.nanoTime()
     private var worldEpoch = context.session.world.terrainEpoch
     private var index = createIndex(worldEpoch)
     private var mainSelector = DistantPageSelector(worldEpoch)
@@ -199,23 +214,21 @@ internal class DistantHierarchicalTerrainRuntime(
     private var pendingSourceIngest = TreeSet(buildPriority.comparator)
     private var needsSourceBuild = TreeSet(buildPriority.comparator)
     private var needsArtifactBuild = TreeSet(buildPriority.comparator)
-    private val failures = HashMap<TerrainPageKey, Int>()
+    private val failures = TerrainPageFailureRegistry(failureCapacity())
+    private val failurePurposes = HashMap<TerrainPageKey, BuildPurpose>()
     private val cpuPages = LinkedHashMap<TerrainPageKey, DistantVerticalPage>()
     private val cpuArtifacts = LinkedHashMap<TerrainPageKey, CpuPage>()
     private val cpuSelectionMetadata = LinkedHashMap<TerrainPageKey, DistantPageSelectionMetadata>()
     private val gpuPages = LinkedHashMap<TerrainPageKey, GpuPage>()
+    private val gpuPublicationVersions = LinkedHashMap<TerrainPageKey, Long>()
     private val system = context.system as OpenGlRenderSystem
     private val staging = OpenGlTerrainStagingBuffer(VERTEX_CAPACITY_BYTES)
-    private val regions = LinkedHashMap<TerrainRegionKey, Region>()
+    private val regions = LinkedHashMap<TerrainRegionKey, MutableList<Region>>()
     private val batchCache = TerrainBatchCache()
     private val selectionPublication = TerrainSelectionPublication()
     private val submittedBatches = ArrayList<TerrainDrawBatch>()
-    private val deviceRuntime = TerrainDeviceRuntimeId(
-        PROCESS_SCOPE,
-        DEVICE_GENERATIONS.getAndUpdate { Math.incrementExact(it) },
-    )
+    private val deviceRuntime = context.terrainSubmissions.deviceRuntime
     private val completion = OpenGlTerrainSubmissionCompletion(context, deviceRuntime)
-    private var nextSubmissionSerial = 1L
     private var sourceRevision = Long.MIN_VALUE
     private val sourceKinds = LinkedHashMap<ChunkPosition, DistantLodTileSource>()
     private var nativeOwnership = NativeTerrainOwnershipSnapshot(0L, emptySet())
@@ -235,6 +248,7 @@ internal class DistantHierarchicalTerrainRuntime(
     private var lastDrawVertices = 0L
     private var diagnosticFrame = 0
     private var shaderGeneration = context.shaderPipeline.selection().generation
+    private var storageCapacityRevision = 0L
     private var closed = false
 
     fun prepare(
@@ -249,12 +263,19 @@ internal class DistantHierarchicalTerrainRuntime(
         nativeOwnership = ownership
         invalidateChangedPipelineGeneration()
         if (!source.presentationEnabled) {
+            // Cancelled builds still own routed shared-runtime capacity until
+            // this tenant consumes their completions. Keep draining while the
+            // presentation is disabled so a toggle cannot strand mailbox
+            // capacity or prevent a bounded idle boundary.
+            drainCompletions()
             clearContent()
             return
         }
         if (source.revision != sourceRevision) synchronize(source.changesSince(sourceRevision))
         drainSourceIngest()
         drainCompletions()
+        retryFailures(failureClockNanos())
+        retryCapacityFailures()
         updateSelections(cameraChunk, seamDistanceChunks)
         drainUploads()
         promoteSelections()
@@ -294,13 +315,15 @@ internal class DistantHierarchicalTerrainRuntime(
         } else {
             DistantTerrainRegionArtifactEncoder.waterMaterial
         }
-        val grouped = pages.filter(gpuPages::containsKey).groupBy { key ->
-            TerrainRegionKey.containing(key, REGION_EXTENT) to gpuPages.getValue(key).materialGeneration
-        }
+        val grouped = pages.mapNotNull { key ->
+            val page = gpuPages[key] ?: return@mapNotNull null
+            val region = page.region ?: return@mapNotNull null
+            Triple(region, page.materialGeneration, key)
+        }.groupBy({ it.first to it.second }, { it.third })
         try {
             for ((group, regionPages) in grouped) {
-                val (key, materialGeneration) = group
-                val region = regions[key] ?: continue
+                val (region, materialGeneration) = group
+                val key = region.key
                 val batch = batchCache.batch(
                     storage = region.storage,
                     material = material,
@@ -341,8 +364,7 @@ internal class DistantHierarchicalTerrainRuntime(
         if (submittedBatches.isNotEmpty()) {
             var failure: Throwable? = null
             try {
-                val serial = TerrainSubmissionSerial(nextSubmissionSerial)
-                nextSubmissionSerial = Math.addExact(nextSubmissionSerial, 1L)
+                val serial = context.terrainSubmissions.next().serial
                 val submission = completion.fence(serial)
                 for (batch in submittedBatches) {
                     try {
@@ -396,7 +418,8 @@ internal class DistantHierarchicalTerrainRuntime(
             sourceKinds[tile.position] = update.source
             tileSourceRevisions[key] = verticalPage?.sourceRevision
                 ?: Math.addExact(tileSourceRevisions[key] ?: 0L, 1L)
-            failures.remove(key)
+            failures.clear(key)
+            failurePurposes.remove(key)
             if (verticalPage == null) {
                 needsSourceBuild += key
             } else {
@@ -414,7 +437,8 @@ internal class DistantHierarchicalTerrainRuntime(
         pendingSourceIngest.remove(key)
         needsSourceBuild.remove(key)
         needsArtifactBuild.remove(key)
-        failures.remove(key)
+        failures.clear(key)
+        failurePurposes.remove(key)
         cancelPending(key)
         cpuPages.remove(key)
         cpuArtifacts.remove(key)
@@ -486,10 +510,17 @@ internal class DistantHierarchicalTerrainRuntime(
                 ),
             )
         }
-        when (index.publishSourceBatchMutation(updates)) {
-            is DistantSourceBatchMutation.Published,
-            DistantSourceBatchMutation.Unchanged,
-            -> {
+        when (val mutation = index.publishSourceBatchMutation(updates)) {
+            is DistantSourceBatchMutation.Published -> {
+                clearFailures(mutation.sourceChangedPages + mutation.dirtiedPages)
+                for (page in pages) {
+                    cpuPages[page.key] = page
+                    cpuSelectionMetadata[page.key] = selectionMetadata(page)
+                }
+                invalidateSelectionData()
+            }
+
+            DistantSourceBatchMutation.Unchanged -> {
                 for (page in pages) {
                     cpuPages[page.key] = page
                     cpuSelectionMetadata[page.key] = selectionMetadata(page)
@@ -550,7 +581,7 @@ internal class DistantHierarchicalTerrainRuntime(
                 continue
             }
             val hierarchyPage = index[key]
-            if ((failures[key] ?: 0) >= MAX_FAILURES_PER_SOURCE) {
+            if (failures[key] != null) {
                 iterator.remove()
                 continue
             }
@@ -584,6 +615,10 @@ internal class DistantHierarchicalTerrainRuntime(
                     TerrainBuildUrgency.NEXT_FRAME
                 } else {
                     TerrainBuildUrgency.DEFERRED
+                },
+                estimate = when (purpose) {
+                    BuildPurpose.SOURCE -> SOURCE_BUILD_ESTIMATE
+                    BuildPurpose.ARTIFACT -> ARTIFACT_BUILD_ESTIMATE
                 },
                 cancellation = cancellation,
             ) { _, token -> build(request, token) }
@@ -678,9 +713,9 @@ internal class DistantHierarchicalTerrainRuntime(
     }
 
     private fun drainUploads() {
-        val residentVersions = gpuPages.mapValues { it.value.publicationVersion }
-        val missing = selectionPublication.missing(residentVersions)
+        val missing = selectionPublication.missing(gpuPublicationVersions)
         val items = missing.mapIndexedNotNull { index, target ->
+            if (failures[target.page]?.phase == TerrainFailurePhase.UPLOAD) return@mapIndexedNotNull null
             val page = cpuArtifacts[target.page]
                 ?.takeIf { it.publicationVersion == target.publicationVersion }
                 ?: return@mapIndexedNotNull null
@@ -701,8 +736,24 @@ internal class DistantHierarchicalTerrainRuntime(
         for (item in selected) {
             val (target, page) = item.value
             try {
-                upload(target, page)
+                if (upload(target, page)) {
+                    failures.clear(target.page)
+                } else {
+                    failures.record(
+                        page = target.page,
+                        category = TerrainFailureCategory.PRESSURE,
+                        phase = TerrainFailurePhase.UPLOAD,
+                        retryEligibility = TerrainRetryEligibility.AfterCapacityChange(storageCapacityRevision),
+                    )
+                }
             } catch (error: Throwable) {
+                failures.recordTransient(
+                    page = target.page,
+                    phase = TerrainFailurePhase.UPLOAD,
+                    monotonicNanos = failureClockNanos(),
+                    maximumAttempts = MAX_FAILURES_PER_SOURCE,
+                    backoffNanos = FAILURE_RETRY_BACKOFF_NANOS,
+                )
                 Log.log(LogMessageType.RENDERING, LogLevels.WARN, error)
             }
         }
@@ -741,7 +792,8 @@ internal class DistantHierarchicalTerrainRuntime(
                 DistantSourceMutationStatus.STALE,
                 -> return
 
-                DistantSourceMutationStatus.PUBLISHED -> Unit
+                DistantSourceMutationStatus.PUBLISHED ->
+                    clearFailures(sourceOutcome.sourceChangedPages + sourceOutcome.dirtiedPages)
 
                 DistantSourceMutationStatus.UNCHANGED -> Unit
             }
@@ -749,7 +801,8 @@ internal class DistantHierarchicalTerrainRuntime(
         cpuPages[key] = result.page
         cpuSelectionMetadata[key] = result.selectionMetadata
         invalidateSelectionData()
-        failures.remove(key)
+        failures.clear(key)
+        failurePurposes.remove(key)
     }
 
     private fun installArtifactResult(result: BuildResult) {
@@ -769,7 +822,8 @@ internal class DistantHierarchicalTerrainRuntime(
         if (result.page.key.detailLevel > 0 && previousArtifact?.source?.semanticDigest != result.page.semanticDigest) {
             index.invalidateRenderPages(DistantPageHierarchy.cardinalNeighbours(key))
         }
-        failures.remove(key)
+        failures.clear(key)
+        failurePurposes.remove(key)
     }
 
     private fun installSourcePage(page: DistantVerticalPage, invalidateSelection: Boolean = true): Boolean {
@@ -786,7 +840,8 @@ internal class DistantHierarchicalTerrainRuntime(
             DistantSourceMutationStatus.STALE,
             -> return false
 
-            DistantSourceMutationStatus.PUBLISHED -> Unit
+            DistantSourceMutationStatus.PUBLISHED ->
+                clearFailures(sourceOutcome.sourceChangedPages + sourceOutcome.dirtiedPages)
 
             DistantSourceMutationStatus.UNCHANGED -> Unit
         }
@@ -797,15 +852,40 @@ internal class DistantHierarchicalTerrainRuntime(
     }
 
     private fun recordFailure(key: TerrainPageKey, error: Throwable, purpose: BuildPurpose) {
-        failures[key] = Math.addExact(failures[key] ?: 0, 1)
-        if ((failures[key] ?: 0) < MAX_FAILURES_PER_SOURCE) {
-            when (purpose) {
-                BuildPurpose.SOURCE -> needsSourceBuild += key
-                BuildPurpose.ARTIFACT -> needsArtifactBuild += key
-            }
-        }
+        failures.recordTransient(
+            page = key,
+            phase = TerrainFailurePhase.BUILD,
+            monotonicNanos = failureClockNanos(),
+            maximumAttempts = MAX_FAILURES_PER_SOURCE,
+            backoffNanos = FAILURE_RETRY_BACKOFF_NANOS,
+        )
+        failurePurposes[key] = purpose
         Log.log(LogMessageType.RENDERING, LogLevels.WARN, error)
     }
+
+    private fun retryFailures(monotonicNanos: Long) {
+        val eligible = failures.releaseEligible(TerrainRetrySignal.ClockAdvanced(monotonicNanos))
+        for (key in eligible) {
+            when (failurePurposes.remove(key)) {
+                BuildPurpose.SOURCE -> needsSourceBuild += key
+                BuildPurpose.ARTIFACT -> needsArtifactBuild += key
+                null -> Unit
+            }
+        }
+    }
+
+    private fun retryCapacityFailures() {
+        failures.releaseEligible(TerrainRetrySignal.CapacityChanged(storageCapacityRevision))
+    }
+
+    private fun clearFailures(pages: Collection<TerrainPageKey>) {
+        for (page in pages) {
+            failures.clear(page)
+            failurePurposes.remove(page)
+        }
+    }
+
+    private fun failureClockNanos(): Long = (System.nanoTime() - failureClockOrigin).coerceAtLeast(0L)
 
     private fun invalidateChangedPipelineGeneration() {
         val nextShader = context.shaderPipeline.selection().generation
@@ -815,6 +895,8 @@ internal class DistantHierarchicalTerrainRuntime(
         pending.clear()
         needsSourceBuild.clear()
         needsArtifactBuild.clear()
+        failures.clear()
+        failurePurposes.clear()
         index.invalidateRenderPages(index.snapshot().pages.keys)
             .filter(cpuPages::containsKey)
             .forEach(needsArtifactBuild::add)
@@ -845,37 +927,81 @@ internal class DistantHierarchicalTerrainRuntime(
     private fun upload(target: TerrainResidencyTarget, page: CpuPage): Boolean {
         if (gpuPages[target.page]?.publicationVersion == target.publicationVersion) return true
         val key = TerrainRegionKey.containing(target.page, REGION_EXTENT)
-        var created = false
-        val region = regions[key] ?: run {
-            if (regions.size >= MAX_REGIONS) return false
-            created = true
-            createRegion(key).also { regions[key] = it }
-        }
         val artifact = DistantTerrainRegionArtifactEncoder.encode(
             identity = page.identity,
             page = page.source,
             artifact = page.artifact,
             extent = REGION_EXTENT,
         )
-        val published = try {
-            region.storage.publish(artifact)
-        } finally {
-            artifact.close()
-        }
-        if (published == null) {
-            if (created) {
-                regions.remove(key)
-                region.device.close()
+        if (artifact.streams.isEmpty()) {
+            artifact.use {
+                replaceGpuPage(
+                    target.page,
+                    GpuPage(
+                        publicationVersion = target.publicationVersion,
+                        digest = artifact.digest.encodedValue,
+                        materialGeneration = artifact.identity.materialGeneration,
+                        region = null,
+                    ),
+                )
             }
-            return false
+            return true
         }
-        gpuPages[target.page] = GpuPage(
-            publicationVersion = target.publicationVersion,
-            digest = published.digest.encodedValue,
-            materialGeneration = published.materialGeneration,
+        val shards = regions.getOrPut(key) { mutableListOf() }
+        var created = false
+        val region = shards.firstOrNull { it.storage.canPublish(artifact) } ?: run {
+            if (regionCount() >= MAX_REGIONS) {
+                if (shards.isEmpty()) regions.remove(key)
+                artifact.close()
+                return false
+            }
+            created = true
+            createRegion(key, shards.size).also(shards::add)
+        }
+        var publicationFailure: Throwable? = null
+        val published = try {
+            checkNotNull(region.storage.publish(artifact)) {
+                "Distant region admission changed before publication"
+            }
+        } catch (error: Throwable) {
+            publicationFailure = error
+            if (created) {
+                shards.remove(region)
+                if (shards.isEmpty()) regions.remove(key)
+                try {
+                    region.device.close()
+                } catch (cleanup: Throwable) {
+                    error.addSuppressed(cleanup)
+                }
+            }
+            throw error
+        } finally {
+            try {
+                artifact.close()
+            } catch (cleanup: Throwable) {
+                publicationFailure?.addSuppressed(cleanup) ?: throw cleanup
+            }
+        }
+        replaceGpuPage(
+            target.page,
+            GpuPage(
+                publicationVersion = target.publicationVersion,
+                digest = published.digest.encodedValue,
+                materialGeneration = published.materialGeneration,
+                region = region,
+            ),
         )
         return true
     }
+
+    private fun replaceGpuPage(key: TerrainPageKey, page: GpuPage) {
+        val previous = gpuPages.put(key, page)
+        gpuPublicationVersions[key] = page.publicationVersion
+        if (previous == null) return
+        if (previous.region !== page.region) previous.region?.storage?.remove(key)
+    }
+
+    private fun regionCount(): Int = regions.values.sumOf { it.size }
 
     private fun updateSelections(camera: ChunkPosition, seamDistanceChunks: Float) {
         val eye = context.camera.view.view.eyePosition
@@ -965,16 +1091,8 @@ internal class DistantHierarchicalTerrainRuntime(
     }
 
     private fun desireWhenArtifactsExist(view: TerrainViewKey, pages: List<TerrainPageKey>) {
-        if (pages.isEmpty()) {
-            selectionPublication.desire(view, emptyList())
-            return
-        }
         val targets = pages.mapNotNull(::residencyTarget)
-        val active = selectionPublication.active(view)
-        val pageSet = pages.toHashSet()
-        if (targets.size == pages.size || active.isEmpty() || active.all(pageSet::contains)) {
-            if (targets.isNotEmpty()) selectionPublication.desire(view, targets)
-        }
+        selectionPublication.desireAvailable(view, pages, targets)
     }
 
     private fun invalidateSelectionData() {
@@ -1009,9 +1127,8 @@ internal class DistantHierarchicalTerrainRuntime(
     }
 
     private fun promoteSelections() {
-        val resident = gpuPages.mapValues { it.value.publicationVersion }
-        selectionPublication.promote(MAIN_VIEW, resident)
-        selectionPublication.promote(SHADOW_VIEW, resident)
+        selectionPublication.promote(MAIN_VIEW, gpuPublicationVersions)
+        selectionPublication.promote(SHADOW_VIEW, gpuPublicationVersions)
         mainSelection = selectionPublication.active(MAIN_VIEW)
         shadowSelection = selectionPublication.active(SHADOW_VIEW)
         val mask = TerrainCoveragePageMask(nativeOwnership.lifecycle, COVERAGE_TRANSITION_POLICY)
@@ -1026,8 +1143,9 @@ internal class DistantHierarchicalTerrainRuntime(
         while (iterator.hasNext()) {
             val page = iterator.next().key
             if (page in retained) continue
-            regions[TerrainRegionKey.containing(page, REGION_EXTENT)]?.storage?.remove(page)
+            gpuPages[page]?.region?.storage?.remove(page)
             iterator.remove()
+            gpuPublicationVersions.remove(page)
             changed = true
         }
         if (changed) batchCache.clear()
@@ -1039,13 +1157,19 @@ internal class DistantHierarchicalTerrainRuntime(
         val iterator = regions.iterator()
         var changed = false
         while (iterator.hasNext()) {
-            val region = iterator.next().value
-            region.storage.collectRetired()
-            val metrics = region.storage.metrics()
-            if (metrics.activePages != 0 || metrics.retiredPages != 0) continue
-            region.device.close()
-            iterator.remove()
-            changed = true
+            val shards = iterator.next().value
+            val shardIterator = shards.iterator()
+            while (shardIterator.hasNext()) {
+                val region = shardIterator.next()
+                if (region.storage.collectRetired() > 0) capacityChanged()
+                val metrics = region.storage.metrics()
+                if (metrics.activePages != 0 || metrics.retiredPages != 0) continue
+                region.device.close()
+                shardIterator.remove()
+                capacityChanged()
+                changed = true
+            }
+            if (shards.isEmpty()) iterator.remove()
         }
         if (changed) batchCache.clear()
         frameDrawBatches = 0
@@ -1053,7 +1177,7 @@ internal class DistantHierarchicalTerrainRuntime(
         frameDrawVertices = 0L
     }
 
-    private fun createRegion(key: TerrainRegionKey): Region {
+    private fun createRegion(key: TerrainRegionKey, shard: Int): Region {
         val device = OpenGlTerrainRegionDevice(
             system = system,
             struct = DistantTerrainMeshStruct,
@@ -1063,7 +1187,11 @@ internal class DistantHierarchicalTerrainRuntime(
             indexCapacityBytes = INDEX_CAPACITY_BYTES,
             staging = staging,
         )
-        return Region(device, TerrainRegionStorage(key, REGION_EXTENT, device, completion))
+        return Region(key, shard, device, TerrainRegionStorage(key, REGION_EXTENT, device, completion))
+    }
+
+    private fun capacityChanged() {
+        storageCapacityRevision = Math.addExact(storageCapacityRevision, 1L)
     }
 
     private fun selectionMetadata(page: DistantVerticalPage): DistantPageSelectionMetadata {
@@ -1170,6 +1298,7 @@ internal class DistantHierarchicalTerrainRuntime(
         sourceKinds.clear()
         tileSourceRevisions.clear()
         failures.clear()
+        failurePurposes.clear()
         cpuPages.clear()
         cpuArtifacts.clear()
         cpuSelectionMetadata.clear()
@@ -1197,6 +1326,7 @@ internal class DistantHierarchicalTerrainRuntime(
         sourceKinds.clear()
         tileSourceRevisions.clear()
         failures.clear()
+        failurePurposes.clear()
         cpuPages.clear()
         cpuArtifacts.clear()
         cpuSelectionMetadata.clear()
@@ -1213,59 +1343,7 @@ internal class DistantHierarchicalTerrainRuntime(
 
     private fun publishDiagnostics() {
         val artifacts = gpuPages.keys.mapNotNull { cpuArtifacts[it]?.artifact }
-        val hierarchySnapshot = index.snapshot()
-        val residentVersions = gpuPages.mapValues { it.value.publicationVersion }
-        val storageMetrics = regions.values.map { it.storage.metrics() }
-        val hierarchyDiagnostics = DistantHierarchyRenderDiagnostics(
-            indexRevision = hierarchySnapshot.revision,
-            sourcePublicationRevision = hierarchySnapshot.sourcePublicationRevision,
-            dirtyRevision = hierarchySnapshot.dirtyRevision,
-            indexedPages = hierarchySnapshot.pages.size,
-            dirtyPages = hierarchySnapshot.dirtyPages.size,
-            cpuPages = cpuPages.size,
-            gpuPages = gpuPages.size,
-            pendingPages = pending.size,
-            queuedPages = Math.addExact(
-                Math.addExact(pendingSourceIngest.size, Math.addExact(needsSourceBuild.size, needsArtifactBuild.size)),
-                selectionPublication.missing(residentVersions).size,
-            ),
-            mainSelectedPages = mainSelection.size,
-            shadowSelectedPages = shadowSelection.size,
-            mainMaskedPages = mainSelection.size - mainDrawSelection.size,
-            shadowMaskedPages = shadowSelection.size - shadowDrawSelection.size,
-            coverageRevision = nativeOwnership.lifecycle?.revision ?: 0L,
-            coverageLifecycleRevision = nativeOwnership.lifecycle?.lifecycleRevision ?: 0L,
-            coverageTransitionFrames = COVERAGE_TRANSITION_POLICY.durationFrames,
-            regions = regions.size,
-            residentBytes = storageMetrics.sumOf { it.residentBytes },
-            retiredBytes = storageMetrics.sumOf { it.retiredBytes },
-            allocationFailures = storageMetrics.sumOf { it.allocationFailures },
-            uploadFailures = storageMetrics.sumOf { it.uploadFailures },
-            drawBatches = lastDrawBatches,
-            drawCommands = lastDrawCommands,
-            drawVertices = lastDrawVertices,
-            pendingSubmissionFences = completion.pendingFences,
-            detailCounts = gpuPages.keys.groupingBy(TerrainPageKey::detailLevel).eachCount(),
-            pages = hierarchySnapshot.pages.values.asSequence()
-                .sortedWith(compareBy({ it.key.detailLevel }, { it.key.z }, { it.key.x }))
-                .take(MAX_DIAGNOSTIC_PAGES)
-                .map { page ->
-                    val artifact = cpuArtifacts[page.key]?.artifact
-                    DistantHierarchyPageDiagnostic(
-                        detailLevel = page.key.detailLevel,
-                        x = page.key.x,
-                        z = page.key.z,
-                        sourceRevision = page.sourceRevision,
-                        dirtyRevision = page.dirtyRevision,
-                        renderRevision = page.renderRevision,
-                        dirty = page.dirty,
-                        derived = page.derived,
-                        buildState = page.buildState,
-                        mergedFaces = artifact?.mergedFaceCount ?: 0,
-                        fallbackFaces = artifact?.fallbackFaceCount ?: 0,
-                    )
-                }.toList(),
-        )
+        val hierarchyDiagnostics = diagnostics()
         source.publishDiagnostics(
             DistantLodRenderDiagnostics(
                 revision = sourceRevision.coerceAtLeast(0L),
@@ -1286,6 +1364,203 @@ internal class DistantHierarchicalTerrainRuntime(
                 hierarchy = hierarchyDiagnostics,
             ),
         )
+    }
+
+    internal fun diagnostics(): DistantHierarchyRenderDiagnostics {
+        val hierarchySnapshot = index.snapshot()
+        val queuedBuildPages = Math.addExact(
+            pendingSourceIngest.size,
+            Math.addExact(needsSourceBuild.size, needsArtifactBuild.size),
+        )
+        val pendingUploadPages = selectionPublication.missing(gpuPublicationVersions).size
+        val regionMetrics = regions.values.flatten().map { it to it.storage.metrics() }
+        val storageMetrics = regionMetrics.map { it.second }
+        return DistantHierarchyRenderDiagnostics(
+            deviceCapacityBytes = Math.addExact(
+                Math.multiplyExact(
+                    MAX_REGIONS.toLong(),
+                    Math.addExact(VERTEX_CAPACITY_BYTES, INDEX_CAPACITY_BYTES).toLong(),
+                ),
+                staging.capacityBytes.toLong(),
+            ),
+            storageHighWaterBytes = storageMetrics.sumOf {
+                Math.addExact(it.vertexHighWaterBytes.toLong(), it.indexHighWaterBytes.toLong())
+            },
+            stagingCapacityBytes = staging.capacityBytes,
+            storagePublicationGeneration = storageMetrics.fold(0L) { total, metrics ->
+                Math.addExact(total, metrics.publicationGeneration)
+            },
+            selectionPublication = selectionPublication.snapshot(gpuPublicationVersions),
+            indexRevision = hierarchySnapshot.revision,
+            sourcePublicationRevision = hierarchySnapshot.sourcePublicationRevision,
+            dirtyRevision = hierarchySnapshot.dirtyRevision,
+            indexedPages = hierarchySnapshot.pages.size,
+            dirtyPages = hierarchySnapshot.dirtyPages.size,
+            cpuPages = cpuPages.size,
+            gpuPages = gpuPages.size,
+            pendingPages = pending.size,
+            queuedPages = Math.addExact(queuedBuildPages, pendingUploadPages),
+            queuedBuildPages = queuedBuildPages,
+            pendingUploadPages = pendingUploadPages,
+            mainSelectedPages = mainSelection.size,
+            shadowSelectedPages = shadowSelection.size,
+            mainMaskedPages = mainSelection.size - mainDrawSelection.size,
+            shadowMaskedPages = shadowSelection.size - shadowDrawSelection.size,
+            coverageRevision = nativeOwnership.lifecycle?.revision ?: 0L,
+            coverageLifecycleRevision = nativeOwnership.lifecycle?.lifecycleRevision ?: 0L,
+            coverageTransitionFrames = COVERAGE_TRANSITION_POLICY.durationFrames,
+            regions = regionCount(),
+            residentBytes = storageMetrics.sumOf { it.residentBytes },
+            retiredBytes = storageMetrics.sumOf { it.retiredBytes },
+            allocationFailures = storageMetrics.sumOf { it.allocationFailures },
+            uploadFailures = storageMetrics.sumOf { it.uploadFailures },
+            cpuLeaseCount = storageMetrics.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.cpuLeaseCount)
+            },
+            pendingSubmissionCount = storageMetrics.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.pendingSubmissionCount)
+            },
+            failedSubmissionCount = storageMetrics.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.failedSubmissionCount)
+            },
+            invalidatedSubmissionCount = storageMetrics.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.invalidatedSubmissionCount)
+            },
+            retiredCpuLeasedPages = storageMetrics.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.retiredCpuLeasedPages)
+            },
+            retiredPendingSubmissionPages = storageMetrics.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.retiredPendingSubmissionPages)
+            },
+            retiredFailedSubmissionPages = storageMetrics.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.retiredFailedSubmissionPages)
+            },
+            retiredDeviceInvalidatedPages = storageMetrics.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.retiredDeviceInvalidatedPages)
+            },
+            deviceInvalidations = storageMetrics.sumOf { it.deviceInvalidations },
+            drawBatches = lastDrawBatches,
+            drawCommands = lastDrawCommands,
+            drawVertices = lastDrawVertices,
+            pendingSubmissionFences = completion.pendingFences,
+            detailCounts = gpuPages.keys.groupingBy(TerrainPageKey::detailLevel).eachCount(),
+            regionStates = regionMetrics.asSequence()
+                .sortedWith(compareBy({ it.first.key.detailLevel }, { it.first.key.z }, { it.first.key.x }, { it.first.shard }))
+                .map { (region, metrics) ->
+                    val key = region.key
+                    DistantHierarchyRegionDiagnostic(
+                        detailLevel = key.detailLevel,
+                        x = key.x,
+                        z = key.z,
+                        shard = region.shard,
+                        activePages = metrics.activePages,
+                        retiredPages = metrics.retiredPages,
+                        residentBytes = metrics.residentBytes,
+                        vertexAllocatedBytes = metrics.vertexAllocatedBytes,
+                        indexAllocatedBytes = metrics.indexAllocatedBytes,
+                        vertexHighWaterBytes = metrics.vertexHighWaterBytes,
+                        indexHighWaterBytes = metrics.indexHighWaterBytes,
+                        vertexFragmentation = metrics.vertexFragmentation,
+                        indexFragmentation = metrics.indexFragmentation,
+                        allocationFailures = metrics.allocationFailures,
+                        uploadFailures = metrics.uploadFailures,
+                    )
+                }.toList(),
+            pages = hierarchySnapshot.pages.values.asSequence()
+                .sortedWith(compareBy({ it.key.detailLevel }, { it.key.z }, { it.key.x }))
+                .take(MAX_DIAGNOSTIC_PAGES)
+                .map { page ->
+                    val artifact = cpuArtifacts[page.key]?.artifact
+                    DistantHierarchyPageDiagnostic(
+                        detailLevel = page.key.detailLevel,
+                        x = page.key.x,
+                        z = page.key.z,
+                        sourceRevision = page.sourceRevision,
+                        dirtyRevision = page.dirtyRevision,
+                        renderRevision = page.renderRevision,
+                        dirty = page.dirty,
+                        derived = page.derived,
+                        buildState = page.buildState,
+                        mergedFaces = artifact?.mergedFaceCount ?: 0,
+                        fallbackFaces = artifact?.fallbackFaceCount ?: 0,
+                    )
+                }.toList(),
+        )
+    }
+
+    internal fun diagnosticPages(
+        query: TerrainPageQuery,
+        afterPage: TerrainPageKey?,
+    ): List<TerrainPageDiagnosticSnapshot> {
+        require(query.selector.domain == TerrainDomain.DISTANT) {
+            "Distant hierarchy diagnostics require a distant page selector"
+        }
+        val limit = Math.addExact(query.maximumCount, 1)
+        return index.snapshot().pages.values.asSequence()
+            .filter { query.selector.matches(it.key) }
+            .filter { afterPage == null || DIAGNOSTIC_PAGE_ORDER.compare(it.key, afterPage) > 0 }
+            .take(limit)
+            .map { hierarchyPage ->
+                val key = hierarchyPage.key
+                val cpu = cpuArtifacts[key]
+                val gpu = gpuPages[key]
+                val published = gpu?.region?.storage?.get(key)
+                val source = if (hierarchyPage.derived) {
+                    "derived"
+                } else if (key.detailLevel == 0 && key.x in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() &&
+                    key.z in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()
+                ) {
+                    sourceKinds[ChunkPosition(key.x.toInt(), key.z.toInt())]?.wireName
+                } else {
+                    null
+                }
+                TerrainPageDiagnosticSnapshot(
+                    page = key,
+                    coverageState = when {
+                        key in gpuPages -> TerrainCoverageState.READY
+                        cpu != null || hierarchyPage.buildState == DistantPageBuildState.READY ->
+                            TerrainCoverageState.UPLOAD_PENDING
+                        key in pending || hierarchyPage.buildState == DistantPageBuildState.BUILDING ->
+                            TerrainCoverageState.BUILDING
+                        hierarchyPage.buildState == DistantPageBuildState.REQUESTED || hierarchyPage.dirty ->
+                            TerrainCoverageState.REQUESTED
+                        else -> TerrainCoverageState.ABSENT
+                    },
+                    buildIdentity = cpu?.identity ?: pending[key]?.identity,
+                    providerId = DistantTerrainInterop.PROVIDER_ID,
+                    failure = failures[key],
+                    source = source,
+                    revisions = TerrainPageRevisionDiagnosticSnapshot(
+                        sourceRevision = hierarchyPage.sourceRevision,
+                        dirtyRevision = hierarchyPage.dirtyRevision,
+                        renderRevision = hierarchyPage.renderRevision,
+                        publicationRevision = gpu?.publicationVersion,
+                    ),
+                    ranges = published?.streams.orEmpty().map { stream ->
+                        TerrainPageRangeDiagnosticSnapshot(
+                            partitionId = stream.partitionId,
+                            vertexOffsetBytes = stream.vertexRange.offset,
+                            vertexLengthBytes = stream.vertexRange.length,
+                            indexOffsetBytes = stream.indexRange.offset,
+                            indexLengthBytes = stream.indexRange.length,
+                        )
+                    },
+                    visibility = listOf(
+                        TerrainPageVisibilityDiagnosticSnapshot(
+                            viewId = MAIN_VIEW.value,
+                            selected = key in mainSelection,
+                            masked = key in mainSelection && key !in mainDrawSelection,
+                        ),
+                        TerrainPageVisibilityDiagnosticSnapshot(
+                            viewId = SHADOW_VIEW.value,
+                            selected = key in shadowSelection,
+                            masked = key in shadowSelection && key !in shadowDrawSelection,
+                        ),
+                    ),
+                    artifactDigest = gpu?.digest ?: cpu?.artifact?.digest,
+                )
+            }
+            .toList()
     }
 
     override fun close() {
@@ -1334,7 +1609,7 @@ internal class DistantHierarchicalTerrainRuntime(
             } catch (error: Throwable) {
                 failure = combineCleanupFailure(failure, error)
             }
-            for (region in regions.values) {
+            for (region in regions.values.flatten()) {
                 try {
                     region.device.close()
                 } catch (error: Throwable) {
@@ -1353,6 +1628,7 @@ internal class DistantHierarchicalTerrainRuntime(
         }
         regions.clear()
         gpuPages.clear()
+        gpuPublicationVersions.clear()
         selectionPublication.clear()
         mainSelection = emptyList()
         shadowSelection = emptyList()
@@ -1366,6 +1642,7 @@ internal class DistantHierarchicalTerrainRuntime(
         lastDrawCommands = 0
         lastDrawVertices = 0L
         diagnosticFrame = 0
+        storageCapacityRevision = 0L
         if (failure != null) throw failure
     }
 
@@ -1406,14 +1683,26 @@ internal class DistantHierarchicalTerrainRuntime(
         return DistantPageHierarchyIndex(epoch, maximumDetail, capacity)
     }
 
+    private fun failureCapacity(): Int = Math.addExact(
+        Math.multiplyExact(config.maximumTiles, DistantPageHierarchy.MAXIMUM_DETAIL_LEVEL + 1),
+        64,
+    )
+
     companion object {
-        val enabled: Boolean get() = TerrainRuntimeSelection.process.distantHierarchy
         private const val MAX_SOURCE_SUBMISSIONS_PER_FRAME = 32
         private const val MAX_ARTIFACT_SUBMISSIONS_PER_FRAME = 6
         private const val MAX_SOURCE_INGEST_PER_FRAME = 128
         private const val MAX_PENDING_SOURCE_PAGES = 48
         private const val MAX_PENDING_ARTIFACT_PAGES = 6
         private const val MAX_PENDING_PAGES = MAX_PENDING_SOURCE_PAGES + MAX_PENDING_ARTIFACT_PAGES
+        private val SOURCE_BUILD_ESTIMATE = TerrainBuildEstimate(
+            cpuNanos = 25_000_000L,
+            outputBytes = 512L * 1024L,
+        )
+        private val ARTIFACT_BUILD_ESTIMATE = TerrainBuildEstimate(
+            cpuNanos = 50_000_000L,
+            outputBytes = 2L * 1024L * 1024L,
+        )
         private const val MAX_COMPLETIONS_PER_FRAME = 64
         private const val MAX_UPLOADS_PER_FRAME = 32
         private const val MAX_UPLOAD_CPU_NANOS_PER_FRAME = 2_000_000L
@@ -1424,6 +1713,7 @@ internal class DistantHierarchicalTerrainRuntime(
         private const val VERTEX_CAPACITY_BYTES = 8 * 1024 * 1024
         private const val INDEX_CAPACITY_BYTES = 2 * 1024 * 1024
         private const val MAX_FAILURES_PER_SOURCE = 3
+        private const val FAILURE_RETRY_BACKOFF_NANOS = 250_000_000L
         private const val SHADOW_DISTANCE_CHUNKS = 128
         private val COVERAGE_TRANSITION_POLICY = TerrainCoverageTransitionPolicy(true, 8)
         private const val MAX_NODE_VISITS = 4_096
@@ -1435,8 +1725,13 @@ internal class DistantHierarchicalTerrainRuntime(
         private const val SEAM_URGENCY_BAND_CHUNKS = 4.0
         private const val MAX_DIAGNOSTIC_PAGES = 128
         private const val DIAGNOSTIC_FRAME_INTERVAL = 60
-        private val PROCESS_SCOPE = TerrainProcessScopeId(0L)
-        private val DEVICE_GENERATIONS = AtomicLong(1L)
+        private val DIAGNOSTIC_PAGE_ORDER: Comparator<TerrainPageKey> = compareBy(
+            { it.domain.ordinal },
+            { it.detailLevel },
+            { it.z },
+            { it.y },
+            { it.x },
+        )
         private val REGION_EXTENT = TerrainRegionExtent(32, 1, 32)
         private val MAIN_VIEW = TerrainViewKey("minosoft:main")
         private val SHADOW_VIEW = TerrainViewKey("minosoft:shadow")

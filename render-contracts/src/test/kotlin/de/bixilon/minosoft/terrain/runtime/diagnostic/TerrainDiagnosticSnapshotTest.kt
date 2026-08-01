@@ -13,6 +13,7 @@ package de.bixilon.minosoft.terrain.runtime.diagnostic
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class TerrainDiagnosticSnapshotTest {
     @Test
@@ -47,11 +48,35 @@ class TerrainDiagnosticSnapshotTest {
                 ),
                 coverage = snapshot.coverage,
                 pageRegistryGeneration = snapshot.pageRegistryGeneration,
+                scheduling = snapshot.scheduling,
                 residency = snapshot.residency,
                 submission = snapshot.submission,
+                publication = snapshot.publication,
                 pageWindow = snapshot.pageWindow,
             )
         }
+    }
+
+    @Test
+    fun `page cursor remains valid across frames while the page registry is unchanged`() {
+        val source = TerrainDiagnosticFixtures.snapshot()
+        val laterFrame = TerrainDiagnosticSnapshot(
+            schemaVersion = source.schemaVersion,
+            diagnosticGeneration = Math.addExact(source.diagnosticGeneration, 1L),
+            worldIdentity = source.worldIdentity,
+            providers = source.providers,
+            pipeline = source.pipeline,
+            material = source.material,
+            coverage = source.coverage,
+            pageRegistryGeneration = source.pageRegistryGeneration,
+            scheduling = source.scheduling,
+            residency = source.residency,
+            submission = source.submission,
+            publication = source.publication,
+            pageWindow = source.pageWindow,
+        )
+
+        assertEquals(source.pageWindow?.nextCursor, laterFrame.pageWindow?.nextCursor)
     }
 
     @Test
@@ -60,6 +85,30 @@ class TerrainDiagnosticSnapshotTest {
             golden("terrain-diagnostic-snapshot-v1.json"),
             TerrainDiagnosticCanonicalJson.encode(TerrainDiagnosticFixtures.snapshot()),
         )
+    }
+
+    @Test
+    fun `page detail bounds ranges views provenance and digest`() {
+        val page = TerrainDiagnosticFixtures.pageSnapshot(-1L, -1L)
+
+        assertEquals("near-snapshot", page.source)
+        assertEquals(4L, page.revisions.sourceRevision)
+        assertEquals(72L, page.revisions.publicationRevision)
+        assertEquals("opaque", page.ranges.single().partitionId)
+        assertEquals(listOf("main", "shadow"), page.visibility.map { it.viewId })
+        assertEquals("sha256:left", page.artifactDigest)
+
+        assertFailsWith<IllegalArgumentException> {
+            TerrainPageDiagnosticSnapshot(
+                page = page.page,
+                coverageState = page.coverageState,
+                buildIdentity = page.buildIdentity,
+                providerId = page.providerId,
+                visibility = listOf(
+                    TerrainPageVisibilityDiagnosticSnapshot("main", selected = false, masked = true),
+                ),
+            )
+        }
     }
 
     private fun golden(name: String): String =

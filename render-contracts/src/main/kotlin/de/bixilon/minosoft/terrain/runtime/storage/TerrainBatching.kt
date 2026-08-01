@@ -98,7 +98,7 @@ data class TerrainBatchCacheMetrics(
  */
 class TerrainBatchCache(private val maximumEntries: Int = 256) {
     private data class Key(
-        val region: TerrainRegionKey,
+        val storage: TerrainRegionStorage,
         val material: TerrainSemanticMaterialId,
         val view: TerrainViewKey,
         val layoutGeneration: Long,
@@ -137,7 +137,7 @@ class TerrainBatchCache(private val maximumEntries: Int = 256) {
             return null
         }
         val key = Key(
-            storage.key,
+            storage,
             material,
             view,
             layoutGeneration,

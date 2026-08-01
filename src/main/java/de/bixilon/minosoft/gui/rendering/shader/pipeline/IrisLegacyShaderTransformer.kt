@@ -608,7 +608,7 @@ internal object IrisLegacyShaderTransformer {
     private fun transformDistantTerrain(name: String, vertex: String, fragment: String): Stages {
         val modelView = if (name == "dh_shadow") "shadowModelView" else "gbufferModelView"
         val projection = if (name == "dh_shadow") "shadowProjection" else "dhProjection"
-        var transformedVertex = core(vertex)
+        var transformedVertex = transformNeutralMaterial(core(vertex))
             .replace(
                 Regex(
                     """(?m)^\s*uniform\s+mat4\s+""" +
@@ -616,6 +616,7 @@ internal object IrisLegacyShaderTransformer {
                 ),
                 "",
             )
+            .replace(Regex("""\battribute\b"""), "in")
             .replace(Regex("""\bvarying\b"""), "out")
             .replace(Regex("""\bgl_Vertex\b"""), "vec4(vinPosition, 1.0)")
             .replace(Regex("""\bgl_Color\b"""), "minosoftDhColor()")
@@ -631,7 +632,7 @@ internal object IrisLegacyShaderTransformer {
         transformedVertex = insertAfterVersion(
             transformedVertex,
             DISTANT_TERRAIN_VERTEX_HEADER +
-                "\nuniform mat4 $modelView;\nuniform mat4 $projection;",
+                "\nuniform mat4 $modelView;\nuniform mat4 $projection;\n$NEUTRAL_MATERIAL_FUNCTIONS",
         )
         transformedVertex += """
 
@@ -643,14 +644,16 @@ internal object IrisLegacyShaderTransformer {
 
         val transformedFragment = transformCoreFragmentOutputs(
             insertAfterVersion(
-                core(fragment)
-                    .replace(Regex("""\bvarying\b"""), "in")
-                    .replace(MODERN_DIFFUSE_SAMPLER, "")
-                    .replace(
-                        Regex("""\btexture\s*\(\s*tex\s*,[^)]*\)"""),
-                        "minosoftDhVertexColor",
-                    ),
-                "in vec4 minosoftDhVertexColor;",
+                transformNeutralMaterial(
+                    core(fragment)
+                        .replace(Regex("""\bvarying\b"""), "in")
+                        .replace(MODERN_DIFFUSE_SAMPLER, "")
+                        .replace(
+                            Regex("""\btexture\s*\(\s*tex\s*,[^)]*\)"""),
+                            "minosoftDhVertexColor",
+                        ),
+                ),
+                "in vec4 minosoftDhVertexColor;\n$NEUTRAL_MATERIAL_FUNCTIONS",
             ),
         )
         return Stages(transformedVertex, transformedFragment)

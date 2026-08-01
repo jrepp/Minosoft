@@ -13,6 +13,7 @@ package de.bixilon.minosoft.terrain.runtime.diagnostic
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class TerrainDiagnosticSchemaTest {
     @Test
@@ -23,6 +24,7 @@ class TerrainDiagnosticSchemaTest {
         assertEquals(TerrainDiagnosticSchema.CURSOR_VERSION, capabilities.cursorSchemaVersion)
         assertEquals(TerrainDiagnosticSchema.REJECTION_VERSION, capabilities.rejectionSchemaVersion)
         assertEquals(capabilities.capabilities.sortedBy { it.name }, capabilities.capabilities)
+        assertEquals(TerrainDiagnosticOperations.schemaVersions, capabilities.operationSchemaVersions)
         assertEquals(
             golden("terrain-diagnostic-capabilities-v1.json"),
             TerrainDiagnosticCanonicalJson.encode(capabilities),
@@ -59,6 +61,23 @@ class TerrainDiagnosticSchemaTest {
                 subject = "x".repeat(TerrainDiagnosticSchema.MAXIMUM_SUBJECT_LENGTH + 1),
             )
         }
+    }
+
+    @Test
+    fun `response envelope carries a complete snapshot without weakening its type`() {
+        val snapshot = TerrainDiagnosticFixtures.snapshot()
+        val response = TerrainDiagnosticResponse(
+            schemaVersion = TerrainDiagnosticSchema.VERSION,
+            capabilities = TerrainDiagnosticCapabilities.current(),
+            snapshot = snapshot,
+            unavailable = emptyList(),
+        )
+        val encoded = TerrainDiagnosticCanonicalJson.encode(response)
+
+        assertTrue(response.snapshot is TerrainDiagnosticSnapshot)
+        assertTrue(encoded.contains("\"worldIdentity\""))
+        assertTrue(encoded.contains("\"pipeline\""))
+        assertTrue(encoded.contains("\"submission\""))
     }
 
     private fun golden(name: String): String =

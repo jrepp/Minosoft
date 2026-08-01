@@ -18,14 +18,27 @@
 package de.bixilon.minosoft.terrain.runtime
 
 import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainSharedBuildService
+import java.util.concurrent.atomic.AtomicLong
 
 /** One bounded CPU service shared by every near and distant terrain tenant. */
 object TerrainProcessBuildService {
     private val workerCount = maxOf(minOf(Runtime.getRuntime().availableProcessors() - 1, 12), 1)
+    private val processScope = TerrainProcessScopeId(0L)
+    private val nextDeviceGeneration = AtomicLong(1L)
 
     val shared = TerrainSharedBuildService(
         workerCount = workerCount,
         queueCapacity = Math.multiplyExact(workerCount, 8),
+        estimatedCpuBudgetNanos = 10_000_000_000L,
+        estimatedOutputBudgetBytes = 512L * 1024L * 1024L,
         threadNamePrefix = "Terrain CPU",
     )
+
+    fun createDeviceSubmissionSequencer(): TerrainSubmissionSequencer =
+        TerrainSubmissionSequencer(
+            TerrainDeviceRuntimeId(
+                process = processScope,
+                deviceGeneration = nextDeviceGeneration.getAndUpdate { Math.incrementExact(it) },
+            ),
+        )
 }

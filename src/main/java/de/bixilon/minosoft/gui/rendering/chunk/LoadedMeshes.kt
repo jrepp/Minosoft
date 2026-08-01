@@ -22,13 +22,14 @@ import de.bixilon.minosoft.data.world.positions.SectionPosition
 import de.bixilon.minosoft.gui.rendering.camera.frustum.FrustumResults
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshes
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.details.ChunkMeshDetails
-import de.bixilon.minosoft.gui.rendering.chunk.queue.meshing.ChunkMeshingCause
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 import de.bixilon.minosoft.gui.rendering.chunk.visible.VisibleMeshes
 import de.bixilon.minosoft.gui.rendering.chunk.visible.VisibilityGraphInvalidReason
 import de.bixilon.minosoft.gui.rendering.terrain.near.NearSurfaceCoverage
 import de.bixilon.minosoft.gui.rendering.terrain.near.NearSurfaceCoverageIndex
 import de.bixilon.minosoft.gui.rendering.terrain.near.NearSurfaceCoverageEnvironment
 import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageSnapshot
+import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentity
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 
 data class LoadedVisibilitySnapshot(
@@ -40,6 +41,12 @@ data class NativeTerrainOwnershipSnapshot(
     val revision: Long,
     val chunks: Set<ChunkPosition>,
     val lifecycle: TerrainCoverageSnapshot? = null,
+)
+
+internal data class NearLoadedPageRegistrySnapshot(
+    val generation: Long,
+    val identities: List<TerrainBuildIdentity>,
+    val artifactDigests: Map<de.bixilon.minosoft.terrain.model.identity.TerrainPageKey, String> = emptyMap(),
 )
 
 class LoadedMeshes(
@@ -117,7 +124,12 @@ class LoadedMeshes(
         renderer.cache -= position
     }
 
-    fun clear() = lock.locked {
+    fun clear() = clear(surfaceCoverage::clear)
+
+    /** Clears owned resources after the terrain registry has begun closing. */
+    fun close() = clear(surfaceCoverage::discard)
+
+    private fun clear(clearCoverage: () -> Boolean) = lock.locked {
         renderer.visibility.meshes.clear()
         for (meshes in meshes.values) {
             renderer.unloadingQueue += meshes.values
@@ -125,7 +137,7 @@ class LoadedMeshes(
         if (meshes.isNotEmpty()) {
             revision++
         }
-        surfaceCoverage.clear()
+        clearCoverage()
         meshes.clear()
         renderer.regionTerrain?.clear()
     }
@@ -160,6 +172,25 @@ class LoadedMeshes(
      */
     fun ownershipSnapshot(): NativeTerrainOwnershipSnapshot = lock.acquired {
         surfaceCoverage.snapshot().let { NativeTerrainOwnershipSnapshot(it.revision, it.chunks, it.lifecycle) }
+    }
+
+    internal fun pageRegistrySnapshot(): NearLoadedPageRegistrySnapshot = lock.acquired {
+        NearLoadedPageRegistrySnapshot(
+            generation = revision,
+            identities = meshes.values.asSequence()
+                .flatMap { it.values.asSequence() }
+                .mapNotNull(ChunkMeshes::terrainIdentity)
+                .sortedWith(compareBy({ it.page.detailLevel }, { it.page.z }, { it.page.y }, { it.page.x }))
+                .toList(),
+            artifactDigests = meshes.values.asSequence()
+                .flatMap { it.values.asSequence() }
+                .mapNotNull { mesh ->
+                    val page = mesh.terrainIdentity?.page ?: return@mapNotNull null
+                    val digest = mesh.artifactDigest?.encodedValue ?: return@mapNotNull null
+                    page to digest
+                }
+                .toMap(),
+        )
     }
 
     fun coverageRequested(position: ChunkPosition) = lock.locked { surfaceCoverage.requested(position) }
@@ -233,7 +264,7 @@ class LoadedMeshes(
 
                     if (next == mesh.details) continue
 
-                    renderer.meshingQueue.unsafeAdd(mesh.section, ChunkMeshingCause.LEVEL_OF_DETAIL_UPDATE)
+                    renderer.meshingQueue.unsafeAdd(mesh.section, TerrainBuildCause.LEVEL_OF_DETAIL_UPDATE)
                 }
 
                 if (meshes.isEmpty()) {

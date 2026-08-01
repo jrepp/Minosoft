@@ -10,12 +10,49 @@
 
 package de.bixilon.minosoft.terrain.runtime
 
+import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
+import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class TerrainFailureTest {
+    @Test
+    fun `page failure registry bounds state and releases retries only after their signal`() {
+        val registry = TerrainPageFailureRegistry(maximumEntries = 2)
+        val first = page(1L)
+        val second = page(2L)
+        val third = page(3L)
+
+        val failure = registry.recordTransient(
+            page = second,
+            phase = TerrainFailurePhase.BUILD,
+            monotonicNanos = 100L,
+            maximumAttempts = 3,
+            backoffNanos = 10L,
+        )
+        registry.recordTransient(first, TerrainFailurePhase.BUILD, 100L, 3, 10L)
+        assertEquals(1, (failure.retryEligibility as TerrainRetryEligibility.AfterBackoff).attemptsUsed)
+        assertEquals(listOf(first, second), registry.snapshot().map(TerrainPageFailureSnapshot::page))
+        assertTrue(registry.releaseEligible(TerrainRetrySignal.ClockAdvanced(109L)).isEmpty())
+        assertEquals(listOf(first, second), registry.releaseEligible(TerrainRetrySignal.ClockAdvanced(110L)))
+        assertEquals(0, registry.size)
+
+        val secondAttempt = registry.recordTransient(second, TerrainFailurePhase.BUILD, 200L, 3, 10L)
+        assertEquals(2, (secondAttempt.retryEligibility as TerrainRetryEligibility.AfterBackoff).attemptsUsed)
+        assertEquals(listOf(second), registry.releaseEligible(TerrainRetrySignal.ClockAdvanced(220L)))
+        val finalAttempt = registry.recordTransient(second, TerrainFailurePhase.BUILD, 300L, 3, 10L)
+        assertEquals(3, (finalAttempt.retryEligibility as TerrainRetryEligibility.AfterBackoff).attemptsUsed)
+        assertTrue(registry.releaseEligible(TerrainRetrySignal.ClockAdvanced(Long.MAX_VALUE)).isEmpty())
+        assertThrows<IllegalArgumentException> {
+            registry.recordTransient(third, TerrainFailurePhase.BUILD, 200L, 3, 10L)
+        }
+        registry.clear()
+        assertEquals(0, registry.size)
+    }
+
     @Test
     fun `transient retries honor backoff and attempt bound`() {
         val retry = TerrainRetryEligibility.AfterBackoff(
@@ -72,6 +109,23 @@ class TerrainFailureTest {
     }
 
     @Test
+    fun `upload pressure remains quarantined until storage capacity advances`() {
+        val registry = TerrainPageFailureRegistry(maximumEntries = 1)
+        val page = page(9L)
+        registry.record(
+            page = page,
+            category = TerrainFailureCategory.PRESSURE,
+            phase = TerrainFailurePhase.UPLOAD,
+            retryEligibility = TerrainRetryEligibility.AfterCapacityChange(12L),
+        )
+
+        assertTrue(registry.releaseEligible(TerrainRetrySignal.ClockAdvanced(Long.MAX_VALUE)).isEmpty())
+        assertTrue(registry.releaseEligible(TerrainRetrySignal.CapacityChanged(12L)).isEmpty())
+        assertEquals(listOf(page), registry.releaseEligible(TerrainRetrySignal.CapacityChanged(13L)))
+        assertEquals(0, registry.size)
+    }
+
+    @Test
     fun `failure categories reject mismatched retry rules`() {
         assertThrows<IllegalArgumentException> {
             TerrainFailureSnapshot(
@@ -97,4 +151,13 @@ class TerrainFailureTest {
             )
         }
     }
+
+    private fun page(x: Long) = TerrainPageKey(
+        domain = TerrainDomain.DISTANT,
+        detailLevel = 0,
+        x = x,
+        y = 0L,
+        z = 0L,
+        worldEpoch = 1L,
+    )
 }

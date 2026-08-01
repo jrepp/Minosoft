@@ -25,6 +25,42 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.LockSupport
 
+data class TerrainSharedBuildTenantSnapshot(
+    val ownerId: String,
+    val tenant: TerrainSchedulerTenantId,
+    val accepting: Boolean,
+    val activeBuilds: Int,
+    val outstanding: Int,
+    val completionDepth: Int,
+    val workerContextCount: Int,
+) {
+    init {
+        require(ownerId.isNotBlank()) { "Terrain build owner ID must not be blank" }
+        require(activeBuilds >= 0) { "Terrain tenant active-build count must not be negative" }
+        require(outstanding >= 0) { "Terrain tenant outstanding count must not be negative" }
+        require(completionDepth >= 0) { "Terrain tenant completion depth must not be negative" }
+        require(workerContextCount >= 0) { "Terrain tenant worker-context count must not be negative" }
+        require(completionDepth <= outstanding) {
+            "Terrain tenant completion depth must not exceed its outstanding count"
+        }
+    }
+}
+
+class TerrainSharedBuildServiceSnapshot(
+    val runtime: TerrainBuildRuntimeSnapshot,
+    tenants: Collection<TerrainSharedBuildTenantSnapshot>,
+) {
+    val tenants: List<TerrainSharedBuildTenantSnapshot> = java.util.List.copyOf(
+        tenants.sortedWith(compareBy({ it.tenant.value }, { it.ownerId })),
+    )
+
+    init {
+        require(this.tenants.map { it.tenant }.toSet().size == this.tenants.size) {
+            "Terrain build service snapshot contains duplicate tenants"
+        }
+    }
+}
+
 /**
  * Process-shareable typed facade over one bounded terrain scheduler/mailbox.
  *
@@ -39,6 +75,8 @@ class TerrainSharedBuildService(
     workerCount: Int,
     queueCapacity: Int,
     nearBurstLimit: Int = 3,
+    estimatedCpuBudgetNanos: Long = Long.MAX_VALUE,
+    estimatedOutputBudgetBytes: Long = Long.MAX_VALUE,
     threadNamePrefix: String = "Terrain shared build",
 ) : AutoCloseable {
     private class ContextEntry(val context: AutoCloseable) : AutoCloseable {
@@ -131,6 +169,7 @@ class TerrainSharedBuildService(
         fun submit(
             identity: TerrainBuildIdentity,
             urgency: TerrainBuildUrgency = TerrainBuildUrgency.NEXT_FRAME,
+            estimate: TerrainBuildEstimate = TerrainBuildEstimate.MINIMUM,
             cancellation: TerrainCancellationToken = TerrainCancellationToken(),
             build: (C, TerrainCancellationToken) -> T,
         ): TerrainCancellationToken? {
@@ -142,6 +181,7 @@ class TerrainSharedBuildService(
                         registration.tenant,
                         identity,
                         urgency,
+                        estimate,
                         cancellation,
                     ) { worker, token ->
                         registration.activeBuilds.incrementAndGet()
@@ -174,6 +214,7 @@ class TerrainSharedBuildService(
                     consumer(completion as TerrainBuildCompletion<T>)
                 } finally {
                     registration.outstanding.decrementAndGet()
+                    service.runtime.releaseRouted(completion.estimate)
                     drained++
                 }
             }
@@ -203,6 +244,7 @@ class TerrainSharedBuildService(
                         failure = combineFailures(failure, error)
                     } finally {
                         registration.outstanding.decrementAndGet()
+                        service.runtime.releaseRouted(completion.estimate)
                     }
                 }
                 if (registration.outstanding.get() > 0) LockSupport.parkNanos(CLOSE_PARK_NANOS)
@@ -233,6 +275,8 @@ class TerrainSharedBuildService(
         workerCount = workerCount,
         queueCapacity = queueCapacity,
         nearBurstLimit = nearBurstLimit,
+        estimatedCpuBudgetNanos = estimatedCpuBudgetNanos,
+        estimatedOutputBudgetBytes = estimatedOutputBudgetBytes,
         threadNamePrefix = threadNamePrefix,
         contextFactory = ::SharedWorkerContext,
     )
@@ -254,7 +298,24 @@ class TerrainSharedBuildService(
         return Lease(this, registration)
     }
 
-    private fun pump(maxCompletions: Int): Int = runtime.drain(maxCompletions) { completion ->
+    fun snapshot(): TerrainSharedBuildServiceSnapshot {
+        val tenantSnapshots = synchronized(lifecycleLock) {
+            registrations.values.map { registration ->
+                TerrainSharedBuildTenantSnapshot(
+                    ownerId = registration.ownerId,
+                    tenant = registration.tenant,
+                    accepting = registration.accepting.get(),
+                    activeBuilds = registration.activeBuilds.get(),
+                    outstanding = registration.outstanding.get(),
+                    completionDepth = registration.completions.size,
+                    workerContextCount = registration.contexts.size,
+                )
+            }
+        }
+        return TerrainSharedBuildServiceSnapshot(runtime.snapshot(), tenantSnapshots)
+    }
+
+    private fun pump(maxCompletions: Int): Int = runtime.route(maxCompletions) { completion ->
         val registration = checkNotNull(registrations[completion.tenant]) {
             "Terrain completion has no registered tenant: ${completion.tenant.value}"
         }
@@ -275,7 +336,7 @@ class TerrainSharedBuildService(
         } catch (error: Throwable) {
             failure = combineFailures(failure, error)
         }
-        while (runtime.snapshot().outstanding > 0) {
+        while (runtime.snapshot().completionDepth > runtime.snapshot().routedCompletionDepth) {
             try {
                 pump(PUMP_BATCH)
             } catch (error: Throwable) {
@@ -296,6 +357,7 @@ class TerrainSharedBuildService(
                     failure = combineFailures(failure, error)
                 } finally {
                     registration.outstanding.decrementAndGet()
+                    runtime.releaseRouted(completion.estimate)
                 }
             }
             try {

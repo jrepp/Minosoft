@@ -109,6 +109,52 @@ class TerrainBackendRegistryTest {
     }
 
     @Test
+    fun `composite pipeline lease pins the exact backend through a frame`() {
+        val builtIn = backend("minosoft:built-in")
+        val registry = TerrainBackendRegistry(builtIn)
+        val selected = backend("minosoft:selected")
+        val registration = registry.replace { selected }
+        val pipelineLease = registry.acquire()
+
+        registration.close()
+        registry.withPinnedBackend(pipelineLease.backend) {
+            registry.prepare()
+            registry.finishPreparation()
+            registry.submit(RenderViewId.MAIN, TerrainMaterialClass.OPAQUE)
+            registry.finishFrame()
+        }
+
+        assertFalse(selected.closed)
+        assertTrue(builtIn.calls.isEmpty())
+        assertEquals(
+            listOf("prepare", "finishPreparation", "submit:minosoft:main:OPAQUE", "finishFrame"),
+            selected.calls,
+        )
+        pipelineLease.close()
+        assertTrue(selected.closed)
+        registry.close()
+    }
+
+    @Test
+    fun `failed composite frame closes its pinned backend lifecycle`() {
+        val registry = TerrainBackendRegistry(backend("minosoft:built-in"))
+        val pinned = registry.acquire()
+
+        assertThrows<IllegalStateException> {
+            registry.withPinnedBackend(pinned.backend) {
+                registry.prepare()
+                throw IllegalStateException("frame failed")
+            }
+        }
+
+        assertEquals(listOf("prepare", "finishFrame"), (pinned.backend as RecordingBackend).calls)
+        registry.prepare()
+        registry.finishFrame()
+        pinned.close()
+        registry.close()
+    }
+
+    @Test
     fun `one material may be submitted once per view and frame`() {
         val registry = TerrainBackendRegistry(backend("minosoft:built-in"))
 

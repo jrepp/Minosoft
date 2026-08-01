@@ -65,16 +65,27 @@ class IrisLegacyShaderTransformerTest {
             """
                 #version 330 compatibility
                 varying vec4 color;
+                attribute vec4 at_tangent;
+                uniform sampler2D normals;
+                uniform sampler2D specular;
                 void main() {
                     color = gl_Color;
                     gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;
                     if (dhMaterialId == 12) gl_Position.x += gl_Normal.x;
+                    gl_Position.xy += texture(normals, vec2(0.5)).xy * 0.0;
+                    gl_Position.xy += texture(specular, vec2(0.5)).xy * 0.0;
                 }
             """.trimIndent(),
             """
                 #version 330 compatibility
                 varying vec4 color;
-                void main() { gl_FragData[0] = color; }
+                uniform sampler2D normals;
+                uniform sampler2D specular;
+                void main() {
+                    gl_FragData[0] = color +
+                        texture(normals, vec2(0.5)) * 0.0 +
+                        texture(specular, vec2(0.5)) * 0.0;
+                }
             """.trimIndent(),
         )
 
@@ -86,7 +97,18 @@ class IrisLegacyShaderTransformerTest {
         assertContains(transformed.vertex, "uniform mat4 dhProjection;")
         assertFalse("gl_Vertex" in transformed.vertex)
         assertFalse("dhMaterialId" in transformed.vertex)
+        assertContains(transformed.vertex, "in vec4 at_tangent;")
+        assertFalse("uniform sampler2D normals" in transformed.vertex)
+        assertFalse("uniform sampler2D specular" in transformed.vertex)
+        val compactVertex = transformed.vertex.replace(" ", "")
+        assertContains(compactVertex, "minosoftNeutralNormal(vec2(0.5))")
+        assertContains(compactVertex, "minosoftNeutralSpecular(vec2(0.5))")
         assertContains(transformed.fragment, "layout (location = 0) out vec4 minosoftFragmentColor0;")
+        assertFalse("uniform sampler2D normals" in transformed.fragment)
+        assertFalse("uniform sampler2D specular" in transformed.fragment)
+        val compactFragment = transformed.fragment.replace(" ", "")
+        assertContains(compactFragment, "minosoftNeutralNormal(vec2(0.5))")
+        assertContains(compactFragment, "minosoftNeutralSpecular(vec2(0.5))")
     }
 
     @Test

@@ -22,7 +22,6 @@ import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshesBuilder
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.types.ChunkMeshTypes
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.vertex.PrimitiveTypes
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainDirectionalVisibility
-import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainRuntimeSelection
 import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentity
 import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
 import de.bixilon.minosoft.terrain.model.mesh.TerrainArtifactBounds
@@ -32,11 +31,6 @@ import de.bixilon.minosoft.terrain.model.mesh.TerrainMeshArtifact
 import de.bixilon.minosoft.terrain.model.mesh.TerrainPrimitiveTopology
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-
-object NearTerrainArtifactCapture {
-    val regionStorageEnabled: Boolean get() = TerrainRuntimeSelection.process.regionStorage
-    val enabled: Boolean get() = TerrainRuntimeSelection.process.semanticArtifacts
-}
 
 /** Exports the candidate CPU builders without retaining a live section. */
 fun ChunkMeshesBuilder.buildSemanticArtifact(

@@ -26,7 +26,6 @@ import de.bixilon.minosoft.gui.rendering.chunk.mesh.details.ChunkMeshDetails
 import de.bixilon.minosoft.gui.rendering.chunk.mesher.fluid.FluidSectionMesher
 import de.bixilon.minosoft.gui.rendering.terrain.IrisTerrainMaterialResolver
 import de.bixilon.minosoft.gui.rendering.terrain.near.buildSemanticArtifact
-import de.bixilon.minosoft.gui.rendering.terrain.near.NearTerrainArtifactCapture
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainSnapshotTintSampler
@@ -123,17 +122,13 @@ class ChunkMesher(
             }
 
             val connectivity = snapshot.connectivity()
-            val artifact = if (NearTerrainArtifactCapture.enabled) {
-                mesh.buildSemanticArtifact(identity, connectivity)
-            } else {
-                null
-            }
+            val artifact = mesh.buildSemanticArtifact(identity, connectivity)
             return try {
                 mesh.build(position, snapshot.modelRevision, connectivity, artifact).also { built ->
-                    if (built == null) artifact?.close()
+                    if (built == null) artifact.close()
                 }
             } catch (failure: Throwable) {
-                artifact?.close()
+                artifact.close()
                 throw failure
             }
         }

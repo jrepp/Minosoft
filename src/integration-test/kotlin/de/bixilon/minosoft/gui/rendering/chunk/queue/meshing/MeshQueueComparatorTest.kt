@@ -18,6 +18,7 @@ import de.bixilon.minosoft.data.world.chunk.ChunkSection
 import de.bixilon.minosoft.data.world.chunk.chunk.Chunk
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.data.world.positions.SectionPosition
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 import de.bixilon.minosoft.test.ITUtil.allocate
 import org.testng.AssertJUnit.assertEquals
 import org.testng.annotations.Test
@@ -26,7 +27,7 @@ import org.testng.annotations.Test
 @Test(groups = ["rendering"])
 class MeshQueueComparatorTest {
 
-    private fun SectionPosition.item(cause: ChunkMeshingCause = ChunkMeshingCause.UNKNOWN): MeshQueueItem {
+    private fun SectionPosition.item(cause: TerrainBuildCause = TerrainBuildCause.UNKNOWN): MeshQueueItem {
         val section = ChunkSection::class.java.allocate()
         val chunk = Chunk::class.java.allocate()
         chunk::position.forceSet(this.chunkPosition.raw)
@@ -73,8 +74,8 @@ class MeshQueueComparatorTest {
         val comparator = MeshQueueComparator()
         comparator.update(BlockPosition(0, 0, 0))
 
-        val a = SectionPosition(9, 0, 0).item(ChunkMeshingCause.LEVEL_OF_DETAIL_UPDATE)
-        val b = SectionPosition(10, 0, 0).item(ChunkMeshingCause.UNKNOWN)
+        val a = SectionPosition(9, 0, 0).item(TerrainBuildCause.LEVEL_OF_DETAIL_UPDATE)
+        val b = SectionPosition(10, 0, 0).item(TerrainBuildCause.UNKNOWN)
 
         val list = mutableListOf(a, b)
         list.sortWith(comparator)
@@ -86,8 +87,8 @@ class MeshQueueComparatorTest {
         val comparator = MeshQueueComparator()
         comparator.update(BlockPosition(0, 0, 0))
 
-        val a = SectionPosition(9, 0, 0).item(ChunkMeshingCause.CULLED)
-        val b = SectionPosition(10, 0, 0).item(ChunkMeshingCause.UNKNOWN)
+        val a = SectionPosition(9, 0, 0).item(TerrainBuildCause.CULLED)
+        val b = SectionPosition(10, 0, 0).item(TerrainBuildCause.UNKNOWN)
 
         val list = mutableListOf(a, b)
         list.sortWith(comparator)

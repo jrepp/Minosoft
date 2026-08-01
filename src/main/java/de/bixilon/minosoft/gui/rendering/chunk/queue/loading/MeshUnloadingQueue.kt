@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -56,6 +57,28 @@ class MeshUnloadingQueue(
         work(this.caches, ChunkMeshCache::unload)
     }
 
+    /** Releases every queued GPU resource while the render context is still current. */
+    fun drain() = lock.locked {
+        var failure: Throwable? = null
+
+        while (meshes.isNotEmpty()) {
+            try {
+                meshes.removeFirst().unload()
+            } catch (error: Throwable) {
+                failure = accumulate(failure, error)
+            }
+        }
+        while (caches.isNotEmpty()) {
+            try {
+                caches.removeFirst().unload()
+            } catch (error: Throwable) {
+                failure = accumulate(failure, error)
+            }
+        }
+
+        failure?.let { throw it }
+    }
+
 
     operator fun plusAssign(cache: ChunkMeshCache) = lock.locked { caches += cache }
 
@@ -66,4 +89,10 @@ class MeshUnloadingQueue(
 
     @JvmName("plusAssignMesh")
     operator fun plusAssign(meshes: Collection<ChunkMeshes>) = lock.locked { this.meshes += meshes }
+
+    private fun accumulate(current: Throwable?, next: Throwable): Throwable {
+        if (current == null) return next
+        current.addSuppressed(next)
+        return current
+    }
 }

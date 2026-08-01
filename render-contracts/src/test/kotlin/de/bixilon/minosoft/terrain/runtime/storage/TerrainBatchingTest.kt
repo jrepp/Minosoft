@@ -25,6 +25,7 @@ import de.bixilon.minosoft.terrain.runtime.TerrainSubmissionState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 
 class TerrainBatchingTest {
     private val deviceId = TerrainDeviceRuntimeId(TerrainProcessScopeId(1L), 1L)
@@ -64,6 +65,31 @@ class TerrainBatchingTest {
         assertEquals(1, storage.metrics().retiredPages)
         completion.states[TerrainSubmissionSerial(1L)] = TerrainSubmissionState.COMPLETE
         assertEquals(1, storage.collectRetired())
+    }
+
+    @Test
+    fun `cache isolates storage shards with the same logical region and publication ids`() {
+        val completion = Completion(deviceId)
+        val regionKey = TerrainRegionKey.containing(page(0L), 8)
+        val firstStorage = TerrainRegionStorage(regionKey, 8, Device(deviceId), completion)
+        val secondStorage = TerrainRegionStorage(regionKey, 8, Device(deviceId), completion)
+        val filler = page(1L)
+        val target = page(0L)
+        artifact(filler, 1L).use { firstStorage.publish(it) }
+        artifact(target, 2L).use { firstStorage.publish(it) }
+        artifact(filler, 1L).use { secondStorage.publish(it) }
+        secondStorage.remove(filler)
+        artifact(target, 2L).use { secondStorage.publish(it) }
+        val cache = TerrainBatchCache()
+        val view = TerrainViewKey("main")
+
+        val first = assertNotNull(cache.batch(firstStorage, material, view, listOf(target), 3L, 4L))
+        val second = assertNotNull(cache.batch(secondStorage, material, view, listOf(target), 3L, 4L))
+        assertNotEquals(first.commands.single().vertexRange.offset, second.commands.single().vertexRange.offset)
+        first.close()
+        second.close()
+        assertEquals(2L, cache.metrics().builds)
+        assertEquals(0L, cache.metrics().hits)
     }
 
     @Test

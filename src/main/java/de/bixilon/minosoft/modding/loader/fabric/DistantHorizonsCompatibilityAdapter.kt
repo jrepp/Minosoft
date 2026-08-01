@@ -11,6 +11,7 @@
 package de.bixilon.minosoft.modding.loader.fabric
 
 import de.bixilon.kutil.concurrent.lock.LockUtil.acquired
+import de.bixilon.kutil.concurrent.lock.LockUtil.locked
 import de.bixilon.minosoft.config.profile.ProfileOptions
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.registries.blocks.state.BlockStateFlags
@@ -42,6 +43,7 @@ import de.bixilon.minosoft.terrain.distant.store.DistantDirectoryTerrainStore
 import de.bixilon.minosoft.terrain.distant.store.DistantTerrainStoreIdentity
 import de.bixilon.minosoft.terrain.distant.store.DistantTerrainStoreWriter
 import de.bixilon.minosoft.terrain.distant.store.DistantTerrainStoreInspection
+import de.bixilon.minosoft.terrain.distant.store.distantTerrainWorldIdentity
 import de.bixilon.minosoft.terrain.distant.network.DistantTerrainMessageV2
 import de.bixilon.minosoft.terrain.distant.DistantTerrainRenderSource
 import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
@@ -56,10 +58,9 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * Exact-artifact adapter for the first source-native Distant Horizons slice.
  *
- * Upstream client bytecode is not linked. The adapter captures compact explored
- * surface tiles behind owned world/chunk hooks so persistence, meshing, and the
- * graph-visible distant-terrain producer can be added without retaining live
- * chunks or leaking state across sessions.
+ * Upstream client bytecode is not linked. The adapter captures normalized
+ * explored pages behind owned world/chunk hooks without retaining live chunks
+ * or leaking state across sessions.
  */
 object DistantHorizonsCompatibilityAdapter : FabricCompatibilityAdapter {
     override val id = "minosoft:distant-horizons-2.4.4-b-mc1.20.4"
@@ -137,15 +138,36 @@ object DistantHorizonsCompatibilityAdapter : FabricCompatibilityAdapter {
         )
         Log.log(LogMessageType.MOD_LOADING, LogLevels.INFO) {
             "DISTANT_HORIZONS_LOD_ACTIVE version=${probe.metadata.version} " +
-                "source=explored+generated+network storage=versioned-persistent renderer=detached-tile-abi"
+                "source=explored+generated+network storage=versioned-persistent " +
+                "renderer=provider-neutral-page-hierarchy"
         }
     }
+}
+
+internal fun isCurrentDistantPublication(
+    tile: DistantLodTile,
+    page: DistantVerticalPage,
+    worldEpoch: Long,
+): Boolean {
+    require(
+        page.key.domain == TerrainDomain.DISTANT &&
+            page.key.detailLevel == 0 &&
+            page.key.y == 0L &&
+            page.key.x == tile.position.x.toLong() &&
+            page.key.z == tile.position.z.toLong(),
+    ) { "Distant vertical page does not match its compatibility tile" }
+    return page.key.worldEpoch == worldEpoch
 }
 
 internal class DistantHorizonsLodController(
     private val options: DistantHorizonsOptions = DistantHorizonsOptions.inMemory(),
     private val persistenceRoot: Path? = null,
 ) : AutoCloseable {
+    private sealed interface NegotiatedHello {
+        data class V1(val message: DistantLodMessage.Hello) : NegotiatedHello
+        data class V2(val message: DistantTerrainMessageV2.Hello) : NegotiatedHello
+    }
+
     private inner class SessionState(
         val session: PlaySession,
     ) : AutoCloseable {
@@ -160,7 +182,12 @@ internal class DistantHorizonsLodController(
             DistantDirectoryTerrainStore(
                 it.path.resolveSibling("${it.path.fileName}.pages"),
                 DistantTerrainStoreIdentity(
-                    worldIdentity = "${session.version.name}\u0000${session.connection.identifier}\u0000${session.world.name}",
+                    worldIdentity = distantTerrainWorldIdentity(
+                        session.version.name,
+                        session.connection.identifier,
+                        session.world.name?.toString() ?: "minosoft:unknown",
+                        session.world.terrainPersistenceFingerprint,
+                    ),
                     normalizedLevelKey = session.world.name?.toString() ?: "minosoft:unknown",
                 ),
                 maximumPages = options.maximumTiles,
@@ -255,14 +282,12 @@ internal class DistantHorizonsLodController(
             verticalPage: DistantVerticalPage? = null,
         ) {
             if (closed) return
-            require(verticalPage == null ||
-                verticalPage.key.domain == TerrainDomain.DISTANT &&
-                verticalPage.key.detailLevel == 0 &&
-                verticalPage.key.y == 0L &&
-                verticalPage.key.x == tile.position.x.toLong() &&
-                verticalPage.key.z == tile.position.z.toLong() &&
-                verticalPage.key.worldEpoch == session.world.terrainEpoch
-            ) { "Distant vertical page does not match its compatibility tile and active world" }
+            if (verticalPage != null && !isCurrentDistantPublication(
+                    tile,
+                    verticalPage,
+                    session.world.terrainEpoch,
+                )
+            ) return
             val publicationRevision = revision.incrementExact()
             val publishedPage = verticalPage?.let {
                 DistantVerticalPage(
@@ -405,7 +430,10 @@ internal class DistantHorizonsLodController(
     }
 
     private val states = IdentityHashMap<PlaySession, SessionState>()
-    private val networkHello = IdentityHashMap<PlaySession, DistantLodMessage.Hello>()
+    // A configuration payload can precede the playable-world JOINED event.
+    // Retain the latest negotiated hello across that same-session replacement;
+    // both readable v1 and production v2 hellos use this ordering boundary.
+    private val networkHello = IdentityHashMap<PlaySession, NegotiatedHello>()
     private val renderDiagnostics = IdentityHashMap<PlaySession, DistantLodRenderDiagnostics>()
     private val revision = AtomicLong()
     @Volatile private var presentationOverride: Boolean? = null
@@ -424,7 +452,20 @@ internal class DistantHorizonsLodController(
         if (closed) return
         val replacement = SessionState(context.session)
         val hello = synchronized(states) { networkHello[context.session] }
-        hello?.let(replacement::receive)
+        try {
+            when (hello) {
+                is NegotiatedHello.V1 -> replacement.receive(hello.message)
+                is NegotiatedHello.V2 -> replacement.receive(hello.message)
+                null -> Unit
+            }
+        } catch (failure: Throwable) {
+            try {
+                replacement.close(sendNetworkCancellation = false)
+            } catch (cleanup: Throwable) {
+                failure.addSuppressed(cleanup)
+            }
+            throw failure
+        }
         val previous = synchronized(states) {
             if (closed) null else states.put(context.session, replacement)
         }
@@ -478,12 +519,13 @@ internal class DistantHorizonsLodController(
             val message = DistantLodProtocol.decodeNegotiated(context.copyPayload())
             val current = synchronized(states) {
                 if (closed) return
-                if (message is DistantLodMessage.Hello) {
-                    // A server can advertise immediately after login, before a
-                    // registry-driven world reconfiguration finishes. Retain
-                    // the negotiated bounds across that same-session world
-                    // transition so the final world state can begin requests.
-                    networkHello[context.session] = message
+                // A server can advertise immediately after login, before a
+                // registry-driven world reconfiguration finishes. Retain the
+                // negotiated bounds across that same-session world transition.
+                when (message) {
+                    is DistantLodMessage.Hello -> networkHello[context.session] = NegotiatedHello.V1(message)
+                    is DistantTerrainMessageV2.Hello -> networkHello[context.session] = NegotiatedHello.V2(message)
+                    else -> Unit
                 }
                 states[context.session]
             }
@@ -595,7 +637,7 @@ internal class DistantHorizonsLodController(
         DistantLodTile.capture(chunk.position) { x, z -> sample(chunk, x, z) }
     }
 
-    private fun captureNative(chunk: Chunk): Pair<DistantLodTile, DistantVerticalPage> = chunk.lock.acquired {
+    private fun captureNative(chunk: Chunk): Pair<DistantLodTile, DistantVerticalPage> = chunk.lock.locked {
         DistantLodTile.capture(chunk.position) { x, z -> sample(chunk, x, z) } to
             DistantWorldVerticalSampler.captureObservedLocked(chunk)
     }
@@ -605,7 +647,7 @@ internal class DistantHorizonsLodController(
         previous: DistantLodTile,
         previousPage: DistantVerticalPage?,
         columns: Set<Int>,
-    ): Pair<DistantLodTile, DistantVerticalPage> = chunk.lock.acquired {
+    ): Pair<DistantLodTile, DistantVerticalPage> = chunk.lock.locked {
         previous.update(columns) { x, z -> sample(chunk, x, z) } to
             if (previousPage == null) {
                 DistantWorldVerticalSampler.captureObservedLocked(chunk)

@@ -28,13 +28,20 @@ import de.bixilon.minosoft.gui.rendering.chunk.queue.meshing.tasks.MeshPrepareTa
 import de.bixilon.minosoft.gui.rendering.chunk.queue.meshing.tasks.MesherTaskManager
 import de.bixilon.minosoft.gui.rendering.models.loader.ModelLoader
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildSnapshot
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainProductionPhase
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainSnapshotCaptureException
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageState
 import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentity
 import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
 import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
+import de.bixilon.minosoft.terrain.runtime.TerrainFailurePhase
+import de.bixilon.minosoft.terrain.runtime.TerrainFailureSnapshot
+import de.bixilon.minosoft.terrain.runtime.TerrainPageFailureRegistry
 import de.bixilon.minosoft.terrain.runtime.TerrainProcessBuildService
+import de.bixilon.minosoft.terrain.runtime.TerrainRetrySignal
 import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildCompletion
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildEstimate
 import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildOutcome
 import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildUrgency
 import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainCancellationToken
@@ -43,6 +50,17 @@ import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
 import java.util.concurrent.ConcurrentHashMap
+
+internal data class NearMeshingPageRegistryEntry(
+    val identity: TerrainBuildIdentity,
+    val state: TerrainCoverageState,
+    val failure: TerrainFailureSnapshot?,
+)
+
+internal data class NearMeshingPageRegistrySnapshot(
+    val generation: Long,
+    val entries: List<NearMeshingPageRegistryEntry>,
+)
 
 class ChunkMeshingQueue(
     private val renderer: ChunkRenderer,
@@ -56,6 +74,11 @@ class ChunkMeshingQueue(
         val cache: ChunkMeshCache,
         val mesh: de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshes?,
         val failure: Throwable? = null,
+    )
+
+    private data class DeferredRetry(
+        val section: ChunkSection,
+        val identity: TerrainBuildIdentity,
     )
 
     private val comparator = MeshQueueComparator()
@@ -74,9 +97,13 @@ class ChunkMeshingQueue(
     private val queue = ArrayDeque<MeshQueueItem>(1000)
     private val positions: MutableSet<SectionPosition> = HashSet(1000)
     private val latestRequests: MutableMap<SectionPosition, TerrainBuildIdentity> = HashMap(1000)
-    private val latestCauses: MutableMap<SectionPosition, ChunkMeshingCause> = HashMap(1000)
+    private val latestCauses: MutableMap<SectionPosition, TerrainBuildCause> = HashMap(1000)
+    private val failures = TerrainPageFailureRegistry(MAXIMUM_FAILURE_PAGES)
+    private val deferredRetries = HashMap<TerrainPageKey, DeferredRetry>()
+    private val failureClockOrigin = System.nanoTime()
     private val submittedTasks = ConcurrentHashMap<TerrainBuildIdentity, MeshPrepareTask>()
     private var nextRequestRevision = 1L
+    private var diagnosticGeneration = 0L
 
     val lock = ReentrantLock()
 
@@ -93,15 +120,20 @@ class ChunkMeshingQueue(
     }
 
     fun clear() = lock.locked {
+        val changed = queue.isNotEmpty() || latestRequests.isNotEmpty() ||
+            deferredRetries.isNotEmpty() || failures.size != 0
         queue.clear()
         this.positions.clear()
         latestRequests.clear()
         latestCauses.clear()
+        deferredRetries.clear()
+        failures.clear()
+        if (changed) diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
         telemetry.queueDepth(0)
         if (runtimeDelegate.isInitialized()) runtime.cancelAll()
     }
 
-    fun unsafeAdd(section: ChunkSection, cause: ChunkMeshingCause) {
+    fun unsafeAdd(section: ChunkSection, cause: TerrainBuildCause) {
         val position = SectionPosition.of(section)
         telemetry.requested(cause)
         val previous = latestRequests[position]
@@ -109,8 +141,17 @@ class ChunkMeshingQueue(
             telemetry.suppressed(cause)
             return
         }
+        val page = position.toTerrainPageKey(renderer.world.terrainEpoch)
+        val deferred = deferredRetries[page]
+        if (deferred != null && hasSameBuildInputs(deferred.identity, section)) {
+            telemetry.suppressed(cause)
+            return
+        }
+        previous?.page?.let(::clearFailure)
+        clearFailure(page)
         latestRequests[position] = createIdentity(section)
         latestCauses[position] = cause
+        diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
         if (!positions.add(position)) return
 
         this.queue += queuedItem(section, cause)
@@ -118,10 +159,10 @@ class ChunkMeshingQueue(
     }
 
     operator fun plusAssign(section: ChunkSection) {
-        add(section, ChunkMeshingCause.UNKNOWN)
+        add(section, TerrainBuildCause.UNKNOWN)
     }
 
-    fun add(section: ChunkSection, cause: ChunkMeshingCause) {
+    fun add(section: ChunkSection, cause: TerrainBuildCause) {
         val position = SectionPosition.of(section)
         val accepted = lock.locked {
             telemetry.requested(cause)
@@ -130,8 +171,17 @@ class ChunkMeshingQueue(
                 telemetry.suppressed(cause)
                 return@locked false
             }
+            val page = position.toTerrainPageKey(renderer.world.terrainEpoch)
+            val deferred = deferredRetries[page]
+            if (deferred != null && hasSameBuildInputs(deferred.identity, section)) {
+                telemetry.suppressed(cause)
+                return@locked false
+            }
+            previous?.page?.let(::clearFailure)
+            clearFailure(page)
             latestRequests[position] = createIdentity(section)
             latestCauses[position] = cause
+            diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
             if (!positions.add(position)) return@locked true
 
             this.queue += queuedItem(section, cause)
@@ -145,15 +195,20 @@ class ChunkMeshingQueue(
     operator fun minusAssign(position: ChunkPosition) = removeIf(false) { it.chunkPosition == position }
 
     operator fun minusAssign(position: SectionPosition) = lock.locked {
+        val page = position.toTerrainPageKey(renderer.world.terrainEpoch)
+        val changed = position in positions || position in latestRequests || page in deferredRetries
         this.positions.remove(position)
         this.queue.removeIf { it.position == position } // TODO: only first
-        latestRequests.remove(position)
+        latestRequests.remove(position)?.page?.let(::clearFailure)
+        clearFailure(page)
         latestCauses.remove(position)
         telemetry.queueDepth(queue.size)
+        if (changed) diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
         Unit
     }
 
     fun removeIf(requeue: Boolean, predicate: (position: SectionPosition) -> Boolean): Unit = lock.locked {
+        var changed = false
         val iterator = queue.iterator()
         while (iterator.hasNext()) {
             val item = iterator.next()
@@ -168,13 +223,23 @@ class ChunkMeshingQueue(
             } else {
                 iterator.remove()
             }
+            changed = true
 
 
             this.positions -= item.position
-            latestRequests.remove(item.position)
+            latestRequests.remove(item.position)?.page?.let(::clearFailure)
             latestCauses.remove(item.position)
         }
+        val deferred = deferredRetries.entries.iterator()
+        while (deferred.hasNext()) {
+            val entry = deferred.next()
+            if (!predicate(entry.key.toNearSectionPosition())) continue
+            deferred.remove()
+            failures.clear(entry.key)
+            changed = true
+        }
         telemetry.queueDepth(queue.size)
+        if (changed) diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
     }
 
 
@@ -192,6 +257,7 @@ class ChunkMeshingQueue(
         val accepted = runtime.submit(
             identity = identity,
             urgency = TerrainBuildUrgency.IMMEDIATE,
+            estimate = NEAR_BUILD_ESTIMATE,
             cancellation = cancellation,
         ) { context, token ->
             renderer.loaded.coverageBuilding(position.chunkPosition)
@@ -226,6 +292,7 @@ class ChunkMeshingQueue(
                 tasks -= task
                 telemetry.outstandingBuilds(tasks.size)
                 telemetry.workerFinished(workerStarted)
+                lock.locked { diagnosticGeneration = Math.incrementExact(diagnosticGeneration) }
                 work()
             }
         }
@@ -239,6 +306,7 @@ class ChunkMeshingQueue(
             telemetry.queueDepth(queue.size)
             return false
         }
+        diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
         return true
     }
 
@@ -270,6 +338,7 @@ class ChunkMeshingQueue(
 
     fun work() {
         lock.locked {
+            releaseEligibleRetries()
             if (queue.isEmpty() || tasks.size >= tasks.max || renderer.loadingQueue.size >= renderer.loadingQueue.max) {
                 return
             }
@@ -320,7 +389,7 @@ class ChunkMeshingQueue(
                     if (requestCurrent) {
                         renderer.invalidate(
                             outcome.value.section,
-                            ChunkMeshingCause.STALE_RETRY,
+                            TerrainBuildCause.STALE_RETRY,
                             advanceRevision = false,
                         )
                     }
@@ -334,7 +403,12 @@ class ChunkMeshingQueue(
             }
             is TerrainBuildOutcome.Failure -> {
                 telemetry.failed()
-                if (requestCurrent) renderer.loaded.coverageRequested(position.chunkPosition)
+                if (requestCurrent) {
+                    renderer.loaded.coverageRequested(position.chunkPosition)
+                    renderer.world.chunks[position.chunkPosition]?.get(position.y)?.let {
+                        deferRetry(completion.identity, it, TerrainFailurePhase.BUILD)
+                    }
+                }
                 Log.log(LogMessageType.GENERAL, LogLevels.WARN, outcome.error)
             }
         }
@@ -342,6 +416,7 @@ class ChunkMeshingQueue(
             lock.locked {
                 if (latestRequests.remove(position, completion.identity)) {
                     latestCauses.remove(position)
+                    diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
                 }
             }
         }
@@ -353,13 +428,15 @@ class ChunkMeshingQueue(
             renderer.loaded.coverageRequested(prepared.section.chunk.position)
             prepared.cache.drop()
             Log.log(LogMessageType.GENERAL, LogLevels.WARN, prepared.failure)
-            if (prepared.failure is TerrainSnapshotCaptureException) {
-                renderer.invalidate(
-                    prepared.section,
-                    ChunkMeshingCause.TASK_RETRY,
-                    advanceRevision = false,
-                )
-            }
+            deferRetry(
+                identity,
+                prepared.section,
+                if (prepared.failure is TerrainSnapshotCaptureException) {
+                    TerrainFailurePhase.SNAPSHOT_CAPTURE
+                } else {
+                    TerrainFailurePhase.BUILD
+                },
+            )
             return
         }
 
@@ -376,14 +453,99 @@ class ChunkMeshingQueue(
                 telemetry.failed()
                 renderer.loaded.coverageRequested(prepared.section.chunk.position)
                 discard(prepared)
+                deferRetry(identity, prepared.section, TerrainFailurePhase.PUBLICATION)
                 Log.log(LogMessageType.GENERAL, LogLevels.WARN, failure)
                 return
             }
             renderer.loaded.coverageUploadPending(prepared.section.chunk.position)
             renderer.loadingQueue += mesh
         }
+        lock.locked { clearFailure(identity.page) }
         telemetry.succeeded()
     }
+
+    private fun deferRetry(
+        identity: TerrainBuildIdentity,
+        section: ChunkSection,
+        phase: TerrainFailurePhase,
+    ) = lock.locked {
+        val position = identity.page.toNearSectionPosition()
+        if (latestRequests[position] != identity) return@locked
+        failures.recordTransient(
+            page = identity.page,
+            phase = phase,
+            monotonicNanos = failureClockNanos(),
+            maximumAttempts = MAXIMUM_TRANSIENT_ATTEMPTS,
+            backoffNanos = RETRY_BACKOFF_NANOS,
+        )
+        deferredRetries[identity.page] = DeferredRetry(section, identity)
+        diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
+    }
+
+    private fun releaseEligibleRetries() {
+        val pages = failures.releaseEligible(TerrainRetrySignal.ClockAdvanced(failureClockNanos()))
+        if (pages.isNotEmpty()) diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
+        for (page in pages) {
+            val retry = deferredRetries.remove(page)
+            if (retry == null ||
+                page.worldEpoch != renderer.world.terrainEpoch ||
+                !hasSameBuildInputs(retry.identity, retry.section)
+            ) {
+                failures.clear(page)
+                continue
+            }
+            val position = page.toNearSectionPosition()
+            if (latestRequests[position] != null || !positions.add(position)) {
+                failures.clear(page)
+                continue
+            }
+            latestRequests[position] = createIdentity(retry.section)
+            latestCauses[position] = TerrainBuildCause.TASK_RETRY
+            queue += queuedItem(retry.section, TerrainBuildCause.TASK_RETRY)
+            diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
+            telemetry.queueDepth(queue.size)
+        }
+    }
+
+    private fun clearFailure(page: TerrainPageKey) {
+        val changed = deferredRetries.remove(page) != null
+        val failureChanged = failures.clear(page)
+        if (changed || failureChanged) diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
+    }
+
+    internal fun pageRegistrySnapshot(): NearMeshingPageRegistrySnapshot = lock.locked {
+        val entries = LinkedHashMap<TerrainPageKey, NearMeshingPageRegistryEntry>()
+        for (identity in latestRequests.values) {
+            entries[identity.page] = NearMeshingPageRegistryEntry(
+                identity = identity,
+                state = if (submittedTasks.containsKey(identity)) {
+                    TerrainCoverageState.BUILDING
+                } else {
+                    TerrainCoverageState.REQUESTED
+                },
+                failure = failures[identity.page],
+            )
+        }
+        for ((page, retry) in deferredRetries) {
+            entries[page] = NearMeshingPageRegistryEntry(
+                identity = retry.identity,
+                state = TerrainCoverageState.ABSENT,
+                failure = failures[page],
+            )
+        }
+        NearMeshingPageRegistrySnapshot(
+            generation = diagnosticGeneration,
+            entries = entries.values.sortedWith(compareBy(
+                { it.identity.page.detailLevel },
+                { it.identity.page.z },
+                { it.identity.page.y },
+                { it.identity.page.x },
+            )),
+        )
+    }
+
+    private fun failureClockNanos(): Long =
+        (System.nanoTime() - failureClockOrigin).coerceAtLeast(0L)
 
     private fun attachBlockEntities(prepared: PreparedMesh) {
         val mesh = prepared.mesh ?: return
@@ -452,9 +614,20 @@ class ChunkMeshingQueue(
         if (failure != null) throw failure
     }
 
-    private fun queuedItem(section: ChunkSection, cause: ChunkMeshingCause) = MeshQueueItem(
+    private fun queuedItem(section: ChunkSection, cause: TerrainBuildCause) = MeshQueueItem(
         section,
         cause,
         telemetry.begin(TerrainProductionPhase.QUEUE_WAIT),
     )
+
+    private companion object {
+        const val MAXIMUM_FAILURE_PAGES = 8192
+        const val MAXIMUM_TRANSIENT_ATTEMPTS = 3
+        const val RETRY_BACKOFF_NANOS = 250_000_000L
+
+        val NEAR_BUILD_ESTIMATE = TerrainBuildEstimate(
+            cpuNanos = 100_000_000L,
+            outputBytes = 8L * 1024L * 1024L,
+        )
+    }
 }

@@ -17,31 +17,29 @@ import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.gui.rendering.camera.CameraUtil
 import de.bixilon.minosoft.gui.rendering.graph.RenderPhase
-import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantLodEdge
-import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantLodMaterial
-import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantLodMeshPlanner
-import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantLodSurface
 import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRenderer
 import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRendererBuilder
-import de.bixilon.minosoft.gui.rendering.terrain.distant.createDistantLodRenderDiagnostics
 import de.bixilon.minosoft.gui.rendering.terrain.distant.distantViewProjection
-import de.bixilon.minosoft.gui.rendering.terrain.distant.maximumContiguousDistantCoverageRadius
 import de.bixilon.minosoft.terrain.distant.DistantLodColumn
+import de.bixilon.minosoft.terrain.distant.DistantSourceCompleteness
 import de.bixilon.minosoft.terrain.distant.DistantLodTile
-import de.bixilon.minosoft.terrain.distant.DistantLodTileSource
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantVerticalColumn
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantVerticalPage
 import de.bixilon.minosoft.terrain.distant.maximumContiguousDistantRadius
 import de.bixilon.minosoft.terrain.distant.network.DistantProtocolWorld
 import de.bixilon.minosoft.terrain.distant.network.DistantTerrainMessageV2
 import de.bixilon.minosoft.terrain.distant.network.DistantTerrainProtocolV2
+import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
+import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import java.io.IOException
 import java.nio.file.Files
 import java.util.HexFormat
+import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlin.io.path.createTempDirectory
 
 class DistantHorizonsCompatibilityAdapterTest {
     @Test
@@ -100,14 +98,8 @@ class DistantHorizonsCompatibilityAdapterTest {
             assertEquals(listOf(adapter.id), FabricBlockMutationEvents.registrations())
             assertEquals(listOf(adapter.id), FabricRendererRegistry.registrations().map { it.owner })
             assertTrue(FabricRendererRegistry.snapshot().single() is DistantTerrainRendererBuilder)
-            assertEquals(
-                listOf(adapter.id),
-                FabricWorldEvents.registrations(FabricWorldEventPhase.JOINED),
-            )
-            assertEquals(
-                listOf(adapter.id),
-                FabricWorldEvents.registrations(FabricWorldEventPhase.LEFT),
-            )
+            assertEquals(listOf(adapter.id), FabricWorldEvents.registrations(FabricWorldEventPhase.JOINED))
+            assertEquals(listOf(adapter.id), FabricWorldEvents.registrations(FabricWorldEventPhase.LEFT))
             assertEquals(
                 listOf(adapter.id),
                 FabricClientPayloadChannels.registrations().getValue(DistantLodProtocol.CHANNEL),
@@ -124,329 +116,6 @@ class DistantHorizonsCompatibilityAdapterTest {
         assertTrue(FabricWorldEvents.registrations(FabricWorldEventPhase.LEFT).isEmpty())
         assertTrue(FabricClientPayloadChannels.registrations()[DistantLodProtocol.CHANNEL].isNullOrEmpty())
         assertTrue(FabricSettings.registrations().isEmpty())
-    }
-
-    @Test
-    fun `lod mesh planner coarsens detached tiles beyond the near seam`() {
-        val stone = ResourceLocation.of("minecraft:stone")
-        val water = ResourceLocation.of("minecraft:water")
-        val near = DistantLodTile.capture(ChunkPosition(1, 0)) { _, _ ->
-            DistantLodColumn(64, stone)
-        }
-        val far = DistantLodTile.capture(ChunkPosition(32, 0)) { x, z ->
-            if (x < 4 && z < 4) {
-                DistantLodColumn(70, water, solidY = 64, solidMaterial = stone)
-            } else {
-                DistantLodColumn(64, stone)
-            }
-        }
-
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(near, far),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-        )
-
-        assertEquals(17, planned.size)
-        assertTrue(planned.all { it.chunk == far.position && it.size == DistantLodMeshPlanner.CELL_SIZE })
-        val waterCell = planned.filter { it.x == 0 && it.z == 0 }
-        assertEquals(
-            setOf(DistantLodMaterial.WATER, DistantLodMaterial.STONE),
-            waterCell.mapTo(linkedSetOf()) { it.material },
-        )
-        assertEquals(70, waterCell.single { it.material == DistantLodMaterial.WATER }.y)
-        assertEquals(64, waterCell.single { it.material == DistantLodMaterial.STONE }.y)
-        assertEquals(DistantLodMaterial.STONE, planned.single { it.x == 4 && it.z == 0 }.material)
-    }
-
-    @Test
-    fun `lod mesh planner excludes chunks retained by native terrain`() {
-        val stone = ResourceLocation.of("minecraft:stone")
-        val native = DistantLodTile.capture(ChunkPosition(32, 0)) { _, _ ->
-            DistantLodColumn(64, stone)
-        }
-        val distant = DistantLodTile.capture(ChunkPosition(33, 0)) { _, _ ->
-            DistantLodColumn(64, stone)
-        }
-
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(native, distant),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-            excludedChunks = setOf(native.position),
-        )
-
-        assertTrue(planned.isNotEmpty())
-        assertTrue(planned.all { it.chunk == distant.position })
-    }
-
-    @Test
-    fun `lod mesh planner ignores one block column spike when aggregating a cell`() {
-        val sand = ResourceLocation.of("minecraft:sand")
-        val stone = ResourceLocation.of("minecraft:stone")
-        val tile = DistantLodTile.capture(ChunkPosition(32, 0)) { x, z ->
-            if (x == 0 && z == 0) DistantLodColumn(112, stone) else DistantLodColumn(64, sand)
-        }
-
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(tile),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-        )
-        val first = planned.single { it.x == 0 && it.z == 0 }
-
-        assertEquals(64, first.y)
-        assertEquals(DistantLodMaterial.SAND, first.material)
-    }
-
-    @Test
-    fun `lod mesh planner fills bounded air holes from retained surface neighbors`() {
-        val air = ResourceLocation.of("minecraft:air")
-        val stone = ResourceLocation.of("minecraft:stone")
-        val tile = DistantLodTile.capture(ChunkPosition(32, 0)) { x, z ->
-            if (x in 4..7 && z in 4..7) {
-                DistantLodColumn(384, air)
-            } else {
-                DistantLodColumn(72, stone)
-            }
-        }
-
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(tile),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-        )
-
-        assertEquals(16, planned.count { it.surface == DistantLodSurface.TERRAIN })
-        assertTrue(planned.filter { it.surface == DistantLodSurface.TERRAIN }.all {
-            it.material == DistantLodMaterial.STONE && it.y == 72
-        })
-    }
-
-    @Test
-    fun `lod mesh planner adds cliff skirts on one stable base lattice`() {
-        val stone = ResourceLocation.of("minecraft:stone")
-        val relief = DistantLodTile.capture(ChunkPosition(32, 0)) { x, _ ->
-            DistantLodColumn(if (x < 4) 72 else 64, stone)
-        }
-        val medium = tile(ChunkPosition(60, 0))
-        val far = tile(ChunkPosition(120, 0))
-
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(relief, medium, far),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-        )
-
-        val raised = planned.single { it.chunk == relief.position && it.x == 0 && it.z == 0 }
-        assertTrue(raised.skirts.any {
-            it.edge == DistantLodEdge.EAST && it.bottomY == 64
-        })
-        assertTrue(raised.skirts.none { it.edge == DistantLodEdge.NORTH })
-        assertTrue(planned.filter { it.chunk == medium.position }.all {
-            it.size == DistantLodMeshPlanner.CELL_SIZE
-        })
-        assertTrue(planned.filter { it.chunk == far.position }.all {
-            it.size == DistantLodMeshPlanner.CELL_SIZE
-        })
-    }
-
-    @Test
-    fun `high relief far tile adaptively retains four block cells`() {
-        val stone = ResourceLocation.of("minecraft:stone")
-        val mountain = DistantLodTile.capture(ChunkPosition(120, 0)) { x, _ ->
-            DistantLodColumn(if (x < 8) 144 else 64, stone)
-        }
-
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(mountain),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-        )
-
-        assertEquals(16, planned.size)
-        assertTrue(planned.all { it.size == DistantLodMeshPlanner.CELL_SIZE })
-        assertTrue(planned.none { it.size == DistantLodMeshPlanner.FAR_CELL_SIZE })
-    }
-
-    @Test
-    fun `extreme relief tile retains exact one block columns`() {
-        val stone = ResourceLocation.of("minecraft:stone")
-        val mountain = DistantLodTile.capture(ChunkPosition(120, 0)) { x, z ->
-            if (x < 2 && z < 2) DistantLodColumn(280, stone) else DistantLodColumn(64, stone)
-        }
-
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(mountain),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-        )
-        val extremeCell = planned.single { it.x == 0 && it.z == 0 }
-
-        assertEquals(1, extremeCell.size)
-        assertEquals(280, extremeCell.maximumY)
-        assertTrue(extremeCell.y < extremeCell.maximumY)
-        assertTrue(planned.none {
-            it.x == 0 && it.z == 0 && it.size == DistantLodMeshPlanner.CELL_SIZE
-        })
-        assertTrue(planned.all { quad ->
-            quad.skirts.all { quad.y - it.bottomY <= 32 }
-        })
-        val rendered = planned.filter { it.surface != DistantLodSurface.WATER_BED }
-            .associateBy { it.x to it.z }
-        rendered.forEach { (position, cell) ->
-            rendered[position.first + 1 to position.second]?.let { east ->
-                assertTrue(kotlin.math.abs(cell.y - east.y) <= 4)
-            }
-            rendered[position.first to position.second + 1]?.let { south ->
-                assertTrue(kotlin.math.abs(cell.y - south.y) <= 4)
-            }
-        }
-    }
-
-    @Test
-    fun `base relief edge merges equal stitched skirt segments per cell`() {
-        val stone = ResourceLocation.of("minecraft:stone")
-        val high = DistantLodTile.capture(ChunkPosition(120, 0)) { _, _ ->
-            DistantLodColumn(70, stone)
-        }
-        val low = DistantLodTile.capture(ChunkPosition(121, 0)) { _, _ ->
-            DistantLodColumn(64, stone)
-        }
-
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(high, low),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-        )
-        val east = planned.filter {
-            it.chunk == high.position && it.x == 12
-        }.flatMap { cell ->
-            cell.skirts.filter { it.edge == DistantLodEdge.EAST }
-        }
-
-        assertEquals(4, east.size)
-        assertTrue(east.all { it.offset == 0 })
-        assertTrue(east.all { it.length == DistantLodMeshPlanner.CELL_SIZE })
-        assertTrue(east.all { it.bottomY == 64 })
-    }
-
-    @Test
-    fun `adaptive two to four transition stitches every refined edge span`() {
-        val stone = ResourceLocation.of("minecraft:stone")
-        val relief = DistantLodTile.capture(ChunkPosition(120, 0)) { x, z ->
-            if (x < 2 && z < 2) DistantLodColumn(88, stone) else DistantLodColumn(64, stone)
-        }
-
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(relief),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-        )
-        val refined = planned.single {
-            it.chunk == relief.position &&
-                it.x == 0 &&
-                it.z == 0
-        }
-
-        assertEquals(2, refined.size)
-        assertTrue(refined.skirts.any {
-            it.edge == DistantLodEdge.EAST &&
-                it.length == 2 &&
-                it.bottomY == 64
-        })
-        assertTrue(planned.any { it.size == DistantLodMeshPlanner.CELL_SIZE })
-    }
-
-    @Test
-    fun `coastline terrain skirts stop at water surface and water beds never emit curtains`() {
-        val stone = ResourceLocation.of("minecraft:stone")
-        val water = ResourceLocation.of("minecraft:water")
-        val coast = DistantLodTile.capture(ChunkPosition(120, 0)) { x, _ ->
-            if (x < 8) {
-                DistantLodColumn(70, stone)
-            } else {
-                DistantLodColumn(64, water, solidY = 20, solidMaterial = stone)
-            }
-        }
-
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(coast),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-        )
-        val shore = planned.single {
-            it.surface == DistantLodSurface.TERRAIN && it.x == 4 && it.z == 0
-        }
-        val beds = planned.filter { it.surface == DistantLodSurface.WATER_BED }
-
-        assertTrue(shore.skirts.any {
-            it.edge == DistantLodEdge.EAST && it.bottomY == 64
-        })
-        assertTrue(shore.skirts.none { it.bottomY == 20 })
-        assertTrue(beds.isNotEmpty())
-        assertTrue(beds.all { it.skirts.isEmpty() })
-    }
-
-    @Test
-    fun `planned cells retain detached tile provenance`() {
-        val position = ChunkPosition(32, 0)
-        val stone = ResourceLocation.of("minecraft:stone")
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(DistantLodTile.capture(position) { _, _ -> DistantLodColumn(64, stone) }),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-            sources = mapOf(position to DistantLodTileSource.NETWORK),
-        )
-
-        assertTrue(planned.isNotEmpty())
-        assertTrue(planned.all { it.source == DistantLodTileSource.NETWORK })
-    }
-
-    @Test
-    fun `render diagnostics preserve material surface and source wire values`() {
-        val position = ChunkPosition(32, 0)
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(
-                DistantLodTile.capture(position) { _, _ ->
-                    DistantLodColumn(64, ResourceLocation.of("minecraft:stone"))
-                },
-            ),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-            sources = mapOf(position to DistantLodTileSource.NETWORK),
-        )
-
-        val diagnostics = createDistantLodRenderDiagnostics(
-            revision = 4L,
-            nativeOwnershipRevision = 5L,
-            tileCount = 1,
-            renderReadyNativeChunks = 0,
-            excludedTiles = 0,
-            planned = planned,
-        )
-
-        assertEquals(mapOf(DistantLodTileSource.NETWORK to planned.size), diagnostics.sources)
-        assertTrue(diagnostics.cells.all { it.material == "stone" })
-        assertTrue(diagnostics.cells.all { it.surface == "terrain" })
-        assertTrue(diagnostics.cells.all { it.source.wireName == "network" })
-    }
-
-    @Test
-    fun `lod mesh planner rejects tiles beyond configured render distance`() {
-        val stone = ResourceLocation.of("minecraft:stone")
-        val planned = DistantLodMeshPlanner.plan(
-            tiles = listOf(
-                DistantLodTile.capture(ChunkPosition(32, 0)) { _, _ -> DistantLodColumn(64, stone) },
-                DistantLodTile.capture(ChunkPosition(65, 0)) { _, _ -> DistantLodColumn(64, stone) },
-            ),
-            cameraChunk = ChunkPosition(),
-            seamDistance = 128.0f,
-            maximumDistanceChunks = 64,
-        )
-
-        assertTrue(planned.isNotEmpty())
-        assertTrue(planned.all { it.chunk == ChunkPosition(32, 0) })
     }
 
     @Test
@@ -493,12 +162,8 @@ class DistantHorizonsCompatibilityAdapterTest {
         val request = DistantLodMessage.Request(91, positions)
         assertEquals(request, DistantLodProtocol.decode(DistantLodProtocol.encode(request)))
 
-        val response = DistantLodMessage.Response(
-            requestId = 91,
-            tiles = listOf(tile(positions.first())),
-        )
-        val decoded = DistantLodProtocol.decode(DistantLodProtocol.encode(response))
-            as DistantLodMessage.Response
+        val response = DistantLodMessage.Response(91, listOf(tile(positions.first())))
+        val decoded = DistantLodProtocol.decode(DistantLodProtocol.encode(response)) as DistantLodMessage.Response
         assertEquals(91, decoded.requestId)
         assertEquals(positions.first(), decoded.tiles.single().position)
         assertEquals(DistantLodColumn(64, null), decoded.tiles.single()[0, 0])
@@ -528,10 +193,6 @@ class DistantHorizonsCompatibilityAdapterTest {
         })
     }
 
-    private fun legacyPersistenceFixture(): ByteArray = HexFormat.of().parseHex(
-        checkNotNull(javaClass.getResource("distant-lod-v1.hex")).readText().trim(),
-    )
-
     @Test
     fun `lod tile capacity bounds a contiguous square radius`() {
         assertEquals(0, maximumContiguousDistantRadius(1))
@@ -542,41 +203,22 @@ class DistantHorizonsCompatibilityAdapterTest {
     }
 
     @Test
-    fun `lod publication stops before the first uncovered outer tile`() {
-        val camera = ChunkPosition()
-        val missing = ChunkPosition(3, 0)
-        val tiles = buildList {
-            for (z in -6..6) {
-                for (x in -6..6) {
-                    val dx = x + 0.5f
-                    val dz = z + 0.5f
-                    val position = ChunkPosition(x, z)
-                    if (dx * dx + dz * dz <= 36.0f && position != missing) {
-                        add(tile(position))
-                    }
-                }
-            }
-        }
+    fun `late network page is rejected after the active world epoch advances`() {
+        val tile = tile(ChunkPosition(-3, 5))
+        val page = DistantVerticalPage(
+            TerrainPageKey(TerrainDomain.DISTANT, 0, -3, 0, 5, 7),
+            width = 1,
+            originY = 0,
+            sourceRevision = 1,
+            completeness = DistantSourceCompleteness.PARTIAL,
+            columns = listOf(DistantVerticalColumn(emptyList())),
+        )
 
-        assertEquals(
-            3,
-            maximumContiguousDistantCoverageRadius(
-                tiles = tiles,
-                cameraChunk = camera,
-                seamDistanceChunks = 1.0f,
-                maximumDistanceChunks = 6,
-            ),
-        )
-        assertEquals(
-            6,
-            maximumContiguousDistantCoverageRadius(
-                tiles = tiles,
-                cameraChunk = camera,
-                seamDistanceChunks = 1.0f,
-                maximumDistanceChunks = 6,
-                coveredChunks = setOf(missing),
-            ),
-        )
+        assertTrue(isCurrentDistantPublication(tile, page, worldEpoch = 7))
+        assertFalse(isCurrentDistantPublication(tile, page, worldEpoch = 8))
+        assertFailsWith<IllegalArgumentException> {
+            isCurrentDistantPublication(tile(ChunkPosition(-2, 5)), page, worldEpoch = 7)
+        }
     }
 
     @Test
@@ -623,6 +265,10 @@ class DistantHorizonsCompatibilityAdapterTest {
             ),
         )
     }
+
+    private fun legacyPersistenceFixture(): ByteArray = HexFormat.of().parseHex(
+        checkNotNull(javaClass.getResource("distant-lod-v1.hex")).readText().trim(),
+    )
 
     private fun tile(position: ChunkPosition) = DistantLodTile.capture(position) { _, _ ->
         DistantLodColumn(64, null)

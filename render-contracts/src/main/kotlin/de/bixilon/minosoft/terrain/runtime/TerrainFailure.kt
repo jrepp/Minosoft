@@ -17,6 +17,8 @@
 
 package de.bixilon.minosoft.terrain.runtime
 
+import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
+
 enum class TerrainFailureCategory {
     STALE,
     CANCELLED,
@@ -177,5 +179,140 @@ data class TerrainFailureSnapshot(
         TerrainFailureCategory.CONTENT -> this is TerrainRetryEligibility.AfterQuarantineChange
         TerrainFailureCategory.PROVIDER -> this is TerrainRetryEligibility.AfterProviderReplacement
         TerrainFailureCategory.DEVICE_LOST -> this is TerrainRetryEligibility.AfterDeviceRecreation
+    }
+}
+
+data class TerrainPageFailureSnapshot(
+    val page: TerrainPageKey,
+    val failure: TerrainFailureSnapshot,
+)
+
+/** Bounded page-owner failure state with event-gated retry eligibility. */
+class TerrainPageFailureRegistry(
+    private val maximumEntries: Int,
+) {
+    private val failures = LinkedHashMap<TerrainPageKey, TerrainFailureSnapshot>()
+    private val transientAttempts = HashMap<TerrainPageKey, Int>()
+    var generation: Long = 0L
+        private set
+
+    val size: Int get() = failures.size
+
+    init {
+        require(maximumEntries > 0) { "Terrain page-failure capacity must be positive" }
+    }
+
+    operator fun get(page: TerrainPageKey): TerrainFailureSnapshot? = failures[page]
+
+    fun recordTransient(
+        page: TerrainPageKey,
+        phase: TerrainFailurePhase,
+        monotonicNanos: Long,
+        maximumAttempts: Int,
+        backoffNanos: Long,
+    ): TerrainFailureSnapshot {
+        require(monotonicNanos >= 0L) { "Terrain failure clock must not be negative" }
+        require(maximumAttempts > 0) { "Terrain maximum retry attempts must be positive" }
+        require(backoffNanos > 0L) { "Terrain retry backoff must be positive" }
+        require(isTracked(page) || trackedSize() < maximumEntries) {
+            "Terrain page-failure registry exceeds its bounded capacity"
+        }
+        val previousAttempts = transientAttempts[page] ?: 0
+        val attempts = Math.addExact(previousAttempts, 1)
+        transientAttempts[page] = attempts
+        val delay = saturatingMultiply(backoffNanos, attempts.toLong())
+        return record(
+            page,
+            TerrainFailureCategory.TRANSIENT,
+            phase,
+            TerrainRetryEligibility.AfterBackoff(
+                attemptsUsed = attempts,
+                maximumAttempts = maximumAttempts,
+                retryAtNanos = saturatingAdd(monotonicNanos, delay),
+            ),
+        )
+    }
+
+    fun record(
+        page: TerrainPageKey,
+        category: TerrainFailureCategory,
+        phase: TerrainFailurePhase,
+        retryEligibility: TerrainRetryEligibility,
+    ): TerrainFailureSnapshot {
+        require(isTracked(page) || trackedSize() < maximumEntries) {
+            "Terrain page-failure registry exceeds its bounded capacity"
+        }
+        if (category != TerrainFailureCategory.TRANSIENT) transientAttempts.remove(page)
+        val snapshot = TerrainFailureSnapshot(
+            category = category,
+            phase = phase,
+            generation = nextGeneration(),
+            retryEligibility = retryEligibility,
+        )
+        failures[page] = snapshot
+        return snapshot
+    }
+
+    fun clear(page: TerrainPageKey): Boolean {
+        val removedFailure = failures.remove(page) != null
+        val removedAttempts = transientAttempts.remove(page) != null
+        if (!removedFailure && !removedAttempts) return false
+        nextGeneration()
+        return true
+    }
+
+    fun clear() {
+        if (failures.isEmpty() && transientAttempts.isEmpty()) return
+        failures.clear()
+        transientAttempts.clear()
+        nextGeneration()
+    }
+
+    fun releaseEligible(signal: TerrainRetrySignal): List<TerrainPageKey> {
+        val eligible = failures.entries.asSequence()
+            .filter { it.value.retryEligibility.isEligible(signal) }
+            .map(Map.Entry<TerrainPageKey, TerrainFailureSnapshot>::key)
+            .sortedWith(PAGE_ORDER)
+            .toList()
+        for (page in eligible) {
+            failures.remove(page)
+            nextGeneration()
+        }
+        return eligible
+    }
+
+    fun snapshot(maximumCount: Int = maximumEntries): List<TerrainPageFailureSnapshot> {
+        require(maximumCount > 0) { "Terrain failure snapshot bound must be positive" }
+        return failures.entries.asSequence()
+            .sortedWith(compareBy(PAGE_ORDER, Map.Entry<TerrainPageKey, TerrainFailureSnapshot>::key))
+            .take(maximumCount)
+            .map { TerrainPageFailureSnapshot(it.key, it.value) }
+            .toList()
+    }
+
+    private fun nextGeneration(): Long {
+        generation = Math.incrementExact(generation)
+        return generation
+    }
+
+    private fun isTracked(page: TerrainPageKey): Boolean = page in failures || page in transientAttempts
+
+    private fun trackedSize(): Int = failures.size + transientAttempts.keys.count { it !in failures }
+
+    private fun saturatingAdd(left: Long, right: Long): Long =
+        if (left > Long.MAX_VALUE - right) Long.MAX_VALUE else left + right
+
+    private fun saturatingMultiply(left: Long, right: Long): Long =
+        if (left > Long.MAX_VALUE / right) Long.MAX_VALUE else left * right
+
+    private companion object {
+        val PAGE_ORDER: Comparator<TerrainPageKey> = compareBy(
+            { it.domain.ordinal },
+            { it.detailLevel },
+            { it.z },
+            { it.y },
+            { it.x },
+            { it.worldEpoch },
+        )
     }
 }

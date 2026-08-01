@@ -28,20 +28,23 @@ import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
 import de.bixilon.minosoft.gui.rendering.terrain.storage.OpenGlTerrainRegionDevice as SharedOpenGlTerrainRegionDevice
 import de.bixilon.minosoft.gui.rendering.terrain.storage.OpenGlTerrainStagingBuffer as SharedOpenGlTerrainStagingBuffer
 import de.bixilon.minosoft.gui.rendering.terrain.storage.OpenGlTerrainSubmissionCompletion as SharedOpenGlTerrainSubmissionCompletion
+import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
-import de.bixilon.minosoft.terrain.runtime.TerrainDeviceRuntimeId
-import de.bixilon.minosoft.terrain.runtime.TerrainProcessScopeId
-import de.bixilon.minosoft.terrain.runtime.TerrainSubmissionSerial
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPageRangeDiagnosticSnapshot
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPageVisibilityDiagnosticSnapshot
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainBatchCache
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainDrawBatch
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainRegionKey
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainRegionExtent
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainRegionStorage
+import de.bixilon.minosoft.terrain.runtime.storage.TerrainResidencyTarget
+import de.bixilon.minosoft.terrain.runtime.storage.TerrainSelectionPublication
+import de.bixilon.minosoft.terrain.runtime.storage.TerrainSelectionPublicationSnapshot
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainViewKey
 import org.lwjgl.opengl.GL32.glFinish
-import java.util.concurrent.atomic.AtomicLong
 
 data class NearTerrainRegionMetrics(
+    val deviceCapacityBytes: Long,
     val regions: Int,
     val activePages: Int,
     val retiredPages: Int,
@@ -57,6 +60,15 @@ data class NearTerrainRegionMetrics(
     val publications: Long,
     val allocationFailures: Long,
     val uploadFailures: Long,
+    val cpuLeaseCount: Int,
+    val pendingSubmissionCount: Int,
+    val failedSubmissionCount: Int,
+    val invalidatedSubmissionCount: Int,
+    val retiredCpuLeasedPages: Int,
+    val retiredPendingSubmissionPages: Int,
+    val retiredFailedSubmissionPages: Int,
+    val retiredDeviceInvalidatedPages: Int,
+    val deviceInvalidations: Long,
     val batchCacheEntries: Int,
     val batchBuilds: Long,
     val batchHits: Long,
@@ -65,6 +77,19 @@ data class NearTerrainRegionMetrics(
     val drawCommands: Int,
     val drawVertices: Long,
     val pendingSubmissionFences: Int,
+)
+
+data class NearTerrainPublicationDiagnostics(
+    val storageGeneration: Long,
+    val residentPageCount: Int,
+    val selection: TerrainSelectionPublicationSnapshot,
+)
+
+data class NearTerrainPagePublicationDiagnostic(
+    val publicationRevision: Long,
+    val artifactDigest: String,
+    val ranges: List<TerrainPageRangeDiagnosticSnapshot>,
+    val visibility: List<TerrainPageVisibilityDiagnosticSnapshot>,
 )
 
 /** Production adapter for the transactional near-terrain region path. */
@@ -78,13 +103,15 @@ class OpenGlNearTerrainRegionRuntime private constructor(
     )
 
     private val batchCache = TerrainBatchCache()
+    private val selectionPublication = TerrainSelectionPublication()
     private val staging = SharedOpenGlTerrainStagingBuffer(VERTEX_CAPACITY_BYTES)
     private val regions = LinkedHashMap<TerrainRegionKey, Region>()
+    private val residentVersions = LinkedHashMap<TerrainPageKey, Long>()
     private val submittedBatches = ArrayList<TerrainDrawBatch>()
+    private val frameSelectionViews = HashSet<TerrainViewKey>()
+    private val frameActivePages = HashMap<TerrainViewKey, Set<TerrainPageKey>>()
     private var completion: SharedOpenGlTerrainSubmissionCompletion? = null
-    private var deviceRuntime: TerrainDeviceRuntimeId? = null
     private var layoutGeneration = -1L
-    private var nextSerial = 1L
     private var closed = false
     private var frameDrawBatches = 0
     private var frameDrawCommands = 0
@@ -99,6 +126,8 @@ class OpenGlNearTerrainRegionRuntime private constructor(
         frameDrawBatches = 0
         frameDrawCommands = 0
         frameDrawVertices = 0L
+        frameSelectionViews.clear()
+        frameActivePages.clear()
     }
 
     fun publish(mesh: ChunkMeshes): Boolean {
@@ -129,13 +158,14 @@ class OpenGlNearTerrainRegionRuntime private constructor(
             regions.remove(key)
             region.device.close()
         }
+        if (published != null) residentVersions[published.key] = published.publicationId
         return published != null
     }
 
     fun remove(mesh: ChunkMeshes) {
         val page = mesh.terrainIdentity?.page ?: return
         val key = TerrainRegionKey.containing(page, REGION_EXTENT)
-        regions[key]?.storage?.remove(page)
+        if (regions[key]?.storage?.remove(page) == true) residentVersions.remove(page)
     }
 
     fun hasVisibleMaterial(material: TerrainMaterialClass, meshes: Collection<ChunkMeshes>): Boolean {
@@ -149,7 +179,23 @@ class OpenGlNearTerrainRegionRuntime private constructor(
         meshes: Collection<ChunkMeshes>,
         materialGeneration: Long,
     ) {
-        if (meshes.isEmpty() || layoutGeneration < 0L) return
+        val viewKey = TerrainViewKey(view.value)
+        if (frameSelectionViews.add(viewKey)) {
+            val requestedPages = meshes.asSequence()
+                .mapNotNull { it.terrainIdentity?.page }
+                .distinct()
+                .toList()
+            val targets = requestedPages.asSequence()
+                .mapNotNull { page ->
+                    residentVersions[page]?.let { TerrainResidencyTarget(page, it) }
+                }
+                .toList()
+            selectionPublication.desireAvailable(viewKey, requestedPages, targets)
+            selectionPublication.promote(viewKey, residentVersions)
+            frameActivePages[viewKey] = selectionPublication.active(viewKey).toHashSet()
+        }
+        val activePages = frameActivePages[viewKey].orEmpty()
+        if (activePages.isEmpty() || layoutGeneration < 0L) return
         val semantic = material.semanticMaterial
         val ordered = if (material == TerrainMaterialClass.TRANSLUCENT) {
             meshes.sortedByDescending(ChunkMeshes::distance)
@@ -157,13 +203,14 @@ class OpenGlNearTerrainRegionRuntime private constructor(
             meshes.sortedBy(ChunkMeshes::distance)
         }
         val byRegion = ordered.mapNotNull { it.terrainIdentity?.page }
+            .filter(activePages::contains)
             .groupBy { TerrainRegionKey.containing(it, REGION_EXTENT) }
         for ((key, pages) in byRegion) {
             val region = regions[key] ?: continue
             val batch = batchCache.batch(
                 storage = region.storage,
                 material = semantic,
-                view = TerrainViewKey(view.value),
+                view = viewKey,
                 orderedPages = pages,
                 layoutGeneration = layoutGeneration,
                 materialGeneration = materialGeneration,
@@ -185,6 +232,14 @@ class OpenGlNearTerrainRegionRuntime private constructor(
     }
 
     fun finishFrame() {
+        selectionPublication.snapshot(residentVersions).views
+            .asSequence()
+            .map { it.view }
+            .filterNot(frameSelectionViews::contains)
+            .forEach { view ->
+                selectionPublication.desire(view, emptyList())
+                selectionPublication.promote(view, residentVersions)
+            }
         collectStorage()
         lastDrawBatches = frameDrawBatches
         lastDrawCommands = frameDrawCommands
@@ -192,13 +247,12 @@ class OpenGlNearTerrainRegionRuntime private constructor(
         if (submittedBatches.isEmpty()) return
         var failure: Throwable? = null
         try {
-            val serial = TerrainSubmissionSerial(nextSerial)
-            nextSerial = Math.addExact(nextSerial, 1L)
+            val submission = context.terrainSubmissions.next()
             val completion = checkNotNull(completion)
-            val submission = completion.fence(serial)
+            val fenced = completion.fence(submission.serial)
             for (batch in submittedBatches) {
                 try {
-                    batch.submit(submission)
+                    batch.submit(fenced)
                 } catch (error: Throwable) {
                     failure = combineCleanupFailure(failure, error)
                 }
@@ -239,11 +293,14 @@ class OpenGlNearTerrainRegionRuntime private constructor(
             // destruction owns these device objects, so only abandon the
             // logical references on this path.
             submittedBatches.clear()
+            frameSelectionViews.clear()
+            frameActivePages.clear()
             regions.clear()
+            residentVersions.clear()
             completion = null
-            deviceRuntime = null
             layoutGeneration = -1L
             batchCache.clear()
+            selectionPublication.clear()
             frameDrawBatches = 0
             frameDrawCommands = 0
             frameDrawVertices = 0L
@@ -281,9 +338,12 @@ class OpenGlNearTerrainRegionRuntime private constructor(
             failure = combineCleanupFailure(failure, error)
         }
         completion = null
-        deviceRuntime = null
+        frameSelectionViews.clear()
+        frameActivePages.clear()
+        residentVersions.clear()
         layoutGeneration = -1L
         batchCache.clear()
+        selectionPublication.clear()
         frameDrawBatches = 0
         frameDrawCommands = 0
         frameDrawVertices = 0L
@@ -297,6 +357,13 @@ class OpenGlNearTerrainRegionRuntime private constructor(
         val storage = regions.values.map { it.storage.metrics() }
         val batches = batchCache.metrics()
         return NearTerrainRegionMetrics(
+            deviceCapacityBytes = Math.addExact(
+                Math.multiplyExact(
+                    MAX_REGIONS.toLong(),
+                    Math.addExact(VERTEX_CAPACITY_BYTES, INDEX_CAPACITY_BYTES).toLong(),
+                ),
+                staging.capacityBytes.toLong(),
+            ),
             regions = regions.size,
             activePages = storage.sumOf { it.activePages },
             retiredPages = storage.sumOf { it.retiredPages },
@@ -312,6 +379,29 @@ class OpenGlNearTerrainRegionRuntime private constructor(
             publications = storage.sumOf { it.publications },
             allocationFailures = storage.sumOf { it.allocationFailures },
             uploadFailures = storage.sumOf { it.uploadFailures },
+            cpuLeaseCount = storage.fold(0) { total, metrics -> Math.addExact(total, metrics.cpuLeaseCount) },
+            pendingSubmissionCount = storage.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.pendingSubmissionCount)
+            },
+            failedSubmissionCount = storage.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.failedSubmissionCount)
+            },
+            invalidatedSubmissionCount = storage.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.invalidatedSubmissionCount)
+            },
+            retiredCpuLeasedPages = storage.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.retiredCpuLeasedPages)
+            },
+            retiredPendingSubmissionPages = storage.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.retiredPendingSubmissionPages)
+            },
+            retiredFailedSubmissionPages = storage.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.retiredFailedSubmissionPages)
+            },
+            retiredDeviceInvalidatedPages = storage.fold(0) { total, metrics ->
+                Math.addExact(total, metrics.retiredDeviceInvalidatedPages)
+            },
+            deviceInvalidations = storage.sumOf { it.deviceInvalidations },
             batchCacheEntries = batches.entries,
             batchBuilds = batches.builds,
             batchHits = batches.hits,
@@ -321,6 +411,46 @@ class OpenGlNearTerrainRegionRuntime private constructor(
             drawVertices = lastDrawVertices,
             pendingSubmissionFences = completion?.pendingFences ?: 0,
         )
+    }
+
+    fun publicationDiagnostics(): NearTerrainPublicationDiagnostics {
+        val storageGeneration = regions.values.fold(0L) { total, region ->
+            Math.addExact(total, region.storage.metrics().publicationGeneration)
+        }
+        return NearTerrainPublicationDiagnostics(
+            storageGeneration = storageGeneration,
+            residentPageCount = residentVersions.size,
+            selection = selectionPublication.snapshot(residentVersions),
+        )
+    }
+
+    fun pagePublicationDiagnostics(): Map<TerrainPageKey, NearTerrainPagePublicationDiagnostic> {
+        val views = listOf(TerrainViewKey(RenderViewId.MAIN.value), TerrainViewKey("minosoft:shadow"))
+        val selected = views.associateWith(selectionPublication::active)
+        return regions.values.asSequence()
+            .flatMap { it.storage.snapshot().values.asSequence() }
+            .associate { page ->
+                page.key to NearTerrainPagePublicationDiagnostic(
+                    publicationRevision = page.publicationId,
+                    artifactDigest = page.digest.encodedValue,
+                    ranges = page.streams.map { stream ->
+                        TerrainPageRangeDiagnosticSnapshot(
+                            partitionId = stream.partitionId,
+                            vertexOffsetBytes = stream.vertexRange.offset,
+                            vertexLengthBytes = stream.vertexRange.length,
+                            indexOffsetBytes = stream.indexRange.offset,
+                            indexLengthBytes = stream.indexRange.length,
+                        )
+                    },
+                    visibility = views.map { view ->
+                        TerrainPageVisibilityDiagnosticSnapshot(
+                            viewId = view.value,
+                            selected = page.key in selected.getValue(view),
+                            masked = false,
+                        )
+                    },
+                )
+            }
     }
 
     override fun close() {
@@ -344,16 +474,12 @@ class OpenGlNearTerrainRegionRuntime private constructor(
         if (layoutGeneration == generation) return
         clear()
         layoutGeneration = generation
-        val runtime = TerrainDeviceRuntimeId(
-            PROCESS_SCOPE,
-            DEVICE_GENERATIONS.getAndUpdate { Math.incrementExact(it) },
-        )
-        deviceRuntime = runtime
+        val runtime = context.terrainSubmissions.deviceRuntime
         completion = SharedOpenGlTerrainSubmissionCompletion(context, runtime)
     }
 
     private fun createRegion(key: TerrainRegionKey): Region {
-        val runtime = checkNotNull(deviceRuntime)
+        val runtime = context.terrainSubmissions.deviceRuntime
         val completion = checkNotNull(completion)
         val device = SharedOpenGlTerrainRegionDevice(
             system = system,
@@ -401,12 +527,9 @@ class OpenGlNearTerrainRegionRuntime private constructor(
         private const val MAX_REGIONS = 16
         private const val VERTEX_CAPACITY_BYTES = 16 * 1024 * 1024
         private const val INDEX_CAPACITY_BYTES = 4 * 1024 * 1024
-        private val PROCESS_SCOPE = TerrainProcessScopeId(0L)
         private val REGION_EXTENT = TerrainRegionExtent(8, 32, 8)
-        private val DEVICE_GENERATIONS = AtomicLong(1L)
 
         fun create(context: RenderContext): OpenGlNearTerrainRegionRuntime? {
-            if (!NearTerrainArtifactCapture.regionStorageEnabled) return null
             val system = context.system as? OpenGlRenderSystem ?: return null
             return OpenGlNearTerrainRegionRuntime(context, system)
         }

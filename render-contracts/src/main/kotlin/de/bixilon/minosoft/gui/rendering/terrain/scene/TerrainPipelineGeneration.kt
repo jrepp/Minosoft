@@ -26,8 +26,6 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
 enum class TerrainRuntimeMode {
-    LEGACY,
-    UNIFIED_COMPARE,
     UNIFIED,
 }
 
@@ -47,6 +45,40 @@ data class TerrainPhysicalLayout(
     init {
         require(id.isNotBlank()) { "Terrain physical layout ID must not be blank" }
         require(generation >= 0L) { "Terrain physical layout generation must not be negative" }
+    }
+}
+
+data class TerrainPipelineSelectionIdentity(
+    val mode: TerrainRuntimeMode,
+    val nearProviderId: String,
+    val nearProviderGeneration: Long,
+    val distantProviderId: String?,
+    val distantProviderGeneration: Long?,
+    val nearLayoutGeneration: Long,
+    val distantLayoutGeneration: Long?,
+    val materialGeneration: Long,
+    val shaderPipelineGeneration: Long,
+    val renderGraphGeneration: Long,
+) {
+    init {
+        require(nearProviderId.isNotBlank()) { "Near terrain provider ID must not be blank" }
+        require(nearProviderGeneration >= 0L) { "Near terrain provider generation must not be negative" }
+        require((distantProviderId == null) == (distantProviderGeneration == null)) {
+            "Distant terrain provider ID and generation must be present together"
+        }
+        require(distantProviderId == null || distantProviderId.isNotBlank()) {
+            "Distant terrain provider ID must not be blank"
+        }
+        require(distantProviderGeneration == null || distantProviderGeneration >= 0L) {
+            "Distant terrain provider generation must not be negative"
+        }
+        require(nearLayoutGeneration >= 0L) { "Near terrain layout generation must not be negative" }
+        require(distantLayoutGeneration == null || distantLayoutGeneration >= 0L) {
+            "Distant terrain layout generation must not be negative"
+        }
+        require(materialGeneration >= 0L) { "Terrain material generation must not be negative" }
+        require(shaderPipelineGeneration >= 0L) { "Terrain shader generation must not be negative" }
+        require(renderGraphGeneration >= 0L) { "Render graph generation must not be negative" }
     }
 }
 

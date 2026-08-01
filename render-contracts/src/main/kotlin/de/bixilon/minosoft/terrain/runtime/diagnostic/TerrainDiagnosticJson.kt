@@ -23,7 +23,13 @@ import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import de.bixilon.minosoft.terrain.model.identity.TerrainWorldIdentity
 import de.bixilon.minosoft.terrain.model.interop.TerrainInteropDescriptor
 import de.bixilon.minosoft.terrain.runtime.TerrainDeviceRuntimeId
+import de.bixilon.minosoft.terrain.runtime.TerrainFailureSnapshot
+import de.bixilon.minosoft.terrain.runtime.TerrainQuarantineKey
 import de.bixilon.minosoft.terrain.runtime.TerrainResidencyCapSnapshot
+import de.bixilon.minosoft.terrain.runtime.TerrainRetryEligibility
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildRuntimeSnapshot
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainSharedBuildServiceSnapshot
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainSharedBuildTenantSnapshot
 
 object TerrainDiagnosticCanonicalJson {
     fun encode(capabilities: TerrainDiagnosticCapabilities): String = capabilities(capabilities).encode()
@@ -33,7 +39,7 @@ object TerrainDiagnosticCanonicalJson {
     fun encode(response: TerrainDiagnosticResponse): String = jsonObject(
         "capabilities" to capabilities(response.capabilities),
         "schemaVersion" to jsonNumber(response.schemaVersion),
-        "snapshot" to availableSnapshot(response.snapshot),
+        "snapshot" to snapshotView(response.snapshot),
         "unavailable" to jsonArray(response.unavailable.map(::rejection)),
     ).encode()
 
@@ -43,6 +49,11 @@ object TerrainDiagnosticCanonicalJson {
         "capabilities" to jsonArray(capabilities.capabilities.map { jsonString(it.name) }),
         "cursorSchemaVersion" to jsonNumber(capabilities.cursorSchemaVersion),
         "maximumPageCount" to jsonNumber(capabilities.maximumPageCount),
+        "operationSchemaVersions" to jsonObject(
+            *capabilities.operationSchemaVersions.map { (operation, version) ->
+                operation to jsonNumber(version)
+            }.toTypedArray(),
+        ),
         "rejectionSchemaVersion" to jsonNumber(capabilities.rejectionSchemaVersion),
         "schemaVersion" to jsonNumber(capabilities.schemaVersion),
     )
@@ -63,6 +74,11 @@ object TerrainDiagnosticCanonicalJson {
         "schemaVersion" to jsonNumber(snapshot.schemaVersion),
     )
 
+    private fun snapshotView(snapshot: TerrainDiagnosticSnapshotView): JsonValue = when (snapshot) {
+        is TerrainAvailableDiagnosticSnapshot -> availableSnapshot(snapshot)
+        is TerrainDiagnosticSnapshot -> snapshot(snapshot)
+    }
+
     private fun snapshot(snapshot: TerrainDiagnosticSnapshot): JsonValue = jsonObject(
         "coverage" to coverage(snapshot.coverage),
         "diagnosticGeneration" to jsonNumber(snapshot.diagnosticGeneration),
@@ -71,7 +87,9 @@ object TerrainDiagnosticCanonicalJson {
         "pageWindow" to snapshot.pageWindow?.let(::pageWindow).orJsonNull(),
         "pipeline" to pipeline(snapshot.pipeline),
         "providers" to jsonArray(snapshot.providers.map(::provider)),
+        "publication" to jsonArray(snapshot.publication.map(::publication)),
         "residency" to jsonArray(snapshot.residency.map(::residency)),
+        "scheduling" to scheduling(snapshot.scheduling),
         "schemaVersion" to jsonNumber(snapshot.schemaVersion),
         "submission" to submission(snapshot.submission),
         "worldIdentity" to worldIdentity(snapshot.worldIdentity),
@@ -153,6 +171,25 @@ object TerrainDiagnosticCanonicalJson {
         "worldEpoch" to jsonNumber(snapshot.worldEpoch),
     )
 
+    private fun publication(snapshot: TerrainPublicationDiagnosticSnapshot): JsonValue = jsonObject(
+        "domain" to jsonString(snapshot.domain.name),
+        "providerId" to jsonString(snapshot.providerId),
+        "residentPageCount" to jsonNumber(snapshot.residentPageCount),
+        "retainedPageCount" to jsonNumber(snapshot.retainedPageCount),
+        "selectionGeneration" to jsonNumber(snapshot.selectionGeneration),
+        "storageGeneration" to jsonNumber(snapshot.storageGeneration),
+        "views" to jsonArray(snapshot.views.map(::visibility)),
+    )
+
+    private fun visibility(snapshot: TerrainViewVisibilityDiagnosticSnapshot): JsonValue = jsonObject(
+        "desiredPageCount" to jsonNumber(snapshot.desiredPageCount),
+        "drawPageCount" to jsonNumber(snapshot.drawPageCount),
+        "maskedPageCount" to jsonNumber(snapshot.maskedPageCount),
+        "missingPageCount" to jsonNumber(snapshot.missingPageCount),
+        "viewId" to jsonString(snapshot.viewId),
+        "visiblePageCount" to jsonNumber(snapshot.visiblePageCount),
+    )
+
     private fun residency(snapshot: TerrainResidencyDiagnosticSnapshot): JsonValue = jsonObject(
         "accounting" to residencyAccounting(snapshot.accounting),
         "generation" to jsonNumber(snapshot.generation),
@@ -192,6 +229,47 @@ object TerrainDiagnosticCanonicalJson {
         "generation" to jsonNumber(snapshot.generation),
         "latestSubmittedSerial" to jsonNullableNumber(snapshot.latestSubmittedSerial?.value),
         "pendingSubmissionCount" to jsonNumber(snapshot.pendingSubmissionCount),
+    )
+
+    private fun scheduling(snapshot: TerrainSharedBuildServiceSnapshot): JsonValue = jsonObject(
+        "runtime" to schedulingRuntime(snapshot.runtime),
+        "tenants" to jsonArray(snapshot.tenants.map(::schedulingTenant)),
+    )
+
+    private fun schedulingRuntime(snapshot: TerrainBuildRuntimeSnapshot): JsonValue = jsonObject(
+        "active" to jsonNumber(snapshot.active),
+        "admitted" to jsonNumber(snapshot.admitted),
+        "cancelled" to jsonNumber(snapshot.cancelled),
+        "completed" to jsonNumber(snapshot.completed),
+        "completionDepth" to jsonNumber(snapshot.completionDepth),
+        "completionHighWater" to jsonNumber(snapshot.completionHighWater),
+        "estimatedCpuBudgetNanos" to jsonNumber(snapshot.estimatedCpuBudgetNanos),
+        "estimatedCpuHighWaterNanos" to jsonNumber(snapshot.estimatedCpuHighWaterNanos),
+        "estimatedCpuRejected" to jsonNumber(snapshot.estimatedCpuRejected),
+        "estimatedOutputBudgetBytes" to jsonNumber(snapshot.estimatedOutputBudgetBytes),
+        "estimatedOutputHighWaterBytes" to jsonNumber(snapshot.estimatedOutputHighWaterBytes),
+        "estimatedOutputRejected" to jsonNumber(snapshot.estimatedOutputRejected),
+        "failed" to jsonNumber(snapshot.failed),
+        "outstanding" to jsonNumber(snapshot.outstanding),
+        "outstandingEstimatedCpuNanos" to jsonNumber(snapshot.outstandingEstimatedCpuNanos),
+        "outstandingEstimatedOutputBytes" to jsonNumber(snapshot.outstandingEstimatedOutputBytes),
+        "outstandingHighWater" to jsonNumber(snapshot.outstandingHighWater),
+        "queueDepth" to jsonNumber(snapshot.queueDepth),
+        "queueHighWater" to jsonNumber(snapshot.queueHighWater),
+        "rejected" to jsonNumber(snapshot.rejected),
+        "requested" to jsonNumber(snapshot.requested),
+        "routedCompletionDepth" to jsonNumber(snapshot.routedCompletionDepth),
+        "started" to jsonNumber(snapshot.started),
+    )
+
+    private fun schedulingTenant(snapshot: TerrainSharedBuildTenantSnapshot): JsonValue = jsonObject(
+        "accepting" to jsonBoolean(snapshot.accepting),
+        "activeBuilds" to jsonNumber(snapshot.activeBuilds),
+        "completionDepth" to jsonNumber(snapshot.completionDepth),
+        "outstanding" to jsonNumber(snapshot.outstanding),
+        "ownerId" to jsonString(snapshot.ownerId),
+        "tenant" to jsonString(snapshot.tenant.value),
+        "workerContextCount" to jsonNumber(snapshot.workerContextCount),
     )
 
     private fun deviceRuntime(scope: TerrainDeviceRuntimeId): JsonValue = jsonObject(
@@ -237,10 +315,77 @@ object TerrainDiagnosticCanonicalJson {
     }
 
     private fun page(snapshot: TerrainPageDiagnosticSnapshot): JsonValue = jsonObject(
+        "artifactDigest" to jsonNullableString(snapshot.artifactDigest),
         "buildIdentity" to snapshot.buildIdentity?.let(::buildIdentity).orJsonNull(),
         "coverageState" to jsonString(snapshot.coverageState.name),
+        "failure" to snapshot.failure?.let(::failure).orJsonNull(),
         "page" to pageKey(snapshot.page),
         "providerId" to jsonNullableString(snapshot.providerId),
+        "ranges" to jsonArray(snapshot.ranges.map(::pageRange)),
+        "revisions" to pageRevisions(snapshot.revisions),
+        "source" to jsonNullableString(snapshot.source),
+        "visibility" to jsonArray(snapshot.visibility.map(::pageVisibility)),
+    )
+
+    private fun pageRevisions(snapshot: TerrainPageRevisionDiagnosticSnapshot): JsonValue = jsonObject(
+        "dirtyRevision" to jsonNullableNumber(snapshot.dirtyRevision),
+        "publicationRevision" to jsonNullableNumber(snapshot.publicationRevision),
+        "renderRevision" to jsonNullableNumber(snapshot.renderRevision),
+        "sourceRevision" to jsonNullableNumber(snapshot.sourceRevision),
+    )
+
+    private fun pageRange(snapshot: TerrainPageRangeDiagnosticSnapshot): JsonValue = jsonObject(
+        "indexLengthBytes" to jsonNumber(snapshot.indexLengthBytes),
+        "indexOffsetBytes" to jsonNumber(snapshot.indexOffsetBytes),
+        "partitionId" to jsonString(snapshot.partitionId),
+        "vertexLengthBytes" to jsonNumber(snapshot.vertexLengthBytes),
+        "vertexOffsetBytes" to jsonNumber(snapshot.vertexOffsetBytes),
+    )
+
+    private fun pageVisibility(snapshot: TerrainPageVisibilityDiagnosticSnapshot): JsonValue = jsonObject(
+        "masked" to jsonBoolean(snapshot.masked),
+        "selected" to jsonBoolean(snapshot.selected),
+        "viewId" to jsonString(snapshot.viewId),
+    )
+
+    private fun failure(snapshot: TerrainFailureSnapshot): JsonValue = jsonObject(
+        "category" to jsonString(snapshot.category.name),
+        "generation" to jsonNumber(snapshot.generation),
+        "phase" to jsonString(snapshot.phase.name),
+        "retryEligibility" to retryEligibility(snapshot.retryEligibility),
+    )
+
+    private fun retryEligibility(eligibility: TerrainRetryEligibility): JsonValue = when (eligibility) {
+        TerrainRetryEligibility.None -> jsonObject("type" to jsonString("NONE"))
+        is TerrainRetryEligibility.AfterBackoff -> jsonObject(
+            "attemptsUsed" to jsonNumber(eligibility.attemptsUsed),
+            "maximumAttempts" to jsonNumber(eligibility.maximumAttempts),
+            "retryAtNanos" to jsonNumber(eligibility.retryAtNanos),
+            "type" to jsonString("AFTER_BACKOFF"),
+        )
+        is TerrainRetryEligibility.AfterCapacityChange -> jsonObject(
+            "capacityRevisionAtFailure" to jsonNumber(eligibility.capacityRevisionAtFailure),
+            "type" to jsonString("AFTER_CAPACITY_CHANGE"),
+        )
+        is TerrainRetryEligibility.AfterQuarantineChange -> jsonObject(
+            "failedKey" to quarantineKey(eligibility.failedKey),
+            "type" to jsonString("AFTER_QUARANTINE_CHANGE"),
+        )
+        is TerrainRetryEligibility.AfterProviderReplacement -> jsonObject(
+            "failedProviderGeneration" to jsonNumber(eligibility.failedProviderGeneration),
+            "type" to jsonString("AFTER_PROVIDER_REPLACEMENT"),
+        )
+        is TerrainRetryEligibility.AfterDeviceRecreation -> jsonObject(
+            "failedDeviceRuntime" to deviceRuntime(eligibility.failedDeviceRuntime),
+            "type" to jsonString("AFTER_DEVICE_RECREATION"),
+        )
+    }
+
+    private fun quarantineKey(key: TerrainQuarantineKey): JsonValue = jsonObject(
+        "materialGeneration" to jsonNumber(key.materialGeneration),
+        "providerGeneration" to jsonNumber(key.providerGeneration),
+        "schemaGeneration" to jsonNumber(key.schemaGeneration),
+        "sourceDataRevision" to jsonNullableNumber(key.sourceDataRevision),
     )
 
     private fun buildIdentity(identity: TerrainBuildIdentity): JsonValue = jsonObject(
@@ -328,6 +473,12 @@ object TerrainDiagnosticCanonicalJson {
         }
     }
 
+    private data class JsonBoolean(val value: Boolean) : JsonValue {
+        override fun appendTo(target: StringBuilder) {
+            target.append(value)
+        }
+    }
+
     private data object JsonNull : JsonValue {
         override fun appendTo(target: StringBuilder) {
             target.append("null")
@@ -344,6 +495,8 @@ object TerrainDiagnosticCanonicalJson {
     private fun jsonNumber(value: Int): JsonValue = JsonNumber(value.toLong())
 
     private fun jsonNumber(value: Long): JsonValue = JsonNumber(value)
+
+    private fun jsonBoolean(value: Boolean): JsonValue = JsonBoolean(value)
 
     private fun jsonNullableNumber(value: Long?): JsonValue =
         value?.let(::jsonNumber) ?: JsonNull

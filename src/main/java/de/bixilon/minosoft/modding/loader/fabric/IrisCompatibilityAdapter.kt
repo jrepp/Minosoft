@@ -25,6 +25,7 @@ import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.RenderingStates
 import de.bixilon.minosoft.gui.rendering.chunk.ChunkRenderer
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisShaderPackPlanner
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisWorldShaderPipeline
@@ -287,6 +288,9 @@ private class IrisPresentationController : AutoCloseable {
         presentations.remove(context)?.let { presentation ->
             presentation.registration?.close()
             presentation.registration = null
+            requireNotNull(context.renderer[ChunkRenderer]) {
+                "Iris shader pipeline requires terrain"
+            }.invalidate(context.session.world, TerrainBuildCause.RESOURCE_GENERATION_CHANGE)
             context.renderer.pipeline.rebuild()
         }
         return false

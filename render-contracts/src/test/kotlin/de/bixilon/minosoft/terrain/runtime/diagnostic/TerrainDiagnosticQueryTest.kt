@@ -15,6 +15,7 @@ import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 class TerrainDiagnosticQueryTest {
     @Test
@@ -123,5 +124,36 @@ class TerrainDiagnosticQueryTest {
             ),
         )
         assertEquals(TerrainDiagnosticRejectionCode.MALFORMED_CURSOR, malformed.rejection.code)
+    }
+
+    @Test
+    fun `bounded paging uses one-record lookahead and issues the canonical continuation`() {
+        val query = TerrainDiagnosticFixtures.query(maximumCount = 2)
+        val first = TerrainDiagnosticFixtures.pageSnapshot(-1L, -1L)
+        val second = TerrainDiagnosticFixtures.pageSnapshot(0L, 0L)
+        val lookahead = TerrainDiagnosticFixtures.pageSnapshot(1L, 0L)
+        val window = TerrainPageDiagnosticPaging.window(
+            TerrainDiagnosticFixtures.DIAGNOSTIC_GENERATION,
+            query,
+            listOf(lookahead, second, first),
+        )
+
+        assertEquals(listOf(first, second), window.pages)
+        val cursor = assertNotNull(window.nextCursor)
+        assertEquals(
+            TerrainPageCursorResolution.Accepted(second.page),
+            TerrainPageCursorCodec.resolve(
+                cursor,
+                TerrainDiagnosticFixtures.DIAGNOSTIC_GENERATION,
+                query,
+            ),
+        )
+        assertThrows<IllegalArgumentException> {
+            TerrainPageDiagnosticPaging.window(
+                TerrainDiagnosticFixtures.DIAGNOSTIC_GENERATION,
+                query,
+                listOf(first, second, lookahead, TerrainDiagnosticFixtures.pageSnapshot(1L, 1L)),
+            )
+        }
     }
 }

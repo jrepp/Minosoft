@@ -97,6 +97,9 @@ internal class DistantHorizonsDebugProvider(
                 }
                 diagnostics.hierarchy?.let { hierarchy ->
                     putObject("hierarchy").apply {
+                        put("deviceCapacityBytes", hierarchy.deviceCapacityBytes)
+                        put("storageHighWaterBytes", hierarchy.storageHighWaterBytes)
+                        put("stagingCapacityBytes", hierarchy.stagingCapacityBytes)
                         put("indexRevision", hierarchy.indexRevision)
                         put("sourcePublicationRevision", hierarchy.sourcePublicationRevision)
                         put("dirtyRevision", hierarchy.dirtyRevision)
@@ -106,6 +109,8 @@ internal class DistantHorizonsDebugProvider(
                         put("gpuPages", hierarchy.gpuPages)
                         put("pendingPages", hierarchy.pendingPages)
                         put("queuedPages", hierarchy.queuedPages)
+                        put("queuedBuildPages", hierarchy.queuedBuildPages)
+                        put("pendingUploadPages", hierarchy.pendingUploadPages)
                         put("mainSelectedPages", hierarchy.mainSelectedPages)
                         put("shadowSelectedPages", hierarchy.shadowSelectedPages)
                         put("mainMaskedPages", hierarchy.mainMaskedPages)
@@ -118,6 +123,15 @@ internal class DistantHorizonsDebugProvider(
                         put("retiredBytes", hierarchy.retiredBytes)
                         put("allocationFailures", hierarchy.allocationFailures)
                         put("uploadFailures", hierarchy.uploadFailures)
+                        put("cpuLeaseCount", hierarchy.cpuLeaseCount)
+                        put("pendingSubmissionCount", hierarchy.pendingSubmissionCount)
+                        put("failedSubmissionCount", hierarchy.failedSubmissionCount)
+                        put("invalidatedSubmissionCount", hierarchy.invalidatedSubmissionCount)
+                        put("retiredCpuLeasedPages", hierarchy.retiredCpuLeasedPages)
+                        put("retiredPendingSubmissionPages", hierarchy.retiredPendingSubmissionPages)
+                        put("retiredFailedSubmissionPages", hierarchy.retiredFailedSubmissionPages)
+                        put("retiredDeviceInvalidatedPages", hierarchy.retiredDeviceInvalidatedPages)
+                        put("deviceInvalidations", hierarchy.deviceInvalidations)
                         put("drawBatches", hierarchy.drawBatches)
                         put("drawCommands", hierarchy.drawCommands)
                         put("drawVertices", hierarchy.drawVertices)
@@ -125,6 +139,26 @@ internal class DistantHorizonsDebugProvider(
                         putObject("detailCounts").also { counts ->
                             hierarchy.detailCounts.toSortedMap().forEach { (detail, count) ->
                                 counts.put(detail.toString(), count)
+                            }
+                        }
+                        putArray("regionStates").also { states ->
+                            hierarchy.regionStates.forEach { region ->
+                                states.addObject().apply {
+                                    put("detailLevel", region.detailLevel)
+                                    put("x", region.x); put("z", region.z)
+                                    put("shard", region.shard)
+                                    put("activePages", region.activePages)
+                                    put("retiredPages", region.retiredPages)
+                                    put("residentBytes", region.residentBytes)
+                                    put("vertexAllocatedBytes", region.vertexAllocatedBytes)
+                                    put("indexAllocatedBytes", region.indexAllocatedBytes)
+                                    put("vertexHighWaterBytes", region.vertexHighWaterBytes)
+                                    put("indexHighWaterBytes", region.indexHighWaterBytes)
+                                    put("vertexFragmentation", region.vertexFragmentation)
+                                    put("indexFragmentation", region.indexFragmentation)
+                                    put("allocationFailures", region.allocationFailures)
+                                    put("uploadFailures", region.uploadFailures)
+                                }
                             }
                         }
                         putArray("pages").also { pages ->
@@ -177,6 +211,11 @@ internal class DistantHorizonsDebugProvider(
                     put("cancellationsSent", network.cancellationsSent)
                     put("cancellationFailures", network.cancellationFailures)
                     put("worldResets", network.worldResets)
+                    putObject("responseRejections").also { rejections ->
+                        network.responseRejections.forEach { (reason, count) ->
+                            rejections.put(reason.name, count)
+                        }
+                    }
                     putArray("outstandingRequestIds").also { ids ->
                         network.outstandingRequestIds.forEach(ids::add)
                     }

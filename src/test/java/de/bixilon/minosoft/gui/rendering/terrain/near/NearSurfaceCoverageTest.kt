@@ -110,6 +110,24 @@ class NearSurfaceCoverageTest {
         assertEquals(2L, index.revision)
     }
 
+    @Test
+    fun `discard releases coverage without consulting a closed owner`() {
+        var ownerAvailable = true
+        val index = NearSurfaceCoverageIndex {
+            check(ownerAvailable) { "owner is closed" }
+            NearSurfaceCoverageEnvironment(1L, 2L, 3L)
+        }
+        val position = ChunkPosition(4, 5)
+        index.update(position, setOf(0), setOf(0))
+        val revision = index.revision
+
+        ownerAvailable = false
+
+        assertTrue(index.discard())
+        assertEquals(revision + 1L, index.revision)
+        assertFalse(index.discard())
+    }
+
     private class ArrayHeightmap(private val values: IntArray) : Heightmap {
         override fun recalculate() = Unit
         override fun get(x: Int, z: Int) = values[(z shl 4) or x]

@@ -64,6 +64,7 @@ class IrisShaderPackPlannerTest {
             preprocessorDefines = IrisShaderPackPlanner.standardEnvironmentDefines(
                 12004,
                 perBufferBlending = true,
+                distantHorizons = System.getenv("MINOSOFT_IRIS_TEST_DISTANT_HORIZONS").toBoolean(),
             ).let { environment ->
                 if (System.getenv("MINOSOFT_IRIS_TEST_NON_MAC").toBoolean()) {
                     environment - "MC_OS_MAC"

@@ -11,15 +11,53 @@
 package de.bixilon.minosoft.terrain.distant
 
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
+import de.bixilon.minosoft.data.registries.biomes.Biome
+import de.bixilon.minosoft.data.registries.dimension.DimensionProperties
+import de.bixilon.minosoft.data.world.biome.accessor.noise.NoiseBiomeAccessor
+import de.bixilon.minosoft.data.world.chunk.chunk.Chunk
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
+import de.bixilon.minosoft.data.world.positions.InChunkPosition
 import de.bixilon.minosoft.local.generator.ChunkBuilder
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantRunFlag
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantVerticalPage
 import org.testng.Assert.assertEquals
+import org.testng.Assert.assertFalse
+import org.testng.Assert.assertNull
 import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
 
 class DistantGeneratedLightingTest {
+    @Test
+    fun assertObservedCaptureCanPopulateBiomeCache() {
+        val session = SessionTestUtil.createSession(
+            worldSize = 1,
+            dimension = DimensionProperties(light = false, skyLight = false, height = 16, logicalHeight = 16),
+        )
+        session.world.biomes.accessor = object : NoiseBiomeAccessor(session.world) {
+            override fun get(x: Int, y: Int, z: Int, chunk: Chunk): Biome? = null
+        }
+        val chunk = session.world.chunks[ChunkPosition()]!!
+        chunk.sections.create(0)
+        val result = AtomicReference<DistantVerticalPage?>()
+        val failure = AtomicReference<Throwable?>()
+        val capture = thread(name = "observed-distant-page-capture", isDaemon = true) {
+            try {
+                result.set(DistantWorldVerticalSampler.captureObserved(chunk))
+            } catch (error: Throwable) {
+                failure.set(error)
+            }
+        }
+
+        capture.join(5_000L)
+
+        assertFalse(capture.isAlive, "Observed capture deadlocked while populating the biome cache")
+        assertNull(failure.get())
+        assertEquals(result.get()?.columns?.size, 16 * 16)
+    }
+
     @Test(enabled = false)
     fun assertGeneratedPageUsesDetachedHaloLighting() {
         val session = SessionTestUtil.createSession(light = true)

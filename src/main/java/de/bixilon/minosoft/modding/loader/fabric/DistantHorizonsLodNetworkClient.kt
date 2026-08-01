@@ -17,6 +17,7 @@ import de.bixilon.minosoft.terrain.distant.hierarchy.DistantVerticalPage
 import de.bixilon.minosoft.terrain.distant.network.DistantProtocolWorld
 import de.bixilon.minosoft.terrain.distant.network.DistantRequestedPage
 import de.bixilon.minosoft.terrain.distant.network.DistantResponseAdmission
+import de.bixilon.minosoft.terrain.distant.network.DistantResponseRejection
 import de.bixilon.minosoft.terrain.distant.network.DistantTerrainMessageV2
 import de.bixilon.minosoft.terrain.distant.network.DistantTerrainProtocolV2
 import de.bixilon.minosoft.terrain.distant.network.DistantTerrainRequestTracker
@@ -62,6 +63,7 @@ internal class DistantLodNetworkClient(
     private var cancellationsSent = 0L
     private var cancellationFailures = 0L
     private var worldResets = 0L
+    private val responseRejections = LongArray(DistantResponseRejection.entries.size)
     private var v2World: DistantProtocolWorld? = null
     private var v2MaximumDetailLevel = 0
     private var v2Tracker: DistantTerrainRequestTracker? = null
@@ -79,6 +81,7 @@ internal class DistantLodNetworkClient(
         val cancellationsSent: Long,
         val cancellationFailures: Long,
         val worldResets: Long,
+        val responseRejections: Map<DistantResponseRejection, Long>,
     )
 
     @Synchronized
@@ -142,14 +145,15 @@ internal class DistantLodNetworkClient(
                 exhausted = true
             }
             is DistantTerrainMessageV2.Response -> {
-                require(session.world.terrainEpoch == v2ClientWorldEpoch) {
-                    "Distant v2 response arrived after a client world transition"
+                val tracker = v2Tracker
+                val admission = when {
+                    tracker == null -> DistantResponseAdmission.Rejected(DistantResponseRejection.UNKNOWN_REQUEST)
+                    session.world.terrainEpoch != v2ClientWorldEpoch ||
+                        session.world.name?.toString() != message.world.levelKey ->
+                        DistantResponseAdmission.Rejected(DistantResponseRejection.WRONG_WORLD)
+                    else -> tracker.admit(message)
                 }
-                require(session.world.name?.toString() == message.world.levelKey) {
-                    "Distant v2 response targets another client level"
-                }
-                when (val admission = v2Tracker?.admit(message)
-                    ?: throw IllegalArgumentException("A server sent a v2 response before v2 hello")) {
+                when (admission) {
                     is DistantResponseAdmission.Accepted -> {
                         for (page in admission.pages) {
                             val tile = page.toTopOnlyCompatibilityTile()
@@ -159,9 +163,7 @@ internal class DistantLodNetworkClient(
                         }
                         if (admission.requestComplete) v2PendingRequests.remove(message.requestId)
                     }
-                    is DistantResponseAdmission.Rejected -> throw IllegalArgumentException(
-                        "Rejected distant v2 response: ${admission.reason}",
-                    )
+                    is DistantResponseAdmission.Rejected -> rejectResponse(message, admission.reason)
                 }
             }
             is DistantTerrainMessageV2.Request,
@@ -281,7 +283,26 @@ internal class DistantLodNetworkClient(
         cancellationsSent = cancellationsSent,
         cancellationFailures = cancellationFailures,
         worldResets = worldResets,
+        responseRejections = DistantResponseRejection.entries.associateWith { responseRejections[it.ordinal] },
     )
+
+    private fun rejectResponse(
+        message: DistantTerrainMessageV2.Response,
+        reason: DistantResponseRejection,
+    ) {
+        responseRejections[reason.ordinal] = Math.incrementExact(responseRejections[reason.ordinal])
+        val request = v2PendingRequests.remove(message.requestId)
+        request?.positions?.forEach(pending::remove)
+        v2Tracker?.cancel(message.requestId)
+        val activeWorld = v2World
+        if (request != null && activeWorld != null) trySendCancellation(activeWorld, message.requestId)
+        val total = responseRejections.sum()
+        if (total == 1L || total % 128L == 0L) {
+            Log.log(LogMessageType.MOD_LOADING, LogLevels.WARN) {
+                "Distant v2 response rejected reason=$reason request=${message.requestId} total=$total"
+            }
+        }
+    }
 
     private fun expirePendingRequests() {
         val world = v2World

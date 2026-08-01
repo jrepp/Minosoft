@@ -145,7 +145,7 @@ class ShaderPipelineRegistry : AutoCloseable {
         val contract: SceneShaderContract?,
     )
 
-    private data class Generation(
+    internal data class Generation(
         val pipeline: WorldShaderPipeline,
         val closeOnRetire: Boolean,
     )
@@ -164,6 +164,15 @@ class ShaderPipelineRegistry : AutoCloseable {
         val shadowDirectives: IrisShadowDirectives?,
     )
 
+    class Lease internal constructor(
+        private val delegate: TransactionalGenerationStore.Lease<Generation>,
+    ) : AutoCloseable {
+        val generation: Long get() = delegate.generation
+        val pipeline: WorldShaderPipeline get() = delegate.value.pipeline
+
+        override fun close() = delegate.close()
+    }
+
     private val lock = Any()
     private val store = TransactionalOverrideStore(Generation(BuiltInWorldShaderPipeline, true)) { generation ->
         if (generation.closeOnRetire) generation.pipeline.close()
@@ -178,6 +187,8 @@ class ShaderPipelineRegistry : AutoCloseable {
     @Volatile
     private var activeFrame: ActiveFrame? = null
     private var closed = false
+
+    fun acquire(): Lease = Lease(store.acquire())
 
     fun replace(
         terrain: TerrainBackendDescriptor,
@@ -218,6 +229,19 @@ class ShaderPipelineRegistry : AutoCloseable {
         }
     }
 
+    internal fun <T> withFramePipeline(
+        pipeline: WorldShaderPipeline,
+        action: (WorldShaderPipeline) -> T,
+    ): T {
+        check(framePipeline.get() == null) { "A shader pipeline frame is already active on this thread" }
+        framePipeline.set(pipeline)
+        try {
+            return action(pipeline)
+        } finally {
+            framePipeline.remove()
+        }
+    }
+
     fun <T> withFramePipeline(
         context: de.bixilon.minosoft.gui.rendering.RenderContext,
         action: (WorldShaderPipeline) -> T,
@@ -228,24 +252,32 @@ class ShaderPipelineRegistry : AutoCloseable {
         prepare: () -> Unit,
         action: (WorldShaderPipeline) -> T,
     ): T {
+        return acquire().use { lease ->
+            withFramePipeline(context, lease.pipeline, prepare, action)
+        }
+    }
+
+    internal fun <T> withFramePipeline(
+        context: de.bixilon.minosoft.gui.rendering.RenderContext,
+        pipeline: WorldShaderPipeline,
+        prepare: () -> Unit,
+        action: (WorldShaderPipeline) -> T,
+    ): T {
         check(framePipeline.get() == null) { "A shader pipeline frame is already active on this thread" }
-        return store.acquire().use { lease ->
-            val pipeline = lease.value.pipeline
-            val state = frameStateClock.capture(context, pipeline.plan)
-            pipeline.beginFrame(state)
-            check(activeFrame == null) { "A shader pipeline frame is already active" }
-            activeFrame = ActiveFrame(pipeline, pipeline.plan, state)
+        val state = frameStateClock.capture(context, pipeline.plan)
+        pipeline.beginFrame(state)
+        check(activeFrame == null) { "A shader pipeline frame is already active" }
+        activeFrame = ActiveFrame(pipeline, pipeline.plan, state)
+        try {
+            prepare()
+            framePipeline.set(pipeline)
             try {
-                prepare()
-                framePipeline.set(pipeline)
-                try {
-                    action(pipeline)
-                } finally {
-                    framePipeline.remove()
-                }
+                return action(pipeline)
             } finally {
-                activeFrame = null
+                framePipeline.remove()
             }
+        } finally {
+            activeFrame = null
         }
     }
 

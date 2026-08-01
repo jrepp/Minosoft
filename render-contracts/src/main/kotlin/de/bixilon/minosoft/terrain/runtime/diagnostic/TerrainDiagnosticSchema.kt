@@ -24,6 +24,32 @@ object TerrainDiagnosticSchema {
     const val MAXIMUM_PAGE_COUNT: Int = 1_024
     const val MAXIMUM_CURSOR_LENGTH: Int = 256
     const val MAXIMUM_SUBJECT_LENGTH: Int = 256
+    const val MAXIMUM_PAGE_SOURCE_LENGTH: Int = 64
+    const val MAXIMUM_PAGE_RANGES: Int = 64
+    const val MAXIMUM_PAGE_VIEWS: Int = 16
+    const val MAXIMUM_ARTIFACT_DIGEST_LENGTH: Int = 256
+}
+
+object TerrainDiagnosticOperations {
+    const val SUMMARY: String = "render.terrain.summary"
+    const val PAGES: String = "render.terrain.pages"
+    const val COVERAGE: String = "render.terrain.coverage"
+    const val PAGE: String = "render.terrain.page"
+    const val FLUSH_IDLE: String = "render.terrain.flush-idle"
+    const val COMPARE: String = "render.terrain.compare"
+    const val FAULT: String = "render.terrain.fault"
+
+    val schemaVersions: Map<String, Int> = java.util.Collections.unmodifiableMap(
+        linkedMapOf(
+            SUMMARY to TerrainDiagnosticSchema.VERSION,
+            PAGES to TerrainDiagnosticSchema.VERSION,
+            COVERAGE to TerrainDiagnosticSchema.VERSION,
+            PAGE to TerrainDiagnosticSchema.VERSION,
+            FLUSH_IDLE to TerrainDiagnosticSchema.VERSION,
+            COMPARE to TerrainDiagnosticSchema.VERSION,
+            FAULT to TerrainDiagnosticSchema.VERSION,
+        ),
+    )
 }
 
 enum class TerrainDiagnosticCapability {
@@ -33,10 +59,13 @@ enum class TerrainDiagnosticCapability {
     MATERIAL_GENERATION,
     OPAQUE_PAGE_CURSOR,
     PIPELINE_GENERATION,
+    PUBLICATION_STATE,
     PROVIDER_DESCRIPTOR,
     RESIDENCY_GENERATION,
+    SCHEDULER_STATE,
     STRUCTURED_REJECTION,
     SUBMISSION_GENERATION,
+    VISIBILITY_STATE,
     WORLD_IDENTITY,
 }
 
@@ -46,9 +75,13 @@ class TerrainDiagnosticCapabilities(
     val maximumPageCount: Int,
     val cursorSchemaVersion: Int,
     val rejectionSchemaVersion: Int,
+    operationSchemaVersions: Map<String, Int> = TerrainDiagnosticOperations.schemaVersions,
 ) {
     val capabilities: List<TerrainDiagnosticCapability> =
         java.util.List.copyOf(capabilities.distinct().sortedBy { it.name })
+    val operationSchemaVersions: Map<String, Int> = java.util.Collections.unmodifiableMap(
+        operationSchemaVersions.toSortedMap(),
+    )
 
     init {
         require(schemaVersion == TerrainDiagnosticSchema.VERSION) {
@@ -69,6 +102,12 @@ class TerrainDiagnosticCapabilities(
         require(rejectionSchemaVersion == TerrainDiagnosticSchema.REJECTION_VERSION) {
             "Unsupported terrain diagnostic rejection schema version: $rejectionSchemaVersion"
         }
+        require(this.operationSchemaVersions.keys == TerrainDiagnosticOperations.schemaVersions.keys) {
+            "Terrain diagnostic operation capabilities must advertise every required operation"
+        }
+        require(this.operationSchemaVersions.values.all { it == schemaVersion }) {
+            "Terrain diagnostic operation capabilities must use the response schema version"
+        }
     }
 
     companion object {
@@ -78,6 +117,7 @@ class TerrainDiagnosticCapabilities(
             maximumPageCount = TerrainDiagnosticSchema.MAXIMUM_PAGE_COUNT,
             cursorSchemaVersion = TerrainDiagnosticSchema.CURSOR_VERSION,
             rejectionSchemaVersion = TerrainDiagnosticSchema.REJECTION_VERSION,
+            operationSchemaVersions = TerrainDiagnosticOperations.schemaVersions,
         )
     }
 }
@@ -85,7 +125,7 @@ class TerrainDiagnosticCapabilities(
 class TerrainDiagnosticResponse(
     val schemaVersion: Int,
     val capabilities: TerrainDiagnosticCapabilities,
-    val snapshot: TerrainAvailableDiagnosticSnapshot,
+    val snapshot: TerrainDiagnosticSnapshotView,
     unavailable: Collection<TerrainDiagnosticRejection>,
 ) {
     val unavailable: List<TerrainDiagnosticRejection> =
@@ -118,17 +158,19 @@ class TerrainDiagnosticResponse(
     }
 }
 
-/**
- * Atomic subset returned while production still uses the legacy terrain
- * registry. This deliberately does not weaken or populate the complete
- * [TerrainDiagnosticSnapshot] until its consolidated owners exist.
- */
+sealed interface TerrainDiagnosticSnapshotView {
+    val schemaVersion: Int
+    val diagnosticGeneration: Long
+    val providers: List<TerrainProviderDiagnosticSnapshot>
+}
+
+/** Provider-only compatibility shape retained for callers without consolidated production owners. */
 class TerrainAvailableDiagnosticSnapshot(
-    val schemaVersion: Int,
-    val diagnosticGeneration: Long,
+    override val schemaVersion: Int,
+    override val diagnosticGeneration: Long,
     providers: Collection<TerrainProviderDiagnosticSnapshot>,
-) {
-    val providers: List<TerrainProviderDiagnosticSnapshot> =
+) : TerrainDiagnosticSnapshotView {
+    override val providers: List<TerrainProviderDiagnosticSnapshot> =
         java.util.List.copyOf(providers.sortedWith(compareBy({ it.providerId }, { it.generation })))
 
     init {

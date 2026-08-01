@@ -48,4 +48,20 @@ class TerrainSubmissionTest {
         assertFalse(completion.state(TerrainSubmissionSerial(3L)).permitsRangeReuse)
         assertFalse(TerrainSubmissionState.DEVICE_INVALIDATED.permitsRangeReuse)
     }
+
+    @Test
+    fun `one device sequencer gives every provider a unique monotonic submission`() {
+        val device = TerrainDeviceRuntimeId(TerrainProcessScopeId(3L), 5L)
+        val sequencer = TerrainSubmissionSequencer(device)
+
+        assertEquals(null, sequencer.latest())
+        val near = sequencer.next()
+        val distant = sequencer.next()
+
+        assertEquals(device, near.deviceRuntime)
+        assertEquals(device, distant.deviceRuntime)
+        assertEquals(TerrainSubmissionSerial(1L), near.serial)
+        assertEquals(TerrainSubmissionSerial(2L), distant.serial)
+        assertEquals(distant.serial, sequencer.latest())
+    }
 }

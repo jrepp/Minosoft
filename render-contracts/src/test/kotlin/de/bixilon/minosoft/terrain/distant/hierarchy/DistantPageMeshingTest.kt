@@ -108,6 +108,46 @@ class DistantPageMeshingTest {
     }
 
     @Test
+    fun `coast and custom fluid preserve independent material tint and light semantics`() {
+        val brineMaterial = TerrainSemanticMaterialId("example:brine")
+        val brine = DistantFluidSample(brineMaterial, 5, "example:brine")
+        val coastTint = DistantTintSample(0x2A7F91, "example:salt_marsh", 12)
+        val subject = page(
+            key(-2, 4),
+            width = 2,
+            columns = listOf(
+                column(run(0, 12, STONE, opaque = true, blockLight = 1, skyLight = 15)),
+                column(
+                    run(6, 4, brineMaterial, fluid = brine, blockLight = 6, skyLight = 11, tint = coastTint),
+                    run(0, 6, STONE, opaque = true, blockLight = 3, skyLight = 8),
+                ),
+                column(run(0, 12, STONE, opaque = true, blockLight = 1, skyLight = 14)),
+                column(
+                    run(6, 4, brineMaterial, fluid = brine, blockLight = 7, skyLight = 10, tint = coastTint),
+                    run(0, 6, STONE, opaque = true, blockLight = 2, skyLight = 7),
+                ),
+            ),
+        )
+        val emptyNeighbours = cardinalPages(subject.key).map {
+            page(it, 2, List(4) { column() })
+        }
+
+        val first = DistantPageMesher.mesh(subject, DistantPageNeighbourhood(subject, emptyNeighbours))
+        val second = DistantPageMesher.mesh(subject, DistantPageNeighbourhood(subject, emptyNeighbours))
+        val fluidFaces = first.quads.filter { it.fluid == brine }
+
+        assertTrue(fluidFaces.isNotEmpty())
+        assertTrue(fluidFaces.all { it.material == brineMaterial && it.tint == coastTint })
+        assertEquals(setOf(6, 7), fluidFaces.map { it.blockLight }.toSet())
+        assertEquals(setOf(10, 11), fluidFaces.map { it.skyLight }.toSet())
+        assertTrue(first.quads.any {
+            it.direction == DistantFaceDirection.EAST && it.material == STONE && it.maximumVExclusive == 12
+        })
+        assertEquals(first.digest, second.digest)
+        assertEquals("24fda655859bdaf5bbc279f272596267fa3ae9c20009ea720f1c6185942894c5", first.digest)
+    }
+
+    @Test
     fun `fallback is bounded and used only for missing or incomplete neighbours`() {
         val subject = page(key(0, 0), 1, listOf(column(run(0, 100, STONE, opaque = true))))
         val missing = DistantPageMesher.mesh(subject, maximumFallbackDepth = 32)

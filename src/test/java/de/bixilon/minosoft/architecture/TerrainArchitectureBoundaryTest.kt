@@ -27,6 +27,19 @@ import kotlin.test.assertTrue
 
 class TerrainArchitectureBoundaryTest {
     @Test
+    fun `terrain idle generation capture starts on the render thread`() {
+        val source = PROJECT_ROOT
+            .resolve("src/main/java/de/bixilon/minosoft/debug/ClientDebugChannel.kt")
+            .readText()
+            .withoutCommentsAndLiterals()
+
+        assertTrue(
+            "onRenderAsync { flushTerrainIdle(request, body, it) }" in source,
+            "Terrain flush-idle must capture and retire pipeline generations only from the render thread.",
+        )
+    }
+
+    @Test
     fun `standalone terrain packages do not import Fabric adapters`() {
         val violations = mainSourceFiles()
             .map { it to it.readText() }
@@ -163,10 +176,75 @@ class TerrainArchitectureBoundaryTest {
             .resolve("src/main/java/de/bixilon/minosoft/gui/rendering/terrain/distant/DistantTerrainRenderer.kt")
             .readText()
             .withoutCommentsAndLiterals()
+        val distantHierarchy = PROJECT_ROOT
+            .resolve("src/main/java/de/bixilon/minosoft/gui/rendering/terrain/distant/DistantHierarchicalTerrainRuntime.kt")
+            .readText()
+            .withoutCommentsAndLiterals()
 
         assertTrue("TerrainProcessBuildService.shared" in near)
-        assertTrue("TerrainProcessBuildService.shared" in distant)
+        assertTrue("TerrainProcessBuildService.shared" !in distant)
+        assertTrue("DistantHierarchicalTerrainRuntime(" in distant)
+        assertTrue("TerrainPageFailureRegistry" in near && "recordTransient" in near && "releaseEligible" in near)
+        assertTrue(
+            "TerrainPageFailureRegistry" in distantHierarchy &&
+                "recordTransient" in distantHierarchy &&
+                "releaseEligible" in distantHierarchy,
+        )
         assertTrue("newSingleThreadExecutor" !in distant && "CompletableFuture" !in distant)
+    }
+
+    @Test
+    fun `production frames lease one complete terrain pipeline generation`() {
+        val pipeline = PROJECT_ROOT
+            .resolve(
+                "src/main/java/de/bixilon/minosoft/gui/rendering/renderer/renderer/pipeline/RendererPipeline.kt",
+            )
+            .readText()
+            .withoutCommentsAndLiterals()
+        val registry = PROJECT_ROOT
+            .resolve(
+                "src/main/java/de/bixilon/minosoft/gui/rendering/terrain/scene/ProductionTerrainPipelineRegistry.kt",
+            )
+            .readText()
+            .withoutCommentsAndLiterals()
+        val diagnostics = PROJECT_ROOT
+            .resolve("src/main/java/de/bixilon/minosoft/debug/terrain/TerrainProductionDiagnosticCapture.kt")
+            .readText()
+            .withoutCommentsAndLiterals()
+        val manager = PROJECT_ROOT
+            .resolve("src/main/java/de/bixilon/minosoft/gui/rendering/renderer/renderer/RendererManager.kt")
+            .readText()
+            .withoutCommentsAndLiterals()
+        val renderLoop = PROJECT_ROOT
+            .resolve("src/main/java/de/bixilon/minosoft/gui/RenderLoop.kt")
+            .readText()
+            .withoutCommentsAndLiterals()
+
+        assertTrue("terrainPipelines.withFrame(prepare)" in pipeline)
+        assertTrue("graph.execute(execution)" in pipeline && "complete()" in pipeline)
+        assertTrue("complete =" in manager && "finishFrame()" in manager)
+        assertTrue("context.renderer.forEach { it.postDraw() }" !in renderLoop)
+        assertTrue("TerrainPipelineRegistry" in registry)
+        assertTrue("withPinnedBackend(near.backend)" in registry)
+        assertTrue("withFramePipeline(context, shader.pipeline" in registry)
+        assertTrue("pipelineSelection.generation" in diagnostics)
+        assertTrue("TerrainPipelineGenerationClock" !in diagnostics)
+    }
+
+    @Test
+    fun `shader presentation removal invalidates near material generations`() {
+        val adapter = PROJECT_ROOT
+            .resolve("src/main/java/de/bixilon/minosoft/modding/loader/fabric/IrisCompatibilityAdapter.kt")
+            .readText()
+            .withoutCommentsAndLiterals()
+        val removal = adapter
+            .substringAfter("fun setEnabled(context: RenderContext, enabled: Boolean): Boolean")
+            .substringBefore("fun isInstalled(context: RenderContext): Boolean")
+
+        assertTrue(
+            ".invalidate(context.session.world, TerrainBuildCause.RESOURCE_GENERATION_CHANGE)" in removal,
+            "Restoring the built-in shader pipeline must rebuild near terrain for its material generation",
+        )
     }
 
     @Test
@@ -242,42 +320,60 @@ class TerrainArchitectureBoundaryTest {
         assertTrue("index.publishSource" in runtime && "index.publishRender" in runtime)
         assertTrue("index.removeSource" in runtime)
         assertTrue("HashMap<TerrainPageKey, Pending>" in runtime)
+        assertTrue("TerrainPageFailureRegistry" in runtime)
+        assertTrue("HashMap<TerrainPageKey, Int>" !in runtime)
         assertTrue("TerrainRegionStorage" in runtime && "TerrainBatchCache" in runtime)
         assertTrue("TerrainSelectionPublication" in runtime)
         assertTrue("DistantTerrainMeshBuilder" !in runtime && "gui.rendering.util.mesh.Mesh" !in runtime)
         assertTrue("DistantLodMeshPlanner" !in runtime)
-        assertTrue("DistantHierarchicalTerrainRuntime.enabled" in renderer)
+        assertTrue("DistantHierarchicalTerrainRuntime(" in renderer)
+        assertTrue("DistantLodMeshPlanner" !in renderer && "DistantTerrainMeshBuilder" !in renderer)
         assertTrue("uPageOffset" in shader && "vinPosition + uPageOffset" in shader)
     }
 
     @Test
-    fun `production terrain rollout has one process pinned selection`() {
-        val selectionSource = PROJECT_ROOT
-            .resolve("src/main/java/de/bixilon/minosoft/gui/rendering/terrain/runtime/TerrainRuntimeSelection.kt")
-            .readText()
-        val selection = selectionSource.withoutCommentsAndLiterals()
+    fun `near and distant views share transactional selection publication`() {
         val near = PROJECT_ROOT
-            .resolve("src/main/java/de/bixilon/minosoft/gui/rendering/terrain/near/NearTerrainMeshArtifact.kt")
+            .resolve("src/main/java/de/bixilon/minosoft/gui/rendering/terrain/near/OpenGlNearTerrainRegionRuntime.kt")
             .readText()
             .withoutCommentsAndLiterals()
         val distant = PROJECT_ROOT
             .resolve("src/main/java/de/bixilon/minosoft/gui/rendering/terrain/distant/DistantHierarchicalTerrainRuntime.kt")
             .readText()
             .withoutCommentsAndLiterals()
+
+        for (runtime in listOf(near, distant)) {
+            assertTrue("TerrainSelectionPublication" in runtime)
+            assertTrue("selectionPublication.desire" in runtime)
+            assertTrue("selectionPublication.promote" in runtime)
+            assertTrue("selectionPublication.active" in runtime)
+        }
+    }
+
+    @Test
+    fun `production terrain has no rollout switch or retired whole domain renderer`() {
         val legacyProperties = setOf(
-            "minosoft.terrain.semantic-artifacts",
-            "minosoft.terrain.region-storage",
-            "minosoft.terrain.distant-hierarchy",
+            "\"minosoft.terrain.runtime\"",
+            "\"minosoft.terrain.semantic-artifacts\"",
+            "\"minosoft.terrain.region-storage\"",
+            "\"minosoft.terrain.distant-hierarchy\"",
+        )
+        val retiredTypes = setOf(
+            "DistantMeshBuildRequest",
+            "DistantMeshBuildResult",
+            "DistantLodMeshPlanner",
+            "DistantTerrainMeshBuilder",
+            "ChunkMeshingCause",
         )
 
-        assertTrue("minosoft.terrain.runtime" in selectionSource)
-        assertTrue("TerrainRuntimeMode.UNIFIED" in selection)
-        assertTrue("TerrainRuntimeSelection.process" in near)
-        assertTrue("TerrainRuntimeSelection.process" in distant)
         for (source in mainSourceFiles()) {
             val contents = source.readText()
             legacyProperties.forEach { property ->
                 assertTrue(property !in contents, "Legacy terrain rollout property remains in ${relative(source)}")
+            }
+            val declarations = contents.declaredTypeNames()
+            retiredTypes.forEach { type ->
+                assertTrue(type !in declarations, "Retired terrain type remains in ${relative(source)}: $type")
             }
         }
     }
@@ -481,11 +577,15 @@ class TerrainArchitectureBoundaryTest {
         val HEADLESS_SCHEDULER_TYPES = setOf(
             "TerrainBuildRuntime",
             "TerrainBuildRuntimeSnapshot",
+            "TerrainBuildEstimate",
             "TerrainBuildCompletion",
             "TerrainBuildOutcome",
             "TerrainCancellationToken",
             "TerrainBuildUrgency",
             "TerrainSchedulerTenantId",
+            "TerrainSharedBuildService",
+            "TerrainSharedBuildServiceSnapshot",
+            "TerrainSharedBuildTenantSnapshot",
         )
         val HEADLESS_STORAGE_TYPES = setOf(
             "TerrainRangeAllocator",

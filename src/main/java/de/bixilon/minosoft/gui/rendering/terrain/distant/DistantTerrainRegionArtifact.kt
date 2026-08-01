@@ -17,6 +17,7 @@
 
 package de.bixilon.minosoft.gui.rendering.terrain.distant
 
+import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantFaceDirection
@@ -31,8 +32,67 @@ import de.bixilon.minosoft.terrain.model.mesh.TerrainArtifactStream
 import de.bixilon.minosoft.terrain.model.mesh.TerrainMeshArtifact
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainRegionExtent
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainRegionKey
+import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+
+/** Compact material mapping retained by the consolidated distant-page encoder. */
+internal enum class DistantLodMaterial(
+    val dhId: Int,
+    val color: RGBAColor,
+    val water: Boolean = false,
+) {
+    UNKNOWN(0, RGBAColor(112, 112, 112)),
+    LEAVES(1, RGBAColor(72, 128, 58)),
+    STONE(2, RGBAColor(120, 120, 120)),
+    WOOD(3, RGBAColor(126, 94, 58)),
+    METAL(4, RGBAColor(164, 166, 170)),
+    DIRT(5, RGBAColor(120, 86, 54)),
+    LAVA(6, RGBAColor(255, 102, 12)),
+    DEEPSLATE(7, RGBAColor(70, 70, 76)),
+    SNOW(8, RGBAColor(238, 244, 247)),
+    SAND(9, RGBAColor(218, 204, 143)),
+    TERRACOTTA(10, RGBAColor(156, 88, 63)),
+    NETHER_STONE(11, RGBAColor(104, 40, 42)),
+    WATER(12, RGBAColor(48, 96, 196, 184), water = true),
+    GRASS(13, RGBAColor(92, 146, 62)),
+    AIR(14, RGBAColor(0, 0, 0, 0)),
+    ILLUMINATED(15, RGBAColor(255, 194, 92));
+
+    companion object {
+        fun of(resource: ResourceLocation?): DistantLodMaterial {
+            val path = resource?.path ?: return UNKNOWN
+            return when {
+                path == "air" || path.endsWith("_air") -> AIR
+                "water" in path -> WATER
+                "lava" in path -> LAVA
+                "leaves" in path -> LEAVES
+                "grass" in path || "moss" in path -> GRASS
+                "snow" in path || "ice" in path -> SNOW
+                "sand" in path || "gravel" in path -> SAND
+                "terracotta" in path -> TERRACOTTA
+                "deepslate" in path -> DEEPSLATE
+                "netherrack" in path || "nether_" in path -> NETHER_STONE
+                "log" in path || "wood" in path || "planks" in path -> WOOD
+                "iron" in path || "gold" in path || "copper" in path || "metal" in path -> METAL
+                "dirt" in path || "mud" in path || "clay" in path -> DIRT
+                "torch" in path || "lamp" in path || "lantern" in path || "glow" in path ||
+                    "light" in path -> ILLUMINATED
+                "stone" in path || "ore" in path -> STONE
+                else -> UNKNOWN
+            }
+        }
+    }
+}
+
+internal data class DistantTerrainMeshStruct(
+    val position: Vec3f,
+    val color: Int,
+    val light: Int,
+    val normalMaterial: Int,
+) {
+    companion object : MeshStruct(DistantTerrainMeshStruct::class)
+}
 
 /** Encodes compact distant quads relative to one shared region draw origin. */
 internal object DistantTerrainRegionArtifactEncoder {

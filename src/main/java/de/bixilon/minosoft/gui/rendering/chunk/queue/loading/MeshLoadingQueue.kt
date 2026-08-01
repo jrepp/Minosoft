@@ -23,9 +23,16 @@ import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.data.world.positions.SectionPosition
 import de.bixilon.minosoft.gui.rendering.chunk.ChunkRenderer
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshes
-import de.bixilon.minosoft.gui.rendering.chunk.queue.meshing.ChunkMeshingCause
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 import de.bixilon.minosoft.gui.rendering.chunk.util.ChunkRendererUtil.maxBusyTime
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainProductionPhase
+import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentity
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainAcceptanceFault
+
+internal data class NearUploadPageRegistrySnapshot(
+    val generation: Long,
+    val identities: List<TerrainBuildIdentity>,
+)
 
 class MeshLoadingQueue(
     private val renderer: ChunkRenderer,
@@ -34,6 +41,7 @@ class MeshLoadingQueue(
     private val meshes = ArrayDeque<ChunkMeshes>(100)
     private val positions: MutableSet<SectionPosition> = HashSet()
     private val lock = Lock.lock()
+    private var diagnosticGeneration = 0L
 
 
     val max = if (Runtime.getRuntime().maxMemory().bytes > 1.gigabytes) 120 else 60
@@ -74,6 +82,7 @@ class MeshLoadingQueue(
                 if (index > 0 && nextBytes > MAX_UPLOAD_BYTES_PER_FRAME) return@locked null
                 this.positions -= first.position
                 meshes.removeFirst().also {
+                    diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
                     renderer.terrainPerformance.pendingUploads(meshes.size)
                 }
             } ?: break
@@ -85,7 +94,25 @@ class MeshLoadingQueue(
                 discard(mesh)
                 renderer.invalidate(
                     mesh.section,
-                    ChunkMeshingCause.RESOURCE_GENERATION_CHANGE,
+                    TerrainBuildCause.RESOURCE_GENERATION_CHANGE,
+                    advanceRevision = false,
+                )
+                continue
+            }
+            if (
+                renderer.terrainFaults.isArmed(TerrainAcceptanceFault.REJECT_NEXT_NEAR_UPLOAD) &&
+                renderer.terrainFaults.consume(
+                    TerrainAcceptanceFault.REJECT_NEXT_NEAR_UPLOAD,
+                    renderer.terrainFaultScope(),
+                )
+            ) {
+                renderer.terrainPerformance.rejected()
+                renderer.terrainPerformance.uploadFailed()
+                discard(mesh)
+                renderer.loaded.coverageRequested(mesh.position.chunkPosition)
+                renderer.invalidate(
+                    mesh.section,
+                    TerrainBuildCause.UPLOAD_RETRY,
                     advanceRevision = false,
                 )
                 continue
@@ -165,6 +192,7 @@ class MeshLoadingQueue(
         sort()
 
         this.positions += mesh.position
+        diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
         renderer.terrainPerformance.pendingUploads(meshes.size)
     }
 
@@ -182,6 +210,7 @@ class MeshLoadingQueue(
                 removed += mesh
             }
             renderer.terrainPerformance.pendingUploads(meshes.size)
+            if (removed.isNotEmpty()) diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
             removed
         }
         cleanupRemoved(removed, requeue)
@@ -204,6 +233,7 @@ class MeshLoadingQueue(
                 break
             }
             renderer.terrainPerformance.pendingUploads(meshes.size)
+            if (removed != null) diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
             removed
         }
         if (removed != null) cleanupRemoved(listOf(removed), requeue = false)
@@ -215,9 +245,17 @@ class MeshLoadingQueue(
             meshes.clear()
             positions.clear()
             renderer.terrainPerformance.pendingUploads(0)
+            if (removed.isNotEmpty()) diagnosticGeneration = Math.incrementExact(diagnosticGeneration)
             removed
         }
         cleanupRemoved(removed, requeue = false)
+    }
+
+    internal fun pageRegistrySnapshot(): NearUploadPageRegistrySnapshot = lock.locked {
+        NearUploadPageRegistrySnapshot(
+            generation = diagnosticGeneration,
+            identities = meshes.mapNotNull { it.terrainIdentity },
+        )
     }
 
     private fun cleanupRemoved(removed: Collection<ChunkMeshes>, requeue: Boolean) {
@@ -230,7 +268,7 @@ class MeshLoadingQueue(
             }
             try {
                 if (requeue) {
-                    renderer.invalidate(mesh.section, ChunkMeshingCause.UPLOAD_RETRY, advanceRevision = false)
+                    renderer.invalidate(mesh.section, TerrainBuildCause.UPLOAD_RETRY, advanceRevision = false)
                 } else {
                     renderer.cache -= mesh.position
                 }

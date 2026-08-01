@@ -17,6 +17,8 @@
 
 package de.bixilon.minosoft.terrain.runtime
 
+import java.util.concurrent.atomic.AtomicLong
+
 @JvmInline
 value class TerrainSubmissionSerial(val value: Long) : Comparable<TerrainSubmissionSerial> {
     init {
@@ -32,6 +34,28 @@ data class TerrainSubmission(
     val deviceRuntime: TerrainDeviceRuntimeId,
     val serial: TerrainSubmissionSerial,
 )
+
+/**
+ * One monotonic serial source for every terrain submission issued by a device
+ * runtime. Sharing this sequencer across providers prevents two independent
+ * storage domains from assigning the same device submission identity.
+ */
+class TerrainSubmissionSequencer(
+    val deviceRuntime: TerrainDeviceRuntimeId,
+) {
+    private val nextSerial = AtomicLong(1L)
+
+    fun next(): TerrainSubmission = TerrainSubmission(
+        deviceRuntime = deviceRuntime,
+        serial = TerrainSubmissionSerial(
+            nextSerial.getAndUpdate { current -> Math.incrementExact(current) },
+        ),
+    )
+
+    fun latest(): TerrainSubmissionSerial? = nextSerial.get().let { next ->
+        if (next == 1L) null else TerrainSubmissionSerial(next - 1L)
+    }
+}
 
 enum class TerrainSubmissionState(val permitsRangeReuse: Boolean) {
     PENDING(false),

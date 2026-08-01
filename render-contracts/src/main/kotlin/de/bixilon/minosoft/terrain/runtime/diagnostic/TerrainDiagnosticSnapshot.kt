@@ -23,15 +23,105 @@ import de.bixilon.minosoft.gui.rendering.terrain.scene.TerrainRuntimeMode
 import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageSnapshot
 import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageState
 import de.bixilon.minosoft.terrain.model.identity.TerrainBuildIdentity
+import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
 import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import de.bixilon.minosoft.terrain.model.identity.TerrainWorldIdentity
 import de.bixilon.minosoft.terrain.model.interop.TerrainInteropDescriptor
 import de.bixilon.minosoft.terrain.model.material.TerrainMaterialTableMetadata
 import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
 import de.bixilon.minosoft.terrain.runtime.TerrainDeviceRuntimeId
+import de.bixilon.minosoft.terrain.runtime.TerrainFailureSnapshot
 import de.bixilon.minosoft.terrain.runtime.TerrainResidencyCapSnapshot
 import de.bixilon.minosoft.terrain.runtime.TerrainResidencyScope
 import de.bixilon.minosoft.terrain.runtime.TerrainSubmissionSerial
+import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainSharedBuildServiceSnapshot
+import de.bixilon.minosoft.terrain.runtime.storage.TerrainSelectionPublicationSnapshot
+
+data class TerrainViewVisibilityDiagnosticSnapshot(
+    val viewId: String,
+    val desiredPageCount: Int,
+    val visiblePageCount: Int,
+    val missingPageCount: Int,
+    val maskedPageCount: Int,
+) {
+    val drawPageCount: Int = Math.subtractExact(visiblePageCount, maskedPageCount)
+
+    init {
+        require(viewId.isNotBlank()) { "Terrain diagnostic view ID must not be blank" }
+        require(desiredPageCount >= 0) { "Terrain diagnostic desired-page count must not be negative" }
+        require(visiblePageCount >= 0) { "Terrain diagnostic visible-page count must not be negative" }
+        require(missingPageCount in 0..desiredPageCount) {
+            "Terrain diagnostic missing-page count must be within the desired selection"
+        }
+        require(maskedPageCount in 0..visiblePageCount) {
+            "Terrain diagnostic masked-page count must be within the visible selection"
+        }
+    }
+}
+
+class TerrainPublicationDiagnosticSnapshot(
+    val domain: TerrainDomain,
+    val providerId: String,
+    val storageGeneration: Long,
+    val selectionGeneration: Long,
+    val residentPageCount: Int,
+    val retainedPageCount: Int,
+    views: Collection<TerrainViewVisibilityDiagnosticSnapshot>,
+) {
+    val views: List<TerrainViewVisibilityDiagnosticSnapshot> =
+        java.util.List.copyOf(views.sortedBy { it.viewId })
+
+    init {
+        require(providerId.isNotBlank()) { "Terrain diagnostic publication provider must not be blank" }
+        require(storageGeneration >= 0L) {
+            "Terrain diagnostic storage generation must not be negative"
+        }
+        require(selectionGeneration >= 0L) {
+            "Terrain diagnostic selection generation must not be negative"
+        }
+        require(residentPageCount >= 0) {
+            "Terrain diagnostic resident-page count must not be negative"
+        }
+        require(retainedPageCount >= 0) {
+            "Terrain diagnostic retained-page count must not be negative"
+        }
+        require(this.views.map { it.viewId }.distinct().size == this.views.size) {
+            "Terrain diagnostic publication contains duplicate views"
+        }
+    }
+
+    companion object {
+        fun from(
+            domain: TerrainDomain,
+            providerId: String,
+            storageGeneration: Long,
+            residentPageCount: Int,
+            selection: TerrainSelectionPublicationSnapshot,
+            maskedPageCounts: Map<String, Int> = emptyMap(),
+        ): TerrainPublicationDiagnosticSnapshot {
+            require(maskedPageCounts.keys.all { masked ->
+                selection.views.any { it.view.value == masked }
+            }) { "Terrain diagnostic mask references an unpublished view" }
+            return TerrainPublicationDiagnosticSnapshot(
+                domain = domain,
+                providerId = providerId,
+                storageGeneration = storageGeneration,
+                selectionGeneration = selection.generation,
+                residentPageCount = residentPageCount,
+                retainedPageCount = selection.retainedPageCount,
+                views = selection.views.map { view ->
+                    TerrainViewVisibilityDiagnosticSnapshot(
+                        viewId = view.view.value,
+                        desiredPageCount = view.desiredPageCount,
+                        visiblePageCount = view.activePageCount,
+                        missingPageCount = view.missingPageCount,
+                        maskedPageCount = maskedPageCounts[view.view.value] ?: 0,
+                    )
+                },
+            )
+        }
+    }
+}
 
 data class TerrainProviderDiagnosticSnapshot(
     val providerId: String,
@@ -242,12 +332,67 @@ data class TerrainSubmissionDiagnosticSnapshot(
     }
 }
 
-data class TerrainPageDiagnosticSnapshot(
+data class TerrainPageRevisionDiagnosticSnapshot(
+    val sourceRevision: Long? = null,
+    val dirtyRevision: Long? = null,
+    val renderRevision: Long? = null,
+    val publicationRevision: Long? = null,
+) {
+    init {
+        require(listOfNotNull(sourceRevision, dirtyRevision, renderRevision, publicationRevision).all { it >= 0L }) {
+            "Terrain diagnostic page revisions must not be negative"
+        }
+    }
+}
+
+data class TerrainPageRangeDiagnosticSnapshot(
+    val partitionId: String,
+    val vertexOffsetBytes: Int,
+    val vertexLengthBytes: Int,
+    val indexOffsetBytes: Int,
+    val indexLengthBytes: Int,
+) {
+    init {
+        require(partitionId.isNotBlank()) { "Terrain diagnostic range partition must not be blank" }
+        require(vertexOffsetBytes >= 0 && vertexLengthBytes >= 0) {
+            "Terrain diagnostic vertex range must not be negative"
+        }
+        require(indexOffsetBytes >= 0 && indexLengthBytes >= 0) {
+            "Terrain diagnostic index range must not be negative"
+        }
+    }
+}
+
+data class TerrainPageVisibilityDiagnosticSnapshot(
+    val viewId: String,
+    val selected: Boolean,
+    val masked: Boolean,
+) {
+    init {
+        require(viewId.isNotBlank()) { "Terrain diagnostic page view must not be blank" }
+        require(!masked || selected) { "A masked terrain diagnostic page must be selected" }
+    }
+}
+
+class TerrainPageDiagnosticSnapshot(
     val page: TerrainPageKey,
     val coverageState: TerrainCoverageState,
     val buildIdentity: TerrainBuildIdentity?,
     val providerId: String?,
+    val failure: TerrainFailureSnapshot? = null,
+    val source: String? = null,
+    val revisions: TerrainPageRevisionDiagnosticSnapshot = TerrainPageRevisionDiagnosticSnapshot(),
+    ranges: Collection<TerrainPageRangeDiagnosticSnapshot> = emptyList(),
+    visibility: Collection<TerrainPageVisibilityDiagnosticSnapshot> = emptyList(),
+    val artifactDigest: String? = null,
 ) {
+    val ranges: List<TerrainPageRangeDiagnosticSnapshot> = java.util.List.copyOf(
+        ranges.sortedBy { it.partitionId },
+    )
+    val visibility: List<TerrainPageVisibilityDiagnosticSnapshot> = java.util.List.copyOf(
+        visibility.sortedBy { it.viewId },
+    )
+
     init {
         require(buildIdentity == null || buildIdentity.page == page) {
             "Terrain diagnostic build identity must belong to its page"
@@ -255,6 +400,25 @@ data class TerrainPageDiagnosticSnapshot(
         require(providerId == null || providerId.isNotBlank()) {
             "Terrain diagnostic page provider ID must not be blank"
         }
+        require(source == null || source.isNotBlank() && source.length <= TerrainDiagnosticSchema.MAXIMUM_PAGE_SOURCE_LENGTH) {
+            "Terrain diagnostic page source is invalid"
+        }
+        require(this.ranges.size <= TerrainDiagnosticSchema.MAXIMUM_PAGE_RANGES) {
+            "Terrain diagnostic page range count exceeds the schema bound"
+        }
+        require(this.ranges.map { it.partitionId }.distinct().size == this.ranges.size) {
+            "Terrain diagnostic page ranges contain duplicate partitions"
+        }
+        require(this.visibility.size <= TerrainDiagnosticSchema.MAXIMUM_PAGE_VIEWS) {
+            "Terrain diagnostic page visibility count exceeds the schema bound"
+        }
+        require(this.visibility.map { it.viewId }.distinct().size == this.visibility.size) {
+            "Terrain diagnostic page visibility contains duplicate views"
+        }
+        require(
+            artifactDigest == null ||
+                artifactDigest.isNotBlank() && artifactDigest.length <= TerrainDiagnosticSchema.MAXIMUM_ARTIFACT_DIGEST_LENGTH,
+        ) { "Terrain diagnostic artifact digest is invalid" }
     }
 
     companion object {
@@ -295,23 +459,53 @@ class TerrainPageDiagnosticWindow(
     }
 }
 
+object TerrainPageDiagnosticPaging {
+    fun window(
+        pageRegistryGeneration: Long,
+        query: TerrainPageQuery,
+        candidates: Collection<TerrainPageDiagnosticSnapshot>,
+    ): TerrainPageDiagnosticWindow {
+        require(pageRegistryGeneration >= 0L) {
+            "Terrain page-registry generation must not be negative"
+        }
+        require(candidates.size <= Math.addExact(query.maximumCount, 1)) {
+            "Terrain page owner exceeded the bounded diagnostic lookahead"
+        }
+        require(candidates.all { query.selector.matches(it.page) && it.page.worldEpoch == query.worldEpoch }) {
+            "Terrain page owner returned a candidate outside the diagnostic query"
+        }
+        val ordered = candidates.sortedWith(TerrainPageDiagnosticSnapshot.ORDER)
+        val pages = ordered.take(query.maximumCount)
+        val nextCursor = if (ordered.size > query.maximumCount) {
+            TerrainPageCursorCodec.issue(pageRegistryGeneration, query, pages.last().page)
+        } else {
+            null
+        }
+        return TerrainPageDiagnosticWindow(query, pages, nextCursor)
+    }
+}
+
 class TerrainDiagnosticSnapshot(
-    val schemaVersion: Int,
-    val diagnosticGeneration: Long,
+    override val schemaVersion: Int,
+    override val diagnosticGeneration: Long,
     val worldIdentity: TerrainWorldIdentity,
     providers: Collection<TerrainProviderDiagnosticSnapshot>,
     val pipeline: TerrainPipelineDiagnosticSnapshot,
     val material: TerrainMaterialDiagnosticSnapshot,
     val coverage: TerrainCoverageDiagnosticSnapshot,
     val pageRegistryGeneration: Long,
+    val scheduling: TerrainSharedBuildServiceSnapshot,
     residency: Collection<TerrainResidencyDiagnosticSnapshot>,
     val submission: TerrainSubmissionDiagnosticSnapshot,
+    publication: Collection<TerrainPublicationDiagnosticSnapshot>,
     val pageWindow: TerrainPageDiagnosticWindow? = null,
-) {
-    val providers: List<TerrainProviderDiagnosticSnapshot> =
+) : TerrainDiagnosticSnapshotView {
+    override val providers: List<TerrainProviderDiagnosticSnapshot> =
         java.util.List.copyOf(providers.sortedWith(compareBy({ it.providerId }, { it.generation })))
     val residency: List<TerrainResidencyDiagnosticSnapshot> =
         java.util.List.copyOf(residency.sortedBy { it.scope.ordinal })
+    val publication: List<TerrainPublicationDiagnosticSnapshot> =
+        java.util.List.copyOf(publication.sortedBy { it.domain.ordinal })
 
     init {
         require(schemaVersion == TerrainDiagnosticSchema.VERSION) {
@@ -355,13 +549,35 @@ class TerrainDiagnosticSnapshot(
         require(this.residency.map { it.scope }.toSet().size == this.residency.size) {
             "Terrain diagnostic snapshot contains duplicate residency scopes"
         }
+        require(this.publication.map { it.domain }.distinct().size == this.publication.size) {
+            "Terrain diagnostic snapshot contains duplicate publication domains"
+        }
+        require(this.publication.all { state ->
+            this.providers.any { provider ->
+                provider.providerId == state.providerId && state.domain in provider.descriptor.domains
+            }
+        }) {
+            "Terrain diagnostic publication must belong to a declared provider domain"
+        }
+        require(this.publication.any {
+            it.domain == TerrainDomain.NEAR && it.providerId == pipeline.nearProviderId
+        }) {
+            "Terrain diagnostic snapshot is missing near publication state"
+        }
+        require(
+            pipeline.distantProviderId == null || this.publication.any {
+                it.domain == TerrainDomain.DISTANT && it.providerId == pipeline.distantProviderId
+            },
+        ) {
+            "Terrain diagnostic snapshot is missing distant publication state"
+        }
         require(pageWindow == null || pageWindow.query.worldEpoch == worldIdentity.worldEpoch) {
             "Terrain diagnostic page window must belong to the snapshot world epoch"
         }
         if (pageWindow?.nextCursor != null) {
             val resolved = TerrainPageCursorCodec.resolve(
                 cursor = pageWindow.nextCursor,
-                diagnosticGeneration = diagnosticGeneration,
+                diagnosticGeneration = pageRegistryGeneration,
                 query = pageWindow.query,
             )
             require(

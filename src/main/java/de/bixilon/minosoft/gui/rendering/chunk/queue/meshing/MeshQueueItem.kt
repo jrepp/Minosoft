@@ -17,10 +17,11 @@ import de.bixilon.minosoft.data.world.chunk.ChunkSection
 import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.data.world.positions.SectionPosition
+import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 
 class MeshQueueItem(
     val section: ChunkSection,
-    val cause: ChunkMeshingCause,
+    val cause: TerrainBuildCause,
     val queuedAtNanos: Long = 0L,
 ) {
     val position = SectionPosition.of(section)

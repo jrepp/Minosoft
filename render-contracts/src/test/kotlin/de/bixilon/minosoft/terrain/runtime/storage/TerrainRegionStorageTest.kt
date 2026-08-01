@@ -78,6 +78,29 @@ class TerrainRegionStorageTest {
     }
 
     @Test
+    fun `allocator admission predicts fit without mutating storage or failure telemetry`() {
+        val completion = Completion(deviceId)
+        val device = Device(deviceId, vertexCapacityBytes = 16, indexCapacityBytes = 12)
+        val storage = storage(device, completion)
+        artifact(revision = 1L, vertexBytes = 8, indexBytes = 6).use {
+            assertTrue(storage.canPublish(it))
+            assertNotNull(storage.publish(it))
+        }
+        artifact(revision = 2L, vertexBytes = 8, indexBytes = 6).use {
+            assertTrue(storage.canPublish(it))
+        }
+        artifact(revision = 3L, vertexBytes = 12, indexBytes = 6).use {
+            assertFalse(storage.canPublish(it))
+        }
+
+        val metrics = storage.metrics()
+        assertEquals(8, metrics.vertexAllocatedBytes)
+        assertEquals(6, metrics.indexAllocatedBytes)
+        assertEquals(0L, metrics.allocationFailures)
+        assertEquals(1L, metrics.publications)
+    }
+
+    @Test
     fun `retired ranges wait for every device submission and cpu lease`() {
         val completion = Completion(deviceId)
         val device = Device(deviceId, vertexCapacityBytes = 16, indexCapacityBytes = 12)
@@ -90,20 +113,51 @@ class TerrainRegionStorageTest {
         artifact(revision = 2L).use { assertNotNull(storage.publish(it)) }
         assertEquals(1, storage.metrics().retiredPages)
         assertEquals(16, storage.metrics().vertexAllocatedBytes)
+        assertEquals(1, storage.metrics().cpuLeaseCount)
+        assertEquals(1, storage.metrics().retiredCpuLeasedPages)
+        assertEquals(2, storage.metrics().pendingSubmissionCount)
 
         completion.states[TerrainSubmissionSerial(2L)] = TerrainSubmissionState.COMPLETE
         lease.close()
         assertEquals(0, storage.collectRetired())
         assertEquals(1, storage.metrics().retiredPages)
+        assertEquals(1, storage.metrics().pendingSubmissionCount)
+        assertEquals(1, storage.metrics().retiredPendingSubmissionPages)
+        assertEquals(0, storage.metrics().retiredCpuLeasedPages)
 
         completion.states[TerrainSubmissionSerial(1L)] = TerrainSubmissionState.COMPLETE
         assertEquals(1, storage.collectRetired())
         assertEquals(0, storage.metrics().retiredPages)
+        assertEquals(0, storage.metrics().pendingSubmissionCount)
         assertEquals(8, storage.metrics().vertexAllocatedBytes)
 
         artifact(revision = 3L).use { assertNotNull(storage.publish(it)) }
         assertEquals(8, storage.metrics().vertexAllocatedBytes)
         assertEquals(6, storage.metrics().indexAllocatedBytes)
+    }
+
+    @Test
+    fun `active pages discard completed historical submission references`() {
+        val completion = Completion(deviceId)
+        val device = Device(deviceId, vertexCapacityBytes = 16, indexCapacityBytes = 12)
+        val storage = storage(device, completion)
+        artifact(revision = 1L).use { assertNotNull(storage.publish(it)) }
+        for (value in 1L..3L) {
+            storage.acquire(listOf(page())).use { lease ->
+                lease.submit(TerrainSubmission(deviceId, TerrainSubmissionSerial(value)))
+            }
+        }
+        assertEquals(3, storage.metrics().pendingSubmissionCount)
+
+        completion.states[TerrainSubmissionSerial(1L)] = TerrainSubmissionState.COMPLETE
+        completion.states[TerrainSubmissionSerial(2L)] = TerrainSubmissionState.COMPLETE
+        assertEquals(0, storage.collectRetired())
+        assertEquals(1, storage.metrics().activePages)
+        assertEquals(1, storage.metrics().pendingSubmissionCount)
+
+        completion.states[TerrainSubmissionSerial(3L)] = TerrainSubmissionState.COMPLETE
+        assertEquals(0, storage.collectRetired())
+        assertEquals(0, storage.metrics().pendingSubmissionCount)
     }
 
     @Test
@@ -119,8 +173,43 @@ class TerrainRegionStorageTest {
         completion.states[TerrainSubmissionSerial(1L)] = TerrainSubmissionState.FAILED
 
         assertEquals(0, storage.collectRetired())
-        assertEquals(1, storage.metrics().retiredPages)
+        val failed = storage.metrics()
+        assertEquals(1, failed.retiredPages)
+        assertEquals(0, failed.pendingSubmissionCount)
+        assertEquals(1, failed.failedSubmissionCount)
+        assertEquals(0, failed.invalidatedSubmissionCount)
+        assertEquals(0, failed.retiredPendingSubmissionPages)
+        assertEquals(1, failed.retiredFailedSubmissionPages)
         artifact(revision = 3L).use { assertNull(storage.publish(it)) }
+    }
+
+    @Test
+    fun `device-invalidated submissions remain diagnosed until context recovery`() {
+        val completion = Completion(deviceId)
+        val device = Device(deviceId, vertexCapacityBytes = 16, indexCapacityBytes = 12)
+        val storage = storage(device, completion)
+        artifact(revision = 1L).use { storage.publish(it) }
+        storage.acquire(listOf(page())).use { lease ->
+            lease.submit(TerrainSubmission(deviceId, TerrainSubmissionSerial(1L)))
+        }
+        artifact(revision = 2L).use { storage.publish(it) }
+        completion.states[TerrainSubmissionSerial(1L)] = TerrainSubmissionState.DEVICE_INVALIDATED
+
+        assertEquals(0, storage.collectRetired())
+        val invalidated = storage.metrics()
+        assertEquals(0, invalidated.pendingSubmissionCount)
+        assertEquals(0, invalidated.failedSubmissionCount)
+        assertEquals(1, invalidated.invalidatedSubmissionCount)
+        assertEquals(1, invalidated.retiredDeviceInvalidatedPages)
+        artifact(revision = 3L).use { assertNull(storage.publish(it)) }
+
+        storage.invalidateDevice()
+        val recovered = storage.metrics()
+        assertEquals(0, recovered.activePages)
+        assertEquals(0, recovered.retiredPages)
+        assertEquals(0, recovered.invalidatedSubmissionCount)
+        assertEquals(0, recovered.retiredDeviceInvalidatedPages)
+        assertEquals(1L, recovered.deviceInvalidations)
     }
 
     @Test
@@ -186,6 +275,7 @@ class TerrainRegionStorageTest {
         val storage = storage(device, completion)
         artifact(revision = 1L).use { storage.publish(it) }
         val lease = storage.acquire(listOf(page()))
+        assertEquals(1, storage.metrics().cpuLeaseCount)
 
         assertThrows<IllegalStateException> { storage.invalidateDevice() }
         lease.close()
@@ -196,6 +286,11 @@ class TerrainRegionStorageTest {
         assertEquals(0, metrics.retiredPages)
         assertEquals(0, metrics.vertexAllocatedBytes)
         assertEquals(0, metrics.indexAllocatedBytes)
+        assertEquals(0, metrics.cpuLeaseCount)
+        assertEquals(0, metrics.pendingSubmissionCount)
+        assertEquals(0, metrics.failedSubmissionCount)
+        assertEquals(0, metrics.invalidatedSubmissionCount)
+        assertEquals(1L, metrics.deviceInvalidations)
     }
 
     private fun storage(device: Device, completion: Completion) = TerrainRegionStorage(

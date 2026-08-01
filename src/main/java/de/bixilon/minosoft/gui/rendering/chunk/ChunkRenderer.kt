@@ -66,6 +66,8 @@ import de.bixilon.minosoft.gui.rendering.terrain.near.OpenGlNearTerrainRegionRun
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainAcceptanceFaultController
+import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainAcceptanceFaultScope
 
 class ChunkRenderer(
     val session: PlaySession,
@@ -77,6 +79,7 @@ class ChunkRenderer(
     private val textShader = context.system.shader.create(minosoft("chunk")) { ChunkShader(it) }
     val world = session.world
     val terrainPerformance = TerrainPerformanceTelemetry()
+    val terrainFaults = TerrainAcceptanceFaultController()
     val visibility = ChunkVisibilityManager(this)
 
     val culledQueue = CulledQueue(this)
@@ -443,15 +446,40 @@ class ChunkRenderer(
     }
 
     override fun unload() {
+        terrainFaults.invalidate()
         terrain.close()
     }
 
+    fun terrainFaultScope(): TerrainAcceptanceFaultScope {
+        val selection = context.renderer.pipeline.terrainSelection()
+        return TerrainAcceptanceFaultScope(
+            worldEpoch = session.world.terrainEpoch,
+            pipelineGeneration = selection.generation,
+            shaderGeneration = selection.identity.shaderPipelineGeneration,
+            nearLayoutGeneration = selection.identity.nearLayoutGeneration,
+        )
+    }
+
     internal fun closeTerrainCore() {
-        culledQueue.clear()
-        meshingQueue.tasks.interrupt(false)
-        meshingQueue.close()
-        loadingQueue.clear()
-        regionTerrain?.close()
+        var failure: Throwable? = null
+        fun cleanup(action: () -> Unit) {
+            try {
+                action()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+
+        cleanup(culledQueue::clear)
+        cleanup { meshingQueue.tasks.interrupt(false) }
+        cleanup(meshingQueue::close)
+        cleanup(loadingQueue::clear)
+        cleanup(loaded::close)
+        cleanup(cache::clear)
+        cleanup(unloadingQueue::drain)
+        cleanup { regionTerrain?.close() }
+
+        failure?.let { throw it }
     }
 
     private object TextLayer : RenderLayer {
