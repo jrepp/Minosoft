@@ -1,0 +1,154 @@
+{
+  "name": "terrain-dimension-transitions",
+  "steps": [
+    {
+      "name": "managed client and server are ready",
+      "type": "wait",
+      "predicate": "both.ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "begin in overworld",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.player" },
+      "assert": [
+        { "pointer": "/worldState/dimension", "equals": "minecraft:overworld" }
+      ]
+    },
+    {
+      "name": "teleport to loaded nether dimension",
+      "type": "request",
+      "role": "server",
+      "operation": "world.teleport-player",
+      "body": {
+        "dimension": "minecraft:the_nether",
+        "position": { "x": 0.5, "y": 120.0, "z": 0.5 },
+        "yaw": 0.0,
+        "pitch": 0.0
+      },
+      "assert": [
+        { "pointer": "/current/dimension", "equals": "minecraft:the_nether" }
+      ]
+    },
+    {
+      "name": "client observes nether replacement",
+      "type": "sleep",
+      "duration": "2s"
+    },
+    {
+      "name": "nether terrain drains",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/worldEpoch", "min": 1 },
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 }
+      ]
+    },
+    {
+      "name": "nether identity is current",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.player" },
+      "assert": [
+        { "pointer": "/worldState/dimension", "equals": "minecraft:the_nether" }
+      ]
+    },
+    {
+      "name": "teleport to loaded end dimension",
+      "type": "request",
+      "role": "server",
+      "operation": "world.teleport-player",
+      "body": {
+        "dimension": "minecraft:the_end",
+        "position": { "x": 0.5, "y": 120.0, "z": 0.5 },
+        "yaw": 0.0,
+        "pitch": 0.0
+      },
+      "assert": [
+        { "pointer": "/current/dimension", "equals": "minecraft:the_end" }
+      ]
+    },
+    {
+      "name": "client observes end replacement",
+      "type": "sleep",
+      "duration": "2s"
+    },
+    {
+      "name": "end terrain drains",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/worldEpoch", "min": 1 },
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 }
+      ]
+    },
+    {
+      "name": "end identity is current",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.player" },
+      "assert": [
+        { "pointer": "/worldState/dimension", "equals": "minecraft:the_end" }
+      ]
+    },
+    {
+      "name": "return to overworld",
+      "type": "request",
+      "role": "server",
+      "operation": "world.teleport-player",
+      "body": {
+        "dimension": "minecraft:overworld",
+        "position": { "x": 0.5, "y": 120.0, "z": 0.5 },
+        "yaw": 0.0,
+        "pitch": 0.0
+      },
+      "assert": [
+        { "pointer": "/current/dimension", "equals": "minecraft:overworld" }
+      ]
+    },
+    {
+      "name": "client observes restored overworld",
+      "type": "sleep",
+      "duration": "2s"
+    },
+    {
+      "name": "restored overworld terrain drains",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "final world and generations are valid",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.summary",
+      "body": {},
+      "assert": [
+        { "pointer": "/worldEpoch", "min": 1 },
+        { "pointer": "/snapshot/pipeline/mode", "equals": "UNIFIED" },
+        { "pointer": "/snapshot/scheduling/runtime/failed", "equals": 0 },
+        { "pointer": "/snapshot/residency/0/accounting/retiredBytes", "equals": 0 },
+        { "pointer": "/snapshot/submission/failedSubmissionCount", "equals": 0 }
+      ]
+    }
+  ]
+}

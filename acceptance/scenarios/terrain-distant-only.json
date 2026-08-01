@@ -1,0 +1,59 @@
+{
+  "name": "terrain-distant-only",
+  "steps": [
+    {
+      "name": "combined client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "move camera outside native loaded coverage",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 512.5, "y": 80.0, "z": 0.5, "yaw": 180.0, "pitch": 35.0 }
+      },
+      "assert": [
+        { "pointer": "/camera/x", "equals": 512.5 }
+      ]
+    },
+    {
+      "name": "distant selection becomes populated",
+      "type": "sleep",
+      "duration": "5s"
+    },
+    {
+      "name": "distant provider owns visible camera coverage",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.summary",
+      "body": {},
+      "assert": [
+        { "pointer": "/snapshot/pipeline/mode", "equals": "UNIFIED" },
+        { "pointer": "/snapshot/pipeline/distantProviderId", "equals": "minosoft:distant-terrain" },
+        { "pointer": "/snapshot/publication/1/domain", "equals": "DISTANT" },
+        { "pointer": "/snapshot/publication/1/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/1/views/1/drawPageCount", "min": 1 },
+        { "pointer": "/snapshot/scheduling/runtime/failed", "equals": 0 },
+        { "pointer": "/snapshot/residency/0/accounting/hardFailureCount", "equals": 0 }
+      ]
+    },
+    {
+      "name": "restore ordinary terrain camera",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 40.0, "z": 0.5, "yaw": 180.0, "pitch": 45.0 }
+      }
+    }
+  ]
+}

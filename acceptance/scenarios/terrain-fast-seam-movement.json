@@ -1,0 +1,85 @@
+{
+  "name": "terrain-fast-seam-movement",
+  "steps": [
+    {
+      "name": "combined client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "begin at reference seam pose",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 40.0, "z": 0.5, "yaw": 180.0, "pitch": 45.0 }
+      }
+    },
+    {
+      "name": "teleport camera across positive seam",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 512.5, "y": 80.0, "z": 0.5, "yaw": 180.0, "pitch": 35.0 }
+      }
+    },
+    {
+      "name": "teleport camera across negative seam",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": -512.5, "y": 80.0, "z": 0.5, "yaw": 0.0, "pitch": 35.0 }
+      }
+    },
+    {
+      "name": "return to populated seam",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 40.0, "z": 0.5, "yaw": 180.0, "pitch": 45.0 }
+      }
+    },
+    {
+      "name": "movement work drains without seam loss",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "main and shadow recover the same seam",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.coverage",
+      "body": {},
+      "assert": [
+        { "pointer": "/publication/0/views/0/missingPageCount", "equals": 0 },
+        { "pointer": "/publication/0/views/1/missingPageCount", "equals": 0 },
+        { "pointer": "/publication/1/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/publication/1/views/1/drawPageCount", "min": 1 }
+      ]
+    }
+  ]
+}

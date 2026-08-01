@@ -1,0 +1,167 @@
+{
+  "name": "terrain-seam-bliss-macos-retina",
+  "steps": [
+    {
+      "name": "client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "select Bliss presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.presentation",
+      "body": { "enabled": true },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/installed", "equals": true },
+        { "pointer": "/shaderPack", "equals": "Bliss_v2.1.0_(Chocapic13_Shaders_edit).zip" }
+      ]
+    },
+    {
+      "name": "set deterministic flat-world seam pose",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 40.0, "z": 0.5, "yaw": 180.0, "pitch": 45.0 }
+      },
+      "assert": [
+        { "pointer": "/executed", "equals": 0 },
+        { "pointer": "/camera/x", "equals": 0.5 },
+        { "pointer": "/camera/y", "equals": 40.0 },
+        { "pointer": "/camera/z", "equals": 0.5 },
+        { "pointer": "/camera/yaw", "equals": 180.0 },
+        { "pointer": "/camera/pitch", "equals": 45.0 }
+      ]
+    },
+    {
+      "name": "clear transient presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "hideHud": true,
+        "hideHitboxes": true,
+        "hideClouds": true,
+        "hideWorldBorder": true,
+        "hideEntities": true,
+        "hideParticles": true
+      },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": false },
+        { "pointer": "/worldBorderSuppressed", "equals": true }
+      ]
+    },
+    {
+      "name": "terrain and shader history settle",
+      "type": "sleep",
+      "duration": "6s"
+    },
+    {
+      "name": "main and shadow active seam publication agrees",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain-diagnostics",
+      "body": {},
+      "assert": [
+        { "pointer": "/snapshot/worldIdentity/worldEpoch", "min": 1 },
+        { "pointer": "/snapshot/pipeline/mode", "equals": "UNIFIED" },
+        { "pointer": "/snapshot/coverage/generation", "min": 1 },
+        { "pointer": "/snapshot/coverage/stateCounts/READY", "min": 1 },
+        { "pointer": "/snapshot/publication/0/domain", "equals": "NEAR" },
+        { "pointer": "/snapshot/publication/0/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/0/views/0/missingPageCount", "equals": 0 },
+        { "pointer": "/snapshot/publication/0/views/1/drawPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/0/views/1/missingPageCount", "equals": 0 },
+        { "pointer": "/snapshot/publication/1/domain", "equals": "DISTANT" },
+        { "pointer": "/snapshot/publication/1/selectionGeneration", "min": 1 },
+        { "pointer": "/snapshot/publication/1/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/1/views/0/maskedPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/1/views/0/missingPageCount", "equals": 0 },
+        { "pointer": "/snapshot/publication/1/views/1/drawPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/1/views/1/maskedPageCount", "min": 1 }
+      ]
+    },
+    {
+      "name": "mixed-detail hierarchy is region batched",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.render-diagnostics",
+      "body": {},
+      "assert": [
+        { "pointer": "/hierarchy/gpuPages", "min": 1000 },
+        { "pointer": "/hierarchy/mainSelectedPages", "min": 1000 },
+        { "pointer": "/hierarchy/shadowSelectedPages", "min": 1000 },
+        { "pointer": "/hierarchy/detailCounts/0", "min": 1 },
+        { "pointer": "/hierarchy/detailCounts/1", "min": 1 },
+        { "pointer": "/hierarchy/regions", "min": 1 },
+        { "pointer": "/hierarchy/drawBatches", "max": 64 },
+        { "pointer": "/hierarchy/drawCommands", "min": 1000 },
+        { "pointer": "/hierarchy/retiredBytes", "equals": 0 },
+        { "pointer": "/hierarchy/allocationFailures", "equals": 0 },
+        { "pointer": "/hierarchy/uploadFailures", "equals": 0 }
+      ]
+    },
+    {
+      "name": "first animated seam stripe contains no hole",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.sample",
+      "body": {
+        "region": { "x": 600, "y": 176, "width": 2200, "height": 16 }
+      },
+      "assert": [
+        { "pointer": "/width", "equals": 3456 },
+        { "pointer": "/height", "equals": 1910 },
+        { "pointer": "/region/averageLuminance", "min": 0.34 },
+        { "pointer": "/region/averageLuminance", "max": 0.37 },
+        { "pointer": "/region/minimumLuminance", "min": 0.03 },
+        { "pointer": "/region/nearBlackPixelCount", "equals": 0 },
+        { "pointer": "/region/minimumAlpha", "equals": 255 },
+        { "pointer": "/region/maximumAlpha", "equals": 255 }
+      ]
+    },
+    {
+      "name": "second animated seam stripe contains no hole",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.sample",
+      "body": {
+        "region": { "x": 600, "y": 176, "width": 2200, "height": 16 }
+      },
+      "assert": [
+        { "pointer": "/region/averageLuminance", "min": 0.34 },
+        { "pointer": "/region/averageLuminance", "max": 0.37 },
+        { "pointer": "/region/minimumLuminance", "min": 0.03 },
+        { "pointer": "/region/nearBlackPixelCount", "equals": 0 },
+        { "pointer": "/region/minimumAlpha", "equals": 255 },
+        { "pointer": "/region/maximumAlpha", "equals": 255 }
+      ]
+    },
+    {
+      "name": "restore ordinary presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "hideHud": false,
+        "hideHitboxes": true,
+        "hideClouds": false,
+        "hideWorldBorder": false,
+        "hideEntities": false,
+        "hideParticles": false
+      },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": true },
+        { "pointer": "/worldBorderSuppressed", "equals": false }
+      ]
+    }
+  ]
+}

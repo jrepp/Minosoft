@@ -1,0 +1,95 @@
+{
+  "name": "terrain-light-fluid-materials",
+  "steps": [
+    {
+      "name": "combined client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "prepare daylight fluid coastline and emissive materials",
+      "type": "request",
+      "role": "client",
+      "operation": "render.prepare-terrain-materials",
+      "body": { "enabled": true, "phase": "day" },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/phase", "equals": "day" },
+        { "pointer": "/blocks/0/current", "equals": "minecraft:water" },
+        { "pointer": "/blocks/2/fixture", "equals": "minecraft:oak_slab" },
+        { "pointer": "/blocks/2/waterlogged", "equals": true },
+        { "pointer": "/blocks/3/current", "equals": "minecraft:stone" },
+        { "pointer": "/blocks/4/current", "equals": "minecraft:glowstone" },
+        { "pointer": "/blocks/5/current", "equals": "minecraft:sea_lantern" },
+        { "pointer": "/blocks/6/current", "equals": "minecraft:lava" }
+      ]
+    },
+    {
+      "name": "daylight material replacement drains",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 }
+      ]
+    },
+    {
+      "name": "switch the same emissive and fluid scene to night",
+      "type": "request",
+      "role": "client",
+      "operation": "render.prepare-terrain-materials",
+      "body": { "enabled": true, "phase": "night" },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/phase", "equals": "night" },
+        { "pointer": "/blocks/2/waterlogged", "equals": true },
+        { "pointer": "/blocks/4/current", "equals": "minecraft:glowstone" },
+        { "pointer": "/blocks/6/current", "equals": "minecraft:lava" }
+      ]
+    },
+    {
+      "name": "night main and shadow terrain remains valid",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.summary",
+      "body": {},
+      "assert": [
+        { "pointer": "/snapshot/pipeline/mode", "equals": "UNIFIED" },
+        { "pointer": "/snapshot/publication/0/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/0/views/1/drawPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/0/views/0/missingPageCount", "equals": 0 },
+        { "pointer": "/snapshot/publication/0/views/1/missingPageCount", "equals": 0 },
+        { "pointer": "/snapshot/scheduling/runtime/failed", "equals": 0 },
+        { "pointer": "/snapshot/residency/0/accounting/hardFailureCount", "equals": 0 }
+      ]
+    },
+    {
+      "name": "restore exact prior terrain and time",
+      "type": "request",
+      "role": "client",
+      "operation": "render.prepare-terrain-materials",
+      "body": { "enabled": false },
+      "assert": [
+        { "pointer": "/enabled", "equals": false },
+        { "pointer": "/restored", "equals": true }
+      ]
+    },
+    {
+      "name": "restored terrain drains",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    }
+  ]
+}

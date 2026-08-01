@@ -1,0 +1,149 @@
+{
+  "name": "terrain-same-name-different-world-reconnect",
+  "steps": [
+    {
+      "name": "reconnected client and same-address server are ready",
+      "type": "wait",
+      "predicate": "both.ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "use the built-in presentation for bounded reconnect draining",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.presentation",
+      "body": { "enabled": false },
+      "assert": [
+        { "pointer": "/enabled", "equals": false }
+      ]
+    },
+    {
+      "name": "set deterministic same-key terrain pose",
+      "type": "request",
+      "role": "server",
+      "operation": "world.teleport-player",
+      "body": {
+        "dimension": "minecraft:overworld",
+        "position": { "x": 0.5, "y": 100.0, "z": 0.5 },
+        "yaw": 180.0,
+        "pitch": 45.0
+      },
+      "assert": [
+        { "pointer": "/current/dimension", "equals": "minecraft:overworld" }
+      ]
+    },
+    {
+      "name": "allow the client to receive the replacement spawn column",
+      "type": "sleep",
+      "duration": "2s"
+    },
+    {
+      "name": "record player dimension and pose",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.player" },
+      "assert": [
+        { "pointer": "/worldState/dimension", "equals": "minecraft:overworld" }
+      ]
+    },
+    {
+      "name": "record loaded-only blocks around the camera column",
+      "type": "request",
+      "role": "client",
+      "operation": "world.blocks.sample",
+      "body": {
+        "min": { "x": -2, "y": 88, "z": -2 },
+        "max": { "x": 2, "y": 104, "z": 2 }
+      }
+    },
+    {
+      "name": "reconnected terrain drains",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/worldEpoch", "equals": 1 },
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/outstandingBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "same normalized key has a stable persistence identity",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.summary",
+      "body": {},
+      "assert": [
+        { "pointer": "/snapshot/worldIdentity/normalizedWorldKey", "equals": "minecraft:overworld" },
+        { "pointer": "/snapshot/worldIdentity/worldEpoch", "equals": 1 },
+        { "pointer": "/snapshot/worldIdentity/persistenceIdentity", "exists": true },
+        { "pointer": "/snapshot/pipeline/mode", "equals": "UNIFIED" },
+        { "pointer": "/snapshot/scheduling/runtime/failed", "equals": 0 },
+        { "pointer": "/snapshot/submission/failedSubmissionCount", "equals": 0 }
+      ]
+    },
+    {
+      "name": "current epoch owns every sampled near page",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.pages",
+      "body": {
+        "pageQuery": {
+          "worldEpoch": 1,
+          "maximumCount": 16,
+          "selector": {
+            "type": "AREA",
+            "domain": "NEAR",
+            "minimumDetailLevel": 0,
+            "maximumDetailLevel": 0,
+            "minimumX": -8,
+            "maximumX": 8,
+            "minimumY": -4,
+            "maximumY": 8,
+            "minimumZ": -8,
+            "maximumZ": 8
+          }
+        }
+      },
+      "assert": [
+        { "pointer": "/pageWindow/pages/0/page/domain", "equals": "NEAR" },
+        { "pointer": "/pageWindow/pages/0/page/worldEpoch", "equals": 1 },
+        { "pointer": "/pageWindow/pages/0/artifactDigest", "exists": true }
+      ]
+    },
+    {
+      "name": "current epoch owns every sampled distant page",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.pages",
+      "body": {
+        "pageQuery": {
+          "worldEpoch": 1,
+          "maximumCount": 16,
+          "selector": {
+            "type": "AREA",
+            "domain": "DISTANT",
+            "minimumDetailLevel": 0,
+            "maximumDetailLevel": 12,
+            "minimumX": -64,
+            "maximumX": 64,
+            "minimumY": 0,
+            "maximumY": 0,
+            "minimumZ": -64,
+            "maximumZ": 64
+          }
+        }
+      },
+      "assert": [
+        { "pointer": "/pageWindow/pages/0/page/domain", "equals": "DISTANT" },
+        { "pointer": "/pageWindow/pages/0/page/worldEpoch", "equals": 1 },
+        { "pointer": "/pageWindow/pages/0/artifactDigest", "exists": true }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+{
+  "name": "terrain-seam-built-in-macos-retina",
+  "steps": [
+    {
+      "name": "client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "select built-in presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.presentation",
+      "body": { "enabled": false },
+      "assert": [
+        { "pointer": "/enabled", "equals": false },
+        { "pointer": "/installed", "equals": false }
+      ]
+    },
+    {
+      "name": "set deterministic flat-world seam pose",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 40.0, "z": 0.5, "yaw": 180.0, "pitch": 45.0 }
+      },
+      "assert": [
+        { "pointer": "/executed", "equals": 0 },
+        { "pointer": "/camera/x", "equals": 0.5 },
+        { "pointer": "/camera/y", "equals": 40.0 },
+        { "pointer": "/camera/z", "equals": 0.5 },
+        { "pointer": "/camera/yaw", "equals": 180.0 },
+        { "pointer": "/camera/pitch", "equals": 45.0 }
+      ]
+    },
+    {
+      "name": "clear transient presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "hideHud": true,
+        "hideHitboxes": true,
+        "hideClouds": true,
+        "hideWorldBorder": true,
+        "hideEntities": true,
+        "hideParticles": true
+      },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": false },
+        { "pointer": "/worldBorderSuppressed", "equals": true }
+      ]
+    },
+    {
+      "name": "terrain replacement settles",
+      "type": "sleep",
+      "duration": "6s"
+    },
+    {
+      "name": "near and distant seam publication is complete",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain-diagnostics",
+      "body": {},
+      "assert": [
+        { "pointer": "/snapshot/worldIdentity/worldEpoch", "min": 1 },
+        { "pointer": "/snapshot/pipeline/mode", "equals": "UNIFIED" },
+        { "pointer": "/snapshot/coverage/stateCounts/READY", "min": 1 },
+        { "pointer": "/snapshot/publication/0/domain", "equals": "NEAR" },
+        { "pointer": "/snapshot/publication/0/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/0/views/0/missingPageCount", "equals": 0 },
+        { "pointer": "/snapshot/publication/1/domain", "equals": "DISTANT" },
+        { "pointer": "/snapshot/publication/1/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/1/views/0/maskedPageCount", "min": 1 },
+        { "pointer": "/snapshot/publication/1/views/0/missingPageCount", "equals": 0 },
+        { "pointer": "/snapshot/publication/1/views/1/missingPageCount", "equals": 0 }
+      ]
+    },
+    {
+      "name": "continuous seam stripe has exact checked pixels",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.sample",
+      "body": {
+        "region": { "x": 600, "y": 176, "width": 2200, "height": 16 },
+        "points": [
+          { "x": 768, "y": 184 },
+          { "x": 1280, "y": 184 },
+          { "x": 1792, "y": 184 },
+          { "x": 2304, "y": 184 },
+          { "x": 2700, "y": 184 }
+        ]
+      },
+      "assert": [
+        { "pointer": "/width", "equals": 3456 },
+        { "pointer": "/height", "equals": 1910 },
+        { "pointer": "/region/sha256", "equals": "4c4c28615159776beabc8af2f76a7caef6429c913eb36b5f3b774e42f81e495b" },
+        { "pointer": "/region/averageLuminance", "min": 0.35 },
+        { "pointer": "/region/averageLuminance", "max": 0.36 },
+        { "pointer": "/region/minimumLuminance", "min": 0.03 },
+        { "pointer": "/region/nearBlackPixelCount", "equals": 0 },
+        { "pointer": "/region/minimumAlpha", "equals": 255 },
+        { "pointer": "/region/maximumAlpha", "equals": 255 },
+        { "pointer": "/points/0/hex", "equals": "#506831" },
+        { "pointer": "/points/1/hex", "equals": "#506831" },
+        { "pointer": "/points/2/hex", "equals": "#4b622e" },
+        { "pointer": "/points/3/hex", "equals": "#4e6630" },
+        { "pointer": "/points/4/hex", "equals": "#526b32" }
+      ]
+    },
+    {
+      "name": "restore Bliss presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.presentation",
+      "body": { "enabled": true },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/installed", "equals": true }
+      ]
+    },
+    {
+      "name": "restore ordinary presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "hideHud": false,
+        "hideHitboxes": true,
+        "hideClouds": false,
+        "hideWorldBorder": false,
+        "hideEntities": false,
+        "hideParticles": false
+      },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": true },
+        { "pointer": "/worldBorderSuppressed", "equals": false }
+      ]
+    }
+  ]
+}
