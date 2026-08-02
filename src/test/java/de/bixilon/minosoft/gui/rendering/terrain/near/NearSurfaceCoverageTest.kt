@@ -113,14 +113,16 @@ class NearSurfaceCoverageTest {
     @Test
     fun `discard releases coverage without consulting a closed owner`() {
         var ownerAvailable = true
+        var environment = NearSurfaceCoverageEnvironment(1L, 2L, 3L)
         val index = NearSurfaceCoverageIndex {
             check(ownerAvailable) { "owner is closed" }
-            NearSurfaceCoverageEnvironment(1L, 2L, 3L)
+            environment
         }
         val position = ChunkPosition(4, 5)
         index.update(position, setOf(0), setOf(0))
         val revision = index.revision
 
+        environment = environment.copy(frame = 10L)
         ownerAvailable = false
 
         assertTrue(index.discard())

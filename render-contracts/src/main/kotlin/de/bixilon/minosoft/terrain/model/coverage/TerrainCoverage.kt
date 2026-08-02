@@ -150,6 +150,9 @@ class TerrainCoverageTracker(
     }
 
     @Synchronized
+    fun hasCoverage(): Boolean = entries.values.any { it.contributesCoverage }
+
+    @Synchronized
     fun transition(
         page: TerrainPageKey,
         next: TerrainCoverageState,
