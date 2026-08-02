@@ -770,7 +770,7 @@ class RendererPipelineTest {
             override fun close() = Unit
         }
 
-        expectThrows<IllegalStateException> {
+        expectThrows(IllegalStateException::class.java) {
             pipeline.renderView(IrisShaderPackPlanner.SHADOW_VIEW) { error("draw failed") }
         }
 
