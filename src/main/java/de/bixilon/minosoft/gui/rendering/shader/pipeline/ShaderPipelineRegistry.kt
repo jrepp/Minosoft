@@ -46,6 +46,7 @@ data class WorldShaderPipelineDiagnostics(
     val programStages: Map<String, String> = emptyMap(),
     val programOutputs: Map<String, String> = emptyMap(),
     val programSamplers: Map<String, String> = emptyMap(),
+    val programShadowComparisonSamplers: Map<String, String> = emptyMap(),
     val programAlphaTests: Map<String, String> = emptyMap(),
     val programBlendOverrides: Map<String, String> = emptyMap(),
     val appliedBlendOverrides: Map<String, Long> = emptyMap(),

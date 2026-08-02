@@ -151,6 +151,7 @@ class IrisFrameStateTest {
             frameCounter = 7,
             frameTime = 0.05f,
             frameTimeCounter = 12.5f,
+            frameTimeSmooth = 0.04f,
             viewWidth = 1920.0f,
             viewHeight = 1080.0f,
             near = 0.05f,
@@ -185,6 +186,7 @@ class IrisFrameStateTest {
             fogStart = 24.0f,
             fogEnd = 96.0f,
             fogColor = Vec4f(0.1f, 0.2f, 0.3f, 0.4f),
+            shadowMapResolution = 1024,
         )
 
         val uploads = state.uploadTo(
@@ -192,10 +194,12 @@ class IrisFrameStateTest {
             setOf(
                 "frameCounter",
                 "frameTime",
+                "frameTimeSmooth",
                 "gbufferProjection",
                 "gbufferPreviousModelView",
                 "gbufferPreviousProjection",
                 "shadowProjection",
+                "shadowMapResolution",
                 "cameraPosition",
                 "fogMode",
                 "fogStart",
@@ -206,13 +210,15 @@ class IrisFrameStateTest {
             ),
         )
 
-        assertEquals(11, uploads)
+        assertEquals(13, uploads)
         assertEquals(7, native.ints["frameCounter"])
         assertEquals(0.05f, native.floats["frameTime"])
+        assertEquals(0.04f, native.floats["frameTimeSmooth"])
         assertEquals(Mat4f(), native.matrices["gbufferProjection"])
         assertEquals(Mat4f(2.0f), native.matrices["gbufferPreviousModelView"])
         assertEquals(Mat4f(3.0f), native.matrices["gbufferPreviousProjection"])
         assertEquals(Mat4f(), native.matrices["shadowProjection"])
+        assertEquals(1024, native.ints["shadowMapResolution"])
         assertEquals(Vec3f(1.0f, 2.0f, 3.0f), native.vectors["cameraPosition"])
         assertEquals(0x0801, native.ints["fogMode"])
         assertEquals(24.0f, native.floats["fogStart"])

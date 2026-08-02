@@ -38,12 +38,14 @@ import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.data.world.positions.BlockPositionUtil.center
 import de.bixilon.minosoft.data.world.time.WorldTime
 import de.bixilon.minosoft.gui.rendering.RenderContext
+import de.bixilon.minosoft.gui.rendering.graph.resource.RenderTargetSize
 import de.bixilon.minosoft.gui.rendering.camera.CameraUtil
 import de.bixilon.minosoft.gui.rendering.camera.view.person.FirstPersonView
 import de.bixilon.minosoft.gui.rendering.chunk.outline.BlockOutlineRenderer
 import de.bixilon.minosoft.gui.rendering.gui.GUIRenderer
 import de.bixilon.minosoft.gui.rendering.light.VisionEffectIntensity
 import de.bixilon.minosoft.gui.rendering.sky.SkyRenderer
+import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 import de.bixilon.minosoft.tags.MinecraftTagTypes.BIOME
 import java.time.LocalDateTime
@@ -121,6 +123,7 @@ data class IrisFrameState(
     val frameCounter: Int,
     val frameTime: Float,
     val frameTimeCounter: Float,
+    val frameTimeSmooth: Float = frameTime,
     val viewWidth: Float,
     val viewHeight: Float,
     val near: Float,
@@ -172,6 +175,7 @@ data class IrisFrameState(
     val selectedBlock: IrisSelectedBlockFrameState = IrisSelectedBlockFrameState.EMPTY,
     val renderOrigin: Vec3d = Vec3d.EMPTY,
     val shadowLightDirectionWorld: Vec3f = Vec3f(0.0f, 1.0f, 0.0f),
+    val shadowMapResolution: Int = 1,
     val shadowCulling: IrisShadowCullingSet = IrisShadowCullingSet.uncull(cameraPosition),
     val distantHorizons: IrisDistantFrameState = IrisDistantFrameState.host(
         near = near,
@@ -184,6 +188,8 @@ data class IrisFrameState(
     init {
         require(playerMood in 0.0f..1.0f)
         require(constantMood in 0.0f..1.0f)
+        require(frameTimeSmooth.isFinite() && frameTimeSmooth >= 0.0f)
+        require(shadowMapResolution > 0)
     }
 
     fun uploadTo(
@@ -217,6 +223,7 @@ data class IrisFrameState(
                 "shadowModelViewInverse" -> native.setMat4f(uniform, shadowModelViewInverse)
                 "shadowProjection" -> native.setMat4f(uniform, shadowProjection)
                 "shadowProjectionInverse" -> native.setMat4f(uniform, shadowProjectionInverse)
+                "shadowMapResolution" -> native.setInt(uniform, shadowMapResolution)
                 "dhProjection" -> native.setMat4f(uniform, distantHorizons.projection)
                 "dhProjectionInverse" -> native.setMat4f(uniform, distantHorizons.projectionInverse)
                 "dhPreviousProjection" -> native.setMat4f(uniform, distantHorizons.previousProjection)
@@ -248,6 +255,7 @@ data class IrisFrameState(
                 "frameCounter" -> native.setInt(uniform, frameCounter)
                 "frameTime" -> native.setFloat(uniform, frameTime)
                 "frameTimeCounter" -> native.setFloat(uniform, frameTimeCounter)
+                "frameTimeSmooth" -> native.setFloat(uniform, frameTimeSmooth)
                 "velocity" -> {
                     val x = cameraPosition.x - previousCameraPosition.x
                     val y = cameraPosition.y - previousCameraPosition.y
@@ -361,6 +369,7 @@ data class IrisFrameState(
             put("frameCounter", frameCounter.toDouble())
             put("frameTime", frameTime.toDouble())
             put("frameTimeCounter", frameTimeCounter.toDouble())
+            put("frameTimeSmooth", frameTimeSmooth.toDouble())
             put("aspectRatio", (viewWidth / viewHeight).toDouble())
             put("velocity", cameraVelocity())
             put("worldTime", worldTime.toDouble())
@@ -443,6 +452,7 @@ data class IrisFrameState(
             putMatrix("shadowModelViewInverse", shadowModelViewInverse)
             putMatrix("shadowProjection", shadowProjection)
             putMatrix("shadowProjectionInverse", shadowProjectionInverse)
+            put("shadowMapResolution", shadowMapResolution.toDouble())
             put("dhNearPlane", distantHorizons.near.toDouble())
             put("dhFarPlane", distantHorizons.far.toDouble())
             put("dhRenderDistance", distantHorizons.renderDistance.toDouble())
@@ -478,6 +488,7 @@ data class IrisFrameState(
             "shadowModelViewInverse",
             "shadowProjection",
             "shadowProjectionInverse",
+            "shadowMapResolution",
             "dhProjection",
             "dhProjectionInverse",
             "dhPreviousProjection",
@@ -507,6 +518,7 @@ data class IrisFrameState(
             "frameCounter",
             "frameTime",
             "frameTimeCounter",
+            "frameTimeSmooth",
             "velocity",
             "worldTime",
             "worldDay",
@@ -1039,6 +1051,7 @@ internal fun irisShadowModelView(
 internal class IrisFrameStateClock {
     private var previousNanos: Long? = null
     private var counter = 0.0f
+    private var smoothFrameTime = 0.0f
     private var previousCameraPosition = Vec3d.EMPTY
     private var previousModelViewMatrix = Mat4f()
     private var previousProjectionMatrix = Mat4f()
@@ -1056,6 +1069,13 @@ internal class IrisFrameStateClock {
             ((nowNanos - previous) / 1_000_000_000.0).toFloat().coerceIn(0.0f, 1.0f)
         }
         previousNanos = nowNanos
+        if (frameTime > 0.0f) {
+            smoothFrameTime = if (smoothFrameTime == 0.0f) {
+                frameTime
+            } else {
+                smoothFrameTime + (frameTime - smoothFrameTime) * FRAME_TIME_SMOOTHING
+            }
+        }
         counter = (counter + frameTime) % FRAME_TIME_WRAP_SECONDS
 
         val matrix = context.camera.matrix
@@ -1169,11 +1189,21 @@ internal class IrisFrameStateClock {
             ),
         )
         val shadowProjection = irisShadowProjection(shadow)
+        val shadowMapResolution = (
+            plan?.buffers?.get(ShaderBufferId(ShaderBufferKind.SHADOWTEX, 0))?.size as? RenderTargetSize.Fixed
+        )?.width ?: 1
         val modelViewMatrix = matrix.viewMatrix.copyImmutable()
         val projectionMatrix = matrix.projectionMatrix.copyImmutable()
+        var distantRenderDistance = IrisDistantFrameState.DEFAULT_RENDER_DISTANCE
+        for (renderer in context.renderer) {
+            if (renderer !is DistantTerrainRenderer) continue
+            distantRenderDistance = renderer.renderDistanceBlocks
+            break
+        }
         val distantHorizons = IrisDistantFrameState.create(
             hostProjection = projectionMatrix,
             near = matrix.nearPlane,
+            renderDistance = distantRenderDistance,
             previousProjection = previousDistantProjection,
         )
         val shadowLightDirectionWorld = irisShadowLightDirectionWorld(
@@ -1206,6 +1236,7 @@ internal class IrisFrameStateClock {
             frameCounter = (context.frameNumber and Int.MAX_VALUE.toLong()).toInt(),
             frameTime = frameTime,
             frameTimeCounter = counter,
+            frameTimeSmooth = smoothFrameTime,
             viewWidth = size.x.toFloat().coerceAtLeast(1.0f),
             viewHeight = size.y.toFloat().coerceAtLeast(1.0f),
             near = matrix.nearPlane,
@@ -1274,6 +1305,7 @@ internal class IrisFrameStateClock {
                 renderOrigin.z.toDouble(),
             ),
             shadowLightDirectionWorld = shadowLightDirectionWorld,
+            shadowMapResolution = shadowMapResolution,
             shadowCulling = shadowCulling,
             distantHorizons = distantHorizons,
         )
@@ -1286,6 +1318,7 @@ internal class IrisFrameStateClock {
 
     private companion object {
         const val FRAME_TIME_WRAP_SECONDS = 3_600.0f
+        const val FRAME_TIME_SMOOTHING = 0.1f
         const val SECONDS_PER_MINUTE = 60
         const val SECONDS_PER_HOUR = 60 * SECONDS_PER_MINUTE
         const val SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR

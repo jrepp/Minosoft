@@ -30,6 +30,8 @@ object IrisProgramFallbacks {
             listOf("gbuffers_terrain_cutout", "gbuffers_terrain", "gbuffers_textured_lit", "gbuffers_textured", "gbuffers_basic")
         TerrainMaterialClass.TRANSLUCENT ->
             listOf("gbuffers_water", "gbuffers_terrain", "gbuffers_textured_lit", "gbuffers_textured", "gbuffers_basic")
+        TerrainMaterialClass.DISTANT_WATER ->
+            listOf("gbuffers_water", "gbuffers_terrain", "gbuffers_textured_lit", "gbuffers_textured", "gbuffers_basic")
         TerrainMaterialClass.EMISSIVE_ADDITIVE -> listOf("gbuffers_terrain", "gbuffers_textured_lit", "gbuffers_textured", "gbuffers_basic")
     }
 
@@ -37,6 +39,7 @@ object IrisProgramFallbacks {
         TerrainMaterialClass.OPAQUE -> listOf("shadow_solid", "shadow")
         TerrainMaterialClass.CUTOUT -> listOf("shadow_cutout", "shadow")
         TerrainMaterialClass.TRANSLUCENT -> listOf("shadow")
+        TerrainMaterialClass.DISTANT_WATER -> listOf("shadow")
         TerrainMaterialClass.EMISSIVE_ADDITIVE -> emptyList()
     }
 

@@ -69,7 +69,9 @@ internal enum class IrisRenderStage(val shaderValue: Int) {
             // Minosoft's cutout atlas is mipmapped, matching Iris's Sodium
             // GBUFFER_CUTOUT terrain pass.
             TerrainMaterialClass.CUTOUT -> TERRAIN_CUTOUT_MIPPED
-            TerrainMaterialClass.TRANSLUCENT -> TERRAIN_TRANSLUCENT
+            TerrainMaterialClass.TRANSLUCENT,
+            TerrainMaterialClass.DISTANT_WATER,
+            -> TERRAIN_TRANSLUCENT
         }
 
         fun scene(semantic: PipelineSemantic, contract: SceneShaderContract): IrisRenderStage = when (semantic) {

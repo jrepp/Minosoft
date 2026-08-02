@@ -48,6 +48,7 @@ import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Compan
 import de.bixilon.minosoft.gui.rendering.system.opengl.irisPerBufferBlending
 import de.bixilon.minosoft.gui.rendering.light.LightmapBuffer
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
+import de.bixilon.minosoft.gui.rendering.terrain.NEAR_TERRAIN_MATERIALS
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
@@ -385,7 +386,7 @@ class IrisWorldShaderPipeline private constructor(
 
     private fun terrainBindDiagnostics(): Map<String, Long> = buildMap {
         for (viewIndex in MAIN_VIEW_INDEX..SHADOW_VIEW_INDEX) {
-            TerrainMaterialClass.entries.forEach { material ->
+            NEAR_TERRAIN_MATERIALS.forEach { material ->
                 val count = selectedTerrainBinds[viewIndex * TerrainMaterialClass.entries.size + material.ordinal]
                 if (count == 0L) return@forEach
                 val shadow = viewIndex == SHADOW_VIEW_INDEX
@@ -595,6 +596,11 @@ class IrisWorldShaderPipeline private constructor(
                         } +
                         program.resourceUsage.customImages.map { "image.$it=read-write" }
                     ).joinToString(",")
+            },
+        programShadowComparisonSamplers = plan.programs
+            .filter { it.resourceUsage.shadowComparisonSamplers.isNotEmpty() }
+            .associate { program ->
+                program.name to program.resourceUsage.shadowComparisonSamplers.sorted().joinToString(",")
             },
         selectedTerrainBinds = terrainBindDiagnostics(),
         selectedSceneBinds = sceneBindDiagnostics(),
@@ -1257,7 +1263,7 @@ class IrisWorldShaderPipeline private constructor(
         )
 
         private fun selectPrograms(plan: ShaderPipelinePlan): SelectedPrograms {
-            val terrainCandidates = TerrainMaterialClass.entries
+            val terrainCandidates = NEAR_TERRAIN_MATERIALS
                 .flatMap(IrisProgramFallbacks::terrain)
                 .toSet()
             val terrain = plan.programs.filter {
@@ -1279,7 +1285,7 @@ class IrisWorldShaderPipeline private constructor(
             }
             val unsupported =
                 plan.programs - terrain.toSet() - finals.toSet() - fullscreen.toSet() - shadows.toSet() - scenes.toSet()
-            val terrainByMaterial = TerrainMaterialClass.entries.associateWith { material ->
+            val terrainByMaterial = NEAR_TERRAIN_MATERIALS.associateWith { material ->
                 IrisProgramFallbacks.select(terrain, IrisProgramFallbacks.terrain(material))
             }
             val failures = buildList {
@@ -1721,7 +1727,7 @@ class IrisWorldShaderPipeline private constructor(
                 "uPlayerLightIntensity",
                 "uPlayerLightRadius",
             ),
-            SceneStateAbi.DISTANT_TERRAIN to setOf("uViewProjectionMatrix"),
+            SceneStateAbi.DISTANT_TERRAIN to setOf("uViewProjectionMatrix", "uPageOffset"),
         )
         private val HOST_FOG_UNIFORMS = setOf("uFogStart", "uFogDistance", "uFogColor", "uFogFlags")
         private val SKELETAL_STATES = setOf(

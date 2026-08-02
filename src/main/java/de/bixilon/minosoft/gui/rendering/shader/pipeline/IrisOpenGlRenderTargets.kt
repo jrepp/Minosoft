@@ -312,10 +312,24 @@ internal class IrisOpenGlRenderTargets(
         }
         val bufferUnits = distinctBuffers.withIndex().associate { (offset, id) ->
             val buffer = requireNotNull(buffers[id]) { "${program.name} samples undeclared Iris buffer $id" }
+            val comparisonModes = activeBuffers.asSequence()
+                .filter { it.value == id }
+                .map { it.key in program.resourceUsage.shadowComparisonSamplers }
+                .toSet()
+            require(comparisonModes.size == 1) {
+                "${program.name} samples $id as both raw depth and shadow comparison"
+            }
             val unit = samplerUnits[offset]
             gl { glActiveTexture(GL_TEXTURE0 + unit) }
             gl { glBindTexture(GL_TEXTURE_2D, buffer.readTexture()) }
             system.boundTexture = buffer.readTexture()
+            gl {
+                glTexParameteri(
+                    GL_TEXTURE_2D,
+                    GL_TEXTURE_COMPARE_MODE,
+                    if (comparisonModes.single()) GL_COMPARE_REF_TO_TEXTURE else GL_NONE,
+                )
+            }
             id to unit
         }
         activeBuffers.forEach { (sampler, id) ->
@@ -439,6 +453,9 @@ internal class IrisOpenGlRenderTargets(
             return (0 until maximum).filterNot(reserved::contains).take(required)
         }
 
+        internal fun shouldClearTexture(policy: RenderClearPolicy, initializing: Boolean): Boolean =
+            initializing || policy == RenderClearPolicy.CLEAR
+
         private val FULLSCREEN_BUFFER_PHASES = setOf(
             ShaderProgramPhase.BEGIN,
             ShaderProgramPhase.SHADOW_COMPOSITE,
@@ -446,12 +463,14 @@ internal class IrisOpenGlRenderTargets(
             ShaderProgramPhase.DEFERRED,
             ShaderProgramPhase.COMPOSITE,
         )
+
     }
 
     private fun clearView(
         view: RenderViewId,
         colors: Boolean = true,
         clearDepth: Boolean = true,
+        initializing: Boolean = false,
     ) {
         val colorKind = if (view == IrisShaderPackPlanner.SHADOW_VIEW) {
             ShaderBufferKind.SHADOWCOLOR
@@ -462,7 +481,7 @@ internal class IrisOpenGlRenderTargets(
         system.framebuffer = framebuffer
         if (colors) {
             for (buffer in buffers.values.filter { it.descriptor.id.kind == colorKind }) {
-                if (buffer.descriptor.clear != RenderClearPolicy.CLEAR) continue
+                if (!shouldClearTexture(buffer.descriptor.clear, initializing)) continue
                 for (texture in buffer.textures()) {
                     framebuffer.configure(listOf(buffer.descriptor.id), mapOf(buffer.descriptor.id to texture))
                     val clear = when (val source = buffer.descriptor.clearColor) {
@@ -496,16 +515,16 @@ internal class IrisOpenGlRenderTargets(
             ShaderBufferKind.DEPTHTEX
         }
         val depth = buffers[ShaderBufferId(depthKind, 0)]
-        if (clearDepth && depth != null && depth.descriptor.clear == RenderClearPolicy.CLEAR) {
+        if (clearDepth && depth != null && shouldClearTexture(depth.descriptor.clear, initializing)) {
             framebuffer.configure(defaultOutputs(colorKind))
             gl { glClearDepth(1.0) }
             gl { glClear(GL_DEPTH_BUFFER_BIT) }
         }
     }
 
-    private fun clearDistantDepth() {
+    private fun clearDistantDepth(initializing: Boolean = false) {
         val depth = buffers[ShaderBufferId(ShaderBufferKind.DHDEPTHTEX, 0)] ?: return
-        if (depth.descriptor.clear != RenderClearPolicy.CLEAR) return
+        if (!shouldClearTexture(depth.descriptor.clear, initializing)) return
         system.framebuffer = main
         main.configure(
             defaultOutputs(ShaderBufferKind.COLORTEX),
@@ -528,6 +547,11 @@ internal class IrisOpenGlRenderTargets(
             main.init()
             if (hasShadow) shadow.init()
             initialized = true
+            // LOAD is a per-frame persistence policy, not permission to sample
+            // undefined driver memory on the generation's first frame.
+            clearView(RenderViewId.MAIN, initializing = true)
+            clearDistantDepth(initializing = true)
+            if (hasShadow) clearView(IrisShaderPackPlanner.SHADOW_VIEW, initializing = true)
         } catch (failure: Throwable) {
             try {
                 release()
@@ -609,47 +633,59 @@ internal class IrisOpenGlRenderTargets(
         require(source.size == target.size) {
             "Depth snapshot sizes differ: ${source.descriptor.id}=${source.size}, ${target.descriptor.id}=${target.size}"
         }
-        gl { glBindFramebuffer(GL_READ_FRAMEBUFFER, copyReadFramebuffer) }
-        gl {
-            glFramebufferTexture2D(
-                GL_READ_FRAMEBUFFER,
-                GL_DEPTH_ATTACHMENT,
-                GL_TEXTURE_2D,
-                source.readTexture(),
-                0,
-            )
-        }
-        gl { glReadBuffer(GL_NONE) }
-        gl { glBindFramebuffer(GL_DRAW_FRAMEBUFFER, copyDrawFramebuffer) }
-        gl {
-            glFramebufferTexture2D(
-                GL_DRAW_FRAMEBUFFER,
-                GL_DEPTH_ATTACHMENT,
-                GL_TEXTURE_2D,
-                target.primary,
-                0,
-            )
-        }
-        gl { glDrawBuffer(GL_NONE) }
-        require(gl { glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) } == GL_FRAMEBUFFER_COMPLETE) {
-            "Iris depth snapshot read framebuffer is incomplete"
-        }
-        require(gl { glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) } == GL_FRAMEBUFFER_COMPLETE) {
-            "Iris depth snapshot draw framebuffer is incomplete"
-        }
-        gl {
-            glBlitFramebuffer(
-                0,
-                0,
-                source.size.x,
-                source.size.y,
-                0,
-                0,
-                target.size.x,
-                target.size.y,
-                GL_DEPTH_BUFFER_BIT,
-                GL_NEAREST,
-            )
+        val previousFramebuffer = system.framebuffer
+        try {
+            gl { glBindFramebuffer(GL_READ_FRAMEBUFFER, copyReadFramebuffer) }
+            gl {
+                glFramebufferTexture2D(
+                    GL_READ_FRAMEBUFFER,
+                    GL_DEPTH_ATTACHMENT,
+                    GL_TEXTURE_2D,
+                    source.readTexture(),
+                    0,
+                )
+            }
+            gl { glReadBuffer(GL_NONE) }
+            gl { glBindFramebuffer(GL_DRAW_FRAMEBUFFER, copyDrawFramebuffer) }
+            gl {
+                glFramebufferTexture2D(
+                    GL_DRAW_FRAMEBUFFER,
+                    GL_DEPTH_ATTACHMENT,
+                    GL_TEXTURE_2D,
+                    target.primary,
+                    0,
+                )
+            }
+            gl { glDrawBuffer(GL_NONE) }
+            require(gl { glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) } == GL_FRAMEBUFFER_COMPLETE) {
+                "Iris depth snapshot read framebuffer is incomplete"
+            }
+            require(gl { glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) } == GL_FRAMEBUFFER_COMPLETE) {
+                "Iris depth snapshot draw framebuffer is incomplete"
+            }
+            gl {
+                glBlitFramebuffer(
+                    0,
+                    0,
+                    source.size.x,
+                    source.size.y,
+                    0,
+                    0,
+                    target.size.x,
+                    target.size.y,
+                    GL_DEPTH_BUFFER_BIT,
+                    GL_NEAREST,
+                )
+            }
+        } finally {
+            // READ/DRAW binds bypass OpenGlRenderSystem's cached logical
+            // framebuffer. Restore the actual binding even when the blit or a
+            // completeness check fails.
+            if (previousFramebuffer == null) {
+                gl { glBindFramebuffer(GL_FRAMEBUFFER, 0) }
+            } else {
+                previousFramebuffer.bind()
+            }
         }
     }
 

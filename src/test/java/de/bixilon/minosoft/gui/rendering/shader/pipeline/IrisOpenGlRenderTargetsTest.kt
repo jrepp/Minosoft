@@ -12,10 +12,19 @@ package de.bixilon.minosoft.gui.rendering.shader.pipeline
 
 import de.bixilon.minosoft.gui.rendering.system.base.BlendFunctionState
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
+import de.bixilon.minosoft.gui.rendering.graph.resource.RenderClearPolicy
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class IrisOpenGlRenderTargetsTest {
+    @Test
+    fun `load targets initialize once while clear targets reset every frame`() {
+        assertEquals(true, IrisOpenGlRenderTargets.shouldClearTexture(RenderClearPolicy.LOAD, initializing = true))
+        assertEquals(false, IrisOpenGlRenderTargets.shouldClearTexture(RenderClearPolicy.LOAD, initializing = false))
+        assertEquals(true, IrisOpenGlRenderTargets.shouldClearTexture(RenderClearPolicy.CLEAR, initializing = true))
+        assertEquals(true, IrisOpenGlRenderTargets.shouldClearTexture(RenderClearPolicy.CLEAR, initializing = false))
+    }
+
     @Test
     fun `depth snapshots preserve independent main and shadow pre-translucent depth`() {
         assertEquals(

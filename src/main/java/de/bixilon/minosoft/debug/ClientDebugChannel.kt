@@ -3439,6 +3439,11 @@ object ClientDebugChannel : AutoCloseable {
                         put(program, samplers)
                     }
                 }
+                putObject("programShadowComparisonSamplers").apply {
+                    shaderDiagnostics.programShadowComparisonSamplers.toSortedMap().forEach { (program, samplers) ->
+                        put(program, samplers)
+                    }
+                }
                 if (shaderDiagnostics.frameState == null) {
                     putNull("frameState")
                 } else {
