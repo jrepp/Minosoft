@@ -36,6 +36,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.shader.code.glsl.GLSLCommentStripper
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
+import de.bixilon.minosoft.gui.rendering.terrain.NEAR_TERRAIN_MATERIALS
 import de.bixilon.minosoft.util.json.Jackson
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -129,9 +130,19 @@ object IrisShaderPackPlanner {
         NOISE_TEXTURE_RESOLUTION,
         SUN_PATH_ROTATION,
     )
-    private val FLOAT_DIRECTIVE = Regex(
-        """\bconst\s+float\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*""" +
-            """([-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?)[fF]?\s*;""",
+    private val FLOAT_DIRECTIVE_NAMES = setOf(
+        "sunPathRotation",
+        "wetnessHalflife",
+        "drynessHalflife",
+        "eyeBrightnessHalflife",
+        "shadowDistance",
+        "shadowNearPlane",
+        "shadowFarPlane",
+        "shadowMapFov",
+        "shadowIntervalSize",
+        "shadowDistanceRenderMul",
+        "entityShadowDistanceMul",
+        "voxelDistance",
     )
     private val PROPERTY = Regex("""^\s*([^#!\s][^=]*)=(.*)$""")
     private val PROPERTY_DIRECTIVE = Regex("""^\s*#\s*([A-Za-z]+)\b(.*)$""")
@@ -499,8 +510,9 @@ object IrisShaderPackPlanner {
             "Shader pack has no paired composite or final program"
         }
 
+        val floatDirectives = floatDirectives(programs)
         val shadow = programs.any { it.phase == ShaderProgramPhase.SHADOW }
-        val shadowDirectives = shadowDirectives(properties, shadow, programs)
+        val shadowDirectives = shadowDirectives(properties, shadow, programs, floatDirectives)
         val views = buildSet {
             add(RenderViewId.MAIN)
             if (shadow && shadowDirectives.enabled) add(SHADOW_VIEW)
@@ -522,8 +534,8 @@ object IrisShaderPackPlanner {
             customResources = customResources,
             customUniforms = customUniforms(properties),
             selectedProfile = selectedProfile?.name,
-            sunPathRotation = sunPathRotation(programs),
-            smoothingDirectives = smoothingDirectives(programs),
+            sunPathRotation = floatDirective(floatDirectives, "sunPathRotation", 0.0f),
+            smoothingDirectives = smoothingDirectives(floatDirectives),
             idMaps = idMaps(files, propertyDefinitions),
             oldHandLight = parseBooleanProperty(properties, "oldHandLight", true),
             underwaterOverlay = parseBooleanProperty(properties, "underwaterOverlay", true),
@@ -870,48 +882,109 @@ object IrisShaderPackPlanner {
         }
     }
 
-    private fun sunPathRotation(programs: List<ShaderProgramSource>): Float {
-        val values = programs.flatMap { program ->
-            inspectionStages(program).flatMap { source ->
-                SUN_PATH_ROTATION.findAll(source).map { match ->
-                    match.groupValues[1].toFloat().also { value ->
-                        require(value.isFinite()) {
-                            "Shader program ${program.name} declares a non-finite sunPathRotation"
-                        }
-                    }
-                }.toList()
-            }
-        }.distinct()
-        require(values.size <= 1) {
-            "Shader pack declares inconsistent sunPathRotation values: ${values.sorted()}"
-        }
-        return values.singleOrNull() ?: 0.0f
-    }
-
-    private fun smoothingDirectives(programs: List<ShaderProgramSource>) = IrisSmoothingDirectives(
-        wetnessHalfLife = floatDirective(programs, "wetnessHalflife", 600.0f),
-        drynessHalfLife = floatDirective(programs, "drynessHalflife", 200.0f),
-        eyeBrightnessHalfLife = floatDirective(programs, "eyeBrightnessHalflife", 10.0f),
+    private fun smoothingDirectives(directives: Map<String, List<Float>>) = IrisSmoothingDirectives(
+        wetnessHalfLife = floatDirective(directives, "wetnessHalflife", 600.0f),
+        drynessHalfLife = floatDirective(directives, "drynessHalflife", 200.0f),
+        eyeBrightnessHalfLife = floatDirective(directives, "eyeBrightnessHalflife", 10.0f),
     )
 
     private fun floatDirective(
-        programs: List<ShaderProgramSource>,
+        directives: Map<String, List<Float>>,
         name: String,
         default: Float,
     ): Float {
-        val values = programs.flatMap { program ->
-            inspectionStages(program).flatMap { source ->
-                FLOAT_DIRECTIVE.findAll(source)
-                    .filter { it.groupValues[1] == name }
-                    .map { it.groupValues[2].toFloat() }
-                    .toList()
-            }
-        }.distinct()
+        val values = directives[name].orEmpty()
         require(values.size <= 1) {
             "Shader pack declares inconsistent $name values: ${values.sorted()}"
         }
         return values.singleOrNull() ?: default
     }
+
+    private fun floatDirectives(programs: List<ShaderProgramSource>): Map<String, List<Float>> {
+        val values = linkedMapOf<String, LinkedHashSet<Float>>()
+        programs.forEach { program ->
+            inspectionStages(program).forEach { source ->
+                scanFloatDirectives(source) { name, value ->
+                    if (name !in FLOAT_DIRECTIVE_NAMES) return@scanFloatDirectives
+                    require(value.isFinite()) {
+                        "Shader program ${program.name} declares a non-finite $name"
+                    }
+                    values.getOrPut(name, ::linkedSetOf).add(value)
+                }
+            }
+        }
+        return values.mapValues { (_, declared) -> declared.toList() }
+    }
+
+    private inline fun scanFloatDirectives(
+        source: String,
+        accept: (name: String, value: Float) -> Unit,
+    ) {
+        var searchFrom = 0
+        while (searchFrom < source.length) {
+            val declarationStart = source.indexOf("const", searchFrom)
+            if (declarationStart < 0) return
+            searchFrom = declarationStart + "const".length
+            if (declarationStart > 0 && source[declarationStart - 1].isShaderIdentifierPart()) continue
+
+            var cursor = searchFrom
+            if (cursor >= source.length || !source[cursor].isShaderWhitespace()) continue
+            cursor = source.skipShaderWhitespace(cursor)
+            if (!source.regionMatches(cursor, "float", 0, "float".length)) continue
+            cursor += "float".length
+            if (cursor >= source.length || !source[cursor].isShaderWhitespace()) continue
+            cursor = source.skipShaderWhitespace(cursor)
+            if (cursor >= source.length || !source[cursor].isShaderIdentifierStart()) continue
+
+            val nameStart = cursor++
+            while (cursor < source.length && source[cursor].isShaderIdentifierPart()) cursor++
+            val name = source.substring(nameStart, cursor)
+            cursor = source.skipShaderWhitespace(cursor)
+            if (cursor >= source.length || source[cursor++] != '=') continue
+            cursor = source.skipShaderWhitespace(cursor)
+
+            val numberStart = cursor
+            if (cursor < source.length && (source[cursor] == '+' || source[cursor] == '-')) cursor++
+            var digits = 0
+            while (cursor < source.length && source[cursor] in '0'..'9') {
+                cursor++
+                digits++
+            }
+            if (cursor < source.length && source[cursor] == '.') {
+                cursor++
+                while (cursor < source.length && source[cursor] in '0'..'9') {
+                    cursor++
+                    digits++
+                }
+            }
+            if (digits == 0) continue
+            if (cursor < source.length && (source[cursor] == 'e' || source[cursor] == 'E')) {
+                cursor++
+                if (cursor < source.length && (source[cursor] == '+' || source[cursor] == '-')) cursor++
+                val exponentStart = cursor
+                while (cursor < source.length && source[cursor] in '0'..'9') cursor++
+                if (cursor == exponentStart) continue
+            }
+            val numberEnd = cursor
+            if (cursor < source.length && (source[cursor] == 'f' || source[cursor] == 'F')) cursor++
+            cursor = source.skipShaderWhitespace(cursor)
+            if (cursor >= source.length || source[cursor] != ';') continue
+            accept(name, source.substring(numberStart, numberEnd).toFloat())
+        }
+    }
+
+    private fun String.skipShaderWhitespace(start: Int): Int {
+        var cursor = start
+        while (cursor < length && this[cursor].isShaderWhitespace()) cursor++
+        return cursor
+    }
+
+    private fun Char.isShaderWhitespace(): Boolean =
+        this == ' ' || this == '\t' || this == '\n' || this == '\r' || this == '\u000B' || this == '\u000C'
+
+    private fun Char.isShaderIdentifierStart(): Boolean = this == '_' || this in 'A'..'Z' || this in 'a'..'z'
+
+    private fun Char.isShaderIdentifierPart(): Boolean = isShaderIdentifierStart() || this in '0'..'9'
 
     private fun inspectionStages(program: ShaderProgramSource): List<String> = listOfNotNull(
         program.inspectionVertex ?: program.vertex,
@@ -925,6 +998,7 @@ object IrisShaderPackPlanner {
         properties: Map<String, String>,
         hasShadowProgram: Boolean,
         programs: List<ShaderProgramSource>,
+        floatDirectives: Map<String, List<Float>>,
     ): IrisShadowDirectives {
         fun boolean(name: String, default: Boolean): Boolean =
             parseBooleanProperty(properties, name, default)
@@ -944,15 +1018,15 @@ object IrisShaderPackPlanner {
             LEGACY_SHADOW_HALF_PLANE,
             "SHADOWHPL",
         )
-        val distance = floatDirective(programs, "shadowDistance", legacyDistance ?: 160.0f)
-        val nearPlane = floatDirective(programs, "shadowNearPlane", 0.05f)
-        val farPlane = floatDirective(programs, "shadowFarPlane", 256.0f)
-        val mapFov = optionalFloatDirective(programs, "shadowMapFov")
+        val distance = floatDirective(floatDirectives, "shadowDistance", legacyDistance ?: 160.0f)
+        val nearPlane = floatDirective(floatDirectives, "shadowNearPlane", 0.05f)
+        val farPlane = floatDirective(floatDirectives, "shadowFarPlane", 256.0f)
+        val mapFov = optionalFloatDirective(floatDirectives, "shadowMapFov")
             ?: legacyShadowFloatDirective(programs, LEGACY_SHADOW_MAP_FOV, "SHADOWFOV")
-        val intervalSize = floatDirective(programs, "shadowIntervalSize", 2.0f)
-        val distanceRenderMultiplier = floatDirective(programs, "shadowDistanceRenderMul", -1.0f)
-        val entityShadowDistanceMultiplier = floatDirective(programs, "entityShadowDistanceMul", 1.0f)
-        val voxelDistance = floatDirective(programs, "voxelDistance", 0.0f)
+        val intervalSize = floatDirective(floatDirectives, "shadowIntervalSize", 2.0f)
+        val distanceRenderMultiplier = floatDirective(floatDirectives, "shadowDistanceRenderMul", -1.0f)
+        val entityShadowDistanceMultiplier = floatDirective(floatDirectives, "entityShadowDistanceMul", 1.0f)
+        val voxelDistance = floatDirective(floatDirectives, "voxelDistance", 0.0f)
         val cullingMode = when (properties["shadow.culling"]) {
             null -> IrisShadowCullingMode.DEFAULT
             "false" -> IrisShadowCullingMode.DISTANCE
@@ -1003,11 +1077,11 @@ object IrisShaderPackPlanner {
     }
 
     private fun optionalFloatDirective(
-        programs: List<ShaderProgramSource>,
+        directives: Map<String, List<Float>>,
         name: String,
     ): Float? {
         val sentinel = Float.NaN
-        return floatDirective(programs, name, sentinel).takeUnless(Float::isNaN)
+        return floatDirective(directives, name, sentinel).takeUnless(Float::isNaN)
     }
 
     private fun stripComments(source: String): String =
@@ -1124,11 +1198,8 @@ object IrisShaderPackPlanner {
                 inspectionFragment,
             ).joinToString("\n"),
         )
-        val declaredUniforms = UNIFORM.findAll(combined).map { it.groupValues[1] }.toSet()
-        val withoutUniformDeclarations = UNIFORM.replace(combined, "")
-        val referencedUniforms = declaredUniforms.filterTo(linkedSetOf()) { uniform ->
-            Regex("""\b${Regex.escape(uniform)}\b""").containsMatchIn(withoutUniformDeclarations)
-        }
+        val uniformInspection = inspectProgramUniforms(name, combined)
+        val referencedUniforms = uniformInspection.referenced
         val bridges = SCENE_BRIDGE.findAll(vertex).map { match ->
             val vertexAbi = enumValue<SceneVertexAbi>(name, "vertex ABI", match.groupValues[1])
             val stateAbi = enumValue<SceneStateAbi>(name, "state ABI", match.groupValues[2])
@@ -1153,9 +1224,8 @@ object IrisShaderPackPlanner {
             fragment = fragment,
             geometry = geometry,
             uniforms = referencedUniforms,
-            samplers = SAMPLER.findAll(combined)
-                .map { it.groupValues[1] }
-                .filterTo(linkedSetOf()) { it in referencedUniforms },
+            samplers = uniformInspection.samplers.filterTo(linkedSetOf()) { it in referencedUniforms },
+            shadowSamplers = uniformInspection.shadowSamplers.filterTo(linkedSetOf()) { it in referencedUniforms },
             sceneBridges = bridges.toSet(),
             alphaTest = alphaTest,
             inspectionVertex = inspectionVertex,
@@ -1168,6 +1238,119 @@ object IrisShaderPackPlanner {
             tessellationPatchVertices = 3.takeIf { tessellationControl != null },
         )
     }
+
+    private data class ProgramUniformInspection(
+        val referenced: Set<String>,
+        val samplers: Set<String>,
+        val shadowSamplers: Set<String>,
+    )
+
+    /**
+     * Inspects uniform declarations and uses in two bounded forward passes.
+     * The former implementation removed declarations with one global regex and
+     * then rescanned the complete expanded program once for every uniform.
+     */
+    private fun inspectProgramUniforms(program: String, source: String): ProgramUniformInspection {
+        val declared = linkedSetOf<String>()
+        val samplers = linkedSetOf<String>()
+        val shadowSamplers = linkedSetOf<String>()
+        val declarationRanges = mutableListOf<IntRange>()
+        var searchFrom = 0
+        while (searchFrom < source.length) {
+            val start = source.indexOf("uniform", searchFrom)
+            if (start < 0) break
+            val keywordEnd = start + "uniform".length
+            searchFrom = keywordEnd
+            if ((start > 0 && source[start - 1].isShaderIdentifierPart()) ||
+                (keywordEnd < source.length && source[keywordEnd].isShaderIdentifierPart())
+            ) {
+                continue
+            }
+            if (keywordEnd >= source.length || !source[keywordEnd].isShaderWhitespace()) continue
+
+            var cursor = source.skipShaderWhitespace(keywordEnd)
+            val firstTypeStart = cursor
+            if (cursor >= source.length || !source[cursor].isShaderIdentifierStart()) continue
+            cursor++
+            while (cursor < source.length && source[cursor].isShaderIdentifierPart()) cursor++
+            var typeStart = firstTypeStart
+            var typeEnd = cursor
+            if (source.tokenEquals(firstTypeStart, cursor, "lowp") ||
+                source.tokenEquals(firstTypeStart, cursor, "mediump") ||
+                source.tokenEquals(firstTypeStart, cursor, "highp")
+            ) {
+                if (cursor >= source.length || !source[cursor].isShaderWhitespace()) continue
+                cursor = source.skipShaderWhitespace(cursor)
+                typeStart = cursor
+                if (cursor >= source.length || !source[cursor].isShaderIdentifierStart()) continue
+                cursor++
+                while (cursor < source.length && source[cursor].isShaderIdentifierPart()) cursor++
+                typeEnd = cursor
+            }
+            if (cursor >= source.length || !source[cursor].isShaderWhitespace()) continue
+            cursor = source.skipShaderWhitespace(cursor)
+            if (cursor >= source.length || !source[cursor].isShaderIdentifierStart()) continue
+            val nameStart = cursor++
+            while (cursor < source.length && source[cursor].isShaderIdentifierPart()) cursor++
+            val nameEnd = cursor
+            cursor = source.skipShaderWhitespace(cursor)
+            if (cursor < source.length && source[cursor] == '[') {
+                val close = source.indexOf(']', cursor + 1)
+                if (close < 0) continue
+                cursor = source.skipShaderWhitespace(close + 1)
+            }
+            if (cursor >= source.length || source[cursor] != ';') continue
+
+            val name = source.substring(nameStart, nameEnd)
+            declared += name
+            if (source.isSamplerType(typeStart, typeEnd)) {
+                samplers += name
+                if (source.isShadowSamplerType(typeStart, typeEnd)) shadowSamplers += name
+            }
+            declarationRanges += start..cursor
+            require(declared.size <= MAX_PROGRAM_UNIFORMS) {
+                "Shader program $program declares more than $MAX_PROGRAM_UNIFORMS uniforms"
+            }
+        }
+
+        if (declared.isEmpty()) return ProgramUniformInspection(emptySet(), emptySet(), emptySet())
+        val namesByLength = declared.groupBy(String::length)
+        val referenced = linkedSetOf<String>()
+        var rangeIndex = 0
+        var cursor = 0
+        while (cursor < source.length) {
+            val range = declarationRanges.getOrNull(rangeIndex)
+            if (range != null && cursor >= range.first) {
+                cursor = range.last + 1
+                rangeIndex++
+                continue
+            }
+            if (!source[cursor].isShaderIdentifierStart()) {
+                cursor++
+                continue
+            }
+            val tokenStart = cursor++
+            while (cursor < source.length && source[cursor].isShaderIdentifierPart()) cursor++
+            namesByLength[cursor - tokenStart]?.firstOrNull { candidate ->
+                source.regionMatches(tokenStart, candidate, 0, candidate.length)
+            }?.let(referenced::add)
+        }
+        return ProgramUniformInspection(referenced, samplers, shadowSamplers)
+    }
+
+    private fun String.isSamplerType(start: Int, end: Int): Boolean {
+        var prefix = start
+        if (prefix < end && (this[prefix] == 'i' || this[prefix] == 'u')) prefix++
+        val sampler = "sampler"
+        return end - prefix >= sampler.length && regionMatches(prefix, sampler, 0, sampler.length)
+    }
+
+    private fun String.isShadowSamplerType(start: Int, end: Int): Boolean =
+        isSamplerType(start, end) && end - start >= "Shadow".length &&
+            regionMatches(end - "Shadow".length, "Shadow", 0, "Shadow".length)
+
+    private fun String.tokenEquals(start: Int, end: Int, value: String): Boolean =
+        end - start == value.length && regionMatches(start, value, 0, value.length)
 
     private fun alphaTestOverrides(properties: Map<String, String>): Map<String, IrisAlphaTest> {
         return properties.asSequence()
@@ -1356,7 +1539,7 @@ object IrisShaderPackPlanner {
     }
 
     private fun terrainPrograms(programs: List<ShaderProgramSource>): List<ShaderProgramSource> {
-        val candidates = TerrainMaterialClass.entries
+        val candidates = NEAR_TERRAIN_MATERIALS
             .flatMap(IrisProgramFallbacks::terrain)
             .toSet()
         return programs.filter {
@@ -1830,6 +2013,7 @@ object IrisShaderPackPlanner {
             customImages = images,
             flipsAfter = flips,
             mipmapsBefore = mipmaps,
+            shadowComparisonSamplers = program.shadowSamplers.intersect(sampled.keys),
         )
     }
 
@@ -3343,6 +3527,7 @@ object IrisShaderPackPlanner {
     private const val MAX_PROPERTY_CONDITION_LENGTH = 4_096
     private const val MAX_PROPERTY_CONDITION_DEPTH = 64
     private const val MAX_CUSTOM_UNIFORMS = 512
+    private const val MAX_PROGRAM_UNIFORMS = 1_024
 }
 
 data class ShaderPackOption(

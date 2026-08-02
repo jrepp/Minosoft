@@ -590,6 +590,8 @@ class IrisShaderPackPlannerTest {
                 void main() { color = texture(depthtex0, vec2(0.0)); }
             """.trimIndent(),
         )
+        write(shaders, "shadow.vsh", SIMPLE_VERTEX)
+        write(shaders, "shadow.fsh", SIMPLE_FRAGMENT)
         write(shaders, "composite.vsh", SIMPLE_VERTEX)
         write(
             shaders,
@@ -602,8 +604,11 @@ class IrisShaderPackPlannerTest {
                 const vec4 colortex2ClearColor = vec4(0.1, 0.2, 0.3, 1.0);
                 const bool colortex0MipmapEnabled = true;
                 uniform sampler2D colortex0;
+                uniform sampler2DShadow shadowtex1;
                 out vec4 color;
-                void main() { color = texture(colortex0, vec2(0.0)); }
+                void main() {
+                    color = texture(colortex0, vec2(0.0)) + vec4(texture(shadowtex1, vec3(0.5)));
+                }
             """.trimIndent(),
         )
         write(
@@ -624,9 +629,13 @@ class IrisShaderPackPlannerTest {
             composite.resourceUsage.colorWrites,
         )
         assertEquals(
-            mapOf("colortex0" to ShaderBufferId(ShaderBufferKind.COLORTEX, 0)),
+            mapOf(
+                "colortex0" to ShaderBufferId(ShaderBufferKind.COLORTEX, 0),
+                "shadowtex1" to ShaderBufferId(ShaderBufferKind.SHADOWTEX, 1),
+            ),
             composite.resourceUsage.sampledBuffers,
         )
+        assertEquals(setOf("shadowtex1"), composite.resourceUsage.shadowComparisonSamplers)
         assertEquals(setOf(ShaderBufferId(ShaderBufferKind.COLORTEX, 2)), composite.resourceUsage.flipsAfter)
         assertEquals(
             setOf(ShaderBufferId(ShaderBufferKind.COLORTEX, 0)),
@@ -2088,6 +2097,68 @@ class IrisShaderPackPlannerTest {
     }
 
     @Test
+    fun `float directives use a bounded scan across large expanded stages`() {
+        val shaders = temporary.resolve("bounded-float-directives/shaders").createDirectories()
+        val expanded = buildString {
+            appendLine(SIMPLE_VERTEX)
+            repeat(12_000) { index ->
+                append("const float ignoredDirective")
+                append(index)
+                appendLine(" = 1.0;")
+            }
+            appendLine("const\nfloat\nwetnessHalflife\n=\n4.0f\n;")
+            appendLine("const float shadowDistance = 192.0;")
+        }
+        write(shaders, "gbuffers_terrain.vsh", expanded)
+        write(shaders, "gbuffers_terrain.fsh", SIMPLE_FRAGMENT)
+        write(shaders, "final.vsh", SIMPLE_VERTEX)
+        write(shaders, "final.fsh", SIMPLE_FRAGMENT)
+
+        val plan = IrisShaderPackPlanner.plan(temporary.resolve("bounded-float-directives"))
+
+        assertEquals(4.0f, plan.smoothingDirectives.wetnessHalfLife)
+        assertEquals(192.0f, plan.shadowDirectives.distance)
+
+        write(
+            shaders,
+            "gbuffers_terrain.vsh",
+            "$SIMPLE_VERTEX\nconst float shadowDistance = 1e999;",
+        )
+        val nonFinite = assertThrows<IllegalArgumentException> {
+            IrisShaderPackPlanner.plan(temporary.resolve("bounded-float-directives"))
+        }
+        assertContains(nonFinite.message.orEmpty(), "non-finite shadowDistance")
+    }
+
+    @Test
+    fun `uniform inspection stays bounded across large expanded programs`() {
+        val shaders = temporary.resolve("bounded-uniform-inspection/shaders").createDirectories()
+        write(shaders, "gbuffers_terrain.vsh", SIMPLE_VERTEX)
+        write(shaders, "gbuffers_terrain.fsh", SIMPLE_FRAGMENT)
+        write(shaders, "final.vsh", SIMPLE_VERTEX)
+        val fragment = buildString {
+            appendLine("#version 330 core")
+            appendLine("uniform highp sampler2D colortex0 [ 1 ];")
+            appendLine("uniform float viewWidth;")
+            appendLine("uniform float unusedValue;")
+            repeat(12_000) { index ->
+                append("float unrelatedIdentifier")
+                append(index)
+                appendLine(" = 0.0;")
+            }
+            appendLine("out vec4 color;")
+            appendLine("void main() { color = texture(colortex0, vec2(0.5)) + vec4(viewWidth * 0.0); }")
+        }
+        write(shaders, "final.fsh", fragment)
+
+        val final = IrisShaderPackPlanner.plan(temporary.resolve("bounded-uniform-inspection"))
+            .programs.single { it.name == "final" }
+
+        assertEquals(setOf("colortex0", "viewWidth"), final.uniforms)
+        assertEquals(setOf("colortex0"), final.samplers)
+    }
+
+    @Test
     fun `runtime contract rejects declared bindings the host does not upload`() {
         val shaders = temporary.resolve("bindings/shaders").createDirectories()
         write(
@@ -2121,6 +2192,49 @@ class IrisShaderPackPlannerTest {
         assertContains(failure.message.orEmpty(), "unsupportedMood")
         assertTrue("frameTimeCounter" !in failure.message.orEmpty())
         assertTrue("ignoredComment" !in failure.message.orEmpty())
+    }
+
+    @Test
+    fun `runtime contract accepts the distant region draw offset`() {
+        val shaders = temporary.resolve("distant-offset/shaders").createDirectories()
+        write(shaders, "gbuffers_terrain.vsh", SIMPLE_VERTEX)
+        write(shaders, "gbuffers_terrain.fsh", SIMPLE_FRAGMENT)
+        write(shaders, "final.vsh", SIMPLE_VERTEX)
+        write(shaders, "final.fsh", SIMPLE_FRAGMENT)
+        write(
+            shaders,
+            "dh_terrain.vsh",
+            """
+                #version 330 compatibility
+                varying vec4 color;
+                void main() {
+                    color = gl_Color;
+                    gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;
+                }
+            """.trimIndent(),
+        )
+        write(
+            shaders,
+            "dh_terrain.fsh",
+            """
+                #version 330 compatibility
+                varying vec4 color;
+                void main() { gl_FragData[0] = color; }
+            """.trimIndent(),
+        )
+
+        val plan = IrisShaderPackPlanner.plan(
+            temporary.resolve("distant-offset"),
+            preprocessorDefines = IrisShaderPackPlanner.standardEnvironmentDefines(
+                minecraftVersion = 12004,
+                perBufferBlending = true,
+                distantHorizons = true,
+            ),
+        )
+
+        val distant = plan.programs.single { it.name == "dh_terrain" }
+        assertContains(distant.uniforms, "uPageOffset")
+        IrisWorldShaderPipeline.validateProgramContract(plan)
     }
 
     @Test

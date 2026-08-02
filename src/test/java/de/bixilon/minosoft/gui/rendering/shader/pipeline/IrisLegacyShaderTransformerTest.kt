@@ -91,10 +91,12 @@ class IrisLegacyShaderTransformerTest {
 
         assertContains(
             transformed.vertex,
-            "// minosoft:scene_bridge DISTANT_TERRAIN DISTANT_TERRAIN uViewProjectionMatrix",
+            "// minosoft:scene_bridge DISTANT_TERRAIN DISTANT_TERRAIN uViewProjectionMatrix,uPageOffset",
         )
         assertContains(transformed.vertex, "layout (location = 3) in float vinNormalMaterial;")
         assertContains(transformed.vertex, "uniform mat4 dhProjection;")
+        assertContains(transformed.vertex, "uniform vec3 uPageOffset;")
+        assertContains(transformed.vertex, "vec4(vinPosition + uPageOffset, 1.0)")
         assertFalse("gl_Vertex" in transformed.vertex)
         assertFalse("dhMaterialId" in transformed.vertex)
         assertContains(transformed.vertex, "in vec4 at_tangent;")
@@ -398,6 +400,33 @@ class IrisLegacyShaderTransformerTest {
     }
 
     @Test
+    fun `legacy shadow lookup handles bounded nested pack expressions without prefix capture`() {
+        val nested = "(".repeat(16_384) + "vec3(0.5)" + ")".repeat(16_384)
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "composite1",
+            ShaderProgramPhase.COMPOSITE,
+            """
+                #version 130
+                void main() { gl_Position = ftransform(); }
+            """.trimIndent(),
+            """
+                #version 130
+                uniform sampler2DShadow shadowtex1;
+                void main() {
+                    float direct = shadow2D (shadowtex1, $nested).x;
+                    vec2 paired = shadow2D(shadowtex1, vec3(0.5)).xy;
+                    float untouched = my_shadow2D(shadowtex1, vec3(0.5)).x;
+                    gl_FragData[0] = vec4(direct + paired.x + untouched);
+                }
+            """.trimIndent(),
+        )
+
+        assertContains(transformed.fragment, "texture(shadowtex1, $nested);")
+        assertContains(transformed.fragment, "vec4(texture(shadowtex1, vec3(0.5))).xy")
+        assertContains(transformed.fragment, "my_shadow2D(shadowtex1, vec3(0.5)).x")
+    }
+
+    @Test
     fun `modern shadow terrain uses retained position without redeclaring pack matrices`() {
         val transformed = IrisLegacyShaderTransformer.transform(
             "shadow",
@@ -432,6 +461,8 @@ class IrisLegacyShaderTransformerTest {
         assertContains(transformed.vertex, "minosoft:scene_bridge SKELETAL SKELETAL_TINTED")
         assertContains(transformed.vertex, "defined(MINOSOFT_STATE_ABI_PLAYER)")
         assertContains(transformed.vertex, "minosoftFinishShadow")
+        assertContains(transformed.vertex, "out vec2 texCoord;")
+        assertContains(transformed.vertex, "texcoord = texCoord;")
     }
 
     @Test
@@ -569,6 +600,24 @@ class IrisLegacyShaderTransformerTest {
     }
 
     @Test
+    fun `modern weather preserves the pack flat light coordinate contract`() {
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "gbuffers_weather",
+            ShaderProgramPhase.WEATHER,
+            "#version 330 compatibility\nvoid main() { gl_Position = ftransform(); }",
+            """
+                #version 330 compatibility
+                flat in vec2 lmCoord;
+                in vec2 texCoord;
+                void main() { gl_FragData[0] = vec4(lmCoord, texCoord.x, 1.0); }
+            """.trimIndent(),
+        )
+
+        assertContains(transformed.vertex, "flat out vec2 lmCoord;")
+        assertContains(transformed.fragment, "flat in vec2 lmCoord;")
+    }
+
+    @Test
     fun `modern beacon programs expose the retained textured face basis`() {
         val transformed = IrisLegacyShaderTransformer.transform(
             "gbuffers_beaconbeam",
@@ -589,13 +638,13 @@ class IrisLegacyShaderTransformerTest {
         )
         assertContains(
             transformed.vertex,
-            "tangent = vec4(normalize((uMatrix * vec4(vinTangent.xyz, 0.0)).xyz), vinTangent.w);",
+            "tangent = normalize((uMatrix * vec4(vinTangent.xyz, 0.0)).xyz);",
         )
         assertContains(
             transformed.vertex,
-            "binormal = normalize(cross(normal, tangent.xyz)) * vinTangent.w;",
+            "binormal = normalize(cross(normal, tangent)) * vinTangent.w;",
         )
-        assertContains(transformed.vertex, "tbn = mat3(tangent.xyz, binormal, normal);")
+        assertContains(transformed.vertex, "tbn = mat3(tangent, binormal, normal);")
     }
 
     @Test
@@ -635,6 +684,7 @@ class IrisLegacyShaderTransformerTest {
             """
                 #version 330 compatibility
                 uniform sampler2D gtexture;
+                flat in vec3 binormal, tangent;
                 void main() { gl_FragData[0] = texture(gtexture, vec2(0.0)); }
             """.trimIndent(),
         )
@@ -656,7 +706,8 @@ class IrisLegacyShaderTransformerTest {
         assertContains(transformed.vertex, "signMidCoordPos = sign(midOffset)")
         assertContains(transformed.vertex, "uint(max(blockEntityId - 10000, 0))")
         assertContains(transformed.vertex, "minosoftBlockEntityLightMap[light]")
-        assertContains(transformed.vertex, "out vec4 tangent")
+        assertContains(transformed.vertex, "flat out vec3 tangent")
+        assertContains(transformed.fragment, "flat in vec3 binormal, tangent;")
         assertContains(transformed.vertex, "out vec3 viewVector")
         assertContains(transformed.vertex, "out vec4 vTexCoordAM")
         assertContains(
@@ -978,6 +1029,42 @@ class IrisLegacyShaderTransformerTest {
         assertFalse("ftransform" in transformed.vertex)
         assertFalse("gl_TextureMatrix" in transformed.vertex)
         assertFalse("gl_MultiTexCoord1" in transformed.vertex)
+    }
+
+    @Test
+    fun `modern fullscreen token rewrite stays bounded on large expanded stages`() {
+        val vertex = buildString {
+            appendLine("#version 330 core")
+            repeat(12_000) {
+                appendLine("// keep_gl_Vertex_suffix ftransformValue gl_TextureMatrixExtra varyingValue")
+            }
+            appendLine("varying vec4 color;")
+            appendLine("attribute vec4 legacyPosition;")
+            appendLine("void main() {")
+            appendLine("    color = gl_Color;")
+            appendLine("    vec4 coordinates = gl_Vertex + gl_MultiTexCoord0 + gl_MultiTexCoord1;")
+            appendLine("    gl_Position = gl_TextureMatrix [ 12 ] * ftransform ( );")
+            appendLine("}")
+        }
+
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "composite",
+            ShaderProgramPhase.COMPOSITE,
+            vertex,
+            "#version 330 core\nvoid main() {}",
+        ).vertex
+
+        assertContains(transformed, "keep_gl_Vertex_suffix")
+        assertContains(transformed, "ftransformValue")
+        assertContains(transformed, "gl_TextureMatrixExtra")
+        assertContains(transformed, "varyingValue")
+        assertContains(transformed, "out vec4 color;")
+        assertContains(transformed, "in vec4 legacyPosition;")
+        assertContains(transformed, "vec4(minosoftFullscreenPosition, 0.0, 1.0)")
+        assertContains(transformed, "vec4(minosoftFullscreenUv, 0.0, 1.0)")
+        assertContains(transformed, "mat4(1.0)")
+        assertFalse(Regex("""\bgl_Vertex\b""").containsMatchIn(transformed))
+        assertFalse(Regex("""\bftransform\s*\(""").containsMatchIn(transformed))
     }
 
     @Test

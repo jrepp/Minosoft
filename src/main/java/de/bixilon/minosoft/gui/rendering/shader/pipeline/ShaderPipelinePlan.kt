@@ -277,6 +277,7 @@ data class ShaderProgramResourceUsage(
     val customImages: Set<String> = emptySet(),
     val flipsAfter: Set<ShaderBufferId> = emptySet(),
     val mipmapsBefore: Set<ShaderBufferId> = emptySet(),
+    val shadowComparisonSamplers: Set<String> = emptySet(),
 ) {
     init {
         require(colorWrites.toSet().size == colorWrites.size) {
@@ -289,6 +290,9 @@ data class ShaderProgramResourceUsage(
             it.kind == ShaderBufferKind.COLORTEX || it.kind == ShaderBufferKind.SHADOWCOLOR
         }) {
             "Only color render targets can be bound as Iris images"
+        }
+        require(shadowComparisonSamplers.all(sampledBuffers::containsKey)) {
+            "Shadow-comparison samplers must refer to sampled Iris buffers"
         }
     }
 }
@@ -663,6 +667,7 @@ data class ShaderProgramSource(
     val geometry: String? = null,
     val uniforms: Set<String>,
     val samplers: Set<String>,
+    val shadowSamplers: Set<String> = emptySet(),
     val sceneBridges: Set<SceneProgramBridge> = emptySet(),
     val resourceUsage: ShaderProgramResourceUsage = ShaderProgramResourceUsage(),
     val alphaTest: IrisAlphaTest? = null,

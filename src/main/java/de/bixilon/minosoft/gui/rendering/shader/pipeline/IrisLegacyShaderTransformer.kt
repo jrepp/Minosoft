@@ -616,18 +616,23 @@ internal object IrisLegacyShaderTransformer {
                 ),
                 "",
             )
-            .replace(Regex("""\battribute\b"""), "in")
-            .replace(Regex("""\bvarying\b"""), "out")
-            .replace(Regex("""\bgl_Vertex\b"""), "vec4(vinPosition, 1.0)")
-            .replace(Regex("""\bgl_Color\b"""), "minosoftDhColor()")
-            .replace(Regex("""\bgl_NormalMatrix\b"""), "mat3($modelView)")
-            .replace(Regex("""\bgl_Normal\b"""), "minosoftDhNormal()")
-            .replace(Regex("""\bgl_ModelViewMatrix\b"""), modelView)
-            .replace(Regex("""\bgl_ProjectionMatrix\b"""), projection)
-            .replace(Regex("""gl_TextureMatrix\s*\[\s*\d+\s*]"""), "mat4(1.0)")
-            .replace(Regex("""\bgl_MultiTexCoord0\b"""), "vec4(0.0, 0.0, 0.0, 1.0)")
-            .replace(Regex("""\bgl_MultiTexCoord1\b"""), "vec4(minosoftDhLight(), 0.0, 1.0)")
-            .replace(Regex("""\bdhMaterialId\b"""), "minosoftDhMaterialId()")
+        transformedVertex = transformShaderTokens(
+            source = transformedVertex,
+            replacements = mapOf(
+                "attribute" to "in",
+                "varying" to "out",
+                "gl_Vertex" to "vec4(vinPosition + uPageOffset, 1.0)",
+                "gl_Color" to "minosoftDhColor()",
+                "gl_NormalMatrix" to "mat3($modelView)",
+                "gl_Normal" to "minosoftDhNormal()",
+                "gl_ModelViewMatrix" to modelView,
+                "gl_ProjectionMatrix" to projection,
+                "gl_MultiTexCoord0" to "vec4(0.0, 0.0, 0.0, 1.0)",
+                "gl_MultiTexCoord1" to "vec4(minosoftDhLight(), 0.0, 1.0)",
+                "dhMaterialId" to "minosoftDhMaterialId()",
+            ),
+            indexedArrayReplacements = mapOf("gl_TextureMatrix" to "mat4(1.0)"),
+        )
         transformedVertex = renameMain(transformedVertex, "minosoftDhPackMain")
         transformedVertex = insertAfterVersion(
             transformedVertex,
@@ -925,15 +930,7 @@ internal object IrisLegacyShaderTransformer {
     }
 
     private fun transformModernFullscreenVertex(source: String): String {
-        var transformed = core(source)
-            .replace(Regex("""\bvarying\b"""), "out")
-            .replace(Regex("""\battribute\b"""), "in")
-            .replace(Regex("""\bftransform\s*\(\s*\)"""), "vec4(minosoftFullscreenPosition, 0.0, 1.0)")
-            .replace(Regex("""\bgl_Vertex\b"""), "vec4(minosoftFullscreenPosition, 0.0, 1.0)")
-            .replace(Regex("""\bgl_MultiTexCoord0\b"""), "vec4(minosoftFullscreenUv, 0.0, 1.0)")
-            .replace(Regex("""\bgl_MultiTexCoord1\b"""), "vec4(1.0)")
-            .replace(Regex("""gl_TextureMatrix\s*\[\s*\d+\s*]"""), "mat4(1.0)")
-            .replace(Regex("""\bgl_Color\b"""), "vec4(1.0)")
+        var transformed = transformModernFullscreenTokens(core(source))
         transformed = insertAfterVersion(
             transformed,
             """
@@ -943,6 +940,105 @@ internal object IrisLegacyShaderTransformer {
             """.trimIndent(),
         )
         return ensureCoreFogUniforms(initializeFullscreenOutputs(transformed))
+    }
+
+    /**
+     * Rewrites the fixed-function fullscreen vocabulary in one bounded pass.
+     * Expanded community-pack stages can be close to the source-size limit;
+     * applying a separate global regular expression for every token made the
+     * first render frame scale with the token catalog rather than source size.
+     */
+    private fun transformModernFullscreenTokens(source: String): String {
+        return transformShaderTokens(
+            source = source,
+            replacements = mapOf(
+                "varying" to "out",
+                "attribute" to "in",
+                "gl_Vertex" to "vec4(minosoftFullscreenPosition, 0.0, 1.0)",
+                "gl_MultiTexCoord0" to "vec4(minosoftFullscreenUv, 0.0, 1.0)",
+                "gl_MultiTexCoord1" to "vec4(1.0)",
+                "gl_Color" to "vec4(1.0)",
+            ),
+            emptyCallReplacements = mapOf(
+                "ftransform" to "vec4(minosoftFullscreenPosition, 0.0, 1.0)",
+            ),
+            indexedArrayReplacements = mapOf("gl_TextureMatrix" to "mat4(1.0)"),
+        )
+    }
+
+    private fun transformShaderTokens(
+        source: String,
+        replacements: Map<String, String>,
+        emptyCallReplacements: Map<String, String> = emptyMap(),
+        indexedArrayReplacements: Map<String, String> = emptyMap(),
+    ): String {
+        val replacementsByLength = replacements.keys.groupBy(String::length)
+        val emptyCallsByLength = emptyCallReplacements.keys.groupBy(String::length)
+        val indexedArraysByLength = indexedArrayReplacements.keys.groupBy(String::length)
+        val output = StringBuilder(source.length)
+        var cursor = 0
+        while (cursor < source.length) {
+            if (!source[cursor].isShaderIdentifierStart()) {
+                output.append(source[cursor++])
+                continue
+            }
+
+            val start = cursor++
+            while (cursor < source.length && source[cursor].isShaderIdentifierPart()) cursor++
+            val end = cursor
+            val tokenLength = end - start
+            val replacementName = replacementsByLength[tokenLength]?.firstOrNull { candidate ->
+                source.regionMatches(start, candidate, 0, candidate.length)
+            }
+            if (replacementName != null) {
+                output.append(replacements.getValue(replacementName))
+                continue
+            }
+
+            val emptyCallName = emptyCallsByLength[tokenLength]?.firstOrNull { candidate ->
+                source.regionMatches(start, candidate, 0, candidate.length)
+            }
+            if (emptyCallName != null) {
+                var suffix = source.skipShaderWhitespace(end)
+                if (suffix < source.length && source[suffix] == '(') {
+                    suffix = source.skipShaderWhitespace(suffix + 1)
+                    if (suffix < source.length && source[suffix] == ')') {
+                        output.append(emptyCallReplacements.getValue(emptyCallName))
+                        cursor = suffix + 1
+                        continue
+                    }
+                }
+            }
+
+            val indexedArrayName = indexedArraysByLength[tokenLength]?.firstOrNull { candidate ->
+                source.regionMatches(start, candidate, 0, candidate.length)
+            }
+            if (indexedArrayName != null) {
+                var suffix = source.skipShaderWhitespace(end)
+                if (suffix < source.length && source[suffix] == '[') {
+                    suffix = source.skipShaderWhitespace(suffix + 1)
+                    val digitsStart = suffix
+                    while (suffix < source.length && source[suffix] in '0'..'9') suffix++
+                    if (suffix > digitsStart) {
+                        suffix = source.skipShaderWhitespace(suffix)
+                        if (suffix < source.length && source[suffix] == ']') {
+                            output.append(indexedArrayReplacements.getValue(indexedArrayName))
+                            cursor = suffix + 1
+                            continue
+                        }
+                    }
+                }
+            }
+
+            output.append(source, start, end)
+        }
+        return output.toString()
+    }
+
+    private fun String.skipShaderWhitespace(start: Int): Int {
+        var cursor = start
+        while (cursor < length && this[cursor].isWhitespace()) cursor++
+        return cursor
     }
 
     private fun transformModernFullscreenFragment(source: String): String =
@@ -1291,15 +1387,20 @@ internal object IrisLegacyShaderTransformer {
         grad: String,
         fetch: String,
         size: String,
-    ): String = source
-        .replace(Regex("""\btexture2DLod\s*\(\s*(?:gtexture|tex|texture)\s*,"""), "$lod(")
-        .replace(Regex("""\btextureLod\s*\(\s*(?:gtexture|tex|texture)\s*,"""), "$lod(")
-        .replace(Regex("""\btexture2DGradARB\s*\(\s*(?:gtexture|tex|texture)\s*,"""), "$grad(")
-        .replace(Regex("""\btextureGrad\s*\(\s*(?:gtexture|tex|texture)\s*,"""), "$grad(")
-        .replace(Regex("""\btexture2D\s*\(\s*(?:gtexture|tex|texture)\s*,"""), "$sample(")
-        .replace(Regex("""\btexture\s*\(\s*(?:gtexture|tex|texture)\s*,"""), "$sample(")
-        .replace(Regex("""\btexelFetch\s*\(\s*(?:gtexture|tex|texture)\s*,"""), "$fetch(")
-        .replace(Regex("""\btextureSize\s*\(\s*(?:gtexture|tex|texture)\s*,"""), "$size(")
+    ): String = transformTextureCalls(
+        source = source,
+        samplers = setOf("gtexture", "tex", "texture"),
+        functions = mapOf(
+            "texture2DLod" to lod,
+            "textureLod" to lod,
+            "texture2DGradARB" to grad,
+            "textureGrad" to grad,
+            "texture2D" to sample,
+            "texture" to sample,
+            "texelFetch" to fetch,
+            "textureSize" to size,
+        ),
+    )
 
     private fun transformMaterialCompanions(source: String, scene: Boolean = false): String {
         val prefix = if (scene) "minosoftSampleScene" else "minosoftSample"
@@ -1307,16 +1408,21 @@ internal object IrisLegacyShaderTransformer {
             .let { transformMaterialSampler(it, "specular", "${prefix}Specular") }
     }
 
-    private fun transformMaterialSampler(source: String, sampler: String, function: String): String = source
-        .replace(if (sampler == "normals") MODERN_NORMAL_SAMPLER else MODERN_SPECULAR_SAMPLER, "")
-        .replace(Regex("""\btexture2DLod\s*\(\s*$sampler\s*,"""), "${function}Lod(")
-        .replace(Regex("""\btextureLod\s*\(\s*$sampler\s*,"""), "${function}Lod(")
-        .replace(Regex("""\btexture2DGradARB\s*\(\s*$sampler\s*,"""), "${function}Grad(")
-        .replace(Regex("""\btextureGrad\s*\(\s*$sampler\s*,"""), "${function}Grad(")
-        .replace(Regex("""\btexture2D\s*\(\s*$sampler\s*,"""), "$function(")
-        .replace(Regex("""\btexture\s*\(\s*$sampler\s*,"""), "$function(")
-        .replace(Regex("""\btexelFetch\s*\(\s*$sampler\s*,"""), "${function}Fetch(")
-        .replace(Regex("""\btextureSize\s*\(\s*$sampler\s*,"""), "${function}Size(")
+    private fun transformMaterialSampler(source: String, sampler: String, function: String): String =
+        transformTextureCalls(
+            source = removeSamplerDeclaration(source, sampler),
+            samplers = setOf(sampler),
+            functions = mapOf(
+                "texture2DLod" to "${function}Lod",
+                "textureLod" to "${function}Lod",
+                "texture2DGradARB" to "${function}Grad",
+                "textureGrad" to "${function}Grad",
+                "texture2D" to function,
+                "texture" to function,
+                "texelFetch" to "${function}Fetch",
+                "textureSize" to "${function}Size",
+            ),
+        )
 
     private fun transformNeutralMaterial(source: String): String =
         transformNeutralSampler(source, "normals", "minosoftNeutralNormal")
@@ -1332,16 +1438,113 @@ internal object IrisLegacyShaderTransformer {
             "minosoftNeutralDiffuseSize",
         )
 
-    private fun transformNeutralSampler(source: String, sampler: String, function: String): String = source
-        .replace(if (sampler == "normals") MODERN_NORMAL_SAMPLER else MODERN_SPECULAR_SAMPLER, "")
-        .replace(Regex("""\btexture2DLod\s*\(\s*$sampler\s*,"""), "$function(")
-        .replace(Regex("""\btextureLod\s*\(\s*$sampler\s*,"""), "$function(")
-        .replace(Regex("""\btexture2DGradARB\s*\(\s*$sampler\s*,"""), "$function(")
-        .replace(Regex("""\btextureGrad\s*\(\s*$sampler\s*,"""), "$function(")
-        .replace(Regex("""\btexture2D\s*\(\s*$sampler\s*,"""), "$function(")
-        .replace(Regex("""\btexture\s*\(\s*$sampler\s*,"""), "$function(")
-        .replace(Regex("""\btexelFetch\s*\(\s*$sampler\s*,"""), "$function(")
-        .replace(Regex("""\btextureSize\s*\(\s*$sampler\s*,"""), "${function}Size(")
+    private fun transformNeutralSampler(source: String, sampler: String, function: String): String =
+        transformTextureCalls(
+            source = removeSamplerDeclaration(source, sampler),
+            samplers = setOf(sampler),
+            functions = mapOf(
+                "texture2DLod" to function,
+                "textureLod" to function,
+                "texture2DGradARB" to function,
+                "textureGrad" to function,
+                "texture2D" to function,
+                "texture" to function,
+                "texelFetch" to function,
+                "textureSize" to "${function}Size",
+            ),
+        )
+
+    private fun transformTextureCalls(
+        source: String,
+        samplers: Set<String>,
+        functions: Map<String, String>,
+    ): String {
+        val functionsByLength = functions.keys.groupBy(String::length)
+        val samplersByLength = samplers.groupBy(String::length)
+        val output = StringBuilder(source.length)
+        var cursor = 0
+        while (cursor < source.length) {
+            if (!source[cursor].isShaderIdentifierStart()) {
+                output.append(source[cursor++])
+                continue
+            }
+            val functionStart = cursor++
+            while (cursor < source.length && source[cursor].isShaderIdentifierPart()) cursor++
+            val functionEnd = cursor
+            val functionName = functionsByLength[functionEnd - functionStart]?.firstOrNull { candidate ->
+                source.regionMatches(functionStart, candidate, 0, candidate.length)
+            }
+            if (functionName == null) {
+                output.append(source, functionStart, functionEnd)
+                continue
+            }
+
+            var suffix = source.skipShaderWhitespace(functionEnd)
+            if (suffix >= source.length || source[suffix] != '(') {
+                output.append(source, functionStart, functionEnd)
+                continue
+            }
+            suffix = source.skipShaderWhitespace(suffix + 1)
+            if (suffix >= source.length || !source[suffix].isShaderIdentifierStart()) {
+                output.append(source, functionStart, functionEnd)
+                continue
+            }
+            val samplerStart = suffix++
+            while (suffix < source.length && source[suffix].isShaderIdentifierPart()) suffix++
+            val samplerName = samplersByLength[suffix - samplerStart]?.firstOrNull { candidate ->
+                source.regionMatches(samplerStart, candidate, 0, candidate.length)
+            }
+            if (samplerName == null) {
+                output.append(source, functionStart, functionEnd)
+                continue
+            }
+            suffix = source.skipShaderWhitespace(suffix)
+            if (suffix >= source.length || source[suffix] != ',') {
+                output.append(source, functionStart, functionEnd)
+                continue
+            }
+            output.append(functions.getValue(functionName)).append('(')
+            cursor = suffix + 1
+        }
+        return output.toString()
+    }
+
+    private fun removeSamplerDeclaration(source: String, sampler: String): String {
+        val output = StringBuilder(source.length)
+        var lineStart = 0
+        while (lineStart < source.length) {
+            val newline = source.indexOf('\n', lineStart).let { if (it < 0) source.length else it }
+            val contentEnd = if (newline > lineStart && source[newline - 1] == '\r') newline - 1 else newline
+            if (!source.isSamplerDeclarationLine(lineStart, contentEnd, sampler)) {
+                output.append(source, lineStart, newline)
+            }
+            if (newline < source.length) output.append('\n')
+            lineStart = newline + 1
+        }
+        return output.toString()
+    }
+
+    private fun String.isSamplerDeclarationLine(start: Int, end: Int, sampler: String): Boolean {
+        var cursor = start
+        while (cursor < end && this[cursor].isWhitespace()) cursor++
+        val uniformEnd = cursor + "uniform".length
+        if (uniformEnd > end || !regionMatches(cursor, "uniform", 0, "uniform".length)) return false
+        cursor = uniformEnd
+        if (cursor >= end || !this[cursor].isWhitespace()) return false
+        while (cursor < end && this[cursor].isWhitespace()) cursor++
+        val typeEnd = cursor + "sampler2D".length
+        if (typeEnd > end || !regionMatches(cursor, "sampler2D", 0, "sampler2D".length)) return false
+        cursor = typeEnd
+        if (cursor >= end || !this[cursor].isWhitespace()) return false
+        while (cursor < end && this[cursor].isWhitespace()) cursor++
+        val samplerEnd = cursor + sampler.length
+        if (samplerEnd > end || !regionMatches(cursor, sampler, 0, sampler.length)) return false
+        cursor = samplerEnd
+        while (cursor < end && this[cursor].isWhitespace()) cursor++
+        if (cursor >= end || this[cursor++] != ';') return false
+        while (cursor < end && this[cursor].isWhitespace()) cursor++
+        return cursor == end
+    }
 
     private fun transformModernSkyBasicVertex(source: String): String {
         var transformed = core(source)
@@ -1366,18 +1569,10 @@ internal object IrisLegacyShaderTransformer {
     }
 
     private fun core(source: String): String =
-        VERSION.replaceFirst(source, "#version 330 core")
-            .replace(
-                Regex("""\bshadow2D\s*\(([^\r\n;]+)\)\s*\.x"""),
-                "texture($1)",
-            )
+        transformLegacyShadowLookups(VERSION.replaceFirst(source, "#version 330 core"))
             // GLSL 1.20 shadow2D returns a vec4, while core texture on a
             // sampler2DShadow returns a float. Preserve legacy component
             // swizzles such as shadow2D(...).z after moving to GLSL 330.
-            .replace(
-                Regex("""\bshadow2D\s*\(([^\r\n;]+)\)"""),
-                "vec4(texture($1))",
-            )
             .replace(Regex("""\btexture2DLod\s*\("""), "textureLod(")
             .replace(Regex("""\btexture2DGradARB\s*\("""), "textureGrad(")
             .replace(Regex("""\btexture2D\s*\("""), "texture(")
@@ -1389,6 +1584,80 @@ internal object IrisLegacyShaderTransformer {
                 "(1.0 / max(fogEnd - fogStart, 0.00001))",
             )
             .replace(Regex("""gl_Fog\s*\.\s*color"""), "iris_FogColor")
+
+    /**
+     * Rewrites legacy shadow calls without applying a backtracking expression
+     * to pack-controlled source. Calls are deliberately kept on one statement,
+     * matching the former transform, while balanced nested arguments are
+     * consumed in one forward pass.
+     */
+    private fun transformLegacyShadowLookups(source: String): String {
+        val function = "shadow2D"
+        var searchFrom = 0
+        var copyFrom = 0
+        var transformed: StringBuilder? = null
+
+        while (searchFrom < source.length) {
+            val start = source.indexOf(function, searchFrom)
+            if (start < 0) break
+            val nameEnd = start + function.length
+            if ((start > 0 && source[start - 1].isShaderIdentifierPart()) ||
+                (nameEnd < source.length && source[nameEnd].isShaderIdentifierPart())
+            ) {
+                searchFrom = nameEnd
+                continue
+            }
+
+            var open = nameEnd
+            while (open < source.length && source[open].isWhitespace()) open++
+            if (open >= source.length || source[open] != '(') {
+                searchFrom = nameEnd
+                continue
+            }
+
+            var cursor = open + 1
+            var depth = 1
+            while (cursor < source.length && depth > 0) {
+                when (source[cursor]) {
+                    '\r', '\n', ';' -> break
+                    '(' -> depth++
+                    ')' -> depth--
+                }
+                cursor++
+            }
+            if (depth != 0) {
+                if (cursor >= source.length) break
+                searchFrom = cursor + 1
+                continue
+            }
+
+            val close = cursor - 1
+            var suffix = cursor
+            while (suffix < source.length && source[suffix].isWhitespace()) suffix++
+            val directScalar = suffix + 2 <= source.length &&
+                source[suffix] == '.' && source[suffix + 1] == 'x' &&
+                (suffix + 2 == source.length || !source[suffix + 2].isShaderIdentifierPart())
+            val consumedEnd = if (directScalar) suffix + 2 else cursor
+
+            val output = transformed ?: StringBuilder(source.length).also { transformed = it }
+            output.append(source, copyFrom, start)
+            if (directScalar) {
+                output.append("texture(")
+            } else {
+                output.append("vec4(texture(")
+            }
+            output.append(source, open + 1, close)
+            output.append(if (directScalar) ')' else "))")
+            copyFrom = consumedEnd
+            searchFrom = consumedEnd
+        }
+
+        return transformed?.append(source, copyFrom, source.length)?.toString() ?: source
+    }
+
+    private fun Char.isShaderIdentifierStart(): Boolean = this == '_' || isLetter()
+
+    private fun Char.isShaderIdentifierPart(): Boolean = isShaderIdentifierStart() || isDigit()
 
     private fun tessellationBridge(vertex: String, fragment: String): List<TessellationVarying> =
         HOST_TESSELLATION_VARYING.findAll(vertex).mapNotNull { match ->
@@ -1982,12 +2251,13 @@ internal object IrisLegacyShaderTransformer {
     }.trimEnd()
 
     private val DISTANT_TERRAIN_VERTEX_HEADER = """
-        // minosoft:scene_bridge DISTANT_TERRAIN DISTANT_TERRAIN uViewProjectionMatrix
+        // minosoft:scene_bridge DISTANT_TERRAIN DISTANT_TERRAIN uViewProjectionMatrix,uPageOffset
         layout (location = 0) in vec3 vinPosition;
         layout (location = 1) in float vinTintColor;
         layout (location = 2) in float vinLight;
         layout (location = 3) in float vinNormalMaterial;
         uniform mat4 uViewProjectionMatrix;
+        uniform vec3 uPageOffset;
         out vec4 minosoftDhVertexColor;
 
         uint minosoftDhNormalMaterial() {
@@ -2035,7 +2305,7 @@ internal object IrisLegacyShaderTransformer {
         out vec2 texCoord;
         out vec4 lmtexcoord;
         out vec4 color;
-        out vec2 lmCoord;
+        flat out vec2 lmCoord;
         out float lPos;
         out vec4 tint;
         flat out vec4 glColor;
@@ -2140,7 +2410,7 @@ internal object IrisLegacyShaderTransformer {
         flat out uint material_mask;
         flat out mat3 tbn;
         flat out vec3 binormal;
-        out vec4 tangent;
+        flat out vec3 tangent;
         out vec3 viewVector;
         out vec4 vTexCoordAM;
         flat out vec3 upVec;
@@ -2174,9 +2444,9 @@ internal object IrisLegacyShaderTransformer {
             absMidCoordPos = abs(offset);
         }
         void minosoftPrepareEntityPbr(vec3 position, vec3 surfaceNormal, vec4 surfaceTangent) {
-            tangent = vec4(normalize(surfaceTangent.xyz), surfaceTangent.w);
-            binormal = normalize(cross(surfaceNormal, tangent.xyz)) * surfaceTangent.w;
-            tbn = mat3(tangent.xyz, binormal, surfaceNormal);
+            tangent = normalize(surfaceTangent.xyz);
+            binormal = normalize(cross(surfaceNormal, tangent)) * surfaceTangent.w;
+            tbn = mat3(tangent, binormal, surfaceNormal);
             mat3 worldToTangent = mat3(
                 tangent.x, binormal.x, surfaceNormal.x,
                 tangent.y, binormal.y, surfaceNormal.y,
@@ -2518,7 +2788,7 @@ internal object IrisLegacyShaderTransformer {
         flat out uint material_mask;
         flat out mat3 tbn;
         flat out vec3 binormal;
-        out vec4 tangent;
+        flat out vec3 tangent;
         out vec3 viewVector;
         out vec4 vTexCoordAM;
         flat out vec3 upVec;
@@ -2548,9 +2818,9 @@ internal object IrisLegacyShaderTransformer {
         #include "minosoft:skeletal/buffer"
         #include "minosoft:skeletal/shade"
         void minosoftPrepareBlockPbr(vec3 position, vec3 surfaceNormal, vec4 surfaceTangent) {
-            tangent = vec4(normalize(surfaceTangent.xyz), surfaceTangent.w);
-            binormal = normalize(cross(surfaceNormal, tangent.xyz)) * surfaceTangent.w;
-            tbn = mat3(tangent.xyz, binormal, surfaceNormal);
+            tangent = normalize(surfaceTangent.xyz);
+            binormal = normalize(cross(surfaceNormal, tangent)) * surfaceTangent.w;
+            tbn = mat3(tangent, binormal, surfaceNormal);
             mat3 worldToTangent = mat3(
                 tangent.x, binormal.x, surfaceNormal.x,
                 tangent.y, binormal.y, surfaceNormal.y,
@@ -2638,7 +2908,7 @@ internal object IrisLegacyShaderTransformer {
         flat out uint material_mask;
         flat out mat3 tbn;
         flat out vec3 binormal;
-        out vec4 tangent;
+        flat out vec3 tangent;
         out vec3 viewVector;
         out vec4 vTexCoordAM;
         flat out vec3 upVec;
@@ -2674,9 +2944,9 @@ internal object IrisLegacyShaderTransformer {
             ) / 255.0;
         }
         void minosoftPrepareBlockPbr(vec3 position, vec3 surfaceNormal, vec4 surfaceTangent) {
-            tangent = vec4(normalize(surfaceTangent.xyz), surfaceTangent.w);
-            binormal = normalize(cross(surfaceNormal, tangent.xyz)) * surfaceTangent.w;
-            tbn = mat3(tangent.xyz, binormal, surfaceNormal);
+            tangent = normalize(surfaceTangent.xyz);
+            binormal = normalize(cross(surfaceNormal, tangent)) * surfaceTangent.w;
+            tbn = mat3(tangent, binormal, surfaceNormal);
             mat3 worldToTangent = mat3(
                 tangent.x, binormal.x, surfaceNormal.x,
                 tangent.y, binormal.y, surfaceNormal.y,
@@ -2759,7 +3029,7 @@ internal object IrisLegacyShaderTransformer {
         flat out uint material_mask;
         flat out mat3 tbn;
         flat out vec3 binormal;
-        out vec4 tangent;
+        flat out vec3 tangent;
         flat out vec3 upVec;
         flat out vec3 sunVec;
         out vec2 light_levels;
@@ -2782,8 +3052,8 @@ internal object IrisLegacyShaderTransformer {
         void main() {
             vec4 position = uMatrix * vec4(vinPosition, 1.0);
             normal = normalize((uMatrix * vec4(vinNormal, 0.0)).xyz);
-            tangent = vec4(normalize((uMatrix * vec4(vinTangent.xyz, 0.0)).xyz), vinTangent.w);
-            binormal = normalize(cross(normal, tangent.xyz)) * vinTangent.w;
+            tangent = normalize((uMatrix * vec4(vinTangent.xyz, 0.0)).xyz);
+            binormal = normalize(cross(normal, tangent)) * vinTangent.w;
             uint textureBits = floatBitsToUint(vinTexture);
             minosoftSceneTextureArray = textureBits >> 28u;
             minosoftSceneTextureLayer = float((textureBits >> 12u) & 0xFFFFu);
@@ -2799,7 +3069,7 @@ internal object IrisLegacyShaderTransformer {
             exposure = texelFetch(colortex4, ivec2(10, 37), 0).r;
             glColor = tint;
             material_mask = 32u;
-            tbn = mat3(tangent.xyz, binormal, normal);
+            tbn = mat3(tangent, binormal, normal);
             upVec = normalize(gbufferModelView[1].xyz);
             sunVec = normalize(sunPosition);
             light_levels = vec2(1.0);
@@ -2826,7 +3096,7 @@ internal object IrisLegacyShaderTransformer {
         flat out uint material_mask;
         flat out mat3 tbn;
         flat out vec3 binormal;
-        out vec4 tangent;
+        flat out vec3 tangent;
         out vec3 viewVector;
         out vec4 vTexCoordAM;
         flat out vec3 upVec;
@@ -2856,9 +3126,9 @@ internal object IrisLegacyShaderTransformer {
             absMidCoordPos = abs(offset);
         }
         void minosoftPrepareHandPbr(vec3 position, vec3 surfaceNormal, vec4 surfaceTangent) {
-            tangent = vec4(normalize(surfaceTangent.xyz), surfaceTangent.w);
-            binormal = normalize(cross(surfaceNormal, tangent.xyz)) * surfaceTangent.w;
-            tbn = mat3(tangent.xyz, binormal, surfaceNormal);
+            tangent = normalize(surfaceTangent.xyz);
+            binormal = normalize(cross(surfaceNormal, tangent)) * surfaceTangent.w;
+            tbn = mat3(tangent, binormal, surfaceNormal);
             mat3 worldToTangent = mat3(
                 tangent.x, binormal.x, surfaceNormal.x,
                 tangent.y, binormal.y, surfaceNormal.y,
@@ -3570,6 +3840,7 @@ internal object IrisLegacyShaderTransformer {
             // minosoft:scene_bridge POSITION_TEXTURE ENTITY_FLAME uTextures,uMatrix
 
             flat out int mat;
+            out vec2 texCoord;
             out vec2 texcoord;
             flat out vec3 sunVec;
             flat out vec3 upVec;
@@ -3603,7 +3874,8 @@ internal object IrisLegacyShaderTransformer {
                 minosoftTextureArray = packedTexture >> 28u;
                 minosoftTextureLayer = float((packedTexture >> 12u) & 0xFFFFu);
                 position = worldPosition;
-                texcoord = minosoftMaterialLogicalUv(uv, minosoftTextureArray);
+                texCoord = minosoftMaterialLogicalUv(uv, minosoftTextureArray);
+                texcoord = texCoord;
                 glColor = vec4(1.0);
                 color = glColor;
                 mat = minosoftShadowMaterial();
