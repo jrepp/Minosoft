@@ -17,6 +17,7 @@ import de.bixilon.minosoft.protocol.packets.c2s.handshake.HandshakeC2SP
 import de.bixilon.minosoft.protocol.packets.registry.DefaultPackets
 import de.bixilon.minosoft.protocol.packets.s2c.login.SuccessS2CP
 import org.testng.Assert.assertEquals
+import org.testng.Assert.assertFalse
 import org.testng.annotations.Test
 
 @Test(groups = ["packet"])
@@ -32,5 +33,12 @@ class DefaultPacketMappingTest {
         val type = DefaultPackets[PacketDirections.SERVER_TO_CLIENT][ProtocolStates.LOGIN]!![SuccessS2CP::class]
         val id = DefaultPacketMapping.S2C_PACKET_MAPPING[ProtocolStates.LOGIN, type]
         assertEquals(id, 0x02)
+    }
+
+    fun `play liveness replies bypass the shared packet worker pool`() {
+        val registry = DefaultPackets[PacketDirections.SERVER_TO_CLIENT][ProtocolStates.PLAY]!!
+
+        assertFalse(registry["heartbeat"]!!.threadSafe)
+        assertFalse(registry["ping"]!!.threadSafe)
     }
 }
