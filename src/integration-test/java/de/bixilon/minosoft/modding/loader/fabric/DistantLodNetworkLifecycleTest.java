@@ -24,23 +24,48 @@ import de.bixilon.minosoft.terrain.distant.DistantSourceCompleteness;
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantVerticalColumn;
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantVerticalPage;
 import de.bixilon.minosoft.terrain.distant.network.DistantProtocolWorld;
+import de.bixilon.minosoft.terrain.distant.network.DistantRequestedPage;
 import de.bixilon.minosoft.terrain.distant.network.DistantResponseRejection;
 import de.bixilon.minosoft.terrain.distant.network.DistantTerrainMessageV2;
 import de.bixilon.minosoft.terrain.distant.network.DistantTerrainProtocolV2;
 import kotlin.Unit;
+import kotlin.jvm.functions.Function0;
 import org.testng.annotations.Test;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
 public final class DistantLodNetworkLifecycleTest {
     @Test
     public void v2HelloBeforePlayableWorldJoinSurvivesStateReplacement() {
         final PlaySession session = session();
-        final DistantHorizonsLodController controller = new DistantHorizonsLodController();
+        final List<Function0<Unit>> scheduled = new ArrayList<>();
+        final DistantHorizonsLodController controller = new DistantHorizonsLodController(
+            DistantHorizonsOptions.Companion.inMemory(),
+            null,
+            task -> {
+                task.invoke();
+                return Unit.INSTANCE;
+            },
+            task -> {
+                scheduled.add(task);
+                return Unit.INSTANCE;
+            }
+        );
         try {
             final DistantTerrainMessageV2.Hello hello = new DistantTerrainMessageV2.Hello(
                 world(session, 7L),
@@ -53,6 +78,7 @@ public final class DistantLodNetworkLifecycleTest {
                 DistantLodProtocol.INSTANCE.getCHANNEL(),
                 DistantTerrainProtocolV2.INSTANCE.encode(hello)
             ));
+            assertEquals(scheduled.size(), 1);
 
             controller.onWorldJoined(new FabricWorldEventContext(
                 session,
@@ -61,12 +87,114 @@ public final class DistantLodNetworkLifecycleTest {
                 FabricWorldChangeCause.INITIALIZE,
                 1L
             ));
+            scheduled.getFirst().invoke();
 
             final DistantLodNetworkClient.Inspection inspection =
                 controller.networkInspection$de_bixilon_minosoft_minosoft(session);
             assertEquals(inspection.getProtocolVersion(), 2);
             assertEquals(inspection.getServerMaximumPages(), 32);
             assertEquals(inspection.getServerMaximumRadius(), 256);
+        } finally {
+            controller.close();
+        }
+    }
+
+    @Test
+    public void persistenceHydrationIsDispatchedAwayFromWorldJoin() throws Exception {
+        final PlaySession session = session();
+        final Path persistenceRoot = Files.createTempDirectory("minosoft-dh-hydration-");
+        final List<Function0<Unit>> scheduled = new ArrayList<>();
+        final DistantHorizonsLodController controller = new DistantHorizonsLodController(
+            DistantHorizonsOptions.Companion.inMemory(),
+            persistenceRoot,
+            task -> {
+                scheduled.add(task);
+                return Unit.INSTANCE;
+            },
+            task -> {
+                task.invoke();
+                return Unit.INSTANCE;
+            }
+        );
+        try {
+            controller.onWorldJoined(new FabricWorldEventContext(
+                session,
+                null,
+                new FabricWorldIdentity(session.getWorld().getDimension(), session.getWorld().getName()),
+                FabricWorldChangeCause.INITIALIZE,
+                1L
+            ));
+
+            assertEquals(scheduled.size(), 1);
+            assertNull(controller.storeInspection$de_bixilon_minosoft_minosoft(session));
+
+            scheduled.getFirst().invoke();
+
+            assertNotNull(controller.storeInspection$de_bixilon_minosoft_minosoft(session));
+        } finally {
+            controller.close();
+            try (var paths = Files.walk(persistenceRoot)) {
+                paths.sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+            }
+        }
+    }
+
+    @Test(timeOut = 5_000)
+    public void networkPayloadEntryDoesNotAcquireTheSessionStateMonitor() throws Exception {
+        final PlaySession session = session();
+        final DistantHorizonsLodController controller = new DistantHorizonsLodController(
+            DistantHorizonsOptions.Companion.inMemory(),
+            null,
+            task -> {
+                task.invoke();
+                return Unit.INSTANCE;
+            },
+            task -> {
+                task.invoke();
+                return Unit.INSTANCE;
+            }
+        );
+        try {
+            controller.onWorldJoined(new FabricWorldEventContext(
+                session,
+                null,
+                new FabricWorldIdentity(session.getWorld().getDimension(), session.getWorld().getName()),
+                FabricWorldChangeCause.INITIALIZE,
+                1L
+            ));
+            final Object state = sessionState(controller, session);
+            final DistantTerrainMessageV2.Hello hello = new DistantTerrainMessageV2.Hello(
+                world(session, 7L),
+                32,
+                256,
+                0
+            );
+            final FabricClientPayloadContext payload = new FabricClientPayloadContext(
+                session,
+                DistantLodProtocol.INSTANCE.getCHANNEL(),
+                DistantTerrainProtocolV2.INSTANCE.encode(hello)
+            );
+            final CountDownLatch completed = new CountDownLatch(1);
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final Thread receiver = new Thread(() -> {
+                try {
+                    controller.onNetworkPayload(payload);
+                } catch (Throwable error) {
+                    failure.set(error);
+                } finally {
+                    completed.countDown();
+                }
+            }, "dh-network-lock-order-test");
+
+            final boolean completedWhileStateLocked;
+            synchronized (state) {
+                receiver.start();
+                completedWhileStateLocked = completed.await(1, TimeUnit.SECONDS);
+            }
+            receiver.join();
+
+            assertTrue(completedWhileStateLocked, "Network entry waited for the session-state monitor");
+            assertNull(failure.get());
         } finally {
             controller.close();
         }
@@ -99,7 +227,25 @@ public final class DistantLodNetworkLifecycleTest {
     }
 
     @Test
-    public void renegotiationCancelsThePreviousLedgerBeforeAcceptingTheNewEpoch() {
+    public void fullRemoteWindowSurvivesTheManagedServerDrainInterval() {
+        final PlaySession session = session();
+        final List<DistantTerrainMessageV2> sent = new ArrayList<>();
+        final DistantLodNetworkClient client = client(session, sent);
+        final DistantProtocolWorld world = world(session, 9L);
+        client.receive(new DistantTerrainMessageV2.Hello(world, 32, 32, 0));
+
+        for (int tick = 0; tick < 20 * 40; tick++) client.run();
+
+        final DistantLodNetworkClient.Inspection inspection = client.inspect();
+        assertEquals(inspection.getPendingPages(), 32);
+        assertEquals(inspection.getCancellationsSent(), 0L);
+        assertFalse(inspection.getOutstandingRequestIds().isEmpty());
+        assertTrue(sent.stream().noneMatch(DistantTerrainMessageV2.Cancel.class::isInstance));
+        client.close();
+    }
+
+    @Test
+    public void renegotiationClearsThePreviousLedgerWithoutWritingFromTheReceivePath() {
         final PlaySession session = session();
         final List<DistantTerrainMessageV2> sent = new ArrayList<>();
         final DistantLodNetworkClient client = client(session, sent);
@@ -115,16 +261,14 @@ public final class DistantLodNetworkLifecycleTest {
 
         client.receive(new DistantTerrainMessageV2.Hello(secondWorld, 4, 32, 0));
 
-        final DistantTerrainMessageV2.Cancel cancellation = (DistantTerrainMessageV2.Cancel) sent.getLast();
-        assertEquals(cancellation.getRequestId(), request.getRequestId());
-        assertEquals(cancellation.getWorld(), firstWorld);
+        assertEquals(sent, List.of(request));
         assertTrue(client.inspect().getOutstandingRequestIds().isEmpty());
         assertEquals(client.inspect().getWorldResets(), 1L);
         client.close();
     }
 
     @Test
-    public void staleResponseIsRejectedWithoutPublicationOrConnectionFailure() {
+    public void staleResponseStreamIsConsumedWithoutPublicationOrUnknownRequestCascade() {
         final PlaySession session = session();
         final List<DistantTerrainMessageV2> sent = new ArrayList<>();
         final DistantLodNetworkClient client = new DistantLodNetworkClient(
@@ -147,22 +291,74 @@ public final class DistantLodNetworkLifecycleTest {
         client.receive(new DistantTerrainMessageV2.Hello(world, 4, 32, 0));
         client.run();
         final DistantTerrainMessageV2.Request request = (DistantTerrainMessageV2.Request) sent.getFirst();
-        final DistantVerticalPage stale = new DistantVerticalPage(
+        for (DistantRequestedPage requested : request.getPages()) {
+            final DistantVerticalPage stale = new DistantVerticalPage(
+                requested.getKey(),
+                1,
+                0,
+                1L,
+                DistantSourceCompleteness.COMPLETE,
+                List.of(new DistantVerticalColumn(List.of()))
+            );
+            client.receive(new DistantTerrainMessageV2.Response(world, request.getRequestId(), List.of(stale)));
+        }
+
+        final DistantLodNetworkClient.Inspection inspection = client.inspect();
+        assertEquals(
+            inspection.getResponseRejections().get(DistantResponseRejection.STALE_PAGE),
+            Long.valueOf(request.getPages().size())
+        );
+        assertEquals(inspection.getResponseRejections().get(DistantResponseRejection.UNKNOWN_REQUEST), Long.valueOf(0L));
+        assertTrue(inspection.getOutstandingRequestIds().isEmpty());
+        assertEquals(inspection.getPendingPages(), 0);
+        assertEquals(inspection.getCancellationsSent(), 0L);
+        assertEquals(sent, List.of(request));
+        client.close();
+    }
+
+    @Test
+    public void acceptedRemotePageIsRekeyedToTheLocalRenderEpoch() {
+        final PlaySession session = session();
+        final List<DistantTerrainMessageV2> sent = new ArrayList<>();
+        final AtomicReference<DistantVerticalPage> published = new AtomicReference<>();
+        final DistantLodNetworkClient client = new DistantLodNetworkClient(
+            session,
+            DistantHorizonsOptions.Companion.inMemory(),
+            ignored -> false,
+            ignored -> null,
+            ignored -> {
+                throw new AssertionError("unexpected v1 publication");
+            },
+            (tile, page) -> {
+                published.set(page);
+                return Unit.INSTANCE;
+            },
+            payload -> {
+                sent.add(DistantTerrainProtocolV2.INSTANCE.decode(payload));
+                return Unit.INSTANCE;
+            }
+        );
+        final long localWorldEpoch = session.getWorld().getTerrainEpoch();
+        final DistantProtocolWorld remoteWorld = world(session, 23L, Math.addExact(localWorldEpoch, 41L));
+        client.receive(new DistantTerrainMessageV2.Hello(remoteWorld, 4, 32, 0));
+        client.run();
+        final DistantTerrainMessageV2.Request request = (DistantTerrainMessageV2.Request) sent.getFirst();
+        final DistantVerticalPage remotePage = new DistantVerticalPage(
             request.getPages().getFirst().getKey(),
-            1,
+            16,
             0,
             1L,
             DistantSourceCompleteness.COMPLETE,
-            List.of(new DistantVerticalColumn(List.of()))
+            Collections.nCopies(256, new DistantVerticalColumn(List.of()))
         );
 
-        client.receive(new DistantTerrainMessageV2.Response(world, request.getRequestId(), List.of(stale)));
+        client.receive(new DistantTerrainMessageV2.Response(remoteWorld, request.getRequestId(), List.of(remotePage)));
 
-        final DistantLodNetworkClient.Inspection inspection = client.inspect();
-        assertEquals(inspection.getResponseRejections().get(DistantResponseRejection.STALE_PAGE), Long.valueOf(1L));
-        assertTrue(inspection.getOutstandingRequestIds().isEmpty());
-        assertEquals(inspection.getPendingPages(), 0);
-        assertEquals(inspection.getCancellationsSent(), 1L);
+        assertNotNull(published.get());
+        assertEquals(published.get().getKey().getWorldEpoch(), localWorldEpoch);
+        assertEquals(published.get().getKey().getX(), remotePage.getKey().getX());
+        assertEquals(published.get().getKey().getZ(), remotePage.getKey().getZ());
+        assertEquals(client.inspect().getReceivedPages(), 1L);
         client.close();
     }
 
@@ -172,10 +368,22 @@ public final class DistantLodNetworkLifecycleTest {
         return session;
     }
 
+    @SuppressWarnings("unchecked")
+    private static Object sessionState(DistantHorizonsLodController controller, PlaySession session) throws Exception {
+        final var field = DistantHorizonsLodController.class.getDeclaredField("states");
+        field.setAccessible(true);
+        final IdentityHashMap<PlaySession, Object> states = (IdentityHashMap<PlaySession, Object>) field.get(controller);
+        return states.get(session);
+    }
+
     private static DistantProtocolWorld world(PlaySession session, long connectionEpoch) {
+        return world(session, connectionEpoch, session.getWorld().getTerrainEpoch());
+    }
+
+    private static DistantProtocolWorld world(PlaySession session, long connectionEpoch, long worldEpoch) {
         return new DistantProtocolWorld(
             connectionEpoch,
-            session.getWorld().getTerrainEpoch(),
+            worldEpoch,
             "minecraft:overworld"
         );
     }
