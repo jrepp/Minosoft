@@ -100,7 +100,7 @@ class TerrainBuildRuntimeTest {
             contextFactory = ::Context,
         )
 
-        assertNotNull(runtime.submit(tenant, identity(1L)) { _, cancellation ->
+        val running = assertNotNull(runtime.submit(tenant, identity(1L)) { _, cancellation ->
             started.countDown()
             assertTrue(release.await(5, TimeUnit.SECONDS))
             assertTrue(cancellation.isCancelled)
@@ -113,6 +113,11 @@ class TerrainBuildRuntimeTest {
 
         val closer = Thread(runtime::close)
         closer.start()
+        val cancellationDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L)
+        while (!running.isCancelled && System.nanoTime() < cancellationDeadline) {
+            Thread.sleep(1L)
+        }
+        assertTrue(running.isCancelled)
         release.countDown()
         closer.join(5_000L)
         assertFalse(closer.isAlive)
