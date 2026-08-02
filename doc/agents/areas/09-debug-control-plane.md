@@ -217,7 +217,7 @@ Windows named pipes.
 | `mods.iris.configure-options` | client | render queue/resource reload | validate and transactionally apply 1–64 authored shader-option values |
 | `mods.distanthorizons.presentation` | client | mod generation | report, enable, disable, or restore the non-persistent detached-terrain presentation override |
 | `mods.distanthorizons.render-diagnostics` | client | mod generation | bounded detached tile/cell/source/native-ownership, adaptive-size, surface, skirt, and maximum-drop snapshot |
-| `mods.distanthorizons.store-network-inspection` | client | mod generation | bounded page-store schema/count/bytes/temp/pinning/eviction state plus negotiated protocol bounds, pending/correlated requests, cancellations, world resets, and fixed semantic response-rejection counts |
+| `mods.distanthorizons.store-network-inspection` | client | mod generation | bounded page-store schema/count/bytes/temp/pinning/eviction state plus negotiated protocol bounds, pending/correlated requests, ordered decode-queue depth/bytes/drops, cancellations, world resets, and fixed semantic response-rejection counts |
 | `metrics.snapshot` | both | transport-safe plus immutable role gauges | capped operation series, fixed latency buckets, counters/totals/max, runtime gauges |
 
 ### Visual and input invariants
