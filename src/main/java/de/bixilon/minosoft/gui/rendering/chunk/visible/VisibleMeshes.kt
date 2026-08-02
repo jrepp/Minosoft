@@ -28,6 +28,8 @@ class VisibleMeshes(
     val camera: BlockPosition = BlockPosition.EMPTY,
     previous: VisibleMeshes? = null,
 ) {
+    var revision: Long = previous?.revision?.let(Math::incrementExact) ?: 0L
+        private set
     val meshes: Array<ArrayList<ChunkMesh>> = Array(ChunkMeshTypes.VALUES.size) { ordinal ->
         val type = ChunkMeshTypes.VALUES[ordinal]
         val defaultCapacity = if (type == ChunkMeshTypes.OPAQUE) 128 else 16
@@ -43,6 +45,7 @@ class VisibleMeshes(
 
 
     private fun add(mesh: ChunkMeshes, frustum: FrustumResults, maintainOrder: Boolean) {
+        revision = Math.incrementExact(revision)
         mesh.update(camera, frustum)
 
         if (mesh.regionBacked) {
@@ -75,6 +78,7 @@ class VisibleMeshes(
     }
 
     operator fun minusAssign(mesh: ChunkMeshes): Unit = lock.locked {
+        revision = Math.incrementExact(revision)
         if (mesh.regionBacked) {
             sections -= mesh
         } else {
@@ -87,10 +91,19 @@ class VisibleMeshes(
     }
 
     fun clear() = lock.locked {
+        revision = Math.incrementExact(revision)
         this.meshes.forEach { it.clear() }
         sections.clear()
         entities.clear()
 
         visibility.invalidate(VisibilityGraphInvalidReason.MESH_UPDATE)
+    }
+
+    fun removeInvisibleMeshes() = lock.locked {
+        var removed = false
+        for (meshes in meshes) {
+            removed = meshes.removeIf { it.occlusion == ChunkMesh.OcclusionStates.INVISIBLE } || removed
+        }
+        if (removed) revision = Math.incrementExact(revision)
     }
 }

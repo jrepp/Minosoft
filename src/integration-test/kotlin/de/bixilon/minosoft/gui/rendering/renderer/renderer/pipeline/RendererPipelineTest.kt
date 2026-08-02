@@ -685,6 +685,104 @@ class RendererPipelineTest {
         assertEquals(calls, phases)
     }
 
+    fun `Iris shadow casters are explicit graph passes with view local enablement`() {
+        val manager = manager()
+        val producer = manager.register(object : WorldRenderer {
+            override val context = manager.context
+            override val passes = WorldPassRegistry()
+            override fun registerPasses() = Unit
+        })
+        val views = setOf(RenderViewId.MAIN, IrisShaderPackPlanner.SHADOW_VIEW)
+        producer.passes.addViews(
+            OpaqueLayer,
+            shader = null,
+            renderer = {},
+            semantic = PipelineSemantic.TERRAIN_OPAQUE,
+            passId = RenderPassId("minosoft:test/shadow-opaque"),
+            views = views,
+            enabled = { it != RenderViewId.MAIN },
+        )
+        producer.passes.addViews(
+            TranslucentLayer,
+            shader = null,
+            renderer = {},
+            semantic = PipelineSemantic.TERRAIN_TRANSLUCENT,
+            passId = RenderPassId("minosoft:test/shadow-translucent"),
+            views = views,
+        )
+        val base = pipelinePlan()
+        val pipeline = object : WorldShaderPipeline {
+            override val owner = IrisShaderPackPlanner.OWNER
+            override val plan = base.copy(
+                views = views,
+                shadowDirectives = IrisShadowDirectives(terrain = true),
+            )
+
+            override fun bindTerrain(view: RenderViewId, material: TerrainMaterialClass, fallback: Shader) = Unit
+            override fun composite(fallback: FramebufferShader) = fallback
+            override fun close() = Unit
+        }
+        manager.context.shaderPipeline.replace(
+            TerrainBackendDescriptor(
+                owner = RenderOwnerId("minosoft:test-terrain"),
+                implementation = "test",
+                materials = TerrainMaterialClass.entries.toSet(),
+                vertexLayout = BuiltInTerrainVertexLayout.VALUE,
+                supportsAuxiliaryViews = true,
+            ),
+        ) { pipeline }
+
+        manager.pipeline.rebuild()
+        val execution = FrameGraphExecution(manager.context)
+        val passes = manager.pipeline.generation.passes
+        val ids = passes.map { it.id }
+        val shadowBegin = RenderPassId("iris:shaderpack/shadow")
+        val opaqueShadow = RenderPassId("minosoft:test/shadow-opaque/shadow")
+        val shadowDepth = RenderPassId("iris:depth/shadow-before-translucent")
+        val translucentShadow = RenderPassId("minosoft:test/shadow-translucent/shadow")
+        val shadowComplete = RenderPassId("iris:shaderpack/shadow-complete")
+
+        assertTrue(!passes.single { it.id == RenderPassId("minosoft:test/shadow-opaque") }.enabled(execution))
+        assertTrue(passes.single { it.id == opaqueShadow }.enabled(execution))
+        assertTrue(ids.indexOf(shadowBegin) < ids.indexOf(opaqueShadow))
+        assertTrue(ids.indexOf(opaqueShadow) < ids.indexOf(shadowDepth))
+        assertTrue(ids.indexOf(shadowDepth) < ids.indexOf(translucentShadow))
+        assertTrue(ids.indexOf(translucentShadow) < ids.indexOf(shadowComplete))
+        assertEquals(passes.single { it.id == opaqueShadow }.view, IrisShaderPackPlanner.SHADOW_VIEW)
+    }
+
+    fun `shader auxiliary view scope closes after draw failure`() {
+        val calls = mutableListOf<String>()
+        val pipeline = object : WorldShaderPipeline {
+            override val owner = IrisShaderPackPlanner.OWNER
+            override val plan = pipelinePlan()
+
+            override fun beginView(view: RenderViewId) {
+                calls += "begin:${view.value}"
+            }
+
+            override fun endView(view: RenderViewId) {
+                calls += "end:${view.value}"
+            }
+
+            override fun bindTerrain(view: RenderViewId, material: TerrainMaterialClass, fallback: Shader) = Unit
+            override fun composite(fallback: FramebufferShader) = fallback
+            override fun close() = Unit
+        }
+
+        expectThrows<IllegalStateException> {
+            pipeline.renderView(IrisShaderPackPlanner.SHADOW_VIEW) { error("draw failed") }
+        }
+
+        assertEquals(
+            calls,
+            listOf(
+                "begin:${IrisShaderPackPlanner.SHADOW_VIEW.value}",
+                "end:${IrisShaderPackPlanner.SHADOW_VIEW.value}",
+            ),
+        )
+    }
+
     fun `Iris mixed particle ordering places only opaque particles before deferred`() {
         val manager = manager()
         val producer = manager.register(object : WorldRenderer {
@@ -986,7 +1084,9 @@ class RendererPipelineTest {
             ),
         )
 
-        assertEquals(RendererPipeline.shadowTerrainMaterials(plan), emptyList<TerrainMaterialClass>())
+        assertTrue(!RendererPipeline.shadowCasterEnabled(PipelineSemantic.TERRAIN_OPAQUE, plan))
+        assertTrue(!RendererPipeline.shadowCasterEnabled(PipelineSemantic.TERRAIN_CUTOUT, plan))
+        assertTrue(!RendererPipeline.shadowCasterEnabled(PipelineSemantic.TERRAIN_TRANSLUCENT, plan))
         assertTrue(RendererPipeline.shadowCasterEnabled(PipelineSemantic.ENTITIES, plan))
         assertTrue(!RendererPipeline.shadowCasterEnabled(PipelineSemantic.BLOCK_ENTITIES, plan))
         assertTrue(!RendererPipeline.shadowCasterEnabled(PipelineSemantic.PARTICLES_OPAQUE, plan))
@@ -1010,6 +1110,9 @@ class RendererPipelineTest {
         assertTrue(RendererPipeline.shadowCasterEnabled(PipelineSemantic.BLOCK_ENTITIES, lightBlockEntitiesOnly))
 
         val terrainPlan = plan.copy(shadowDirectives = plan.shadowDirectives.copy(terrain = true))
+        assertTrue(RendererPipeline.shadowCasterEnabled(PipelineSemantic.TERRAIN_OPAQUE, terrainPlan))
+        assertTrue(RendererPipeline.shadowCasterEnabled(PipelineSemantic.TERRAIN_CUTOUT, terrainPlan))
+        assertTrue(RendererPipeline.shadowCasterEnabled(PipelineSemantic.TERRAIN_TRANSLUCENT, terrainPlan))
         assertTrue(!RendererPipeline.shadowCasterEnabled(PipelineSemantic.DISTANT_TERRAIN, terrainPlan))
         val distantShadowPlan = terrainPlan.copy(
             programs = terrainPlan.programs + ShaderProgramSource(
@@ -1022,21 +1125,13 @@ class RendererPipelineTest {
             ),
         )
         assertTrue(RendererPipeline.shadowCasterEnabled(PipelineSemantic.DISTANT_TERRAIN, distantShadowPlan))
-        assertEquals(
-            RendererPipeline.shadowTerrainMaterials(terrainPlan),
-            listOf(
-                TerrainMaterialClass.OPAQUE,
-                TerrainMaterialClass.CUTOUT,
-                TerrainMaterialClass.TRANSLUCENT,
-            ),
-        )
-        assertEquals(
-            RendererPipeline.shadowTerrainMaterials(
+        assertTrue(
+            !RendererPipeline.shadowCasterEnabled(
+                PipelineSemantic.TERRAIN_TRANSLUCENT,
                 terrainPlan.copy(
                     shadowDirectives = terrainPlan.shadowDirectives.copy(translucentTerrain = false),
                 ),
             ),
-            listOf(TerrainMaterialClass.OPAQUE, TerrainMaterialClass.CUTOUT),
         )
     }
 

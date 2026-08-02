@@ -13,8 +13,6 @@
 
 package de.bixilon.minosoft.gui.rendering.entities.draw
 
-import de.bixilon.kutil.concurrent.lock.Lock
-import de.bixilon.kutil.concurrent.lock.LockUtil.locked
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
 import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderFeature
@@ -27,6 +25,7 @@ import de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.LivingEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
 import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
+import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisEntityOverlay
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisShaderPackPlanner
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisDrawState
@@ -37,6 +36,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.settings.RenderSettings
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import java.util.Collections
 import java.util.IdentityHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 
 private val IRIS_ENTITY_SHADOW = minecraft("entity_shadow")
 private val IRIS_NAME_TAG = minecraft("name_tag")
@@ -45,9 +45,24 @@ private val IRIS_ENTITY_FLAME = minecraft("entity_flame")
 class EntityDrawer(
     val renderer: EntitiesRenderer,
 ) {
-    private val lock = Lock.lock()
-    private val layers = HashMap<EntityLayer, ArrayList<FeatureDrawable>>()
-    private val shadowLayers = HashMap<EntityLayer, ArrayList<FeatureDrawable>>()
+    private class CollectionBatch {
+        val layers = Array(EntityLayer.LAYERS.size) { ArrayList<FeatureDrawable>() }
+        val shadowLayers = Array(EntityLayer.LAYERS.size) { ArrayList<FeatureDrawable>() }
+        val outlines = ArrayList<EntityOutlineRenderer.Command>()
+
+        fun clear() {
+            layers.forEach(ArrayList<FeatureDrawable>::clear)
+            shadowLayers.forEach(ArrayList<FeatureDrawable>::clear)
+            outlines.clear()
+        }
+    }
+
+    private val layers = Array(EntityLayer.LAYERS.size) { ArrayList<FeatureDrawable>(100) }
+    private val shadowLayers = Array(EntityLayer.LAYERS.size) { ArrayList<FeatureDrawable>(100) }
+    private val collectionBatches = ConcurrentLinkedQueue<CollectionBatch>()
+    private val localBatch = ThreadLocal.withInitial {
+        CollectionBatch().also(collectionBatches::add)
+    }
     private val preparedFeatures = Collections.newSetFromMap(IdentityHashMap<FeatureDrawable, Boolean>())
     val outline = EntityOutlineRenderer(renderer.context)
 
@@ -61,17 +76,20 @@ class EntityDrawer(
                 EntityLayer.Translucent -> PipelineSemantic.ENTITIES_TRANSLUCENT
                 else -> error("Unknown entity layer $layer")
             }
-            renderer.passes.add(
+            renderer.passes.addViews(
                 layer,
                 null,
-                { if (!renderer.referenceSuppressed) layers[layer]?.draw(layer) },
+                renderer = { view ->
+                    if (renderer.referenceSuppressed) return@addViews
+                    if (view == IrisShaderPackPlanner.SHADOW_VIEW) {
+                        shadowLayers[index].drawShadowCasters()
+                    } else {
+                        layers[index].draw(layer)
+                    }
+                },
                 semantic,
                 passId = RenderPassId("minosoft:scene/entities-$index"),
-                auxiliaryRenderers = mapOf(
-                    IrisShaderPackPlanner.SHADOW_VIEW to {
-                        if (!renderer.referenceSuppressed) shadowLayers[layer]?.drawShadowCasters(layer)
-                    },
-                ),
+                views = setOf(RenderViewId.MAIN, IrisShaderPackPlanner.SHADOW_VIEW),
             )
         }
         renderer.passes.add(
@@ -91,18 +109,26 @@ class EntityDrawer(
             feature.drawLayer(layer)
         }
     }
-    private fun ArrayList<FeatureDrawable>.drawShadowCasters(layer: EntityLayer) {
+    private fun ArrayList<FeatureDrawable>.drawShadowCasters() {
         forEach { feature ->
-            if (feature.layer == layer && feature.castsShadow) {
-                renderer.context.shaderPipeline.withDrawState(feature.irisDrawState(), feature::draw)
-            }
+            renderer.context.shaderPipeline.withDrawState(feature.irisDrawState(), feature::draw)
         }
     }
 
     fun prepare() {
+        for (batch in collectionBatches) {
+            for (index in layers.indices) {
+                layers[index].addAll(batch.layers[index])
+                shadowLayers[index].addAll(batch.shadowLayers[index])
+            }
+            for (command in batch.outlines) outline += command
+            batch.clear()
+        }
         preparedFeatures.clear()
         var size = 0
-        for ((layer, features) in this.layers) {
+        for (index in layers.indices) {
+            val layer = EntityLayer.LAYERS[index]
+            val features = layers[index]
             for (feature in features) {
                 if (!preparedFeatures.add(feature)) continue
                 feature.prepare()
@@ -110,13 +136,14 @@ class EntityDrawer(
             }
             features.sort(layer.sort)
         }
-        for ((layer, features) in shadowLayers) {
+        for (index in shadowLayers.indices) {
+            val features = shadowLayers[index]
             for (feature in features) {
                 if (!preparedFeatures.add(feature)) continue
                 feature.prepare()
                 size++
             }
-            features.sort(layer.sort)
+            features.sortWith(::compareShadowDrawables)
         }
         outline.prepare()
         this.size = size
@@ -124,32 +151,32 @@ class EntityDrawer(
 
 
     fun clear() {
-        // don't remove array lists (reduce useless allocations)
-        for ((_, features) in this.layers) {
-            features.clear()
-        }
-        for ((_, features) in shadowLayers) {
-            features.clear()
-        }
+        layers.forEach(ArrayList<FeatureDrawable>::clear)
+        shadowLayers.forEach(ArrayList<FeatureDrawable>::clear)
+        collectionBatches.forEach(CollectionBatch::clear)
         outline.clear()
     }
 
-    operator fun plusAssign(drawable: FeatureDrawable) = lock.locked {
-        this.layers.getOrPut(drawable.layer) { ArrayList(100) } += drawable
+    operator fun plusAssign(drawable: FeatureDrawable) {
+        val batch = localBatch.get()
+        batch.layers[layerIndex(drawable.layer)] += drawable
         for (layer in drawable.additionalLayers) {
-            if (layer != drawable.layer) this.layers.getOrPut(layer) { ArrayList(100) } += drawable
+            if (layer != drawable.layer) batch.layers[layerIndex(layer)] += drawable
         }
     }
 
-    fun addShadow(drawable: FeatureDrawable) = lock.locked {
-        shadowLayers.getOrPut(drawable.layer) { ArrayList(100) } += drawable
-        for (layer in drawable.additionalLayers) {
-            if (layer != drawable.layer) shadowLayers.getOrPut(layer) { ArrayList(100) } += drawable
-        }
+    fun addShadow(drawable: FeatureDrawable) {
+        localBatch.get().shadowLayers[layerIndex(drawable.layer)] += drawable
     }
 
-    fun addOutline(feature: EntityOutlineFeature, color: RGBAColor) = lock.locked {
-        outline += EntityOutlineRenderer.Command(feature, color)
+    fun addOutline(feature: EntityOutlineFeature, color: RGBAColor) {
+        localBatch.get().outlines += EntityOutlineRenderer.Command(feature, color)
+    }
+
+    private fun layerIndex(layer: EntityLayer): Int = when (layer) {
+        EntityLayer.Opaque -> 0
+        EntityLayer.Translucent -> 1
+        else -> error("Unknown entity layer $layer")
     }
 
     private object EntityOutlineLayer : RenderLayer {
@@ -192,5 +219,11 @@ internal fun compareFeatureDrawables(
     sort = a.distance2.compareTo(b.distance2) * order.sign
     if (sort != 0) return sort
 
+    return a.stableOrder.compareTo(b.stableOrder)
+}
+
+internal fun compareShadowDrawables(a: FeatureDrawable, b: FeatureDrawable): Int {
+    val ordered = a.compareTo(b)
+    if (ordered != 0) return ordered
     return a.stableOrder.compareTo(b.stableOrder)
 }

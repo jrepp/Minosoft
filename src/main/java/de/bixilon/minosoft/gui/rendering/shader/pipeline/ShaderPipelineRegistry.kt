@@ -117,7 +117,16 @@ interface WorldShaderPipeline : AutoCloseable {
     fun bindViewTarget(view: RenderViewId, fallback: () -> Unit) = fallback()
     fun snapshotDepth(snapshot: ShaderDepthSnapshot) = Unit
     fun executePrograms(phase: ShaderProgramPhase, drawFullscreen: () -> Unit) = Unit
-    fun renderView(view: RenderViewId, draw: () -> Unit) = draw()
+    fun beginView(view: RenderViewId) = Unit
+    fun endView(view: RenderViewId) = Unit
+    fun renderView(view: RenderViewId, draw: () -> Unit) {
+        beginView(view)
+        try {
+            draw()
+        } finally {
+            endView(view)
+        }
+    }
     fun composite(fallback: FramebufferShader): FramebufferShader
     fun diagnostics(): WorldShaderPipelineDiagnostics = WorldShaderPipelineDiagnostics()
     override fun close()

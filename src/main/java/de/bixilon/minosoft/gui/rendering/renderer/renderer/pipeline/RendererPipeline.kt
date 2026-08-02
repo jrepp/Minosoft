@@ -16,7 +16,6 @@ package de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline
 
 import de.bixilon.kutil.profiler.stack.StackedProfiler.Companion.invoke
 import de.bixilon.minosoft.gui.rendering.RenderContext
-import de.bixilon.minosoft.gui.rendering.chunk.ChunkRenderer
 import de.bixilon.minosoft.gui.rendering.graph.RenderGraphBuilder
 import de.bixilon.minosoft.gui.rendering.graph.RenderGraphGeneration
 import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
@@ -41,16 +40,10 @@ import de.bixilon.minosoft.gui.rendering.system.base.PolygonModes
 import de.bixilon.minosoft.gui.rendering.system.base.RenderSystem
 import de.bixilon.minosoft.modding.loader.fabric.FabricClientEventPhase
 import de.bixilon.minosoft.modding.loader.fabric.FabricClientEvents
-import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
 import de.bixilon.minosoft.gui.rendering.terrain.scene.ProductionTerrainPipelineRegistry
 import de.bixilon.minosoft.gui.rendering.terrain.scene.ProductionTerrainPipelineSelection
 
 class RendererPipeline(private val renderer: RendererManager) : Drawable {
-    private data class WorldElement(
-        val id: RenderPassId,
-        val element: WorldRenderPass,
-    )
-
     private val other: MutableList<Drawable> = mutableListOf()
     private val system = renderer.context.system
     private val framebuffer = renderer.context.framebuffer
@@ -76,18 +69,13 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
         }
     }
 
-    private fun buildWorldElements(): List<WorldElement> {
-        val elements = mutableListOf<WorldElement>()
+    private fun buildWorldElements(): List<WorldRenderPass> {
+        val elements = mutableListOf<WorldRenderPass>()
         for (candidate in renderer) {
             if (candidate !is WorldRenderer) continue
-            for (element in candidate.passes.declarations) {
-                elements += WorldElement(
-                    id = element.id,
-                    element = element,
-                )
-            }
+            elements += candidate.passes.declarations
         }
-        return elements.sortedWith(compareBy({ it.element.layer.priority }, WorldElement::id))
+        return elements.sortedWith(compareBy({ it.layer.priority }, WorldRenderPass::id))
     }
 
     fun rebuild() {
@@ -126,38 +114,75 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
         }
         addFullscreenPrograms(ShaderProgramPhase.BEGIN, RenderPhase.IRIS_BEGIN)
         if (shaderPlan != null && IrisShaderPackPlanner.SHADOW_VIEW in shaderPlan.views) {
+            val shadowView = IrisShaderPackPlanner.SHADOW_VIEW
+            val shadowBegin = RenderPassId("iris:shaderpack/shadow")
+            val shadowDepth = RenderPassId("iris:depth/shadow-before-translucent")
+            val shadowComplete = RenderPassId("iris:shaderpack/shadow-complete")
             builder.add(
                 RenderPass(
-                    id = RenderPassId("iris:shaderpack/shadow"),
+                    id = shadowBegin,
                     owner = shaderPlan.owner,
-                    view = IrisShaderPackPlanner.SHADOW_VIEW,
+                    view = shadowView,
                     phase = RenderPhase.SHADOW,
+                    order = Int.MIN_VALUE,
                     draw = { execution ->
-                        val chunks = requireNotNull(execution.context.renderer[ChunkRenderer]) {
-                            "Iris shadow view requires the selected terrain renderer"
-                        }
-                        execution.context.shaderPipeline.withPipeline { pipeline ->
-                            pipeline.renderView(IrisShaderPackPlanner.SHADOW_VIEW) {
-                                val shadowMaterials = shadowTerrainMaterials(shaderPlan)
-                                shadowMaterials.filter { it != TerrainMaterialClass.TRANSLUCENT }.forEach { material ->
-                                    chunks.terrain.submit(IrisShaderPackPlanner.SHADOW_VIEW, material)
-                                }
-                                worldElements.asSequence()
-                                    .map(WorldElement::element)
-                                    .filter { shadowCasterEnabled(it.semantic, shaderPlan) }
-                                    .filter { it.supports(IrisShaderPackPlanner.SHADOW_VIEW) && it.isEnabled() }
-                                    .forEach { element ->
-                                        execution.context.shaderPipeline.withScene(element.semantic) {
-                                            element.draw(IrisShaderPackPlanner.SHADOW_VIEW, execution.context)
-                                        }
-                                    }
-                                pipeline.snapshotDepth(ShaderDepthSnapshot.SHADOW_BEFORE_TRANSLUCENT)
-                                shadowMaterials.filter { it == TerrainMaterialClass.TRANSLUCENT }.forEach { material ->
-                                    chunks.terrain.submit(IrisShaderPackPlanner.SHADOW_VIEW, material)
-                                }
+                        execution.beginView(shadowView)
+                    },
+                ),
+            )
+            val opaqueShadowPasses = linkedSetOf<RenderPassId>()
+            val translucentShadowPasses = linkedSetOf<RenderPassId>()
+            for (element in worldElements) {
+                if (!element.supports(shadowView) || !shadowCasterEnabled(element.semantic, shaderPlan)) continue
+                val passId = element.id.forView(shadowView)
+                val translucentTerrain = element.semantic == PipelineSemantic.TERRAIN_TRANSLUCENT
+                val dependencies = if (translucentTerrain) setOf(shadowDepth) else setOf(shadowBegin)
+                builder.add(
+                    RenderPass(
+                        id = passId,
+                        owner = element.owner?.invoke() ?: BUILT_IN_WORLD_OWNER,
+                        view = shadowView,
+                        phase = RenderPhase.SHADOW,
+                        semantic = element.semantic.name.lowercase(),
+                        order = if (translucentTerrain) Int.MAX_VALUE else element.layer.priority,
+                        after = dependencies,
+                        enabled = { element.isEnabled(shadowView) },
+                        draw = { execution ->
+                            execution.context.shaderPipeline.withScene(element.semantic) {
+                                element.draw(shadowView, execution.context)
                             }
+                        },
+                    ),
+                )
+                if (translucentTerrain) translucentShadowPasses += passId else opaqueShadowPasses += passId
+            }
+            builder.add(
+                RenderPass(
+                    id = shadowDepth,
+                    owner = shaderPlan.owner,
+                    view = shadowView,
+                    phase = RenderPhase.SHADOW,
+                    order = Int.MAX_VALUE - 1,
+                    after = opaqueShadowPasses.ifEmpty { setOf(shadowBegin) },
+                    draw = { execution ->
+                        execution.context.shaderPipeline.withPipeline { pipeline ->
+                            pipeline.snapshotDepth(ShaderDepthSnapshot.SHADOW_BEFORE_TRANSLUCENT)
                         }
                     },
+                ),
+            )
+            builder.add(
+                RenderPass(
+                    id = shadowComplete,
+                    owner = shaderPlan.owner,
+                    view = shadowView,
+                    phase = RenderPhase.SHADOW,
+                    order = Int.MAX_VALUE,
+                    after = buildSet {
+                        add(shadowDepth)
+                        addAll(translucentShadowPasses)
+                    },
+                    draw = { execution -> execution.endView(shadowView) },
                 ),
             )
         }
@@ -208,20 +233,20 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
                 ),
             )
         }
-        worldElements.forEach { (id, element) ->
+        worldElements.forEach { element ->
             builder.add(
                 RenderPass(
-                    id = id,
+                    id = element.id,
                     owner = element.owner?.invoke() ?: BUILT_IN_WORLD_OWNER,
                     phase = element.phase(shaderPlan),
                     semantic = element.semantic.name.lowercase(),
                     order = element.layer.priority,
                     enabled = {
-                        element.isEnabled() && mainGeometryEnabled(element.semantic, shaderPlan)
+                        element.isEnabled(RenderViewId.MAIN) && mainGeometryEnabled(element.semantic, shaderPlan)
                     },
                     draw = { execution ->
                         execution.context.shaderPipeline.withScene(element.semantic) {
-                            element.drawMain(execution.context)
+                            element.draw(RenderViewId.MAIN, execution.context)
                         }
                     },
                 ),
@@ -282,7 +307,7 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
             ),
         )
 
-        this.worldElements = worldElements.map(WorldElement::element).toTypedArray()
+        this.worldElements = worldElements.toTypedArray()
         graph = builder.build()
     }
 
@@ -306,6 +331,11 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
                 complete()
             }
         } catch (failure: Throwable) {
+            try {
+                execution.closeView()
+            } catch (cleanup: Throwable) {
+                failure.addSuppressed(cleanup)
+            }
             if (execution.worldEventOpen) {
                 execution.worldEventOpen = false
                 try {
@@ -335,6 +365,11 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
             .replace('.', '/')
             .replace('$', '-')
         return RenderPassId("minosoft:$group/$producer")
+    }
+
+    private fun RenderPassId.forView(view: RenderViewId): RenderPassId {
+        val viewName = view.value.substringAfter(':').replace('/', '-')
+        return RenderPassId("$value/$viewName")
     }
 
     private fun WorldRenderPass.phase(shaderPlan: ShaderPipelinePlan?): RenderPhase {
@@ -408,23 +443,15 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
         val BUILT_IN_WORLD_OWNER = RenderOwnerId("minosoft:built-in-world")
         val BUILT_IN_OVERLAY_OWNER = RenderOwnerId("minosoft:built-in-overlays")
         val BUILT_IN_SCENE_OWNER = RenderOwnerId("minosoft:built-in-scene")
-        fun shadowTerrainMaterials(plan: ShaderPipelinePlan): List<TerrainMaterialClass> =
-            if (plan.shadowDirectives.terrain) {
-                buildList {
-                    add(TerrainMaterialClass.OPAQUE)
-                    add(TerrainMaterialClass.CUTOUT)
-                    if (plan.shadowDirectives.translucentTerrain) {
-                        add(TerrainMaterialClass.TRANSLUCENT)
-                    }
-                }
-            } else {
-                emptyList()
-            }
-
         fun shadowCasterEnabled(
             semantic: PipelineSemantic,
             plan: ShaderPipelinePlan,
         ): Boolean = when (semantic) {
+            PipelineSemantic.TERRAIN_OPAQUE,
+            PipelineSemantic.TERRAIN_CUTOUT,
+            -> plan.shadowDirectives.terrain
+            PipelineSemantic.TERRAIN_TRANSLUCENT ->
+                plan.shadowDirectives.terrain && plan.shadowDirectives.translucentTerrain
             PipelineSemantic.ENTITIES,
             PipelineSemantic.ENTITIES_TRANSLUCENT,
             -> plan.shadowDirectives.entities || plan.shadowDirectives.player
@@ -462,4 +489,25 @@ class FrameGraphExecution(
     val context: RenderContext,
 ) {
     internal var worldEventOpen = false
+    private var activeView: RenderViewId? = null
+
+    internal fun beginView(view: RenderViewId) {
+        check(activeView == null) { "Render view $activeView is already active" }
+        context.shaderPipeline.withPipeline { it.beginView(view) }
+        activeView = view
+    }
+
+    internal fun endView(view: RenderViewId) {
+        check(activeView == view) { "Render view $view is not active" }
+        try {
+            context.shaderPipeline.withPipeline { it.endView(view) }
+        } finally {
+            activeView = null
+        }
+    }
+
+    internal fun closeView() {
+        val view = activeView ?: return
+        endView(view)
+    }
 }

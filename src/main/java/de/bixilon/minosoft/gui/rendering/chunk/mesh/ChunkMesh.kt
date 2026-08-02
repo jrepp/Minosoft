@@ -59,6 +59,7 @@ class ChunkMesh(
         if (occlusion != OcclusionStates.MAYBE) return
         val query = query ?: return
         if (query.recordings == 0) return
+        if (!query.isReady) return
 
         query.collect()
         occlusion = if (query.result > 10) OcclusionStates.VISIBLE else OcclusionStates.INVISIBLE

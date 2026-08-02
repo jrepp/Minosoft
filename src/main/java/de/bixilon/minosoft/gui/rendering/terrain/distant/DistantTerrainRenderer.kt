@@ -21,6 +21,7 @@ import de.bixilon.minosoft.gui.rendering.chunk.ChunkRenderer
 import de.bixilon.minosoft.gui.rendering.chunk.NativeTerrainOwnershipSnapshot
 import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
 import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
+import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
 import de.bixilon.minosoft.gui.rendering.light.LightmapBuffer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
@@ -88,17 +89,21 @@ internal class DistantTerrainRenderer(
         get() = effectiveRenderDistanceBlocks
 
     override fun registerPasses() {
-        passes.add(
+        passes.addViews(
             layer = OpaqueLayer,
             shader = solidShader,
-            renderer = { hierarchy?.drawSolid(shadow = false) },
+            renderer = { view -> hierarchy?.drawSolid(shadow = view == IrisShaderPackPlanner.SHADOW_VIEW) },
             semantic = PipelineSemantic.DISTANT_TERRAIN,
             owner = { OWNER },
             passId = RenderPassId("minosoft:distant-terrain/solid"),
-            auxiliaryRenderers = mapOf(
-                IrisShaderPackPlanner.SHADOW_VIEW to { hierarchy?.drawSolid(shadow = true) },
-            ),
-            skip = { hierarchy?.hasSolid()?.not() ?: true },
+            views = setOf(RenderViewId.MAIN, IrisShaderPackPlanner.SHADOW_VIEW),
+            enabled = { view ->
+                if (view == IrisShaderPackPlanner.SHADOW_VIEW) {
+                    hierarchy?.hasShadow() == true
+                } else {
+                    hierarchy?.hasSolid() == true
+                }
+            },
         )
         passes.add(
             layer = TranslucentLayer,

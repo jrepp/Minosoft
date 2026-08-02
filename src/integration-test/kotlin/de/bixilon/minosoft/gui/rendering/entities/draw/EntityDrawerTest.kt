@@ -42,6 +42,7 @@ import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegist
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import org.testng.Assert.assertEquals
 import org.testng.annotations.Test
+import kotlin.concurrent.thread
 
 @Test(groups = ["entities", "rendering"])
 class EntityDrawerTest {
@@ -254,6 +255,21 @@ class EntityDrawerTest {
         assertEquals(drawer.shadow(EntityLayer.Opaque).size, 0)
     }
 
+    fun `concurrent collection batches merge before preparation`() {
+        val drawer = create()
+        val first = drawer.feature(EntityLayer.Opaque)
+        val second = drawer.feature(EntityLayer.Opaque)
+        drawer.clear()
+
+        listOf(
+            thread { drawer += first.drawable },
+            thread { drawer += second.drawable },
+        ).forEach(Thread::join)
+        drawer.prepare()
+
+        assertEquals(drawer[EntityLayer.Opaque], listOf(first.drawable, second.drawable))
+    }
+
     fun `two opaque features, sorted by distance`() {
         val drawer = create()
         val a = drawer.feature(EntityLayer.Opaque, priority = 0, 0.0)
@@ -291,7 +307,9 @@ class EntityDrawerTest {
 
     // TODO: test if type is respected
 
-    private operator fun EntityDrawer.get(layer: EntityLayer) = LAYERS.get<Map<EntityLayer, ArrayList<FeatureDrawable>>>(this)[layer] ?: emptyList()
-    private fun EntityDrawer.shadow(layer: EntityLayer) =
-        SHADOW_LAYERS.get<Map<EntityLayer, ArrayList<FeatureDrawable>>>(this)[layer] ?: emptyList()
+    private operator fun EntityDrawer.get(layer: EntityLayer): List<FeatureDrawable> =
+        LAYERS.get<Array<ArrayList<FeatureDrawable>>>(this)[EntityLayer.LAYERS.indexOf(layer)]
+
+    private fun EntityDrawer.shadow(layer: EntityLayer): List<FeatureDrawable> =
+        SHADOW_LAYERS.get<Array<ArrayList<FeatureDrawable>>>(this)[EntityLayer.LAYERS.indexOf(layer)]
 }

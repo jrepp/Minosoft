@@ -312,6 +312,10 @@ class TerrainArchitectureBoundaryTest {
             .resolve("src/main/java/de/bixilon/minosoft/gui/rendering/terrain/distant/DistantTerrainRenderer.kt")
             .readText()
             .withoutCommentsAndLiterals()
+        val frameSubmission = PROJECT_ROOT
+            .resolve("src/main/java/de/bixilon/minosoft/gui/rendering/terrain/storage/TerrainRegionFrameSubmission.kt")
+            .readText()
+            .withoutCommentsAndLiterals()
         val shader = PROJECT_ROOT
             .resolve("src/main/resources/assets/minosoft/rendering/shader/distant/terrain/terrain.vsh")
             .readText()
@@ -324,7 +328,8 @@ class TerrainArchitectureBoundaryTest {
         assertTrue("HashMap<TerrainPageKey, Pending>" in runtime)
         assertTrue("TerrainPageFailureRegistry" in runtime)
         assertTrue("HashMap<TerrainPageKey, Int>" !in runtime)
-        assertTrue("TerrainRegionStorage" in runtime && "TerrainBatchCache" in runtime)
+        assertTrue("TerrainRegionStorage" in runtime)
+        assertTrue("TerrainBatchCache" in frameSubmission && "TerrainDrawBatch" in frameSubmission)
         assertTrue("TerrainSelectionPublication" in runtime)
         assertTrue("DistantTerrainMeshBuilder" !in runtime && "gui.rendering.util.mesh.Mesh" !in runtime)
         assertTrue("DistantLodMeshPlanner" !in runtime)

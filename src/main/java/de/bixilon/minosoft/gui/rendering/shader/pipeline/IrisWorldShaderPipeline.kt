@@ -663,21 +663,33 @@ class IrisWorldShaderPipeline private constructor(
         fullscreenProgramExecutions = fullscreenProgramExecutions.toMap(),
     )
 
-    override fun renderView(view: RenderViewId, draw: () -> Unit) {
+    override fun beginView(view: RenderViewId) {
         check(!closed) { "Iris shader pipeline is closed" }
-        if (view != IrisShaderPackPlanner.SHADOW_VIEW) return draw()
-        targets.beginShadow()
-        executeComputePrograms(ShaderProgramPhase.SHADOW, targets.size(view))
-        targets.clearShadowColors()
-        targets.bindView(view)
+        if (view != IrisShaderPackPlanner.SHADOW_VIEW) return
         check(currentView == RenderViewId.MAIN) { "A shader auxiliary view is already active" }
-        currentView = view
+        targets.beginShadow()
         try {
-            draw()
-        } finally {
+            executeComputePrograms(ShaderProgramPhase.SHADOW, targets.size(view))
+            targets.clearShadowColors()
+            targets.bindView(view)
+            currentView = view
+        } catch (failure: Throwable) {
             currentView = RenderViewId.MAIN
-            targets.bindView(RenderViewId.MAIN)
+            try {
+                targets.bindView(RenderViewId.MAIN)
+            } catch (cleanup: Throwable) {
+                failure.addSuppressed(cleanup)
+            }
+            throw failure
         }
+    }
+
+    override fun endView(view: RenderViewId) {
+        check(!closed) { "Iris shader pipeline is closed" }
+        if (view != IrisShaderPackPlanner.SHADOW_VIEW) return
+        check(currentView == view) { "Shader auxiliary view $view is not active" }
+        currentView = RenderViewId.MAIN
+        targets.bindView(RenderViewId.MAIN)
     }
 
     override fun composite(fallback: FramebufferShader): FramebufferShader {

@@ -38,6 +38,9 @@ import de.bixilon.minosoft.gui.rendering.camera.occlusion.OcclusionGraph
 import de.bixilon.minosoft.gui.rendering.camera.occlusion.SectionPositionSet
 import de.bixilon.minosoft.gui.rendering.camera.occlusion.WorldOcclusionManager
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshes
+import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMesh
+import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshBuilder
+import de.bixilon.minosoft.gui.rendering.chunk.mesh.types.ChunkMeshTypes
 import de.bixilon.minosoft.gui.rendering.chunk.queue.culled.CulledQueue
 import de.bixilon.minosoft.gui.rendering.chunk.queue.loading.MeshLoadingQueue
 import de.bixilon.minosoft.gui.rendering.chunk.queue.loading.MeshUnloadingQueue
@@ -59,6 +62,7 @@ import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderProgramPhase
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderProgramSource
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.WorldShaderPipeline
 import de.bixilon.minosoft.gui.rendering.system.dummy.DummyRenderSystem
+import de.bixilon.minosoft.gui.rendering.system.dummy.buffer.DummyVertexBuffer
 import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTextureManager
 import de.bixilon.minosoft.gui.rendering.terrain.BuiltInTerrainVertexLayout
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendDescriptor
@@ -101,6 +105,21 @@ class ChunkRendererTest {
         assert(snapshot.requestedByCause.getValue(TerrainBuildCause.LEVEL_OF_DETAIL_UPDATE) == 1L)
         assert(snapshot.suppressedByCause.getValue(TerrainBuildCause.LEVEL_OF_DETAIL_UPDATE) == 1L)
         assert(renderer.meshingQueue.size == 1)
+    }
+
+    fun `occlusion removal advances the visible plan revision`() {
+        val renderer = create()
+        val visible = VisibleMeshes(renderer.visibility)
+        val mesh = ChunkMesh(DummyVertexBuffer(ChunkMeshBuilder.ChunkMeshStruct)).apply {
+            occlusion = ChunkMesh.OcclusionStates.INVISIBLE
+        }
+        visible.meshes[ChunkMeshTypes.OPAQUE.ordinal] += mesh
+        val revision = visible.revision
+
+        visible.removeInvisibleMeshes()
+
+        assert(visible.meshes[ChunkMeshTypes.OPAQUE.ordinal].isEmpty())
+        assert(visible.revision == revision + 1L)
     }
 
     private fun ChunkRenderer.create(position: ChunkPosition, visible: Boolean, neighbours: Boolean): Chunk {

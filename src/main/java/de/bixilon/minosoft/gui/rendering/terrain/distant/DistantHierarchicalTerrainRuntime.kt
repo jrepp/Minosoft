@@ -30,6 +30,7 @@ import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Compan
 import de.bixilon.minosoft.gui.rendering.terrain.storage.OpenGlTerrainRegionDevice
 import de.bixilon.minosoft.gui.rendering.terrain.storage.OpenGlTerrainStagingBuffer
 import de.bixilon.minosoft.gui.rendering.terrain.storage.OpenGlTerrainSubmissionCompletion
+import de.bixilon.minosoft.gui.rendering.terrain.storage.TerrainRegionFrameSubmission
 import de.bixilon.minosoft.terrain.distant.DistantCompatibilityMaterial
 import de.bixilon.minosoft.terrain.distant.DistantCompatibilityMaterialResolver
 import de.bixilon.minosoft.terrain.distant.DistantHierarchyPageDiagnostic
@@ -84,8 +85,6 @@ import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildEstimate
 import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainBuildUrgency
 import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainCancellationToken
 import de.bixilon.minosoft.terrain.runtime.scheduling.TerrainSchedulerTenantId
-import de.bixilon.minosoft.terrain.runtime.storage.TerrainBatchCache
-import de.bixilon.minosoft.terrain.runtime.storage.TerrainDrawBatch
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainRegionExtent
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainRegionKey
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainRegionStorage
@@ -173,7 +172,27 @@ internal class DistantHierarchicalTerrainRuntime(
         val digest: String,
         val materialGeneration: Long,
         val region: Region?,
+        val hasSolid: Boolean,
+        val hasWater: Boolean,
     )
+
+    private data class DrawGroup(
+        val region: Region,
+        val materialGeneration: Long,
+        val pages: List<TerrainPageKey>,
+    )
+
+    private data class DrawPlan(
+        val selection: List<TerrainPageKey>,
+        val gpuRevision: Long,
+        val groups: List<DrawGroup>,
+        val hasSolid: Boolean,
+        val hasWater: Boolean,
+    ) {
+        companion object {
+            val EMPTY = DrawPlan(emptyList(), -1L, emptyList(), false, false)
+        }
+    }
 
     private data class SelectionInput(
         val cameraChunkX: Int,
@@ -224,11 +243,10 @@ internal class DistantHierarchicalTerrainRuntime(
     private val system = context.system as OpenGlRenderSystem
     private val staging = OpenGlTerrainStagingBuffer(VERTEX_CAPACITY_BYTES)
     private val regions = LinkedHashMap<TerrainRegionKey, MutableList<Region>>()
-    private val batchCache = TerrainBatchCache()
     private val selectionPublication = TerrainSelectionPublication()
-    private val submittedBatches = ArrayList<TerrainDrawBatch>()
     private val deviceRuntime = context.terrainSubmissions.deviceRuntime
     private val completion = OpenGlTerrainSubmissionCompletion(context, deviceRuntime)
+    private val frameSubmission = TerrainRegionFrameSubmission(context) { completion }
     private var sourceRevision = Long.MIN_VALUE
     private val sourceKinds = LinkedHashMap<ChunkPosition, DistantLodTileSource>()
     private var nativeOwnership = NativeTerrainOwnershipSnapshot(0L, emptySet())
@@ -236,6 +254,9 @@ internal class DistantHierarchicalTerrainRuntime(
     private var shadowSelection: List<TerrainPageKey> = emptyList()
     private var mainDrawSelection: List<TerrainPageKey> = emptyList()
     private var shadowDrawSelection: List<TerrainPageKey> = emptyList()
+    private var mainDrawPlan = DrawPlan.EMPTY
+    private var shadowDrawPlan = DrawPlan.EMPTY
+    private var gpuRevision = 0L
     private var coverageDistanceSelection: List<TerrainPageKey> = emptyList()
     private var coverageDistanceCamera: ChunkPosition? = null
     private var coverageDistanceSeamBits = 0
@@ -244,12 +265,6 @@ internal class DistantHierarchicalTerrainRuntime(
     private var lastSelectionInput: SelectionInput? = null
     private var lastSelectionFrame = 0L
     private var resetSelectionAfterIngest = false
-    private var frameDrawBatches = 0
-    private var frameDrawCommands = 0
-    private var frameDrawVertices = 0L
-    private var lastDrawBatches = 0
-    private var lastDrawCommands = 0
-    private var lastDrawVertices = 0L
     private var diagnosticFrame = 0
     private var shaderGeneration = context.shaderPipeline.selection().generation
     private var storageCapacityRevision = 0L
@@ -289,76 +304,55 @@ internal class DistantHierarchicalTerrainRuntime(
         scheduleQueued()
     }
 
-    fun hasSolid(): Boolean = mainDrawSelection.any { key ->
-        key in gpuPages && cpuArtifacts[key]?.artifact?.quads?.any { it.fluid == null } == true
-    }
+    fun hasSolid(): Boolean = mainDrawPlan.hasSolid
 
-    fun hasWater(): Boolean = mainDrawSelection.any { key ->
-        key in gpuPages && cpuArtifacts[key]?.artifact?.quads?.any { it.fluid != null } == true
-    }
+    fun hasWater(): Boolean = mainDrawPlan.hasWater
 
-    fun hasShadow(): Boolean = shadowDrawSelection.any { key ->
-        key in gpuPages && cpuArtifacts[key]?.artifact?.quads?.any { it.fluid == null } == true
-    }
+    fun hasShadow(): Boolean = shadowDrawPlan.hasSolid
 
     fun effectiveRenderDistanceChunks(): Int = effectiveRenderDistanceChunks
 
     fun drawSolid(shadow: Boolean) {
-        val pages = if (shadow) shadowDrawSelection else mainDrawSelection
-        draw(pages, solidShader, solid = true, view = if (shadow) SHADOW_VIEW else MAIN_VIEW)
+        val plan = if (shadow) shadowDrawPlan else mainDrawPlan
+        draw(plan, solidShader, solid = true, view = if (shadow) SHADOW_VIEW else MAIN_VIEW)
     }
 
-    fun drawWater() = draw(mainDrawSelection, waterShader, solid = false, view = MAIN_VIEW)
+    fun drawWater() = draw(mainDrawPlan, waterShader, solid = false, view = MAIN_VIEW)
 
     private fun draw(
-        pages: List<TerrainPageKey>,
+        plan: DrawPlan,
         shader: DistantTerrainShader,
         solid: Boolean,
         view: TerrainViewKey,
     ) {
-        if (pages.isEmpty()) return
+        if (plan.groups.isEmpty()) return
         val origin = context.camera.offset.offset
         val material = if (solid) {
             DistantTerrainRegionArtifactEncoder.solidMaterial
         } else {
             DistantTerrainRegionArtifactEncoder.waterMaterial
         }
-        val grouped = pages.mapNotNull { key ->
-            val page = gpuPages[key] ?: return@mapNotNull null
-            val region = page.region ?: return@mapNotNull null
-            Triple(region, page.materialGeneration, key)
-        }.groupBy({ it.first to it.second }, { it.third })
         try {
-            for ((group, regionPages) in grouped) {
-                val (region, materialGeneration) = group
+            for (group in plan.groups) {
+                val region = group.region
                 val key = region.key
-                val batch = batchCache.batch(
+                frameSubmission.draw(
+                    device = region.device,
                     storage = region.storage,
                     material = material,
                     view = view,
-                    orderedPages = regionPages,
+                    orderedPages = group.pages,
                     layoutGeneration = layoutGeneration,
-                    materialGeneration = materialGeneration,
-                ) ?: continue
-                val pageSizeBlocks = Math.multiplyExact(16L, 1L shl key.detailLevel)
-                shader.pageOffset = Vec3f(
-                    (Math.multiplyExact(Math.multiplyExact(key.x, REGION_EXTENT.x.toLong()), pageSizeBlocks) - origin.x).toFloat(),
-                    (context.session.world.dimension.minY - origin.y).toFloat(),
-                    (Math.multiplyExact(Math.multiplyExact(key.z, REGION_EXTENT.z.toLong()), pageSizeBlocks) - origin.z).toFloat(),
+                    materialGeneration = group.materialGeneration,
+                    beforeDraw = {
+                        val pageSizeBlocks = Math.multiplyExact(16L, 1L shl key.detailLevel)
+                        shader.pageOffset = Vec3f(
+                            (Math.multiplyExact(Math.multiplyExact(key.x, REGION_EXTENT.x.toLong()), pageSizeBlocks) - origin.x).toFloat(),
+                            (context.session.world.dimension.minY - origin.y).toFloat(),
+                            (Math.multiplyExact(Math.multiplyExact(key.z, REGION_EXTENT.z.toLong()), pageSizeBlocks) - origin.z).toFloat(),
+                        )
+                    },
                 )
-                try {
-                    val deviceBatches = region.device.draw(batch)
-                    submittedBatches += batch
-                    frameDrawBatches = Math.addExact(frameDrawBatches, deviceBatches)
-                    frameDrawCommands = Math.addExact(frameDrawCommands, batch.commands.size)
-                    frameDrawVertices = Math.addExact(
-                        frameDrawVertices,
-                        batch.commands.sumOf { it.indexCount.toLong() },
-                    )
-                } catch (failure: Throwable) {
-                    batch.close()
-                    throw failure
-                }
             }
         } finally {
             shader.pageOffset = Vec3f()
@@ -366,31 +360,7 @@ internal class DistantHierarchicalTerrainRuntime(
     }
 
     fun finishFrame() {
-        lastDrawBatches = frameDrawBatches
-        lastDrawCommands = frameDrawCommands
-        lastDrawVertices = frameDrawVertices
-        if (submittedBatches.isNotEmpty()) {
-            var failure: Throwable? = null
-            try {
-                val serial = context.terrainSubmissions.next().serial
-                val submission = completion.fence(serial)
-                for (batch in submittedBatches) {
-                    try {
-                        batch.submit(submission)
-                    } catch (error: Throwable) {
-                        failure = combineCleanupFailure(failure, error)
-                    }
-                }
-            } catch (error: Throwable) {
-                failure = combineCleanupFailure(failure, error)
-            }
-            try {
-                closeSubmittedBatches()
-            } catch (error: Throwable) {
-                failure = combineCleanupFailure(failure, error)
-            }
-            if (failure != null) throw failure
-        }
+        frameSubmission.finishFrame()
         diagnosticFrame = Math.addExact(diagnosticFrame, 1)
         if (diagnosticFrame >= DIAGNOSTIC_FRAME_INTERVAL) {
             diagnosticFrame = 0
@@ -938,6 +908,8 @@ internal class DistantHierarchicalTerrainRuntime(
     private fun upload(target: TerrainResidencyTarget, page: CpuPage): Boolean {
         if (gpuPages[target.page]?.publicationVersion == target.publicationVersion) return true
         val key = TerrainRegionKey.containing(target.page, REGION_EXTENT)
+        val hasSolid = page.artifact.quads.any { it.fluid == null }
+        val hasWater = page.artifact.quads.any { it.fluid != null }
         val artifact = DistantTerrainRegionArtifactEncoder.encode(
             identity = page.identity,
             page = page.source,
@@ -953,6 +925,8 @@ internal class DistantHierarchicalTerrainRuntime(
                         digest = artifact.digest.encodedValue,
                         materialGeneration = artifact.identity.materialGeneration,
                         region = null,
+                        hasSolid = hasSolid,
+                        hasWater = hasWater,
                     ),
                 )
             }
@@ -1000,6 +974,8 @@ internal class DistantHierarchicalTerrainRuntime(
                 digest = published.digest.encodedValue,
                 materialGeneration = published.materialGeneration,
                 region = region,
+                hasSolid = hasSolid,
+                hasWater = hasWater,
             ),
         )
         return true
@@ -1008,6 +984,7 @@ internal class DistantHierarchicalTerrainRuntime(
     private fun replaceGpuPage(key: TerrainPageKey, page: GpuPage) {
         val previous = gpuPages.put(key, page)
         gpuPublicationVersions[key] = page.publicationVersion
+        gpuRevision = Math.addExact(gpuRevision, 1L)
         if (previous == null) return
         if (previous.region !== page.region) previous.region?.storage?.remove(key)
     }
@@ -1156,6 +1133,32 @@ internal class DistantHierarchicalTerrainRuntime(
         val mask = TerrainCoveragePageMask(nativeOwnership.lifecycle, COVERAGE_TRANSITION_POLICY)
         mainDrawSelection = mainSelection.filter(mask::drawDistant)
         shadowDrawSelection = shadowSelection.filter(mask::drawDistant)
+        mainDrawPlan = drawPlan(mainDrawSelection, mainDrawPlan)
+        shadowDrawPlan = drawPlan(shadowDrawSelection, shadowDrawPlan)
+    }
+
+    private fun drawPlan(selection: List<TerrainPageKey>, previous: DrawPlan): DrawPlan {
+        if (previous.gpuRevision == gpuRevision && previous.selection == selection) return previous
+        data class GroupKey(val region: Region, val materialGeneration: Long)
+        val grouped = LinkedHashMap<GroupKey, ArrayList<TerrainPageKey>>()
+        var hasSolid = false
+        var hasWater = false
+        for (key in selection) {
+            val page = gpuPages[key] ?: continue
+            hasSolid = hasSolid || page.hasSolid
+            hasWater = hasWater || page.hasWater
+            val region = page.region ?: continue
+            grouped.getOrPut(GroupKey(region, page.materialGeneration), ::arrayListOf) += key
+        }
+        return DrawPlan(
+            selection = selection,
+            gpuRevision = gpuRevision,
+            groups = grouped.map { (key, pages) ->
+                DrawGroup(key.region, key.materialGeneration, java.util.List.copyOf(pages))
+            },
+            hasSolid = hasSolid,
+            hasWater = hasWater,
+        )
     }
 
     private fun updateEffectiveRenderDistance(camera: ChunkPosition, seamDistanceChunks: Float) {
@@ -1185,13 +1188,14 @@ internal class DistantHierarchicalTerrainRuntime(
             gpuPages[page]?.region?.storage?.remove(page)
             iterator.remove()
             gpuPublicationVersions.remove(page)
+            gpuRevision = Math.addExact(gpuRevision, 1L)
             changed = true
         }
-        if (changed) batchCache.clear()
+        if (changed) frameSubmission.clearCache()
     }
 
     private fun prepareStorageFrame() {
-        check(submittedBatches.isEmpty()) { "Previous distant terrain frame was not finished" }
+        frameSubmission.beginFrame()
         completion.collect()
         val iterator = regions.iterator()
         var changed = false
@@ -1210,10 +1214,7 @@ internal class DistantHierarchicalTerrainRuntime(
             }
             if (shards.isEmpty()) iterator.remove()
         }
-        if (changed) batchCache.clear()
-        frameDrawBatches = 0
-        frameDrawCommands = 0
-        frameDrawVertices = 0L
+        if (changed) frameSubmission.clearCache()
     }
 
     private fun createRegion(key: TerrainRegionKey, shard: Int): Region {
@@ -1406,6 +1407,7 @@ internal class DistantHierarchicalTerrainRuntime(
     }
 
     internal fun diagnostics(): DistantHierarchyRenderDiagnostics {
+        val draws = frameSubmission.metrics()
         val hierarchySnapshot = index.snapshot()
         val queuedBuildPages = Math.addExact(
             pendingSourceIngest.size,
@@ -1480,9 +1482,9 @@ internal class DistantHierarchicalTerrainRuntime(
                 Math.addExact(total, metrics.retiredDeviceInvalidatedPages)
             },
             deviceInvalidations = storageMetrics.sumOf { it.deviceInvalidations },
-            drawBatches = lastDrawBatches,
-            drawCommands = lastDrawCommands,
-            drawVertices = lastDrawVertices,
+            drawBatches = draws.drawBatches,
+            drawCommands = draws.drawCommands,
+            drawVertices = draws.drawVertices,
             pendingSubmissionFences = completion.pendingFences,
             detailCounts = gpuPages.keys.groupingBy(TerrainPageKey::detailLevel).eachCount(),
             regionStates = regionMetrics.asSequence()
@@ -1638,7 +1640,7 @@ internal class DistantHierarchicalTerrainRuntime(
     private fun clearGpuResources() {
         var failure: Throwable? = null
         if (Thread.currentThread() === context.thread && Rendering.currentContext === context) {
-            if (submittedBatches.isNotEmpty()) {
+            if (frameSubmission.hasSubmittedBatches) {
                 try {
                     gl { glFinish() }
                 } catch (error: Throwable) {
@@ -1646,7 +1648,7 @@ internal class DistantHierarchicalTerrainRuntime(
                 }
             }
             try {
-                closeSubmittedBatches()
+                frameSubmission.closeSubmittedBatches()
             } catch (error: Throwable) {
                 failure = combineCleanupFailure(failure, error)
             }
@@ -1665,7 +1667,7 @@ internal class DistantHierarchicalTerrainRuntime(
         } else {
             // Context destruction owns device objects on shutdown. No GL call,
             // including lease retirement polling, is legal on this path.
-            submittedBatches.clear()
+            frameSubmission.abandon()
         }
         regions.clear()
         gpuPages.clear()
@@ -1675,35 +1677,17 @@ internal class DistantHierarchicalTerrainRuntime(
         shadowSelection = emptyList()
         mainDrawSelection = emptyList()
         shadowDrawSelection = emptyList()
+        mainDrawPlan = DrawPlan.EMPTY
+        shadowDrawPlan = DrawPlan.EMPTY
+        gpuRevision = 0L
         coverageDistanceSelection = emptyList()
         coverageDistanceCamera = null
         coverageDistanceSeamBits = 0
         effectiveRenderDistanceChunks = config.renderDistanceChunks
-        batchCache.clear()
-        frameDrawBatches = 0
-        frameDrawCommands = 0
-        frameDrawVertices = 0L
-        lastDrawBatches = 0
-        lastDrawCommands = 0
-        lastDrawVertices = 0L
+        frameSubmission.clearCache()
+        frameSubmission.resetMetrics()
         diagnosticFrame = 0
         storageCapacityRevision = 0L
-        if (failure != null) throw failure
-    }
-
-    private fun closeSubmittedBatches() {
-        var failure: Throwable? = null
-        try {
-            for (batch in submittedBatches.asReversed()) {
-                try {
-                    batch.close()
-                } catch (error: Throwable) {
-                    failure = combineCleanupFailure(failure, error)
-                }
-            }
-        } finally {
-            submittedBatches.clear()
-        }
         if (failure != null) throw failure
     }
 

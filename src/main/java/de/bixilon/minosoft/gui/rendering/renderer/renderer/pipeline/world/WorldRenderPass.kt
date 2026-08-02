@@ -28,27 +28,28 @@ class WorldRenderPass(
     val id: RenderPassId,
     val layer: RenderLayer,
     val shader: Shader?,
-    private val renderer: () -> Unit,
+    private val renderer: (RenderViewId) -> Unit,
     val semantic: PipelineSemantic,
     val owner: (() -> RenderOwnerId)? = null,
-    private val auxiliaryViews: Map<RenderViewId, () -> Unit> = emptyMap(),
-    private val skip: (() -> Boolean)? = null,
+    views: Set<RenderViewId> = MAIN_VIEW,
+    private val enabled: (RenderViewId) -> Boolean = { true },
 ) {
-    fun isEnabled(): Boolean = skip?.invoke() != true
+    private val views = views.toSet()
+    private val profilerName = renderer::class.java.realName
 
-    fun drawMain(context: RenderContext) = draw(context, renderer)
+    fun isEnabled(view: RenderViewId): Boolean = view in views && enabled(view)
 
-    fun supports(view: RenderViewId): Boolean = view in auxiliaryViews
+    fun supports(view: RenderViewId): Boolean = view in views
 
     fun draw(view: RenderViewId, context: RenderContext) {
-        val renderer = auxiliaryViews[view] ?: return
-        draw(context, renderer)
-    }
-
-    private fun draw(context: RenderContext, renderer: () -> Unit) {
+        check(view in views) { "Render pass $id does not support view $view" }
         context.system.set(layer.settings)
         shader?.use()
-        context.profiler(renderer::class.java.realName) { renderer() }
+        context.profiler(profilerName) { renderer(view) }
+    }
+
+    private companion object {
+        val MAIN_VIEW = setOf(RenderViewId.MAIN)
     }
 }
 

@@ -30,8 +30,29 @@ class WorldPassRegistry {
         semantic: PipelineSemantic,
         owner: (() -> RenderOwnerId)? = null,
         passId: RenderPassId,
-        auxiliaryRenderers: Map<RenderViewId, () -> Unit> = emptyMap(),
         skip: (() -> Boolean)? = null,
+    ) {
+        addViews(
+            passId = passId,
+            layer = layer,
+            shader = shader,
+            renderer = { renderer() },
+            semantic = semantic,
+            owner = owner,
+            views = setOf(RenderViewId.MAIN),
+            enabled = { skip?.invoke() != true },
+        )
+    }
+
+    fun addViews(
+        layer: RenderLayer,
+        shader: Shader?,
+        renderer: (RenderViewId) -> Unit,
+        semantic: PipelineSemantic,
+        owner: (() -> RenderOwnerId)? = null,
+        passId: RenderPassId,
+        views: Set<RenderViewId>,
+        enabled: (RenderViewId) -> Boolean = { true },
     ) {
         declarations += WorldRenderPass(
             id = passId,
@@ -40,8 +61,8 @@ class WorldPassRegistry {
             renderer = renderer,
             semantic = semantic,
             owner = owner,
-            auxiliaryViews = auxiliaryRenderers,
-            skip = skip,
+            views = views,
+            enabled = enabled,
         )
     }
 }

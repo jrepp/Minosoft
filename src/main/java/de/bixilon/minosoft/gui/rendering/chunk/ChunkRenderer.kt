@@ -96,31 +96,45 @@ class ChunkRenderer(
     private data class TerrainFramePlan(
         val regionSections: List<de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshes>,
         val conventional: Array<List<ChunkMesh>>,
-    )
+        val materials: BooleanArray,
+        val hasBlockEntities: Boolean,
+        val hasTranslucentBlockEntities: Boolean,
+    ) {
+        fun hasMaterial(material: TerrainMaterialClass): Boolean = materials[material.ordinal]
+    }
 
     private val terrainFramePlans = HashMap<RenderViewId, TerrainFramePlan>()
+    private var cachedMainVisibleMeshes: de.bixilon.minosoft.gui.rendering.chunk.visible.VisibleMeshes? = null
+    private var cachedMainVisibleRevision = -1L
+    private var cachedMainTerrainFramePlan: TerrainFramePlan? = null
+    private val occlusionCandidates = ArrayList<ChunkMesh>()
 
 
     var limitChunkTransferTime = true
 
     private fun registerMeshLayer(layer: RenderLayer, material: TerrainMaterialClass, type: ChunkMeshTypes) {
-        passes.add(
+        val views = if (material == TerrainMaterialClass.EMISSIVE_ADDITIVE) {
+            setOf(RenderViewId.MAIN)
+        } else {
+            setOf(RenderViewId.MAIN, IrisShaderPackPlanner.SHADOW_VIEW)
+        }
+        passes.addViews(
             layer = layer,
             shader = null,
-            renderer = { terrain.submit(RenderViewId.MAIN, material) },
+            renderer = { view -> terrain.submit(view, material) },
             semantic = material.semantic,
             owner = { terrain.selection().owner },
             passId = material.passId,
-            skip = {
-                val visible = visibility.meshes
-                visible.lock.locked {
-                    if (regionTerrain != null) {
-                        !regionTerrain.hasVisibleMaterial(material, visible.sections) &&
-                            visible.meshes[type.ordinal].isEmpty()
+            views = views,
+            enabled = { view ->
+                terrainFramePlans.getOrPut(view) {
+                    val shadow = if (view == IrisShaderPackPlanner.SHADOW_VIEW) {
+                        context.shaderPipeline.plan()?.shadowDirectives
                     } else {
-                        visible.meshes[type.ordinal].isEmpty()
+                        null
                     }
-                }
+                    buildTerrainFramePlan(shadow)
+                }.hasMaterial(material)
             },
         )
     }
@@ -130,19 +144,16 @@ class ChunkRenderer(
         registerMeshLayer(CutoutLayer, TerrainMaterialClass.CUTOUT, ChunkMeshTypes.CUTOUT)
         registerMeshLayer(TranslucentLayer, TerrainMaterialClass.TRANSLUCENT, ChunkMeshTypes.TRANSLUCENT)
         registerMeshLayer(TextLayer, TerrainMaterialClass.EMISSIVE_ADDITIVE, ChunkMeshTypes.TEXT)
-        passes.add(
+        passes.addViews(
             OpaqueBlockEntitiesLayer,
             null,
-            this::drawBlockEntities,
+            renderer = { view -> drawBlockEntities(shadow = view == IrisShaderPackPlanner.SHADOW_VIEW) },
             semantic = PipelineSemantic.BLOCK_ENTITIES,
             passId = RenderPassId("minosoft:scene/block-entities-opaque"),
-            skip = { visibility.meshes.entities.isEmpty() },
-            auxiliaryRenderers = mapOf(
-                IrisShaderPackPlanner.SHADOW_VIEW to {
-                    drawBlockEntities(shadow = true)
-                    Unit
-                },
-            ),
+            views = setOf(RenderViewId.MAIN, IrisShaderPackPlanner.SHADOW_VIEW),
+            enabled = { view ->
+                view != RenderViewId.MAIN || terrainFramePlans[RenderViewId.MAIN]?.hasBlockEntities == true
+            },
         )
         passes.add(
             TranslucentBlockEntitiesLayer,
@@ -150,7 +161,7 @@ class ChunkRenderer(
             this::drawTranslucentBlockEntities,
             semantic = PipelineSemantic.BLOCK_ENTITIES_TRANSLUCENT,
             passId = RenderPassId("minosoft:scene/block-entities-translucent"),
-            skip = { visibility.meshes.entities.none(BlockEntityRenderer::hasTranslucentPass) },
+            skip = { terrainFramePlans[RenderViewId.MAIN]?.hasTranslucentBlockEntities != true },
         )
     }
 
@@ -300,6 +311,21 @@ class ChunkRenderer(
         context.profiler("meshingPublish") { meshingQueue.publishCompleted() }
         context.profiler("unloading") { unloadingQueue.work() }
         context.profiler("loading") { loadingQueue.work() }
+        val visible = visibility.meshes
+        val cached = cachedMainTerrainFramePlan
+        val mainPlan = if (
+            cached != null && cachedMainVisibleMeshes === visible &&
+            cachedMainVisibleRevision == visible.revision
+        ) {
+            cached
+        } else {
+            buildTerrainFramePlan(null).also {
+                cachedMainVisibleMeshes = visible
+                cachedMainVisibleRevision = visible.revision
+                cachedMainTerrainFramePlan = it
+            }
+        }
+        terrainFramePlans[RenderViewId.MAIN] = mainPlan
     }
 
 
@@ -310,13 +336,12 @@ class ChunkRenderer(
     internal fun finishTerrainFrameCore() {
         regionTerrain?.finishFrame()
         val meshes = visibility.meshes
-        meshes.lock.locked { meshes.meshes[ChunkMeshTypes.OPAQUE.ordinal].firstOrNull() }?.updateOcclusion() // don't lock all meshes, updateOcclusion is a blocking operation
-
+        occlusionCandidates.clear()
         meshes.lock.locked {
-            for (type in ChunkMeshTypes) {
-                meshes.meshes[type.ordinal].removeIf { it.updateOcclusion(); it.occlusion == ChunkMesh.OcclusionStates.INVISIBLE }
-            }
+            for (type in ChunkMeshTypes) occlusionCandidates.addAll(meshes.meshes[type.ordinal])
         }
+        for (mesh in occlusionCandidates) mesh.updateOcclusion()
+        meshes.removeInvisibleMeshes()
     }
 
     internal fun submitTerrainCore(view: RenderViewId, material: TerrainMaterialClass) {
@@ -386,6 +411,18 @@ class ChunkRenderer(
         return TerrainFramePlan(
             java.util.List.copyOf(regions),
             Array(conventional.size) { java.util.List.copyOf(conventional[it]) },
+            BooleanArray(TerrainMaterialClass.entries.size) { ordinal ->
+                val material = TerrainMaterialClass.entries[ordinal]
+                val type = material.chunkMeshType
+                (type != null && conventional[type.ordinal].isNotEmpty()) ||
+                    regionTerrain?.hasVisibleMaterial(material, regions) == true
+            },
+            hasBlockEntities = if (shadow == null) visibility.meshes.entities.isNotEmpty() else false,
+            hasTranslucentBlockEntities = if (shadow == null) {
+                visibility.meshes.entities.any(BlockEntityRenderer::hasTranslucentPass)
+            } else {
+                false
+            },
         )
     }
 
@@ -511,6 +548,15 @@ private val TerrainMaterialClass.semantic: PipelineSemantic
         TerrainMaterialClass.TRANSLUCENT -> PipelineSemantic.TERRAIN_TRANSLUCENT
         TerrainMaterialClass.EMISSIVE_ADDITIVE -> PipelineSemantic.TERRAIN_EMISSIVE
         TerrainMaterialClass.DISTANT_WATER -> error("Distant water has no near terrain graph semantic")
+    }
+
+private val TerrainMaterialClass.chunkMeshType: ChunkMeshTypes?
+    get() = when (this) {
+        TerrainMaterialClass.OPAQUE -> ChunkMeshTypes.OPAQUE
+        TerrainMaterialClass.CUTOUT -> ChunkMeshTypes.CUTOUT
+        TerrainMaterialClass.TRANSLUCENT -> ChunkMeshTypes.TRANSLUCENT
+        TerrainMaterialClass.EMISSIVE_ADDITIVE -> ChunkMeshTypes.TEXT
+        TerrainMaterialClass.DISTANT_WATER -> null
     }
 
 private val TerrainMaterialClass.passId: RenderPassId
