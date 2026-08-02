@@ -17,22 +17,21 @@ import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class DistantPageMeshingTest {
     @Test
-    fun `flat page greedily merges to a closed box with boundary fallback`() {
+    fun `flat page greedily merges known horizontal coverage without inventing boundary walls`() {
         val column = column(run(0, 8, STONE, opaque = true))
         val page = page(key(0, 0), width = 2, columns = List(4) { column })
 
         val artifact = DistantPageMesher.mesh(page)
 
-        assertEquals(16, artifact.primitiveFaceCount)
-        assertEquals(6, artifact.mergedFaceCount)
-        assertEquals(4, artifact.fallbackFaceCount)
-        assertEquals(24, artifact.vertexCount)
-        assertEquals(36, artifact.indexCount)
+        assertEquals(4, artifact.primitiveFaceCount)
+        assertEquals(1, artifact.mergedFaceCount)
+        assertEquals(0, artifact.fallbackFaceCount)
+        assertEquals(4, artifact.vertexCount)
+        assertEquals(6, artifact.indexCount)
         assertTrue(artifact.quads.any {
             it.direction == DistantFaceDirection.UP && it.minimumU == 0 && it.maximumUExclusive == 2 &&
                 it.minimumV == 0 && it.maximumVExclusive == 2
@@ -144,17 +143,15 @@ class DistantPageMeshingTest {
             it.direction == DistantFaceDirection.EAST && it.material == STONE && it.maximumVExclusive == 12
         })
         assertEquals(first.digest, second.digest)
-        assertEquals("24fda655859bdaf5bbc279f272596267fa3ae9c20009ea720f1c6185942894c5", first.digest)
+        assertEquals("a1103f87f1200c6eb1dc86cdaa256b50d6d25dd72867a71bed217343c235365e", first.digest)
     }
 
     @Test
-    fun `fallback is bounded and used only for missing or incomplete neighbours`() {
+    fun `missing and partial neighbours do not invent boundary skirts`() {
         val subject = page(key(0, 0), 1, listOf(column(run(0, 100, STONE, opaque = true))))
-        val missing = DistantPageMesher.mesh(subject, maximumFallbackDepth = 32)
-        assertEquals(4, missing.fallbackFaceCount)
-        assertTrue(missing.quads.filter(DistantMeshQuad::fallback).all {
-            it.minimumV == 68 && it.maximumVExclusive == 100
-        })
+        val missing = DistantPageMesher.mesh(subject)
+        assertEquals(0, missing.fallbackFaceCount)
+        assertFalse(missing.quads.any { it.direction in SIDE_DIRECTIONS })
 
         val complete = cardinalPages(subject.key).map { page(it, 1, listOf(column())) }
         val exact = DistantPageMesher.mesh(subject, DistantPageNeighbourhood(subject, complete))
@@ -173,7 +170,8 @@ class DistantPageMeshingTest {
             subject,
             DistantPageNeighbourhood(subject, complete.filterNot { it.key == incomplete.key } + incomplete),
         )
-        assertTrue(mixed.quads.any { it.direction == DistantFaceDirection.WEST && it.fallback })
+        assertFalse(mixed.quads.any { it.direction == DistantFaceDirection.WEST })
+        assertEquals(0, mixed.fallbackFaceCount)
     }
 
     @Test
@@ -198,11 +196,27 @@ class DistantPageMeshingTest {
         assertEquals(2, stitched.maximumUExclusive)
         assertEquals(0, stitched.minimumV)
         assertEquals(10, stitched.maximumVExclusive)
-        assertNotEquals(0, artifact.fallbackFaceCount)
+        assertEquals(0, artifact.fallbackFaceCount)
     }
 
     @Test
-    fun `parent reduction preserves extrema fluid and minimum completeness deterministically`() {
+    fun `partial surface does not emit an unobserved underside`() {
+        val subject = page(
+            key(0, 0),
+            width = 1,
+            columns = listOf(column(run(8, 1, STONE, opaque = true))),
+            completeness = DistantSourceCompleteness.PARTIAL,
+        )
+
+        val artifact = DistantPageMesher.mesh(subject)
+
+        assertTrue(artifact.quads.any { it.direction == DistantFaceDirection.UP })
+        assertFalse(artifact.quads.any { it.direction == DistantFaceDirection.DOWN })
+        assertFalse(artifact.quads.any { it.direction in SIDE_DIRECTIONS })
+    }
+
+    @Test
+    fun `parent reduction rejects minority relief and fluid without losing completeness`() {
         val parentKey = key(0, 0, detail = 1)
         val childKeys = DistantPageHierarchy.children(parentKey)
         val fluid = DistantFluidSample(WATER, 0, "water")
@@ -222,9 +236,49 @@ class DistantPageMeshingTest {
         val second = DistantVerticalPageReducer.reduce(parentKey, children.reversed(), sourceRevision = 8)
 
         assertEquals(DistantSourceCompleteness.PARTIAL, first.completeness)
-        assertEquals(10, first[0, 0].runs.maxOf(DistantColumnRun::maximumYExclusive))
-        assertTrue(first[0, 0].runs.any { it.fluid == fluid })
+        assertEquals(5, first[0, 0].runs.maxOf(DistantColumnRun::maximumYExclusive))
+        assertFalse(first[0, 0].runs.any { it.fluid == fluid })
         assertEquals(first.semanticDigest, second.semanticDigest)
+    }
+
+    @Test
+    fun `parent reduction retains fluid covered by a child majority`() {
+        val parentKey = key(0, 0, detail = 1)
+        val childKeys = DistantPageHierarchy.children(parentKey)
+        val fluid = DistantFluidSample(WATER, 0, "water")
+        val water = column(run(0, 8, WATER, fluid = fluid))
+        val children = listOf(
+            page(childKeys[0], 1, listOf(water)),
+            page(childKeys[1], 1, listOf(water)),
+            page(childKeys[2], 1, listOf(water)),
+            page(childKeys[3], 1, listOf(column(run(0, 10, STONE, opaque = true)))),
+        )
+
+        val reduced = DistantVerticalPageReducer.reduce(parentKey, children, sourceRevision = 9)
+
+        assertTrue(reduced[0, 0].runs.any { it.fluid == fluid })
+    }
+
+    @Test
+    fun `parent reduction bounds the union of child run boundaries`() {
+        val parentKey = key(0, 0, detail = 1)
+        val childKeys = DistantPageHierarchy.children(parentKey)
+        val alternating = (84 downTo 0).map { y ->
+            run(y, 1, if (y % 2 == 0) STONE else DIRT, opaque = true)
+        }
+        val children = childKeys.mapIndexed { childIndex, child ->
+            page(
+                child,
+                1,
+                listOf(DistantVerticalColumn(alternating.filterIndexed { index, _ -> index % 4 != childIndex })),
+            )
+        }
+
+        val reduced = DistantVerticalPageReducer.reduce(parentKey, children, sourceRevision = 9)
+
+        assertEquals(DistantVerticalColumn.MAXIMUM_RUNS, reduced[0, 0].runs.size)
+        assertEquals(0, reduced[0, 0].runs.last().minimumY)
+        assertEquals(85, reduced[0, 0].runs.first().maximumYExclusive)
     }
 
     private fun page(
@@ -266,6 +320,7 @@ class DistantPageMeshingTest {
     private companion object {
         const val WORLD_EPOCH = 23L
         val STONE = TerrainSemanticMaterialId("minecraft:stone")
+        val DIRT = TerrainSemanticMaterialId("minecraft:dirt")
         val WATER = TerrainSemanticMaterialId("minecraft:water")
         val SIDE_DIRECTIONS = setOf(
             DistantFaceDirection.NORTH,

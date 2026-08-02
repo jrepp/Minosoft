@@ -171,7 +171,18 @@ object DistantVerticalPageReducer {
                 upper = lower
                 continue
             }
-            val representative = representative(candidates, candidateCount)
+            // A parent column covers the complete 2x2 footprint. Promoting an
+            // interval present in only one or two children invents a full-cell
+            // slab (most visibly isolated peaks and water at coastlines).
+            if (candidateCount * 2 <= columns.size) {
+                upper = lower
+                continue
+            }
+            val representative = representative(candidates, candidateCount, columns.size)
+            if (representative == null) {
+                upper = lower
+                continue
+            }
             val interval = copyInterval(representative, lower, upper)
             val previous = reduced.lastOrNull()
             if (previous != null && previous.minimumY == interval.maximumYExclusive &&
@@ -183,12 +194,30 @@ object DistantVerticalPageReducer {
             }
             upper = lower
         }
-        val column = DistantVerticalColumn(reduced)
-        return if (column.runs.size > DistantVerticalColumn.MAXIMUM_RUNS) {
-            DistantColumnReducer.reduce(column, DistantVerticalColumn.MAXIMUM_RUNS)
+        return if (reduced.size > DistantVerticalColumn.MAXIMUM_RUNS) {
+            DistantColumnReducer.reduce(reduced, DistantVerticalColumn.MAXIMUM_RUNS)
         } else {
-            column
+            DistantVerticalColumn(reduced)
         }
+    }
+
+    private fun representative(
+        candidates: Array<DistantColumnRun?>,
+        count: Int,
+        sampleCount: Int,
+    ): DistantColumnRun? {
+        require(sampleCount > 0 && count in 1..sampleCount) { "Distant reduction sample count is invalid" }
+        val fluidCount = (0 until count).count { checkNotNull(candidates[it]).fluid != null }
+        if (fluidCount * 2 <= sampleCount) {
+            var retained = 0
+            for (index in 0 until count) {
+                val candidate = checkNotNull(candidates[index])
+                if (candidate.fluid == null) candidates[retained++] = candidate
+            }
+            if (retained == 0) return null
+            return representative(candidates, retained)
+        }
+        return representative(candidates, count)
     }
 
     private fun representative(candidates: Array<DistantColumnRun?>, count: Int): DistantColumnRun {
@@ -416,21 +445,19 @@ object DistantPageMesher {
     fun mesh(
         page: DistantVerticalPage,
         neighbourhood: DistantPageNeighbourhood = DistantPageNeighbourhood(page, emptyList()),
-        maximumFallbackDepth: Int = DEFAULT_FALLBACK_DEPTH,
     ): DistantPageMeshArtifact {
         require(neighbourhood.subject === page || neighbourhood.subject.key == page.key) {
             "Distant neighbourhood belongs to another page"
         }
-        require(maximumFallbackDepth > 0) { "Distant fallback depth must be positive" }
         val faces = ArrayList<DistantMeshQuad>()
         for (z in 0 until page.width) {
             for (x in 0 until page.width) {
                 val column = page[x, z]
                 emitHorizontalFaces(page, x, z, column, faces)
-                emitDirection(page, neighbourhood, x, z, column, DistantFaceDirection.NORTH, maximumFallbackDepth, faces)
-                emitDirection(page, neighbourhood, x, z, column, DistantFaceDirection.SOUTH, maximumFallbackDepth, faces)
-                emitDirection(page, neighbourhood, x, z, column, DistantFaceDirection.WEST, maximumFallbackDepth, faces)
-                emitDirection(page, neighbourhood, x, z, column, DistantFaceDirection.EAST, maximumFallbackDepth, faces)
+                emitDirection(page, neighbourhood, x, z, column, DistantFaceDirection.NORTH, faces)
+                emitDirection(page, neighbourhood, x, z, column, DistantFaceDirection.SOUTH, faces)
+                emitDirection(page, neighbourhood, x, z, column, DistantFaceDirection.WEST, faces)
+                emitDirection(page, neighbourhood, x, z, column, DistantFaceDirection.EAST, faces)
             }
         }
         val merged = greedyMerge(faces)
@@ -460,8 +487,14 @@ object DistantPageMesher {
                     run,
                 )
             }
-            val below = column.runs.firstOrNull { it.maximumYExclusive == run.minimumY && it.material != null }
-            if (below == null || !occludes(run, below)) {
+            val below = column.runs.firstOrNull { it.maximumYExclusive == run.minimumY }
+            val knownInteriorBelow = below != null || column.runs.any {
+                it.maximumYExclusive < run.minimumY
+            }
+            if (page.completeness == DistantSourceCompleteness.COMPLETE &&
+                knownInteriorBelow &&
+                (below == null || !occludes(run, below))
+            ) {
                 destination += quad(
                     DistantFaceDirection.DOWN,
                     run.minimumY - page.originY,
@@ -482,7 +515,6 @@ object DistantPageMesher {
         z: Int,
         column: DistantVerticalColumn,
         direction: DistantFaceDirection,
-        maximumFallbackDepth: Int,
         destination: MutableList<DistantMeshQuad>,
     ) {
         val localNeighbourX = x + when (direction) {
@@ -537,19 +569,11 @@ object DistantPageMesher {
                 page.cellSizeBlocks - offset,
                 neighbourSegmentLength ?: page.cellSizeBlocks,
             )
-            if (sample == null || sample.page.completeness != DistantSourceCompleteness.COMPLETE) {
-                emitFallbackSegment(
-                    page,
-                    x,
-                    z,
-                    column,
-                    direction,
-                    offset,
-                    segmentLength,
-                    maximumFallbackDepth,
-                    destination,
-                )
-            } else {
+            // Missing coverage is unknown, not an observed cliff. Emitting a
+            // bounded skirt here turns page and LOD frontiers into large dark
+            // walls. A partial neighbour still contributes its known runs;
+            // the comparison therefore closes only geometry backed by data.
+            if (sample != null) {
                 emitComparedSegment(
                     page,
                     x,
@@ -594,35 +618,6 @@ object DistantPageMesher {
                 )
             }
         }
-    }
-
-    private fun emitFallbackSegment(
-        page: DistantVerticalPage,
-        x: Int,
-        z: Int,
-        column: DistantVerticalColumn,
-        direction: DistantFaceDirection,
-        segmentOffset: Int,
-        segmentLength: Int,
-        maximumFallbackDepth: Int,
-        destination: MutableList<DistantMeshQuad>,
-    ) {
-        val top = column.runs.firstOrNull(::isRenderable) ?: return
-        val (minimumU, maximumU, plane) = sideCoordinates(page, x, z, direction, segmentOffset, segmentLength)
-        val minimumY = max(
-            page.originY.toLong(),
-            top.maximumYExclusive.toLong() - maximumFallbackDepth,
-        ).toInt()
-        destination += quad(
-            direction,
-            plane,
-            minimumU,
-            maximumU,
-            minimumY - page.originY,
-            top.maximumYExclusive - page.originY,
-            top,
-            fallback = true,
-        )
     }
 
     private fun sideCoordinates(
@@ -818,7 +813,6 @@ object DistantPageMesher {
         MergeKey::fallback,
     )
 
-    private const val DEFAULT_FALLBACK_DEPTH = 32
 }
 
 private fun overlaps(first: DistantVerticalPage, second: DistantVerticalPage): Boolean =
