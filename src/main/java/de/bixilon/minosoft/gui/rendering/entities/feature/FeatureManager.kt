@@ -38,14 +38,18 @@ class FeatureManager(val renderer: EntityRenderer<*>) : Iterable<EntityRenderFea
         this.features -= feature
     }
 
-    fun update(delta: Duration, auxiliaryVisible: Boolean = false) {
+    fun update(
+        delta: Duration,
+        auxiliaryVisible: Boolean = false,
+        cameraVisible: Boolean = renderer.isVisibleTo(renderer.renderer.context.session.camera.entity),
+    ) {
         for (feature in features) {
             val outline = (feature as? EntityOutlineFeature)?.outlineColor()
             val shadow = feature as? FeatureDrawable
             val shadowVisible = auxiliaryVisible &&
                 shadow?.castsShadow == true &&
                 feature.isShadowVisible()
-            if (!feature.isNormallyVisible() && outline == null && !shadowVisible) continue
+            if (!feature.isNormallyVisible(cameraVisible) && outline == null && !shadowVisible) continue
             feature.update(delta)
         }
     }
@@ -71,11 +75,14 @@ class FeatureManager(val renderer: EntityRenderer<*>) : Iterable<EntityRenderFea
     @Suppress("DEPRECATION")
     fun invalidate() = features.forEach { it.invalidate() }
     fun updateVisibility(level: EntityVisibilityLevels) = features.forEach { it.updateVisibility(level) }
-    fun collect(drawer: EntityDrawer) {
+    fun collect(
+        drawer: EntityDrawer,
+        cameraVisible: Boolean = renderer.isVisibleTo(renderer.renderer.context.session.camera.entity),
+    ) {
         for (feature in features) {
             val outline = (feature as? EntityOutlineFeature)?.outlineColor()
             if (outline != null) drawer.addOutline(feature, outline)
-            if (feature.isNormallyVisible()) feature.collect(drawer)
+            if (feature.isNormallyVisible(cameraVisible)) feature.collect(drawer)
         }
     }
 
@@ -87,9 +94,9 @@ class FeatureManager(val renderer: EntityRenderer<*>) : Iterable<EntityRenderFea
         }
     }
 
-    private fun EntityRenderFeature.isNormallyVisible(): Boolean {
+    private fun EntityRenderFeature.isNormallyVisible(cameraVisible: Boolean): Boolean {
         if (!isVisible()) return false
-        return renderer.isVisibleTo(renderer.renderer.context.session.camera.entity)
+        return cameraVisible
     }
 
     fun clear() {

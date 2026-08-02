@@ -72,46 +72,45 @@ class EntitiesRenderer(
 
         renderers.iterate {
             try {
-                if (invalid) {
-                    it.invalidate()
+                try {
+                    if (invalid) it.invalidate()
+
+                    val cameraVisible = it.isVisibleTo(camera)
+                    val nativeVisibility = visibility.getVisibilityLevel(it, cameraVisible)
+                    it.updateVisibility(FabricEntityVisibilityHooks.refine(it, nativeVisibility))
+                    val mainVisible = it.isVisible(cameraVisible)
+                    val entity = it.entity
+                    val position = entity.physics.position
+                    val dimensions = entity.dimensions
+                    val shadowVisible = shadow != null &&
+                        cameraVisible &&
+                        shadow.allowsEntity(entity === camera) &&
+                        (shadowCulling?.allowsEntityBounds(
+                            position.x - dimensions.x * 0.5,
+                            position.y,
+                            position.z - dimensions.x * 0.5,
+                            position.x + dimensions.x * 0.5,
+                            position.y + dimensions.y,
+                            position.z + dimensions.x * 0.5,
+                        ) ?: shadow.allowsEntityBounds(
+                            shadowCamera.x,
+                            shadowCamera.y,
+                            shadowCamera.z,
+                            position.x - dimensions.x * 0.5,
+                            position.y,
+                            position.z - dimensions.x * 0.5,
+                            position.x + dimensions.x * 0.5,
+                            position.y + dimensions.y,
+                            position.z + dimensions.x * 0.5,
+                        ))
+
+                    if (!mainVisible && !shadowVisible) return@iterate
+                    it.update(time, shadowVisible, cameraVisible)
+                    if (mainVisible) it.collect(drawer, cameraVisible)
+                    if (shadowVisible) it.collectShadow(drawer)
+                } finally {
+                    it.enqueueUnload()
                 }
-
-                val nativeVisibility = visibility.getVisibilityLevel(it)
-                it.updateVisibility(FabricEntityVisibilityHooks.refine(it, nativeVisibility)) // TODO: only calculate if position, world or frustum changed (but still set it)
-                it.enqueueUnload()
-
-                val mainVisible = it.isVisible()
-                val entity = it.entity
-                val position = entity.physics.position
-                val dimensions = entity.dimensions
-                val shadowVisible = shadow != null &&
-                    it.isVisibleTo(camera) &&
-                    shadow.allowsEntity(entity === camera) &&
-                    (shadowCulling?.allowsEntityBounds(
-                        position.x - dimensions.x * 0.5,
-                        position.y,
-                        position.z - dimensions.x * 0.5,
-                        position.x + dimensions.x * 0.5,
-                        position.y + dimensions.y,
-                        position.z + dimensions.x * 0.5,
-                    ) ?: shadow.allowsEntityBounds(
-                        shadowCamera.x,
-                        shadowCamera.y,
-                        shadowCamera.z,
-                        position.x - dimensions.x * 0.5,
-                        position.y,
-                        position.z - dimensions.x * 0.5,
-                        position.x + dimensions.x * 0.5,
-                        position.y + dimensions.y,
-                        position.z + dimensions.x * 0.5,
-                    ))
-
-                if (!mainVisible && !shadowVisible) return@iterate
-                it.update(time, shadowVisible)
-                it.enqueueUnload()
-
-                if (mainVisible) it.collect(drawer)
-                if (shadowVisible) it.collectShadow(drawer)
             } catch (error: Throwable) {
                 error.printStackTrace()
                 Exception("Exception while rendering entity (session=${session.id}, entity=${it.entity})", error).crash()

@@ -18,19 +18,16 @@ import de.bixilon.minosoft.data.world.chunk.ChunkSize
 import de.bixilon.minosoft.data.world.view.ViewDistanceChangeEvent
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
-import de.bixilon.minosoft.gui.rendering.events.VisibilityGraphChangeEvent
 import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3iUtil
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
 
 class VisibilityManager(val renderer: EntitiesRenderer) {
-    private var invalid = false
     private val graph = renderer.context.camera.occlusion
     private val frustum = renderer.context.camera.frustum
     private var renderDistance = 0
     private var eyePosition = renderer.session.camera.entity.physics.positionInfo.eyePosition
 
     fun init() {
-        renderer.session.events.listen<VisibilityGraphChangeEvent> { invalidate() }
         renderer.session.events.listen<ViewDistanceChangeEvent> { updateViewDistance(server = it.viewDistance) }
         renderer.profile.general::renderDistance.observe(this, true) { updateViewDistance(entity = it) }
     }
@@ -39,23 +36,25 @@ class VisibilityManager(val renderer: EntitiesRenderer) {
         var distance = if (entity < 0) (server - 1) else entity
         distance *= ChunkSize.SECTION_LENGTH
         this.renderDistance = distance * distance // length^2
-        invalidate()
-    }
-
-    private fun invalidate() {
-        invalid = true // TODO: Use
     }
 
     fun update() {
         eyePosition = renderer.session.camera.entity.physics.positionInfo.eyePosition
     }
 
-    fun getVisibilityLevel(renderer: EntityRenderer<*>): EntityVisibilityLevels {
+    fun getVisibilityLevel(
+        renderer: EntityRenderer<*>,
+        cameraVisible: Boolean,
+    ): EntityVisibilityLevels {
         val distance = Vec3iUtil.distance2(renderer.entity.physics.positionInfo.eyePosition, eyePosition).toDouble()
         if (distance >= renderDistance) return EntityVisibilityLevels.OUT_OF_VIEW_DISTANCE
 
         val entity = renderer.entity
-        val aabb = if (!renderer.isVisible()) entity.physics.aabb else entity.renderInfo.cameraAABB // cameraAABB is only updated if entity is visible
+        val aabb = if (!renderer.isVisible(cameraVisible)) {
+            entity.physics.aabb
+        } else {
+            entity.renderInfo.cameraAABB
+        }
 
         return when {
             aabb == null -> EntityVisibilityLevels.VISIBLE // TODO: Undecidable...

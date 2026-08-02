@@ -41,6 +41,7 @@ abstract class EntityRenderer<E : Entity>(
     val entity: E,
 ) {
     private var update = TimeUtil.NULL
+    private var suppliedCameraVisibility: Boolean? = null
     val features = FeatureManager(this)
     val renderEffects = EntityRenderEffects(entity.dimensions.x * 0.5f)
     val info = entity.renderInfo
@@ -81,17 +82,23 @@ abstract class EntityRenderer<E : Entity>(
         }
     }
 
-    fun update(time: ValueTimeMark, auxiliaryVisible: Boolean = false) {
+    fun update(
+        time: ValueTimeMark,
+        auxiliaryVisible: Boolean = false,
+        cameraVisible: Boolean = isVisibleTo(renderer.context.session.camera.entity),
+    ) {
         val delta = if (this.update == TimeUtil.NULL) Duration.ZERO else (time - update)
-        update(time, delta, auxiliaryVisible)
-        this.update = time
+        withCameraVisibility(cameraVisible) {
+            update(time, delta, auxiliaryVisible)
+            this.update = time
+        }
     }
 
     open fun update(time: ValueTimeMark, delta: Duration, auxiliaryVisible: Boolean = false) {
         updateLight(delta)
         updateRenderInfo(time)
         updateMatrix(delta)
-        features.update(delta, auxiliaryVisible)
+        features.update(delta, auxiliaryVisible, cameraVisibility())
     }
 
     open fun updateRenderInfo(time: ValueTimeMark) {
@@ -132,8 +139,12 @@ abstract class EntityRenderer<E : Entity>(
         features.invalidate()
     }
 
+    fun collect(drawer: EntityDrawer, cameraVisible: Boolean) {
+        withCameraVisibility(cameraVisible) { collect(drawer) }
+    }
+
     open fun collect(drawer: EntityDrawer) {
-        features.collect(drawer)
+        features.collect(drawer, cameraVisibility())
     }
 
     open fun collectShadow(drawer: EntityDrawer) {
@@ -141,9 +152,24 @@ abstract class EntityRenderer<E : Entity>(
     }
 
     open fun isVisibleTo(camera: Entity) = entity.isVisibleTo(camera)
-    open fun isVisible() = visibility >= EntityVisibilityLevels.OCCLUDED && (
-        isVisibleTo(renderer.context.session.camera.entity) || entity.hasGlowingEffect
+    open fun isVisible() = isVisible(isVisibleTo(renderer.context.session.camera.entity))
+
+    fun isVisible(cameraVisible: Boolean) = visibility >= EntityVisibilityLevels.OCCLUDED && (
+        cameraVisible || entity.hasGlowingEffect
     )
+
+    private fun cameraVisibility(): Boolean = suppliedCameraVisibility
+        ?: isVisibleTo(renderer.context.session.camera.entity)
+
+    private inline fun <T> withCameraVisibility(cameraVisible: Boolean, block: () -> T): T {
+        val previous = suppliedCameraVisibility
+        suppliedCameraVisibility = cameraVisible
+        return try {
+            block()
+        } finally {
+            suppliedCameraVisibility = previous
+        }
+    }
 
     open fun updateVisibility(level: EntityVisibilityLevels) {
         val effective = referenceVisibilityOverride ?: level
