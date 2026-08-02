@@ -7,26 +7,16 @@ file = "fabric.mod.json"
 hash = "12af900efe4fe1124e8d63da20f6077d0e1a3bc437f724a559e6d875b64ba42a"
 
 [[files]]
-file = "ladder.tsv"
-hash = "e653bd72036a9df7db915f481461692f15276939ed0ca644b0bf4b9fcd1c700f"
-
-[[files]]
 file = "fixtures.tsv"
 hash = "45fd39ce7b5993d0854f44849d7ad130dccb9a46c3b6ae2d8c5138a79a8b5ae6"
 
 [[files]]
-file = "resourcepacks/enhanced-audio.pw.toml"
-hash = "d09faf04ca1b235636fc758c4b5438b29d930ed2f7742816d1afa9530bcd6424"
-metafile = true
+file = "ladder.tsv"
+hash = "e653bd72036a9df7db915f481461692f15276939ed0ca644b0bf4b9fcd1c700f"
 
 [[files]]
-file = "shaderpacks/complementary-unbound.pw.toml"
-hash = "63a723a8486925bcd6f2f5b5b3b038607432fe666b6b6ed3480915785c43f4b3"
-metafile = true
-
-[[files]]
-file = "mods/fabric-api.pw.toml"
-hash = "9d99d1fcad45387093968a5657aff7db7985135317434a1b00b4edbae3a7bafc"
+file = "mods/distant-horizons.pw.toml"
+hash = "286d738296cdeae9b62f2d7e683decac0a92f524264e942c8afc705cdb8cae1c"
 metafile = true
 
 [[files]]
@@ -35,13 +25,18 @@ hash = "183f59a3be6cd02ab487d44312f25d7b1ccdd45d9e59ca11143b5cdd421624ca"
 metafile = true
 
 [[files]]
-file = "mods/immediatelyfast.pw.toml"
-hash = "76a0e56851284dae55ac00f4813b87edd1c379d85ad57bfd65060b3729b07c9a"
+file = "mods/fabric-api.pw.toml"
+hash = "9d99d1fcad45387093968a5657aff7db7985135317434a1b00b4edbae3a7bafc"
 metafile = true
 
 [[files]]
 file = "mods/geckolib.pw.toml"
 hash = "2623873c803f97ea665646dd0c65fd2e693051d996c999b71721d1e2ef57c499"
+metafile = true
+
+[[files]]
+file = "mods/immediatelyfast.pw.toml"
+hash = "76a0e56851284dae55ac00f4813b87edd1c379d85ad57bfd65060b3729b07c9a"
 metafile = true
 
 [[files]]
@@ -52,11 +47,6 @@ metafile = true
 [[files]]
 file = "mods/iris.pw.toml"
 hash = "19b22ca1413e79c5deebd4aff9560507ed534cfd497ba61bea94476d2c7f6c7e"
-metafile = true
-
-[[files]]
-file = "mods/distant-horizons.pw.toml"
-hash = "286d738296cdeae9b62f2d7e683decac0a92f524264e942c8afc705cdb8cae1c"
 metafile = true
 
 [[files]]
@@ -75,11 +65,21 @@ hash = "8c8358aca0b62f662b7aebd5856de5eb957648eb8213c5bcac2028963aece888"
 metafile = true
 
 [[files]]
+file = "mods/tectonic.pw.toml"
+hash = "9d31c9d5e43ec20bcc32ac21019962768c2be32208b1d96c0dbd1ddf4f4bccc4"
+metafile = true
+
+[[files]]
 file = "mods/terralith.pw.toml"
 hash = "675c5fe8cfe3886f15e40240a76949e236f441166c7efeb1dbf66173dedfadae"
 metafile = true
 
 [[files]]
-file = "mods/tectonic.pw.toml"
-hash = "9d31c9d5e43ec20bcc32ac21019962768c2be32208b1d96c0dbd1ddf4f4bccc4"
+file = "resourcepacks/enhanced-audio.pw.toml"
+hash = "d09faf04ca1b235636fc758c4b5438b29d930ed2f7742816d1afa9530bcd6424"
+metafile = true
+
+[[files]]
+file = "shaderpacks/complementary-unbound.pw.toml"
+hash = "4d1972397e8faa0c9ba1958c0968e54a1360d5d22a463fc32843191b8b30f82e"
 metafile = true

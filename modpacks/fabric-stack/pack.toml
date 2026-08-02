@@ -1,13 +1,13 @@
 # Copyright (C) 2026 Jacob Repp
 
 name = "Minosoft Fabric Compatibility Stack"
-pack-format = "packwiz:1.1.0"
 version = "0.8.0"
+pack-format = "packwiz:1.1.0"
 
 [index]
 file = "index.toml"
 hash-format = "sha256"
-hash = "58e2700f08a64f832f20fdbb6f478619e3a4befc7085cb1024c60ebae60f2d82"
+hash = "4dfbfcfb427b62434776a3c015c2e0dd0011ccf3a502aed4b5b1bc9d11d015e6"
 
 [versions]
 fabric = "0.15.11"
