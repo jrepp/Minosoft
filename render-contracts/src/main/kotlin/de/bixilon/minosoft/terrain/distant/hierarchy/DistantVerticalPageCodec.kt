@@ -102,6 +102,13 @@ object DistantVerticalPageCodec {
                 require(uniqueStrings.add(value)) { "Distant page palette contains a duplicate string" }
                 strings[index] = value
             }
+            // Material and fluid identifiers are palette values. Validating the
+            // same identifier for every vertical run makes a large response
+            // spend most of its decode time in regular-expression matching.
+            // Keep the wire palette canonical and instantiate each semantic
+            // value or fluid combination only once per page.
+            val materials = arrayOfNulls<TerrainSemanticMaterialId>(strings.size)
+            val fluids = HashMap<DecodedFluidKey, DistantFluidSample>()
             val totalRuns = input.readInt()
             require(totalRuns in 0..MAXIMUM_TOTAL_RUNS) { "Distant page run count is out of bounds: $totalRuns" }
             var decodedRuns = 0
@@ -111,7 +118,7 @@ object DistantVerticalPageCodec {
                 require(runCount <= DistantVerticalColumn.MAXIMUM_RUNS)
                 decodedRuns = Math.addExact(decodedRuns, runCount)
                 require(decodedRuns <= totalRuns)
-                columns += DistantVerticalColumn(List(runCount) { input.readRun(strings) })
+                columns += DistantVerticalColumn(List(runCount) { input.readRun(strings, materials, fluids) })
             }
             require(decodedRuns == totalRuns) { "Distant page run total does not match its columns" }
             require(input.read() == -1) { "Distant page encoding has trailing data" }
@@ -171,17 +178,23 @@ object DistantVerticalPageCodec {
         writeByte(run.confidence)
     }
 
-    private fun DataInputStream.readRun(palette: Array<String?>): DistantColumnRun {
+    private fun DataInputStream.readRun(
+        palette: Array<String?>,
+        materials: Array<TerrainSemanticMaterialId?>,
+        fluids: MutableMap<DecodedFluidKey, DistantFluidSample>,
+    ): DistantColumnRun {
         val minimumY = readInt()
         val height = readInt()
-        val material = readPalette(palette)?.let(::TerrainSemanticMaterialId)
-        val fluidMaterial = readPalette(palette)?.let(::TerrainSemanticMaterialId)
+        val material = readMaterial(palette, materials)
+        val fluidMaterial = readMaterial(palette, materials)
         val fluidLevel = readUnsignedByte()
         val fluidClassification = readPalette(palette)
         val fluid = when {
             fluidMaterial == null && fluidClassification == null -> null
-            fluidMaterial != null && fluidClassification != null ->
-                DistantFluidSample(fluidMaterial, fluidLevel, fluidClassification)
+            fluidMaterial != null && fluidClassification != null -> {
+                val key = DecodedFluidKey(fluidMaterial, fluidLevel, fluidClassification)
+                fluids.getOrPut(key) { DistantFluidSample(fluidMaterial, fluidLevel, fluidClassification) }
+            }
             else -> throw IllegalArgumentException("Incomplete distant fluid encoding")
         }
         val blockLight = readUnsignedByte()
@@ -203,6 +216,23 @@ object DistantVerticalPageCodec {
             minimumY, height, material, fluid, blockLight, skyLight, tint, flags, readUnsignedByte(),
         )
     }
+
+    private fun DataInputStream.readMaterial(
+        palette: Array<String?>,
+        materials: Array<TerrainSemanticMaterialId?>,
+    ): TerrainSemanticMaterialId? {
+        val index = readUnsignedShort()
+        require(index in palette.indices) { "Distant page palette index is out of bounds" }
+        if (index == 0) return null
+        materials[index]?.let { return it }
+        return TerrainSemanticMaterialId(checkNotNull(palette[index])).also { materials[index] = it }
+    }
+
+    private data class DecodedFluidKey(
+        val material: TerrainSemanticMaterialId,
+        val level: Int,
+        val classification: String,
+    )
 
     private fun DataOutputStream.writeBoundedString(value: String) {
         val bytes = value.toByteArray(StandardCharsets.UTF_8)

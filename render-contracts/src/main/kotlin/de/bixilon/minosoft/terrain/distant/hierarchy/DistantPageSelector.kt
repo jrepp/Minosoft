@@ -20,6 +20,7 @@ package de.bixilon.minosoft.terrain.distant.hierarchy
 import de.bixilon.minosoft.terrain.distant.DistantSourceCompleteness
 import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import java.util.Collections
+import java.util.PriorityQueue
 import kotlin.math.max
 import kotlin.math.sqrt
 import kotlin.math.tan
@@ -165,6 +166,117 @@ class DistantPageSelector(private val worldEpoch: Long) {
         index: DistantPageIndexView,
         metadata: Map<TerrainPageKey, DistantPageSelectionMetadata>,
         request: DistantPageSelectionRequest,
+        maximumPages: Int = Int.MAX_VALUE,
+    ): DistantPageSelection {
+        require(maximumPages >= request.roots.size) {
+            "Distant page budget must at least admit every root"
+        }
+        if (maximumPages == Int.MAX_VALUE) return selectOnce(index, metadata, request)
+        return selectBudgeted(index, metadata, request, maximumPages)
+    }
+
+    private data class RefinementCandidate(val page: TerrainPageKey, val error: Double)
+
+    /** Best-first refinement visits the hierarchy once and stops at the page budget. */
+    private fun selectBudgeted(
+        index: DistantPageIndexView,
+        metadata: Map<TerrainPageKey, DistantPageSelectionMetadata>,
+        request: DistantPageSelectionRequest,
+        maximumPages: Int,
+    ): DistantPageSelection {
+        require(index.worldEpoch == worldEpoch) { "Distant hierarchy belongs to another selector world" }
+        require(request.roots.all { it.worldEpoch == worldEpoch && it in index.pages }) {
+            "Every distant selection root must be indexed in the selector world"
+        }
+        require(metadata.keys.all(index.pages::containsKey)) { "Distant selection metadata contains an unknown page" }
+
+        val previousSelection = selected.filterTo(linkedSetOf()) { page ->
+            page in index.pages &&
+                (request.availablePages == null || page in request.availablePages) &&
+                request.roots.any { root -> isDescendantOrSame(page, root) }
+        }
+        val maximumIndexedDetail = index.pages.keys.maxOfOrNull(TerrainPageKey::detailLevel) ?: 0
+        val previouslyRefinedPages = hashSetOf<TerrainPageKey>()
+        for (selectedPage in previousSelection) {
+            var ancestor = selectedPage
+            while (ancestor.detailLevel < maximumIndexedDetail) {
+                ancestor = DistantPageHierarchy.parent(ancestor)
+                previouslyRefinedPages += ancestor
+            }
+        }
+        val queue = PriorityQueue(
+            compareByDescending<RefinementCandidate>(RefinementCandidate::error)
+                .thenBy { it.page.detailLevel }
+                .thenBy { it.page.z }
+                .thenBy { it.page.x },
+        )
+        val proposal = request.roots.toMutableSet()
+        request.roots.forEach { queue += RefinementCandidate(it, projectedError(it, metadata[it], request)) }
+        var visits = 0
+        var balanceExhausted = false
+
+        while (queue.isNotEmpty() && visits < request.maximumNodeVisits) {
+            val candidate = queue.remove()
+            val page = candidate.page
+            if (page !in proposal) continue
+            visits++
+            val children = if (page.detailLevel > 0) DistantPageHierarchy.children(page) else emptyList()
+            if (children.isEmpty() || !children.all { child ->
+                    val state = index.pages[child] ?: return@all false
+                    (request.availablePages == null || child in request.availablePages) &&
+                        (!request.requireCompleteChildren || state.completeness == DistantSourceCompleteness.COMPLETE)
+                }
+            ) continue
+
+            val refine = if (page in previouslyRefinedPages) {
+                candidate.error >= request.coarsenErrorPixels
+            } else {
+                candidate.error > request.refineErrorPixels
+            }
+            if (!refine) continue
+
+            val tentative = proposal.toMutableSet()
+            tentative.remove(page)
+            tentative.addAll(children)
+            val balanced = balance(tentative, index, request.requireCompleteChildren, request.availablePages)
+            if (balanced.exhausted) {
+                balanceExhausted = true
+                continue
+            }
+            if (balanced.pages.size > maximumPages) continue
+            proposal.clear()
+            proposal.addAll(balanced.pages)
+            for (child in children) {
+                if (child in proposal) queue += RefinementCandidate(child, projectedError(child, metadata[child], request))
+            }
+        }
+
+        val visitBudgetExhausted = queue.isNotEmpty() && visits >= request.maximumNodeVisits || balanceExhausted
+        val changes = symmetricDifferenceSize(previousSelection, proposal)
+        val changeBudgetExhausted = changes > request.maximumSelectionChanges
+        val accepted = if (changeBudgetExhausted && previousSelection.size <= maximumPages) {
+            if (previousSelection.isEmpty()) request.roots.toSet() else previousSelection
+        } else {
+            proposal
+        }
+        val acceptedChanges = symmetricDifferenceSize(selected, accepted)
+        if (accepted != selected) generation = Math.addExact(generation, 1L)
+        selected = accepted
+        return DistantPageSelection(
+            worldEpoch,
+            generation,
+            accepted,
+            visits,
+            acceptedChanges,
+            visitBudgetExhausted,
+            changeBudgetExhausted,
+        )
+    }
+
+    private fun selectOnce(
+        index: DistantPageIndexView,
+        metadata: Map<TerrainPageKey, DistantPageSelectionMetadata>,
+        request: DistantPageSelectionRequest,
     ): DistantPageSelection {
         require(index.worldEpoch == worldEpoch) { "Distant hierarchy belongs to another selector world" }
         require(request.roots.all { it.worldEpoch == worldEpoch }) { "Distant roots belong to another selector world" }
@@ -279,38 +391,46 @@ class DistantPageSelector(private val worldEpoch: Long) {
         availablePages: Set<TerrainPageKey>?,
     ): BalanceResult {
         val pages = input.toMutableSet()
-        val maximumIterations = minOf(
-            Int.MAX_VALUE.toLong(),
-            max(1L, index.pages.size.toLong() * 2L),
-        ).toInt()
-        repeat(maximumIterations) {
-            val violation = firstDetailViolation(pages) ?: return BalanceResult(pages, false)
-            val coarse = if (violation.first.detailLevel > violation.second.detailLevel) violation.first else violation.second
-            val fine = if (coarse == violation.first) violation.second else violation.first
-            val children = DistantPageHierarchy.children(coarse)
-            val canRefine = children.all { child ->
-                val state = index.pages[child] ?: return@all false
-                (availablePages == null || child in availablePages) &&
-                    (!requireCompleteChildren || state.completeness == DistantSourceCompleteness.COMPLETE)
+        repeat(MAXIMUM_BALANCE_PASSES) {
+            val violations = detailViolations(pages)
+            if (violations.isEmpty()) return BalanceResult(pages, false)
+            var changed = false
+            for (violation in violations) {
+                if (violation.first !in pages || violation.second !in pages) continue
+                val coarse = if (violation.first.detailLevel > violation.second.detailLevel) {
+                    violation.first
+                } else {
+                    violation.second
+                }
+                val fine = if (coarse == violation.first) violation.second else violation.first
+                val children = DistantPageHierarchy.children(coarse)
+                val canRefine = children.all { child ->
+                    val state = index.pages[child] ?: return@all false
+                    (availablePages == null || child in availablePages) &&
+                        (!requireCompleteChildren || state.completeness == DistantSourceCompleteness.COMPLETE)
+                }
+                if (canRefine) {
+                    pages.remove(coarse)
+                    pages.addAll(children)
+                } else {
+                    val target = ancestorAt(fine, coarse.detailLevel - 1)
+                    val targetState = index.pages[target]
+                    if (targetState == null || availablePages != null && target !in availablePages ||
+                        requireCompleteChildren && targetState.completeness != DistantSourceCompleteness.COMPLETE
+                    ) return BalanceResult(input, true)
+                    pages.removeIf { isDescendantOrSame(it, target) }
+                    pages += target
+                }
+                changed = true
             }
-            if (canRefine) {
-                pages.remove(coarse)
-                pages.addAll(children)
-            } else {
-                val target = ancestorAt(fine, coarse.detailLevel - 1)
-                val targetState = index.pages[target]
-                if (targetState == null || availablePages != null && target !in availablePages || requireCompleteChildren &&
-                    targetState.completeness != DistantSourceCompleteness.COMPLETE
-                ) return BalanceResult(input, true)
-                pages.removeIf { isDescendantOrSame(it, target) }
-                pages += target
-            }
+            if (!changed) return BalanceResult(input, true)
         }
         return BalanceResult(input, true)
     }
 
     private companion object {
         const val DEFAULT_ERROR_RATIO = 0.25
+        const val MAXIMUM_BALANCE_PASSES = 64
     }
 }
 
@@ -335,9 +455,10 @@ private fun isDescendantOrSame(page: TerrainPageKey, ancestor: TerrainPageKey): 
 private fun symmetricDifferenceSize(first: Set<TerrainPageKey>, second: Set<TerrainPageKey>): Int =
     first.count { it !in second } + second.count { it !in first }
 
-private fun firstDetailViolation(pages: Set<TerrainPageKey>): Pair<TerrainPageKey, TerrainPageKey>? {
+private fun detailViolations(pages: Set<TerrainPageKey>): List<Pair<TerrainPageKey, TerrainPageKey>> {
     val ordered = pages.sortedWith(DistantPageHierarchy.order)
-    val maximumDetail = ordered.maxOfOrNull(TerrainPageKey::detailLevel) ?: return null
+    val maximumDetail = ordered.maxOfOrNull(TerrainPageKey::detailLevel) ?: return emptyList()
+    val violations = linkedSetOf<Pair<TerrainPageKey, TerrainPageKey>>()
     for (page in ordered) {
         for (neighbour in DistantPageHierarchy.cardinalNeighbours(page)) {
             var candidate = neighbour
@@ -345,13 +466,13 @@ private fun firstDetailViolation(pages: Set<TerrainPageKey>): Pair<TerrainPageKe
                 candidate = DistantPageHierarchy.parent(candidate)
                 if (candidate !in pages) continue
                 if (candidate.detailLevel - page.detailLevel > 1 && cardinallyAdjacent(page, candidate)) {
-                    return page to candidate
+                    violations += page to candidate
                 }
                 break
             }
         }
     }
-    return null
+    return violations.toList()
 }
 
 private fun maximumAdjacentDetailDelta(pages: List<TerrainPageKey>): Int {

@@ -110,6 +110,87 @@ class DistantPageSelectorTest {
         assertFalse(selection.visitBudgetExhausted)
     }
 
+    @Test
+    fun `page budget coarsens a previously refined selection without losing coverage`() {
+        val index = completeIndex(width = 16, height = 16, maximumDetail = 4)
+        val root = key(0, 0, detail = 4)
+        val selector = DistantPageSelector(WORLD_EPOCH)
+        val request = request(
+            roots = listOf(root),
+            cameraX = 1.0,
+            maximumVisits = 10_000,
+            maximumChanges = 10_000,
+        )
+
+        val refined = selector.select(index.snapshot(), emptyMap(), request)
+        assertEquals(256, refined.pages.size)
+
+        val bounded = selector.select(index.snapshot(), emptyMap(), request, maximumPages = 16)
+
+        assertTrue(bounded.pages.size in 12..16)
+        assertTrue((0L until 16L).all { z ->
+            (0L until 16L).all { x -> bounded.pages.any { it.coversBasePage(x, z) } }
+        })
+        assertTrue(bounded.maximumAdjacentDetailDelta <= 1)
+        assertTrue(bounded.generation > refined.generation)
+    }
+
+    @Test
+    fun `page budget remains a hard limit when coarsening exceeds the change budget`() {
+        val index = completeIndex(width = 16, height = 16, maximumDetail = 4)
+        val root = key(0, 0, detail = 4)
+        val selector = DistantPageSelector(WORLD_EPOCH)
+        val refined = selector.select(
+            index.snapshot(),
+            emptyMap(),
+            request(roots = listOf(root), cameraX = 1.0, maximumVisits = 10_000, maximumChanges = 10_000),
+        )
+        assertEquals(256, refined.pages.size)
+
+        val bounded = selector.select(
+            index.snapshot(),
+            emptyMap(),
+            request(roots = listOf(root), cameraX = 1.0, maximumVisits = 10_000, maximumChanges = 1),
+            maximumPages = 16,
+        )
+
+        assertTrue(bounded.changeBudgetExhausted)
+        assertTrue(bounded.pages.size <= 16)
+        assertTrue((0L until 16L).all { z ->
+            (0L until 16L).all { x -> bounded.pages.any { it.coversBasePage(x, z) } }
+        })
+    }
+
+    @Test
+    fun `large quality search balances violations in bounded passes`() {
+        val index = completeIndex(width = 64, height = 32, maximumDetail = 5)
+        val roots = listOf(key(0, 0, detail = 5), key(1, 0, detail = 5))
+        val metadata = index.snapshot().pages.keys.associateWith { page ->
+            val baseMinimumX = page.x shl page.detailLevel
+            DistantPageSelectionMetadata(
+                geometricErrorBlocks = if (baseMinimumX < 32L) 1_000_000.0 else 0.0,
+                minimumY = 0,
+                maximumYExclusive = 256,
+            )
+        }
+
+        val selection = DistantPageSelector(WORLD_EPOCH).select(
+            index.snapshot(),
+            metadata,
+            request(
+                roots = roots,
+                cameraX = 10_000.0,
+                maximumVisits = 50_000,
+                maximumChanges = 50_000,
+            ),
+            maximumPages = 1_024,
+        )
+
+        assertTrue(selection.pages.size <= 1_024)
+        assertTrue(selection.maximumAdjacentDetailDelta <= 1)
+        assertFalse(selection.visitBudgetExhausted)
+    }
+
     private fun completeIndex(width: Int, height: Int, maximumDetail: Int): DistantPageHierarchyIndex {
         val index = DistantPageHierarchyIndex(WORLD_EPOCH, maximumDetail, maximumPages = width * height * 2)
         var revision = 1L
@@ -148,6 +229,12 @@ class DistantPageSelectorTest {
 
     private fun key(x: Long, z: Long, detail: Int = 0) =
         TerrainPageKey(TerrainDomain.DISTANT, detail, x, 0L, z, WORLD_EPOCH)
+
+    private fun TerrainPageKey.coversBasePage(baseX: Long, baseZ: Long): Boolean {
+        val span = 1L shl detailLevel
+        return baseX in x * span until (x + 1L) * span &&
+            baseZ in z * span until (z + 1L) * span
+    }
 
     private companion object {
         const val WORLD_EPOCH = 19L
