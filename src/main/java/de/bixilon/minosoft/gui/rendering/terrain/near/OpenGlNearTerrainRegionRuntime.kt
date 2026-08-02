@@ -110,6 +110,8 @@ class OpenGlNearTerrainRegionRuntime private constructor(
     private val submittedBatches = ArrayList<TerrainDrawBatch>()
     private val frameSelectionViews = HashSet<TerrainViewKey>()
     private val frameActivePages = HashMap<TerrainViewKey, Set<TerrainPageKey>>()
+    private data class FramePageOrder(val view: TerrainViewKey, val backToFront: Boolean)
+    private val framePagesByRegion = HashMap<FramePageOrder, Map<TerrainRegionKey, List<TerrainPageKey>>>()
     private var completion: SharedOpenGlTerrainSubmissionCompletion? = null
     private var layoutGeneration = -1L
     private var closed = false
@@ -128,6 +130,7 @@ class OpenGlNearTerrainRegionRuntime private constructor(
         frameDrawVertices = 0L
         frameSelectionViews.clear()
         frameActivePages.clear()
+        framePagesByRegion.clear()
     }
 
     fun publish(mesh: ChunkMeshes): Boolean {
@@ -158,7 +161,10 @@ class OpenGlNearTerrainRegionRuntime private constructor(
             regions.remove(key)
             region.device.close()
         }
-        if (published != null) residentVersions[published.key] = published.publicationId
+        if (published != null) {
+            residentVersions[published.key] = published.publicationId
+            mesh.recordArtifactDigest(published.digest)
+        }
         return published != null
     }
 
@@ -197,14 +203,17 @@ class OpenGlNearTerrainRegionRuntime private constructor(
         val activePages = frameActivePages[viewKey].orEmpty()
         if (activePages.isEmpty() || layoutGeneration < 0L) return
         val semantic = material.semanticMaterial
-        val ordered = if (material == TerrainMaterialClass.TRANSLUCENT) {
-            meshes.sortedByDescending(ChunkMeshes::distance)
-        } else {
-            meshes.sortedBy(ChunkMeshes::distance)
+        val orderKey = FramePageOrder(viewKey, material == TerrainMaterialClass.TRANSLUCENT)
+        val byRegion = framePagesByRegion.getOrPut(orderKey) {
+            val ordered = if (orderKey.backToFront) {
+                meshes.sortedByDescending(ChunkMeshes::distance)
+            } else {
+                meshes.sortedBy(ChunkMeshes::distance)
+            }
+            ordered.mapNotNull { it.terrainIdentity?.page }
+                .filter(activePages::contains)
+                .groupBy { TerrainRegionKey.containing(it, REGION_EXTENT) }
         }
-        val byRegion = ordered.mapNotNull { it.terrainIdentity?.page }
-            .filter(activePages::contains)
-            .groupBy { TerrainRegionKey.containing(it, REGION_EXTENT) }
         for ((key, pages) in byRegion) {
             val region = regions[key] ?: continue
             val batch = batchCache.batch(
@@ -295,6 +304,7 @@ class OpenGlNearTerrainRegionRuntime private constructor(
             submittedBatches.clear()
             frameSelectionViews.clear()
             frameActivePages.clear()
+            framePagesByRegion.clear()
             regions.clear()
             residentVersions.clear()
             completion = null
@@ -340,6 +350,7 @@ class OpenGlNearTerrainRegionRuntime private constructor(
         completion = null
         frameSelectionViews.clear()
         frameActivePages.clear()
+        framePagesByRegion.clear()
         residentVersions.clear()
         layoutGeneration = -1L
         batchCache.clear()
@@ -543,5 +554,6 @@ private val TerrainMaterialClass.semanticMaterial: TerrainSemanticMaterialId
             TerrainMaterialClass.CUTOUT -> "minosoft:terrain/cutout"
             TerrainMaterialClass.TRANSLUCENT -> "minosoft:terrain/translucent"
             TerrainMaterialClass.EMISSIVE_ADDITIVE -> "minosoft:terrain/text"
+            TerrainMaterialClass.DISTANT_WATER -> "minosoft:terrain/distant-water"
         },
     )

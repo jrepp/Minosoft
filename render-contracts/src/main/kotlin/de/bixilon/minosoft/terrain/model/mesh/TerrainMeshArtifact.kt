@@ -37,9 +37,11 @@ data class TerrainArtifactBounds(
     }
 }
 
-class TerrainArtifactBuffer(bytes: ByteArray) : AutoCloseable {
+class TerrainArtifactBuffer private constructor(bytes: ByteArray, copy: Boolean) : AutoCloseable {
     private val closed = AtomicBoolean()
-    private var storage = bytes.copyOf()
+    private var storage = if (copy) bytes.copyOf() else bytes
+
+    constructor(bytes: ByteArray) : this(bytes, copy = true)
 
     val size: Int
         @Synchronized get() = storage.size
@@ -58,9 +60,20 @@ class TerrainArtifactBuffer(bytes: ByteArray) : AutoCloseable {
     }
 
     @Synchronized
+    internal fun sharedBytes(): ByteArray {
+        check(!closed.get()) { "Terrain artifact buffer is closed" }
+        return storage
+    }
+
+    @Synchronized
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         storage = ByteArray(0)
+    }
+
+    companion object {
+        /** Transfers exclusive ownership of a newly-created byte array into the artifact. */
+        fun takeOwnership(bytes: ByteArray): TerrainArtifactBuffer = TerrainArtifactBuffer(bytes, copy = false)
     }
 }
 
@@ -77,6 +90,8 @@ class TerrainArtifactStream(
     val indexElementBytes: Int,
     indexBytes: ByteArray,
     val topology: TerrainPrimitiveTopology = TerrainPrimitiveTopology.TRIANGLES,
+    /** The caller transfers exclusive ownership of both arrays when true. */
+    takeOwnership: Boolean = false,
 ) : AutoCloseable {
     init {
         require(partitionId.matches(NORMALIZED_ID)) { "Terrain artifact partition ID must be normalized" }
@@ -84,8 +99,8 @@ class TerrainArtifactStream(
         validateIndexBytes(indexBytes, indexElementBytes, topology)
     }
 
-    val vertices = TerrainArtifactBuffer(vertexBytes)
-    val indices = TerrainArtifactBuffer(indexBytes)
+    val vertices = if (takeOwnership) TerrainArtifactBuffer.takeOwnership(vertexBytes) else TerrainArtifactBuffer(vertexBytes)
+    val indices = if (takeOwnership) TerrainArtifactBuffer.takeOwnership(indexBytes) else TerrainArtifactBuffer(indexBytes)
     val byteCount: Long = Math.addExact(vertices.size.toLong(), indices.size.toLong())
 
     override fun close() {
@@ -144,7 +159,7 @@ class TerrainMeshArtifact(
     val coverageContribution = validatedCoverage(identity, coverageContribution)
     val entityPositions = java.util.List.copyOf(entityPositions.sortedWith(COORDINATE_ORDER))
     val byteCount = this.streams.fold(0L) { total, stream -> Math.addExact(total, stream.byteCount) }
-    val digest: TerrainArtifactDigest = calculateDigest()
+    val digest: TerrainArtifactDigest by lazy(LazyThreadSafetyMode.SYNCHRONIZED, ::calculateDigest)
     private val closed = AtomicBoolean()
 
     init {

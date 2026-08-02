@@ -48,7 +48,8 @@ class ChunkMeshes(
     val artifact: TerrainMeshArtifact? = null,
 ) {
     val entityPositions: List<InSectionPosition> = java.util.List.copyOf(entityPositions)
-    val artifactDigest: TerrainArtifactDigest? = artifact?.digest
+    var artifactDigest: TerrainArtifactDigest? = null
+        private set
     val terrainIdentity: TerrainBuildIdentity? = artifact?.identity
     val terrainMaterials: Set<TerrainSemanticMaterialId> = java.util.Set.copyOf(
         artifact?.streams?.mapTo(linkedSetOf()) { it.material } ?: emptySet(),
@@ -56,6 +57,11 @@ class ChunkMeshes(
     var regionBacked: Boolean = false
         private set
     var candidateCache: ChunkMeshCache? = null
+
+    fun recordArtifactDigest(digest: TerrainArtifactDigest) {
+        check(artifact != null) { "Only semantic terrain candidates have an artifact digest" }
+        artifactDigest = digest
+    }
 
     val center = BlockPosition.of(position, InSectionPosition(8, 8, 8))
 

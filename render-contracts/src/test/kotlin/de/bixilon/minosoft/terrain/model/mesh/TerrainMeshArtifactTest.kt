@@ -74,6 +74,7 @@ class TerrainMeshArtifactTest {
         assertTrue(stream.vertices.isClosed)
         assertTrue(stream.indices.isClosed)
         assertFailsWith<IllegalStateException> { stream.vertices.copyBytes() }
+        assertFailsWith<IllegalStateException> { artifact.digest }
     }
 
     private fun artifact(

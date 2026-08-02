@@ -21,6 +21,7 @@ import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
 import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
 import de.bixilon.minosoft.terrain.model.mesh.TerrainArtifactDigest
+import de.bixilon.minosoft.terrain.model.mesh.TerrainArtifactBuffer
 import de.bixilon.minosoft.terrain.model.mesh.TerrainMeshArtifact
 import de.bixilon.minosoft.terrain.model.mesh.TerrainPrimitiveTopology
 import de.bixilon.minosoft.terrain.runtime.TerrainDeviceRuntimeId
@@ -28,6 +29,7 @@ import de.bixilon.minosoft.terrain.runtime.TerrainSubmission
 import de.bixilon.minosoft.terrain.runtime.TerrainSubmissionCompletion
 import de.bixilon.minosoft.terrain.runtime.TerrainSubmissionSerial
 import de.bixilon.minosoft.terrain.runtime.TerrainSubmissionState
+import java.nio.ByteBuffer
 import java.util.TreeMap
 
 data class TerrainRegionKey(
@@ -80,16 +82,32 @@ enum class TerrainBufferArena {
 }
 
 /** An immutable upload operation; source ownership never crosses the render-thread plan. */
-class TerrainUploadOperation(
+class TerrainUploadOperation private constructor(
     val arena: TerrainBufferArena,
     val range: TerrainBufferRange,
     source: ByteArray,
+    copy: Boolean,
 ) {
-    private val source = validateSource(range, source).copyOf()
+    private val source = validateSource(range, source).let { if (copy) it.copyOf() else it }
+
+    constructor(arena: TerrainBufferArena, range: TerrainBufferRange, source: ByteArray) :
+        this(arena, range, source, copy = true)
 
     fun copyBytes(): ByteArray = source.copyOf()
 
-    private companion object {
+    fun putInto(destination: ByteBuffer) {
+        require(destination.remaining() >= source.size) { "Terrain upload destination is too small" }
+        destination.put(source)
+    }
+
+    fun copyInto(destination: ByteArray, destinationOffset: Int = 0) {
+        source.copyInto(destination, destinationOffset)
+    }
+
+    internal companion object {
+        fun share(arena: TerrainBufferArena, range: TerrainBufferRange, source: TerrainArtifactBuffer) =
+            TerrainUploadOperation(arena, range, source.sharedBytes(), copy = false)
+
         fun validateSource(range: TerrainBufferRange, source: ByteArray): ByteArray {
             require(range.length == source.size) { "Terrain upload source and range sizes differ" }
             return source
@@ -307,15 +325,15 @@ class TerrainRegionStorage(
                 val indexRange = indexAllocator.allocate(stream.indices.size, stream.indexElementBytes)
                     ?: return allocationFailed(vertexRanges, indexRanges)
                 indexRanges += indexRange
-                operations += TerrainUploadOperation(
+                operations += TerrainUploadOperation.share(
                     TerrainBufferArena.VERTEX,
                     vertexRange,
-                    stream.vertices.copyBytes(),
+                    stream.vertices,
                 )
-                operations += TerrainUploadOperation(
+                operations += TerrainUploadOperation.share(
                     TerrainBufferArena.INDEX,
                     indexRange,
-                    stream.indices.copyBytes(),
+                    stream.indices,
                 )
                 streams += TerrainPublishedStream(
                     partitionId = stream.partitionId,

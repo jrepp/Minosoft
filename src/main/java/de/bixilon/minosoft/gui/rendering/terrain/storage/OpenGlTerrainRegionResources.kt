@@ -37,6 +37,7 @@ import de.bixilon.minosoft.terrain.runtime.storage.TerrainDrawBatch
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainDrawCommand
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainRegionUploadDevice
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainUploadPlan
+import de.bixilon.minosoft.terrain.runtime.storage.TerrainUploadOperation
 import org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER
 import org.lwjgl.opengl.GL15.GL_DYNAMIC_DRAW
 import org.lwjgl.opengl.GL15.GL_ELEMENT_ARRAY_BUFFER
@@ -101,7 +102,7 @@ internal class OpenGlTerrainRegionDevice(
                 TerrainBufferArena.INDEX -> indexBuffer
             }
             bind(target, handle)
-            staging.upload(target, operation.range.offset.toLong(), operation.copyBytes())
+            staging.upload(target, operation.range.offset.toLong(), operation)
         }
     }
 
@@ -243,11 +244,11 @@ internal class OpenGlTerrainStagingBuffer(val capacityBytes: Int) : AutoCloseabl
         require(capacityBytes > 0) { "Terrain staging capacity must be positive" }
     }
 
-    fun upload(target: Int, offset: Long, bytes: ByteArray) {
+    fun upload(target: Int, offset: Long, operation: TerrainUploadOperation) {
         check(!closed) { "Terrain staging buffer is closed" }
-        require(bytes.size <= capacityBytes) { "Terrain upload exceeds staging capacity" }
+        require(operation.range.length <= capacityBytes) { "Terrain upload exceeds staging capacity" }
         buffer.clear()
-        buffer.put(bytes)
+        operation.putInto(buffer)
         buffer.flip()
         gl { glBufferSubData(target, offset, buffer) }
     }

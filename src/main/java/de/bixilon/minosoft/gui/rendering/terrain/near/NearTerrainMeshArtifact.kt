@@ -86,6 +86,7 @@ private fun MutableList<TerrainArtifactStream>.addStream(
             PrimitiveTypes.QUAD -> TerrainPrimitiveTopology.QUADS
             else -> error("Unsupported near-terrain primitive topology: ${builder.primitive}")
         },
+        takeOwnership = true,
     )
 }
 

@@ -53,7 +53,7 @@ class ByteArrayTerrainRegionDevice(
                 TerrainBufferArena.VERTEX -> vertices
                 TerrainBufferArena.INDEX -> indices
             }
-            operation.copyBytes().copyInto(destination, operation.range.offset)
+            operation.copyInto(destination, operation.range.offset)
         }
     }
 
