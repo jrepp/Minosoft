@@ -22,6 +22,6 @@ import de.bixilon.minosoft.gui.rendering.renderer.renderer.Renderer
 interface WorldRenderer : Renderer {
     override val framebuffer: IntegratedFramebuffer? get() = context.framebuffer.main
 
-    val layers: LayerSettings
-    fun registerLayers()
+    val passes: WorldPassRegistry
+    fun registerPasses()
 }

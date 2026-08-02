@@ -80,14 +80,14 @@ class LoadedMeshes(
 
             val frustum = renderer.visibility.contains(mesh.position, mesh.min, mesh.max)
             if (frustum != FrustumResults.OUTSIDE) {
-                visible.lock.locked {
-                    visible.unsafeAdd(mesh, frustum)
-                    visible.sort()
-                }
+                visible.lock.locked { visible.unsafeAddSorted(mesh, frustum) }
             }
         }
 
         previous?.let { renderer.unloadingQueue += it }
+        // Incremental insertion prevents a one-frame hole, but only the full
+        // traversal knows whether this section is occluded. Always rebuild so
+        // an occluded replacement cannot remain in the visible lists.
         renderer.visibility.invalidate(VisibilityGraphInvalidReason.MESH_UPDATE)
     }
 
@@ -104,6 +104,7 @@ class LoadedMeshes(
         }
 
         renderer.visibility.meshes -= mesh
+        renderer.visibility.invalidate(VisibilityGraphInvalidReason.MESH_UPDATE)
         if (mesh.regionBacked) renderer.regionTerrain?.remove(mesh)
 
         renderer.unloadingQueue += mesh
@@ -118,6 +119,7 @@ class LoadedMeshes(
             removed
         }
         meshes.values.forEach { renderer.visibility.meshes -= it }
+        renderer.visibility.invalidate(VisibilityGraphInvalidReason.MESH_UPDATE)
         meshes.values.forEach { if (it.regionBacked) renderer.regionTerrain?.remove(it) }
 
         renderer.unloadingQueue += meshes.values

@@ -47,7 +47,7 @@ import de.bixilon.minosoft.gui.rendering.events.VisibilityGraphChangeEvent
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegistry
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisShaderPackPlanner
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisDrawState
@@ -73,7 +73,7 @@ class ChunkRenderer(
     val session: PlaySession,
     override val context: RenderContext,
 ) : WorldRenderer, AsyncRenderer {
-    override val layers = LayerSettings()
+    override val passes = WorldPassRegistry()
     private val profile = session.profiles.block
     private val shader = context.system.shader.create(minosoft("chunk")) { ChunkShader(it) }
     private val textShader = context.system.shader.create(minosoft("chunk")) { ChunkShader(it) }
@@ -93,11 +93,18 @@ class ChunkRenderer(
     val terrain = TerrainBackendRegistry(BuiltInChunkTerrainBackend(this))
     val regionTerrain = OpenGlNearTerrainRegionRuntime.create(context)
 
+    private data class TerrainFramePlan(
+        val regionSections: List<de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshes>,
+        val conventional: Array<List<ChunkMesh>>,
+    )
+
+    private val terrainFramePlans = HashMap<RenderViewId, TerrainFramePlan>()
+
 
     var limitChunkTransferTime = true
 
     private fun registerMeshLayer(layer: RenderLayer, material: TerrainMaterialClass, type: ChunkMeshTypes) {
-        layers.registerSemantic(
+        passes.add(
             layer = layer,
             shader = null,
             renderer = { terrain.submit(RenderViewId.MAIN, material) },
@@ -118,12 +125,12 @@ class ChunkRenderer(
         )
     }
 
-    override fun registerLayers() {
+    override fun registerPasses() {
         registerMeshLayer(OpaqueLayer, TerrainMaterialClass.OPAQUE, ChunkMeshTypes.OPAQUE)
         registerMeshLayer(CutoutLayer, TerrainMaterialClass.CUTOUT, ChunkMeshTypes.CUTOUT)
         registerMeshLayer(TranslucentLayer, TerrainMaterialClass.TRANSLUCENT, ChunkMeshTypes.TRANSLUCENT)
         registerMeshLayer(TextLayer, TerrainMaterialClass.EMISSIVE_ADDITIVE, ChunkMeshTypes.TEXT)
-        layers.registerSemantic(
+        passes.add(
             OpaqueBlockEntitiesLayer,
             null,
             this::drawBlockEntities,
@@ -137,7 +144,7 @@ class ChunkRenderer(
                 },
             ),
         )
-        layers.registerSemantic(
+        passes.add(
             TranslucentBlockEntitiesLayer,
             null,
             this::drawTranslucentBlockEntities,
@@ -280,6 +287,7 @@ class ChunkRenderer(
 
     internal fun prepareTerrainCore() {
         regionTerrain?.prepareFrame()
+        terrainFramePlans.clear()
         visibility.update()
         meshingQueue.work()
     }
@@ -317,78 +325,68 @@ class ChunkRenderer(
             TerrainMaterialClass.CUTOUT -> ChunkMeshTypes.CUTOUT to shader
             TerrainMaterialClass.TRANSLUCENT -> ChunkMeshTypes.TRANSLUCENT to shader
             TerrainMaterialClass.EMISSIVE_ADDITIVE -> ChunkMeshTypes.TEXT to textShader
+            TerrainMaterialClass.DISTANT_WATER -> error("Distant water can not be submitted by the near terrain backend")
         }
         context.shaderPipeline.withPipeline { pipeline ->
             pipeline.bindTerrain(view, material, activeShader)
-            val meshes = visibility.meshes
             val shadow = if (view == IrisShaderPackPlanner.SHADOW_VIEW) {
                 context.shaderPipeline.plan()?.shadowDirectives
             } else {
                 null
             }
+            val plan = terrainFramePlans.getOrPut(view) { buildTerrainFramePlan(shadow) }
             if (regionTerrain != null) {
-                val selected = ArrayList<de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshes>()
-                val conventional = ArrayList<de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMesh>()
-                if (shadow != null) {
-                    val culling = context.shaderPipeline.shadowCulling()
-                    val camera = context.session.camera.entity.physics.positionInfo.eyePosition
-                    loaded.forEachLoaded { section ->
-                        val allowed = culling?.allowsTerrainSection(
-                            section.position.x,
-                            section.position.y,
-                            section.position.z,
-                        ) ?: run {
-                            val delta = camera - section.center
-                            shadow.allowsTerrainSection(delta.x, delta.y, delta.z)
-                        }
-                        if (allowed) {
-                            if (section.regionBacked) {
-                                selected += section
-                            } else {
-                                section.meshes[type]?.let(conventional::add)
-                            }
-                        }
-                    }
-                } else {
-                    meshes.lock.locked { selected += meshes.sections }
-                }
                 regionTerrain.submit(
                     view,
                     material,
-                    selected,
+                    plan.regionSections,
                     context.shaderPipeline.selection().generation,
                 )
                 if (shadow != null) {
-                    conventional.forEach { it.drawShadow() }
+                    plan.conventional[type.ordinal].forEach { it.drawShadow() }
                 } else {
-                    meshes.lock.locked {
-                        meshes.meshes[type.ordinal].forEach { it.draw() }
-                    }
+                    plan.conventional[type.ordinal].forEach { it.draw() }
                 }
             } else if (shadow != null) {
-                val culling = context.shaderPipeline.shadowCulling()
-                val camera = context.session.camera.entity.physics.positionInfo.eyePosition
-                loaded.forEachLoaded { section ->
-                    val allowed = culling?.allowsTerrainSection(
-                        section.position.x,
-                        section.position.y,
-                        section.position.z,
-                    ) ?: run {
+                plan.conventional[type.ordinal].forEach { it.drawShadow() }
+            } else {
+                plan.conventional[type.ordinal].forEach { it.draw() }
+            }
+        }
+    }
+
+    private fun buildTerrainFramePlan(
+        shadow: de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisShadowDirectives?,
+    ): TerrainFramePlan {
+        val regions = ArrayList<de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMeshes>()
+        val conventional = Array(ChunkMeshTypes.VALUES.size) { ArrayList<ChunkMesh>() }
+        if (shadow == null) {
+            val visible = visibility.meshes
+            visible.lock.locked {
+                regions += visible.sections
+                for (type in ChunkMeshTypes) conventional[type.ordinal] += visible.meshes[type.ordinal]
+            }
+        } else {
+            val culling = context.shaderPipeline.shadowCulling()
+            val camera = context.session.camera.entity.physics.positionInfo.eyePosition
+            loaded.forEachLoaded { section ->
+                val allowed = culling?.allowsTerrainSection(section.position.x, section.position.y, section.position.z)
+                    ?: run {
                         val delta = camera - section.center
                         shadow.allowsTerrainSection(delta.x, delta.y, delta.z)
                     }
-                    if (allowed) {
-                        section.meshes[type]?.drawShadow()
-                    }
-                }
-            } else {
-                meshes.lock.locked {
-                    meshes.meshes[type.ordinal].forEach { mesh ->
-                        mesh.draw()
-                    }
+                if (!allowed) return@forEachLoaded
+                if (section.regionBacked) {
+                    regions += section
+                } else {
+                    for (type in ChunkMeshTypes) section.meshes[type]?.let { conventional[type.ordinal] += it }
                 }
             }
         }
+        return TerrainFramePlan(
+            java.util.List.copyOf(regions),
+            Array(conventional.size) { java.util.List.copyOf(conventional[it]) },
+        )
     }
 
     private fun drawBlockEntities(shadow: Boolean = false) {
@@ -512,6 +510,7 @@ private val TerrainMaterialClass.semantic: PipelineSemantic
         TerrainMaterialClass.CUTOUT -> PipelineSemantic.TERRAIN_CUTOUT
         TerrainMaterialClass.TRANSLUCENT -> PipelineSemantic.TERRAIN_TRANSLUCENT
         TerrainMaterialClass.EMISSIVE_ADDITIVE -> PipelineSemantic.TERRAIN_EMISSIVE
+        TerrainMaterialClass.DISTANT_WATER -> error("Distant water has no near terrain graph semantic")
     }
 
 private val TerrainMaterialClass.passId: RenderPassId

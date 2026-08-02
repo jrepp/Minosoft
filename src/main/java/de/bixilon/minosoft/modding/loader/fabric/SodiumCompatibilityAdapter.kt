@@ -20,6 +20,7 @@ import de.bixilon.minosoft.gui.rendering.graph.RenderOwnerId
 import de.bixilon.minosoft.gui.rendering.terrain.BuiltInTerrainVertexLayout
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendDescriptor
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
+import de.bixilon.minosoft.gui.rendering.terrain.NEAR_TERRAIN_MATERIALS
 import de.bixilon.minosoft.gui.rendering.terrain.near.provider.TerrainProviderSelection
 import de.bixilon.minosoft.gui.rendering.tint.sampler.SamplingAlgorithms
 
@@ -185,7 +186,7 @@ object SodiumCompatibilityAdapter : FabricCompatibilityAdapter {
     internal val TERRAIN_DESCRIPTOR = TerrainBackendDescriptor(
         owner = RenderOwnerId("minosoft:sodium-compatible-terrain"),
         implementation = "sodium-0.5.8-adapter-minosoft-core",
-        materials = TerrainMaterialClass.entries.toSet(),
+        materials = NEAR_TERRAIN_MATERIALS,
         vertexLayout = BuiltInTerrainVertexLayout.VALUE,
         supportsAuxiliaryViews = true,
     )

@@ -27,7 +27,7 @@ import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
 import de.bixilon.minosoft.gui.rendering.renderer.drawable.Drawable
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.Renderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererManager
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineElement
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.WorldRenderPass
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.ShaderBufferId
@@ -48,14 +48,14 @@ import de.bixilon.minosoft.gui.rendering.terrain.scene.ProductionTerrainPipeline
 class RendererPipeline(private val renderer: RendererManager) : Drawable {
     private data class WorldElement(
         val id: RenderPassId,
-        val element: PipelineElement,
+        val element: WorldRenderPass,
     )
 
     private val other: MutableList<Drawable> = mutableListOf()
     private val system = renderer.context.system
     private val framebuffer = renderer.context.framebuffer
 
-    private var worldElements: Array<PipelineElement> = emptyArray()
+    private var worldElements: Array<WorldRenderPass> = emptyArray()
     private var graph = RenderGraphGeneration.empty<FrameGraphExecution>()
     private val terrainPipelines = ProductionTerrainPipelineRegistry(
         renderer.context,
@@ -64,7 +64,7 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
     )
 
     val generation: RenderGraphGeneration<FrameGraphExecution> get() = graph
-    val elements: List<PipelineElement> get() = worldElements.toList()
+    val elements: List<WorldRenderPass> get() = worldElements.toList()
 
     private fun RenderSystem.set(renderer: Renderer) {
         val framebuffer = renderer.framebuffer
@@ -78,11 +78,11 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
 
     private fun buildWorldElements(): List<WorldElement> {
         val elements = mutableListOf<WorldElement>()
-        for ((rendererIndex, candidate) in renderer.withIndex()) {
+        for (candidate in renderer) {
             if (candidate !is WorldRenderer) continue
-            for ((elementIndex, element) in candidate.layers.elements.withIndex()) {
+            for (element in candidate.passes.declarations) {
                 elements += WorldElement(
-                    id = element.passId ?: RenderPassId("minosoft:world/producer-$rendererIndex/layer-$elementIndex"),
+                    id = element.id,
                     element = element,
                 )
             }
@@ -221,7 +221,7 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
                     },
                     draw = { execution ->
                         execution.context.shaderPipeline.withScene(element.semantic) {
-                            element.drawEnabled(execution.context)
+                            element.drawMain(execution.context)
                         }
                     },
                 ),
@@ -337,7 +337,7 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
         return RenderPassId("minosoft:$group/$producer")
     }
 
-    private fun PipelineElement.phase(shaderPlan: ShaderPipelinePlan?): RenderPhase {
+    private fun WorldRenderPass.phase(shaderPlan: ShaderPipelinePlan?): RenderPhase {
         return semantic.phase(layer.priority, shaderPlan)
     }
 
@@ -430,7 +430,8 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
             -> plan.shadowDirectives.entities || plan.shadowDirectives.player
             PipelineSemantic.BLOCK_ENTITIES ->
                 plan.shadowDirectives.blockEntities || plan.shadowDirectives.lightBlockEntities
-            PipelineSemantic.DISTANT_TERRAIN -> plan.shadowDirectives.terrain
+            PipelineSemantic.DISTANT_TERRAIN -> plan.shadowDirectives.terrain &&
+                plan.programs.any { it.phase == ShaderProgramPhase.SHADOW && it.name == "dh_shadow" }
             else -> false
         }
 

@@ -60,7 +60,7 @@ class EntityRenderEffectFeatureTest {
         return renderer
     }
 
-    fun `shadow rebuild retires the prior loaded mesh`() {
+    fun `shadow updates the prior loaded mesh in place`() {
         val renderer = createLivingRenderer()
         val owner = Any()
 
@@ -74,10 +74,9 @@ class EntityRenderEffectFeatureTest {
             mapOf(CemRenderProperty.SHADOW_SIZE to 0.5f),
         )
         renderer.shadow.update(Duration.ZERO)
-        val replacement = requireNotNull(renderer.shadow.currentMesh)
-        assertNotSame(first, replacement)
-        renderer.renderer.queue.work()
-        assertSame(MeshStates.UNLOADED, first.state)
+        assertSame(first, renderer.shadow.currentMesh)
+        renderer.shadow.prepare()
+        assertSame(MeshStates.LOADED, first.state)
 
         renderer.shadow.unload()
         assertNull(renderer.shadow.currentMesh)
@@ -124,7 +123,7 @@ class EntityRenderEffectFeatureTest {
         assertNotSame(first, renderer.leash.currentMesh)
     }
 
-    fun `leash offset rebuild retires the prior loaded ribbon mesh`() {
+    fun `leash offset updates the prior loaded ribbon mesh in place`() {
         val renderer = createLivingRenderer()
         val holder = renderer.renderer.createEntity(Pig)
         holder._id = 42
@@ -141,10 +140,9 @@ class EntityRenderEffectFeatureTest {
             mapOf(CemRenderProperty.LEASH_OFFSET_X to 0.5f),
         )
         renderer.leash.update(Duration.ZERO)
-        val replacement = requireNotNull(renderer.leash.currentMesh)
-        assertNotSame(first, replacement)
-        renderer.renderer.queue.work()
-        assertSame(MeshStates.UNLOADED, first.state)
+        assertSame(first, renderer.leash.currentMesh)
+        renderer.leash.prepare()
+        assertSame(MeshStates.LOADED, first.state)
 
         renderer.leash.unload()
         assertNull(renderer.leash.currentMesh)

@@ -29,13 +29,16 @@ import de.bixilon.minosoft.gui.rendering.graph.resource.VertexAttribute
 import de.bixilon.minosoft.gui.rendering.graph.resource.VertexAttributeFormat
 import de.bixilon.minosoft.gui.rendering.graph.resource.VertexLayoutDeclaration
 import de.bixilon.minosoft.gui.rendering.graph.resource.VertexSemantic
+import de.bixilon.minosoft.terrain.model.interop.TerrainMaterialClass as InteropTerrainMaterialClass
 
-enum class TerrainMaterialClass {
-    OPAQUE,
-    CUTOUT,
-    TRANSLUCENT,
-    EMISSIVE_ADDITIVE,
-}
+typealias TerrainMaterialClass = InteropTerrainMaterialClass
+
+val NEAR_TERRAIN_MATERIALS: Set<TerrainMaterialClass> = setOf(
+    TerrainMaterialClass.OPAQUE,
+    TerrainMaterialClass.CUTOUT,
+    TerrainMaterialClass.TRANSLUCENT,
+    TerrainMaterialClass.EMISSIVE_ADDITIVE,
+)
 
 enum class TerrainInvalidationReason {
     BLOCK,

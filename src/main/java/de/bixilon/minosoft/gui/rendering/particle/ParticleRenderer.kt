@@ -30,7 +30,7 @@ import de.bixilon.minosoft.gui.rendering.particle.types.Particle
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegistry
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.OpaqueLayer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.TranslucentLayer
@@ -49,7 +49,7 @@ class ParticleRenderer(
     override val context: RenderContext,
 ) : WorldRenderer, AsyncRenderer, AbstractParticleRenderer {
     override val random = Random()
-    override val layers = LayerSettings()
+    override val passes = WorldPassRegistry()
     private val profile = session.profiles.particle
     private val shader = context.system.shader.create(minosoft("particle")) { ParticleShader(it) }
 
@@ -96,8 +96,8 @@ class ParticleRenderer(
         particle in particles.particles || queue.contains(particle)
     }
 
-    override fun registerLayers() {
-        layers.registerSemantic(
+    override fun registerPasses() {
+        passes.add(
             OpaqueLayer,
             shader,
             renderer = { if (!referenceSuppressed) mesh?.draw() },
@@ -105,7 +105,7 @@ class ParticleRenderer(
             passId = RenderPassId("minosoft:scene/particles-opaque"),
             skip = { referenceSuppressed || mesh == null },
         )
-        layers.registerSemantic(
+        passes.add(
             TranslucentLayer,
             shader,
             renderer = { if (!referenceSuppressed) translucentMesh?.draw() },

@@ -28,6 +28,7 @@ import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
 
 class RendererManager(
@@ -37,6 +38,8 @@ class RendererManager(
     private val renderers: MutableMap<RendererBuilder<*>, Renderer> = linkedMapOf()
     val pipeline = RendererPipeline(this)
     private val session = context.session
+    private val preparedRenderers = LinkedBlockingQueue<Renderer>()
+    private val preparationFailures = ConcurrentHashMap<Renderer, Throwable>()
 
 
     fun <T : Renderer> register(renderer: T): T {
@@ -77,7 +80,7 @@ class RendererManager(
     fun init(latch: AbstractLatch) {
         for (renderer in list) {
             if (renderer !is WorldRenderer) continue
-            renderer.registerLayers()
+            renderer.registerPasses()
         }
         pipeline.rebuild()
 
@@ -95,27 +98,65 @@ class RendererManager(
     }
 
     private fun prepare() {
-        val queue = LinkedBlockingQueue<Renderer>(this.list.size)
+        preparedRenderers.clear()
+        preparationFailures.clear()
         val total = list.size
 
         for (renderer in list) {
             val name = renderer::class.java.realName
-            context.profiler("pre $name") { renderer.prePrepareDraw() }
+            val preFailure = try {
+                context.profiler("pre $name") { renderer.prePrepareDraw() }
+                null
+            } catch (error: Throwable) {
+                error
+            }
+            if (preFailure != null) {
+                preparationFailures[renderer] = preFailure
+                preparedRenderers += renderer
+                continue
+            }
             if (renderer is AsyncRenderer) {
-                context.profiler("?async $name") { context.runAsync { renderer.prepareDrawAsync(); queue += renderer } }
+                context.profiler("?async $name") {
+                    try {
+                        context.runAsync {
+                            val failure = try {
+                                renderer.prepareDrawAsync()
+                                null
+                            } catch (error: Throwable) {
+                                error
+                            }
+                            if (failure != null) preparationFailures[renderer] = failure
+                            preparedRenderers += renderer
+                        }
+                    } catch (error: Throwable) {
+                        preparationFailures[renderer] = error
+                        preparedRenderers += renderer
+                    }
+                }
             } else {
-                queue += renderer
+                preparedRenderers += renderer
             }
         }
 
         var done = 0
+        var failure: Throwable? = null
         while (true) {
             if (done >= total) break
-            val renderer = context.profiler("wait") { queue.take() }
-            val name = renderer::class.java.realName
-            context.profiler("post $name") { renderer.postPrepareDraw() }
+            val renderer = context.profiler("wait") { preparedRenderers.take() }
+            val asyncFailure = preparationFailures.remove(renderer)
+            if (asyncFailure == null) {
+                val name = renderer::class.java.realName
+                try {
+                    context.profiler("post $name") { renderer.postPrepareDraw() }
+                } catch (error: Throwable) {
+                    failure?.addSuppressed(error) ?: run { failure = error }
+                }
+            } else {
+                failure?.addSuppressed(asyncFailure) ?: run { failure = asyncFailure }
+            }
             done++
         }
+        failure?.let { throw it }
     }
 
     private fun finishFrame() {

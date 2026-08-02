@@ -189,9 +189,9 @@ class ChunkRendererTest {
 
     fun `block entity phases let each renderer bind its exact scene shader`() {
         val renderer = create()
-        renderer.registerLayers()
+        renderer.registerPasses()
 
-        val blockEntityLayers = renderer.layers.elements.filter {
+        val blockEntityLayers = renderer.passes.declarations.filter {
             it.semantic == PipelineSemantic.BLOCK_ENTITIES ||
                 it.semantic == PipelineSemantic.BLOCK_ENTITIES_TRANSLUCENT
         }
@@ -324,7 +324,7 @@ class ChunkRendererTest {
         assert(gpuMeshes.all { it.state == MeshStates.UNLOADED })
     }
 
-    fun `complete production pipeline generation owns component retirement`() {
+    fun `direct production pipeline leases preserve generation and component retirement`() {
         val chunks = create()
         val manager = RendererManager(chunks.context)
         chunks.context::renderer.forceSet(manager)
@@ -367,11 +367,10 @@ class ChunkRendererTest {
         assert(installed.generation == 1L)
         assert(installed.identity.shaderPipelineGeneration == chunks.context.shaderPipeline.selection().generation)
         registration.close()
-        assert(!selected.closed)
+        assert(selected.closed)
 
         val restored = manager.pipeline.terrainSelection()
         assert(restored.generation == 2L)
-        assert(selected.closed)
 
         manager.unload()
         chunks.context.shaderPipeline.close()

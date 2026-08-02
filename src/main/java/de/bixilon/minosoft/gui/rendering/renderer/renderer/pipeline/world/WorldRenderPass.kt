@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -22,43 +23,32 @@ import de.bixilon.minosoft.gui.rendering.graph.RenderViewId
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
 
-class PipelineElement(
+/** A producer-owned declaration consumed directly by the frame graph builder. */
+class WorldRenderPass(
+    val id: RenderPassId,
     val layer: RenderLayer,
     val shader: Shader?,
-    val renderer: () -> Unit,
-    val skip: (() -> Boolean)?,
-    val semantic: PipelineSemantic = PipelineSemantic.AUTO,
+    private val renderer: () -> Unit,
+    val semantic: PipelineSemantic,
     val owner: (() -> RenderOwnerId)? = null,
-    val passId: RenderPassId? = null,
-    val auxiliaryRenderers: Map<RenderViewId, () -> Unit> = emptyMap(),
-) : Comparable<PipelineElement> {
-
-    fun draw(context: RenderContext) {
-        if (!isEnabled()) return
-        drawEnabled(context)
-    }
-
+    private val auxiliaryViews: Map<RenderViewId, () -> Unit> = emptyMap(),
+    private val skip: (() -> Boolean)? = null,
+) {
     fun isEnabled(): Boolean = skip?.invoke() != true
 
-    fun drawEnabled(context: RenderContext) {
-        draw(context, renderer)
-    }
+    fun drawMain(context: RenderContext) = draw(context, renderer)
 
-    fun supports(view: RenderViewId): Boolean = view in auxiliaryRenderers
+    fun supports(view: RenderViewId): Boolean = view in auxiliaryViews
 
     fun draw(view: RenderViewId, context: RenderContext) {
-        val renderer = auxiliaryRenderers[view] ?: return
+        val renderer = auxiliaryViews[view] ?: return
         draw(context, renderer)
     }
 
     private fun draw(context: RenderContext, renderer: () -> Unit) {
         context.system.set(layer.settings)
         shader?.use()
-        context.profiler(renderer::class.java.realName) { renderer.invoke() }
-    }
-
-    override fun compareTo(other: PipelineElement): Int {
-        return layer.priority.compareTo(other.layer.priority)
+        context.profiler(renderer::class.java.realName) { renderer() }
     }
 }
 

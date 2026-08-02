@@ -88,31 +88,21 @@ class ChunkVisibilityManager(
                 val nodes = snapshot.candidates.associate { (loaded, _) ->
                     loaded.position to TerrainVisibilityNode(loaded.position, loaded.connectivity)
                 }.toMutableMap()
-                if (nodes.isNotEmpty()) {
-                    val xRange = minOf(sectionPosition.x, nodes.keys.minOf { it.x })..
-                        maxOf(sectionPosition.x, nodes.keys.maxOf { it.x })
-                    val yRange = minOf(sectionPosition.y, nodes.keys.minOf { it.y })..
-                        maxOf(sectionPosition.y, nodes.keys.maxOf { it.y })
-                    val zRange = minOf(sectionPosition.z, nodes.keys.minOf { it.z })..
-                        maxOf(sectionPosition.z, nodes.keys.maxOf { it.z })
-
-                    // Empty/unbuilt sections are passable, not missing graph vertices.
-                    // Treating them as absent would incorrectly hide everything beyond
-                    // the first air gap. Unknown geometry is ALL as the conservative
-                    // fallback until its measured connectivity publishes.
-                    for (y in yRange) {
-                        for (z in zRange) {
-                            for (x in xRange) {
-                                val position = SectionPosition(x, y, z)
-                                nodes.putIfAbsent(
-                                    position,
-                                    TerrainVisibilityNode(position, TerrainDirectionalVisibility.ALL),
-                                )
-                            }
-                        }
-                    }
+                val visible = if (nodes.isEmpty()) {
+                    emptySet()
+                } else {
+                    val minimum = SectionPosition(
+                        minOf(sectionPosition.x, nodes.keys.minOf { it.x }),
+                        minOf(sectionPosition.y, nodes.keys.minOf { it.y }),
+                        minOf(sectionPosition.z, nodes.keys.minOf { it.z }),
+                    )
+                    val maximum = SectionPosition(
+                        maxOf(sectionPosition.x, nodes.keys.maxOf { it.x }),
+                        maxOf(sectionPosition.y, nodes.keys.maxOf { it.y }),
+                        maxOf(sectionPosition.z, nodes.keys.maxOf { it.z }),
+                    )
+                    TerrainVisibilityTraversal.traverseBounded(sectionPosition, nodes, minimum, maximum).toHashSet()
                 }
-                val visible = TerrainVisibilityTraversal.traverse(sectionPosition, nodes).toHashSet()
 
                 var visibleSections = 0
                 for ((loaded, result) in snapshot.candidates) {
@@ -124,10 +114,10 @@ class ChunkVisibilityManager(
                     visibleSections++
                 }
 
+                meshes.sort()
                 if (!renderer.loaded.publishVisibility(snapshot, meshes)) {
                     continue
                 }
-                meshes.sort()
                 telemetry.visible(visibleSections)
                 return
             }

@@ -38,7 +38,7 @@ import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisDrawState
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegistry
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import org.testng.Assert.assertEquals
 import org.testng.annotations.Test
@@ -50,7 +50,7 @@ class EntityDrawerTest {
 
     private fun create(): EntityDrawer {
         val renderer = EntityRendererTestUtil.create()
-        renderer::layers.forceSet(LayerSettings())
+        renderer::passes.forceSet(WorldPassRegistry())
         return EntityDrawer(renderer)
     }
 
@@ -104,10 +104,10 @@ class EntityDrawerTest {
 
     fun `registers outlines as a canonical world overlay pass`() {
         val drawer = create()
-        drawer.registerLayers()
+        drawer.registerPasses()
 
-        val pass = drawer.renderer.layers.elements.single {
-            it.passId == RenderPassId("minosoft:scene/entity-outlines")
+        val pass = drawer.renderer.passes.declarations.single {
+            it.id == RenderPassId("minosoft:scene/entity-outlines")
         }
         assertEquals(pass.semantic, PipelineSemantic.WORLD_OVERLAY)
         assertEquals(pass.layer.priority, 4000)
@@ -115,17 +115,17 @@ class EntityDrawerTest {
 
     fun `registers opaque and translucent entity semantics separately`() {
         val drawer = create()
-        drawer.registerLayers()
+        drawer.registerPasses()
 
         assertEquals(
-            drawer.renderer.layers.elements.single {
-                it.passId == RenderPassId("minosoft:scene/entities-0")
+            drawer.renderer.passes.declarations.single {
+                it.id == RenderPassId("minosoft:scene/entities-0")
             }.semantic,
             PipelineSemantic.ENTITIES,
         )
         assertEquals(
-            drawer.renderer.layers.elements.single {
-                it.passId == RenderPassId("minosoft:scene/entities-1")
+            drawer.renderer.passes.declarations.single {
+                it.id == RenderPassId("minosoft:scene/entities-1")
             }.semantic,
             PipelineSemantic.ENTITIES_TRANSLUCENT,
         )

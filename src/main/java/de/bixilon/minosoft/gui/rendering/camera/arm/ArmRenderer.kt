@@ -42,7 +42,7 @@ import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerS
 import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegistry
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
@@ -55,7 +55,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.dynamic.DynamicText
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
 class ArmRenderer(override val context: RenderContext) : WorldRenderer {
-    override val layers = LayerSettings()
+    override val passes = WorldPassRegistry()
     private var perspective = Mat4f()
     val shader = context.system.shader.create(minosoft("entities/player/arm")) { ArmShader(it) }
     private val mainHandItem = HeldItemRenderer(context)
@@ -161,8 +161,8 @@ class ArmRenderer(override val context: RenderContext) : WorldRenderer {
         }
     }
 
-    override fun registerLayers() {
-        layers.registerSemantic(
+    override fun registerPasses() {
+        passes.add(
             layer = HandLayer,
             shader = null,
             renderer = this::drawHand,

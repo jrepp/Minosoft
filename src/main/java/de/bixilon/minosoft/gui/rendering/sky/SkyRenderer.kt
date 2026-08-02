@@ -24,7 +24,7 @@ import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegistry
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.sky.box.SkyboxRenderer
 import de.bixilon.minosoft.gui.rendering.sky.planet.MoonRenderer
@@ -40,7 +40,7 @@ class SkyRenderer(
     val session: PlaySession,
     override val context: RenderContext,
 ) : WorldRenderer, AsyncRenderer {
-    override val layers = LayerSettings()
+    override val passes = WorldPassRegistry()
     private val renderer: MutableList<SkyChildRenderer> = mutableListOf()
     var effects by observed(session.world.dimension.effects)
     var matrix by observed(Mat4f())
@@ -54,8 +54,8 @@ class SkyRenderer(
     val sunScatter = SunScatterRenderer(this, sun)
     val moon = MoonRenderer(this)
 
-    override fun registerLayers() {
-        layers.registerSemantic(
+    override fun registerPasses() {
+        passes.add(
             SkyLayer,
             null,
             this::drawSky,

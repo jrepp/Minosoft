@@ -10,6 +10,8 @@
 package de.bixilon.minosoft.gui.rendering.entities.effect
 
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.kutil.collections.primitive.floats.FloatList
+import de.bixilon.kutil.collections.primitive.ints.IntList
 import de.bixilon.minosoft.data.entities.Poses
 import de.bixilon.minosoft.data.entities.entities.Entity
 import de.bixilon.minosoft.data.entities.entities.decoration.LeashFenceKnotEntity
@@ -20,8 +22,12 @@ import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.LivingEntityRenderer
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
+import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
 import de.bixilon.minosoft.gui.rendering.util.mesh.integrated.LightColorMeshBuilder
+import de.bixilon.minosoft.gui.rendering.util.mesh.integrated.LightColorMeshBuilder.LightColorMeshStruct
 import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3dUtil.blockPosition
+import de.bixilon.minosoft.util.collections.floats.FloatListUtil
+import de.bixilon.minosoft.util.collections.ints.IntListUtil
 import kotlin.time.Duration
 
 /**
@@ -33,6 +39,10 @@ class EntityLeashFeature(
     private val livingRenderer: LivingEntityRenderer<*>,
 ) : MeshedFeature<Mesh>(livingRenderer), FeatureDrawable {
     private var key: Key? = null
+    private var meshData: FloatList? = null
+    private var meshIndex: IntList? = null
+    private var builder: ReusableLeashMeshBuilder? = null
+    private var pendingVertexUpdate = false
 
     override val updatePriority get() = EFFECT_UPDATE_PRIORITY
     override val priority get() = -50
@@ -68,7 +78,7 @@ class EntityLeashFeature(
         val next = Key(start, end, startLight, endLight)
         if (!unload && mesh != null && key == next) return
         key = next
-        mesh = build(start, end, startLight, endLight)
+        build(start, end, startLight, endLight)
     }
 
     private fun holderAnchor(holder: Entity) = when (holder) {
@@ -97,8 +107,8 @@ class EntityLeashFeature(
         return light
     }
 
-    private fun build(start: Vec3f, end: Vec3f, startLight: LightLevel, endLight: LightLevel): Mesh {
-        val builder = LightColorMeshBuilder(livingRenderer.renderer.context, EntityLeashProjector.SEGMENTS * 2)
+    private fun build(start: Vec3f, end: Vec3f, startLight: LightLevel, endLight: LightLevel) {
+        val builder = resetBuilder()
         for (quad in EntityLeashProjector.ribbons(start, end, startLight, endLight)) {
             builder.addVertex(quad.first0, quad.color0, quad.light0, quad.normal)
             builder.addVertex(quad.second0, quad.color0, quad.light0, quad.normal)
@@ -106,7 +116,35 @@ class EntityLeashFeature(
             builder.addVertex(quad.first1, quad.color1, quad.light1, quad.normal)
             builder.addIndexQuad()
         }
-        return builder.bake()
+        val current = mesh
+        if (current == null || current.state != MeshStates.LOADED) {
+            mesh = builder.bake()
+        } else {
+            pendingVertexUpdate = true
+        }
+    }
+
+    private fun resetBuilder(): ReusableLeashMeshBuilder {
+        val data = meshData ?: FloatListUtil.direct(MAX_FLOATS, false).also { meshData = it }
+        val index = meshIndex ?: IntListUtil.direct(MAX_INDICES, false).also { meshIndex = it }
+        data.clear()
+        index.clear()
+        return (builder ?: ReusableLeashMeshBuilder(livingRenderer.renderer.context, data, index).also {
+            builder = it
+        }).also { it.reset(data, index) }
+    }
+
+    override fun prepare() {
+        if (pendingVertexUpdate) {
+            pendingVertexUpdate = false
+            val current = mesh
+            if (current != null && current.state == MeshStates.LOADED) {
+                builder?.updateVertices(current)
+            } else {
+                mesh = builder?.bake()
+            }
+        }
+        super<MeshedFeature>.prepare()
     }
 
     override fun draw(mesh: Mesh) {
@@ -116,7 +154,33 @@ class EntityLeashFeature(
 
     private fun clear() {
         key = null
+        pendingVertexUpdate = false
         if (mesh != null) mesh = null
+    }
+
+    override fun unload() {
+        var failure: Throwable? = null
+        try {
+            super.unload()
+        } catch (error: Throwable) {
+            failure = error
+        }
+        pendingVertexUpdate = false
+        builder?.drop(free = false)
+        builder = null
+        try {
+            meshData?.free()
+        } catch (error: Throwable) {
+            failure?.addSuppressed(error) ?: run { failure = error }
+        }
+        meshData = null
+        try {
+            meshIndex?.free()
+        } catch (error: Throwable) {
+            failure?.addSuppressed(error) ?: run { failure = error }
+        }
+        meshIndex = null
+        failure?.let { throw it }
     }
 
     private data class Key(
@@ -128,5 +192,21 @@ class EntityLeashFeature(
 
     private companion object {
         const val EFFECT_UPDATE_PRIORITY = 100
+        const val QUADS = EntityLeashProjector.SEGMENTS * 2
+        val MAX_FLOATS = QUADS * 4 * LightColorMeshStruct.floats
+        const val MAX_INDICES = QUADS * 6
+    }
+
+    private class ReusableLeashMeshBuilder(
+        context: de.bixilon.minosoft.gui.rendering.RenderContext,
+        data: FloatList,
+        index: IntList,
+    ) : LightColorMeshBuilder(context, QUADS, data, index) {
+        override val reused: Boolean = true
+
+        fun reset(data: FloatList, index: IntList) {
+            _data = data
+            _index = index
+        }
     }
 }

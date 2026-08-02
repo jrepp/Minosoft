@@ -25,6 +25,7 @@ import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendDescriptor
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainInvalidationReason
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainSectionSnapshot
+import de.bixilon.minosoft.gui.rendering.terrain.NEAR_TERRAIN_MATERIALS
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainBuildCause
 
 class BuiltInChunkTerrainBackend(
@@ -33,7 +34,7 @@ class BuiltInChunkTerrainBackend(
     override val descriptor = TerrainBackendDescriptor(
         owner = OWNER,
         implementation = "minosoft-built-in-chunk-renderer",
-        materials = TerrainMaterialClass.entries.toSet(),
+        materials = NEAR_TERRAIN_MATERIALS,
         vertexLayout = BuiltInTerrainVertexLayout.VALUE,
         supportsAuxiliaryViews = true,
     )

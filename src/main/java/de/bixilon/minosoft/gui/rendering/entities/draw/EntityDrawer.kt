@@ -30,7 +30,6 @@ import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisEntityOverlay
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisShaderPackPlanner
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisDrawState
-import de.bixilon.minosoft.data.entities.entities.player.PlayerEntity
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
@@ -49,19 +48,20 @@ class EntityDrawer(
     private val lock = Lock.lock()
     private val layers = HashMap<EntityLayer, ArrayList<FeatureDrawable>>()
     private val shadowLayers = HashMap<EntityLayer, ArrayList<FeatureDrawable>>()
+    private val preparedFeatures = Collections.newSetFromMap(IdentityHashMap<FeatureDrawable, Boolean>())
     val outline = EntityOutlineRenderer(renderer.context)
 
     var size = 0
         private set
 
-    fun registerLayers() {
+    fun registerPasses() {
         for ((index, layer) in EntityLayer.LAYERS.withIndex()) {
             val semantic = when (layer) {
                 EntityLayer.Opaque -> PipelineSemantic.ENTITIES
                 EntityLayer.Translucent -> PipelineSemantic.ENTITIES_TRANSLUCENT
                 else -> error("Unknown entity layer $layer")
             }
-            renderer.layers.registerSemantic(
+            renderer.passes.add(
                 layer,
                 null,
                 { if (!renderer.referenceSuppressed) layers[layer]?.draw(layer) },
@@ -74,7 +74,7 @@ class EntityDrawer(
                 ),
             )
         }
-        renderer.layers.registerSemantic(
+        renderer.passes.add(
             EntityOutlineLayer,
             null,
             { if (!renderer.referenceSuppressed) outline.draw() },
@@ -92,54 +92,19 @@ class EntityDrawer(
         }
     }
     private fun ArrayList<FeatureDrawable>.drawShadowCasters(layer: EntityLayer) {
-        val shadow = renderer.context.shaderPipeline.plan()?.shadowDirectives
-        val culling = renderer.context.shaderPipeline.shadowCulling()
-        val camera = renderer.context.session.camera.entity.renderInfo.eyePosition
         forEach { feature ->
-            val entity = (feature as? EntityRenderFeature)?.renderer?.entity
-            val position = entity?.renderInfo?.position
-            val dimensions = entity?.dimensions
-            if (
-                feature.layer == layer &&
-                feature.castsShadow &&
-                (
-                    shadow == null ||
-                        shadow.allowsEntity(entity is PlayerEntity) &&
-                        (
-                            position == null ||
-                                dimensions == null ||
-                                (culling?.allowsEntityBounds(
-                                    position.x - dimensions.x * 0.5,
-                                    position.y,
-                                    position.z - dimensions.x * 0.5,
-                                    position.x + dimensions.x * 0.5,
-                                    position.y + dimensions.y,
-                                    position.z + dimensions.x * 0.5,
-                                ) ?: shadow.allowsEntityBounds(
-                                    camera.x,
-                                    camera.y,
-                                    camera.z,
-                                    position.x - dimensions.x * 0.5,
-                                    position.y,
-                                    position.z - dimensions.x * 0.5,
-                                    position.x + dimensions.x * 0.5,
-                                    position.y + dimensions.y,
-                                    position.z + dimensions.x * 0.5,
-                                ))
-                            )
-                    )
-            ) {
+            if (feature.layer == layer && feature.castsShadow) {
                 renderer.context.shaderPipeline.withDrawState(feature.irisDrawState(), feature::draw)
             }
         }
     }
 
     fun prepare() {
-        val prepared = Collections.newSetFromMap(IdentityHashMap<FeatureDrawable, Boolean>())
+        preparedFeatures.clear()
         var size = 0
         for ((layer, features) in this.layers) {
             for (feature in features) {
-                if (!prepared.add(feature)) continue
+                if (!preparedFeatures.add(feature)) continue
                 feature.prepare()
                 size++
             }
@@ -147,7 +112,7 @@ class EntityDrawer(
         }
         for ((layer, features) in shadowLayers) {
             for (feature in features) {
-                if (!prepared.add(feature)) continue
+                if (!preparedFeatures.add(feature)) continue
                 feature.prepare()
                 size++
             }
@@ -170,22 +135,16 @@ class EntityDrawer(
     }
 
     operator fun plusAssign(drawable: FeatureDrawable) = lock.locked {
-        val featureLayers = buildSet {
-            add(drawable.layer)
-            addAll(drawable.additionalLayers)
-        }
-        for (layer in featureLayers) {
-            this.layers.getOrPut(layer) { ArrayList(100) } += drawable
+        this.layers.getOrPut(drawable.layer) { ArrayList(100) } += drawable
+        for (layer in drawable.additionalLayers) {
+            if (layer != drawable.layer) this.layers.getOrPut(layer) { ArrayList(100) } += drawable
         }
     }
 
     fun addShadow(drawable: FeatureDrawable) = lock.locked {
-        val featureLayers = buildSet {
-            add(drawable.layer)
-            addAll(drawable.additionalLayers)
-        }
-        for (layer in featureLayers) {
-            shadowLayers.getOrPut(layer) { ArrayList(100) } += drawable
+        shadowLayers.getOrPut(drawable.layer) { ArrayList(100) } += drawable
+        for (layer in drawable.additionalLayers) {
+            if (layer != drawable.layer) shadowLayers.getOrPut(layer) { ArrayList(100) } += drawable
         }
     }
 

@@ -23,7 +23,7 @@ import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegistry
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.sky.SkyRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
@@ -39,7 +39,7 @@ class CloudRenderer(
     override val context: RenderContext,
 ) : WorldRenderer, AsyncRenderer {
     private val color = CloudColor(sky)
-    override val layers = LayerSettings()
+    override val passes = WorldPassRegistry()
     val shader = context.system.shader.create(minosoft("sky/clouds")) { CloudShader(it) }
     val matrix = CloudMatrix()
     private val cloudLayers: MutableList<CloudLayer> = mutableListOf()
@@ -59,8 +59,8 @@ class CloudRenderer(
     var referenceSuppressed = false
 
 
-    override fun registerLayers() {
-        layers.registerSemantic(
+    override fun registerPasses() {
+        passes.add(
             CloudRenderLayer,
             shader,
             this::draw,

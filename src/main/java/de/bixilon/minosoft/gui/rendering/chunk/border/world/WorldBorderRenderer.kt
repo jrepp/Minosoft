@@ -29,7 +29,7 @@ import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegistry
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
@@ -43,7 +43,7 @@ import kotlin.time.Duration.Companion.seconds
 class WorldBorderRenderer(
     override val context: RenderContext,
 ) : WorldRenderer, AsyncRenderer {
-    override val layers = LayerSettings()
+    override val passes = WorldPassRegistry()
     private val shader = context.system.shader.create(minosoft("world/border")) { WorldBorderShader(it) }
     private var mesh: WorldBorderMesh? = null
     private val border = context.session.world.border
@@ -53,8 +53,8 @@ class WorldBorderRenderer(
     override val skip get() = referenceSuppressed || border.getDistanceTo(context.session.player.physics.position) > MAX_DISTANCE
     private var reload = false
 
-    override fun registerLayers() {
-        layers.registerSemantic(
+    override fun registerPasses() {
+        passes.add(
             WorldBorderLayer,
             shader,
             this::draw,

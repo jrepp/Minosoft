@@ -32,7 +32,7 @@ import de.bixilon.minosoft.gui.rendering.renderer.MeshSwapper
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegistry
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
 import de.bixilon.minosoft.gui.rendering.system.base.settings.RenderSettings
@@ -46,7 +46,7 @@ class ChunkBorderRenderer(
     val session: PlaySession,
     override val context: RenderContext,
 ) : WorldRenderer, AsyncRenderer, MeshSwapper<Mesh> {
-    override val layers = LayerSettings()
+    override val passes = WorldPassRegistry()
     private val profile = session.profiles.rendering
     private var offset = BlockPosition()
     private var chunkPosition: ChunkPosition? = null
@@ -65,8 +65,8 @@ class ChunkBorderRenderer(
     override var nextMesh: Mesh? = null
     override var unload = false
 
-    override fun registerLayers() {
-        layers.registerSemantic(
+    override fun registerPasses() {
+        passes.add(
             ChunkBorderLayer,
             context.shaders.genericColorShader,
             this::draw,

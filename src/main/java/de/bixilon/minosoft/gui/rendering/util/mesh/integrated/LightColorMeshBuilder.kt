@@ -17,11 +17,15 @@ import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.system.base.MeshUtil.buffer
 import de.bixilon.minosoft.gui.rendering.util.mesh.builder.quad.QuadMeshBuilder
 import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
+import de.bixilon.kutil.collections.primitive.floats.FloatList
+import de.bixilon.kutil.collections.primitive.ints.IntList
 
-class LightColorMeshBuilder(
+open class LightColorMeshBuilder(
     context: RenderContext,
     estimate: Int = 100,
-) : QuadMeshBuilder(context, LightColorMeshStruct, estimate) {
+    data: FloatList? = null,
+    index: IntList? = null,
+) : QuadMeshBuilder(context, LightColorMeshStruct, estimate, data, index) {
 
     fun addVertex(position: Vec3f, color: RGBAColor, light: LightLevel, normal: Vec3f) {
         data.add(

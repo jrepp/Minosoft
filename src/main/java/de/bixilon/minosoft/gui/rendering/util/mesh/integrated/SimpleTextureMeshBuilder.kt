@@ -22,10 +22,17 @@ import de.bixilon.minosoft.gui.rendering.system.base.MeshUtil.buffer
 import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTexture
 import de.bixilon.minosoft.gui.rendering.util.mesh.builder.quad.QuadMeshBuilder
 import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
+import de.bixilon.kutil.collections.primitive.floats.FloatList
+import de.bixilon.kutil.collections.primitive.ints.IntList
 import kotlin.math.abs
 import kotlin.math.sqrt
 
-open class SimpleTextureMeshBuilder(context: RenderContext, estimate: Int = 1) : QuadMeshBuilder(context, SimpleTextureMeshStruct, estimate) {
+open class SimpleTextureMeshBuilder(
+    context: RenderContext,
+    estimate: Int = 1,
+    data: FloatList? = null,
+    index: IntList? = null,
+) : QuadMeshBuilder(context, SimpleTextureMeshStruct, estimate, data, index) {
 
     fun addVertex(
         x: Float,

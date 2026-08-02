@@ -27,7 +27,7 @@ import de.bixilon.minosoft.gui.rendering.chunk.breaking.mesh.BreakingMeshBuilder
 import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegistry
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.RenderLayer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.TranslucentLayer
@@ -42,7 +42,7 @@ class BlockBreakRenderer(
     val animation: BreakAnimation,
 ) : WorldRenderer {
     private val shader = context.system.shader.create(minosoft("chunk/breaking"), ::BlockBreakShader)
-    override val layers = LayerSettings()
+    override val passes = WorldPassRegistry()
     private val lock = Lock.lock()
     private val instances: HashMap<Int, BreakInstance> = HashMap()
 
@@ -102,8 +102,8 @@ class BlockBreakRenderer(
         }
     }
 
-    override fun registerLayers() {
-        layers.registerSemantic(
+    override fun registerPasses() {
+        passes.add(
             BlockDestroyLayer,
             shader,
             this::draw,

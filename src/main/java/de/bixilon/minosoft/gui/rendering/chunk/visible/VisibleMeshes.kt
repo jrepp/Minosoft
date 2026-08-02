@@ -15,11 +15,7 @@ package de.bixilon.minosoft.gui.rendering.chunk.visible
 
 import de.bixilon.kutil.concurrent.lock.LockUtil.locked
 import de.bixilon.kutil.concurrent.lock.locks.reentrant.ReentrantLock
-import de.bixilon.kutil.concurrent.pool.ThreadPool
-import de.bixilon.kutil.concurrent.worker.unconditional.UnconditionalTask
-import de.bixilon.kutil.concurrent.worker.unconditional.UnconditionalWorker
 import de.bixilon.minosoft.data.world.positions.BlockPosition
-import de.bixilon.minosoft.gui.rendering.RenderingThreadPool
 import de.bixilon.minosoft.gui.rendering.camera.frustum.FrustumResults
 import de.bixilon.minosoft.gui.rendering.chunk.entities.BlockEntityRenderer
 import de.bixilon.minosoft.gui.rendering.chunk.mesh.ChunkMesh
@@ -46,7 +42,7 @@ class VisibleMeshes(
     val lock = ReentrantLock()
 
 
-    private fun add(mesh: ChunkMeshes, frustum: FrustumResults) {
+    private fun add(mesh: ChunkMeshes, frustum: FrustumResults, maintainOrder: Boolean) {
         mesh.update(camera, frustum)
 
         if (mesh.regionBacked) {
@@ -55,25 +51,27 @@ class VisibleMeshes(
             mesh.meshes.forEach { type, mesh ->
                 if (mesh.occlusion == ChunkMesh.OcclusionStates.INVISIBLE) return@forEach
 
-                this.meshes[type.ordinal] += mesh
+                val target = this.meshes[type.ordinal]
+                if (maintainOrder) {
+                    val found = java.util.Collections.binarySearch(target, mesh)
+                    target.add(if (found < 0) -found - 1 else found, mesh)
+                } else {
+                    target += mesh
+                }
             }
         }
 
         mesh.entities?.let { entities += it }
     }
 
-    fun unsafeAdd(mesh: ChunkMeshes, frustum: FrustumResults) = add(mesh, frustum)
+    fun unsafeAdd(mesh: ChunkMeshes, frustum: FrustumResults) = add(mesh, frustum, maintainOrder = false)
+
+    fun unsafeAddSorted(mesh: ChunkMeshes, frustum: FrustumResults) = add(mesh, frustum, maintainOrder = true)
 
 
     fun sort() {
-        val worker = UnconditionalWorker(pool = RenderingThreadPool)
-        lock.locked {
-            for (mesh in meshes) {
-                worker += UnconditionalTask(ThreadPool.Priorities.HIGHER) { mesh.sort() }
-            }
-            // TODO: sort entities
-            worker.work()
-        }
+        for (mesh in meshes) mesh.sort()
+        // TODO: sort entities
     }
 
     operator fun minusAssign(mesh: ChunkMeshes): Unit = lock.locked {
@@ -86,7 +84,6 @@ class VisibleMeshes(
         }
         mesh.entities?.let { entities -= it }
 
-        visibility.invalidate(VisibilityGraphInvalidReason.MESH_UPDATE)
     }
 
     fun clear() = lock.locked {

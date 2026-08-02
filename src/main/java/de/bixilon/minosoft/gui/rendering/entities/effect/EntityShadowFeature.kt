@@ -11,6 +11,8 @@ package de.bixilon.minosoft.gui.rendering.entities.effect
 
 import de.bixilon.kmath.vec.vec2.f.Vec2f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
+import de.bixilon.kutil.collections.primitive.floats.FloatList
+import de.bixilon.kutil.collections.primitive.ints.IntList
 import de.bixilon.minosoft.data.entities.entities.AgeableMob
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
@@ -21,7 +23,12 @@ import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
+import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
 import de.bixilon.minosoft.gui.rendering.util.mesh.integrated.SimpleTextureMeshBuilder
+import de.bixilon.minosoft.gui.rendering.util.mesh.integrated.SimpleTextureMeshBuilder.SimpleTextureMeshStruct
+import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTexture
+import de.bixilon.minosoft.util.collections.floats.FloatListUtil
+import de.bixilon.minosoft.util.collections.ints.IntListUtil
 import kotlin.time.Duration
 
 /** Native translucent entity shadow projected onto nearby terrain surfaces. */
@@ -29,6 +36,11 @@ class EntityShadowFeature(
     private val entityRenderer: EntityRenderer<*>,
 ) : MeshedFeature<Mesh>(entityRenderer), FeatureDrawable {
     private var key: Key? = null
+    private var meshData: FloatList? = null
+    private var meshIndex: IntList? = null
+    private var builder: ReusableShadowMeshBuilder? = null
+    private var allocatedQuads = 0
+    private var pendingVertexUpdate = false
 
     override val updatePriority get() = EFFECT_UPDATE_PRIORITY
     override val layer get() = EntityLayer.Translucent
@@ -53,6 +65,9 @@ class EntityShadowFeature(
             blockRevision = entityRenderer.renderer.session.world.blockRevision,
             chunkRevision = entityRenderer.renderer.session.world.chunks.revision,
             textureId = texture.shaderId,
+            offsetX = offset.x,
+            offsetY = offset.y,
+            offsetZ = offset.z,
         )
         if (
             entityRenderer.entity.isInvisible ||
@@ -76,7 +91,12 @@ class EntityShadowFeature(
             clear()
             return
         }
-        val builder = SimpleTextureMeshBuilder(entityRenderer.renderer.context, projected.size)
+        val capacity = if (mesh == null || projected.size > allocatedQuads) {
+            Integer.highestOneBit(projected.size).let { if (it == projected.size) it else it shl 1 }
+        } else {
+            allocatedQuads
+        }
+        val builder = resetBuilder(capacity)
         for (quad in projected) {
             val x0 = (quad.x0 - offset.x).toFloat()
             val x1 = (quad.x1 - offset.x).toFloat()
@@ -101,7 +121,41 @@ class EntityShadowFeature(
                 color = color,
             )
         }
-        mesh = builder.bake()
+        while (builder.quads < capacity) builder.addPaddingQuad(texture)
+        val current = mesh
+        if (current == null || current.state != MeshStates.LOADED || capacity != allocatedQuads) {
+            allocatedQuads = capacity
+            mesh = builder.bake()
+        } else {
+            pendingVertexUpdate = true
+        }
+    }
+
+    private fun resetBuilder(capacity: Int): ReusableShadowMeshBuilder {
+        val floatCapacity = Math.multiplyExact(Math.multiplyExact(capacity, 4), SimpleTextureMeshStruct.floats)
+        val indexCapacity = Math.multiplyExact(capacity, 6)
+        val data = meshData ?: FloatListUtil.direct(floatCapacity, false).also { meshData = it }
+        val index = meshIndex ?: IntListUtil.direct(indexCapacity, false).also { meshIndex = it }
+        data.clear()
+        index.clear()
+        data.ensureSize(floatCapacity)
+        index.ensureSize(indexCapacity)
+        return (builder ?: ReusableShadowMeshBuilder(entityRenderer.renderer.context, data, index).also {
+            builder = it
+        }).also { it.reset(data, index) }
+    }
+
+    override fun prepare() {
+        if (pendingVertexUpdate) {
+            pendingVertexUpdate = false
+            val current = mesh
+            if (current != null && current.state == MeshStates.LOADED) {
+                builder?.updateVertices(current)
+            } else {
+                mesh = builder?.bake()
+            }
+        }
+        super<MeshedFeature>.prepare()
     }
 
     override fun draw(mesh: Mesh) {
@@ -117,7 +171,34 @@ class EntityShadowFeature(
 
     private fun clear() {
         key = null
+        pendingVertexUpdate = false
         if (mesh != null) mesh = null
+    }
+
+    override fun unload() {
+        var failure: Throwable? = null
+        try {
+            super.unload()
+        } catch (error: Throwable) {
+            failure = error
+        }
+        pendingVertexUpdate = false
+        builder?.drop(free = false)
+        builder = null
+        try {
+            meshData?.free()
+        } catch (error: Throwable) {
+            failure?.addSuppressed(error) ?: run { failure = error }
+        }
+        meshData = null
+        try {
+            meshIndex?.free()
+        } catch (error: Throwable) {
+            failure?.addSuppressed(error) ?: run { failure = error }
+        }
+        meshIndex = null
+        allocatedQuads = 0
+        failure?.let { throw it }
     }
 
     private fun shadowColor(opacity: Float) = RGBAColor(1.0f, 1.0f, 1.0f, opacity)
@@ -132,7 +213,35 @@ class EntityShadowFeature(
         val blockRevision: Int,
         val chunkRevision: Int,
         val textureId: Int,
+        val offsetX: Int,
+        val offsetY: Int,
+        val offsetZ: Int,
     )
+
+    private class ReusableShadowMeshBuilder(
+        context: de.bixilon.minosoft.gui.rendering.RenderContext,
+        data: FloatList,
+        index: IntList,
+    ) : SimpleTextureMeshBuilder(context, 1, data, index) {
+        override val reused: Boolean = true
+        val quads: Int get() = data.size / SimpleTextureMeshStruct.floats / 4
+
+        fun reset(data: FloatList, index: IntList) {
+            _data = data
+            _index = index
+        }
+
+        fun addPaddingQuad(texture: ShaderTexture) {
+            repeat(4) {
+                addVertex(Vec3f.EMPTY, texture, Vec2f.EMPTY, TRANSPARENT)
+            }
+            addIndexQuad()
+        }
+
+        private companion object {
+            val TRANSPARENT = RGBAColor(1.0f, 1.0f, 1.0f, 0.0f)
+        }
+    }
 
     companion object {
         private const val BABY_SHADOW_SCALE = 0.5f

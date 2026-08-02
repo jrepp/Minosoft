@@ -38,7 +38,7 @@ import de.bixilon.minosoft.gui.rendering.graph.resource.RenderTargetSize
 import de.bixilon.minosoft.gui.rendering.gui.atlas.textures.CodeTexturePart
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererManager
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegistry
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
@@ -85,6 +85,19 @@ import org.testng.Assert.assertSame
 import org.testng.Assert.assertTrue
 import org.testng.Assert.expectThrows
 import org.testng.annotations.Test
+import java.util.concurrent.atomic.AtomicInteger
+
+private val TEST_PASS_SEQUENCE = AtomicInteger()
+
+private fun WorldPassRegistry.testPass(layer: RenderLayer, shader: Shader?, renderer: () -> Unit) {
+    add(
+        layer = layer,
+        shader = shader,
+        renderer = renderer,
+        semantic = PipelineSemantic.AUTO,
+        passId = RenderPassId("minosoft:test/implicit-${TEST_PASS_SEQUENCE.getAndIncrement().toString().padStart(8, '0')}"),
+    )
+}
 
 @Test(groups = ["rendering"])
 class RendererPipelineTest {
@@ -97,7 +110,7 @@ class RendererPipelineTest {
         val manager = manager()
         val renderer = manager.register(renderer())
 
-        renderer.layers.register(OpaqueLayer, null, renderer::run)
+        renderer.passes.testPass(OpaqueLayer, null, renderer::run)
 
         manager.pipeline.rebuild()
 
@@ -110,8 +123,8 @@ class RendererPipelineTest {
         val manager = manager()
         val renderer = manager.register(renderer())
 
-        renderer.layers.register(OpaqueLayer, null, renderer::run)
-        renderer.layers.register(layer("abc", OpaqueLayer.priority), null, renderer::run)
+        renderer.passes.testPass(OpaqueLayer, null, renderer::run)
+        renderer.passes.testPass(layer("abc", OpaqueLayer.priority), null, renderer::run)
 
         manager.pipeline.rebuild()
 
@@ -125,8 +138,8 @@ class RendererPipelineTest {
         val manager = manager()
         val renderer = manager.register(renderer())
 
-        renderer.layers.register(OpaqueLayer, null, renderer::run)
-        renderer.layers.register(layer("abc", 10), null, renderer::run)
+        renderer.passes.testPass(OpaqueLayer, null, renderer::run)
+        renderer.passes.testPass(layer("abc", 10), null, renderer::run)
 
         manager.pipeline.rebuild()
 
@@ -140,8 +153,8 @@ class RendererPipelineTest {
         val manager = manager()
         val renderer = manager.register(renderer())
 
-        renderer.layers.register(layer("abc", 10), null, renderer::run)
-        renderer.layers.register(OpaqueLayer, null, renderer::run)
+        renderer.passes.testPass(layer("abc", 10), null, renderer::run)
+        renderer.passes.testPass(OpaqueLayer, null, renderer::run)
 
         manager.pipeline.rebuild()
 
@@ -155,10 +168,10 @@ class RendererPipelineTest {
         val manager = manager()
         val renderer = manager.register(renderer())
 
-        renderer.layers.register(layer("a", 10), null, renderer::run)
-        renderer.layers.register(OpaqueLayer, null, renderer::run)
-        renderer.layers.register(layer("b", -10), null, renderer::run)
-        renderer.layers.register(layer("c", -10), null, renderer::run)
+        renderer.passes.testPass(layer("a", 10), null, renderer::run)
+        renderer.passes.testPass(OpaqueLayer, null, renderer::run)
+        renderer.passes.testPass(layer("b", -10), null, renderer::run)
+        renderer.passes.testPass(layer("c", -10), null, renderer::run)
 
         manager.pipeline.rebuild()
 
@@ -174,9 +187,9 @@ class RendererPipelineTest {
         val manager = manager()
         val renderer = manager.register(renderer())
 
-        renderer.layers.register(TransparentLayer, null, renderer::run)
-        renderer.layers.register(TranslucentLayer, null, renderer::run)
-        renderer.layers.register(OpaqueLayer, null, renderer::run)
+        renderer.passes.testPass(TransparentLayer, null, renderer::run)
+        renderer.passes.testPass(TranslucentLayer, null, renderer::run)
+        renderer.passes.testPass(OpaqueLayer, null, renderer::run)
 
         manager.pipeline.rebuild()
 
@@ -193,9 +206,9 @@ class RendererPipelineTest {
         val first = manager.register(renderer())
         val second = manager.register(renderer())
 
-        first.layers.register(OpaqueLayer, null, first::run)
-        second.layers.register(OpaqueLayer, null, second::run)
-        second.layers.register(TranslucentLayer, null, second::run)
+        first.passes.testPass(OpaqueLayer, null, first::run)
+        second.passes.testPass(OpaqueLayer, null, second::run)
+        second.passes.testPass(TranslucentLayer, null, second::run)
 
         manager.pipeline.rebuild()
 
@@ -214,9 +227,9 @@ class RendererPipelineTest {
         val first = manager.register(renderer())
         val second = manager.register(renderer())
 
-        first.layers.register(OpaqueLayer, null, { list += "a" })
-        second.layers.register(OpaqueLayer, null, { list += "b" })
-        second.layers.register(TranslucentLayer, null, { list += "c" })
+        first.passes.testPass(OpaqueLayer, null, { list += "a" })
+        second.passes.testPass(OpaqueLayer, null, { list += "b" })
+        second.passes.testPass(TranslucentLayer, null, { list += "c" })
 
         manager.pipeline.rebuild()
 
@@ -231,11 +244,11 @@ class RendererPipelineTest {
     fun `rebuild publishes an immutable graph generation without consuming layers`() {
         val manager = manager()
         val renderer = manager.register(renderer())
-        renderer.layers.register(OpaqueLayer, null, renderer::run)
+        renderer.passes.testPass(OpaqueLayer, null, renderer::run)
 
         manager.pipeline.rebuild()
         val first = manager.pipeline.generation
-        renderer.layers.register(TranslucentLayer, null, renderer::run)
+        renderer.passes.testPass(TranslucentLayer, null, renderer::run)
 
         assertEquals(first.passes.count { it.owner.value == "minosoft:built-in-world" }, 1)
         assertEquals(manager.pipeline.generation.number, first.number)
@@ -244,7 +257,7 @@ class RendererPipelineTest {
 
         assertEquals(manager.pipeline.generation.passes.count { it.owner.value == "minosoft:built-in-world" }, 2)
         assertEquals(manager.pipeline.generation.number, first.number + 1L)
-        assertEquals(renderer.layers.elements.size, 2)
+        assertEquals(renderer.passes.declarations.size, 2)
     }
 
     fun `scene pass routes layer and nested shader binds through selected pipeline`() {
@@ -275,10 +288,10 @@ class RendererPipelineTest {
         val internalComposite = FramebufferShader(DummyNativeShader(manager.context))
         val producer = manager.register(object : WorldRenderer {
             override val context = manager.context
-            override val layers = LayerSettings()
-            override fun registerLayers() = Unit
+            override val passes = WorldPassRegistry()
+            override fun registerPasses() = Unit
         })
-        producer.layers.registerSemantic(
+        producer.passes.add(
             OpaqueLayer,
             fallback,
             renderer = {
@@ -448,10 +461,10 @@ class RendererPipelineTest {
         val unclassified = object : Shader(DummyNativeShader(manager.context)) {}
         val producer = manager.register(object : WorldRenderer {
             override val context = manager.context
-            override val layers = LayerSettings()
-            override fun registerLayers() = Unit
+            override val passes = WorldPassRegistry()
+            override fun registerPasses() = Unit
         })
-        producer.layers.registerSemantic(
+        producer.passes.add(
             OpaqueLayer,
             shader = null,
             renderer = unclassified::use,
@@ -505,10 +518,10 @@ class RendererPipelineTest {
         val routed = mutableListOf<SceneShaderContract>()
         val producer = manager.register(object : WorldRenderer {
             override val context = manager.context
-            override val layers = LayerSettings()
-            override fun registerLayers() = Unit
+            override val passes = WorldPassRegistry()
+            override fun registerPasses() = Unit
         })
-        producer.layers.registerSemantic(
+        producer.passes.add(
             OpaqueLayer,
             shader = null,
             renderer = { fallback.withProgramFamily(SceneProgramFamily.ENTITY_EYES) { Unit } },
@@ -567,10 +580,10 @@ class RendererPipelineTest {
         val manager = manager()
         val producer = manager.register(object : WorldRenderer {
             override val context = manager.context
-            override val layers = LayerSettings()
-            override fun registerLayers() = Unit
+            override val passes = WorldPassRegistry()
+            override fun registerPasses() = Unit
         })
-        producer.layers.registerSemantic(
+        producer.passes.add(
             OpaqueLayer,
             shader = null,
             renderer = {},
@@ -676,17 +689,17 @@ class RendererPipelineTest {
         val manager = manager()
         val producer = manager.register(object : WorldRenderer {
             override val context = manager.context
-            override val layers = LayerSettings()
-            override fun registerLayers() = Unit
+            override val passes = WorldPassRegistry()
+            override fun registerPasses() = Unit
         })
-        producer.layers.registerSemantic(
+        producer.passes.add(
             OpaqueLayer,
             shader = null,
             renderer = {},
             semantic = PipelineSemantic.PARTICLES_OPAQUE,
             passId = RenderPassId("minosoft:test/particles-opaque"),
         )
-        producer.layers.registerSemantic(
+        producer.passes.add(
             TranslucentLayer,
             shader = null,
             renderer = {},
@@ -732,24 +745,24 @@ class RendererPipelineTest {
         val manager = manager()
         val producer = manager.register(object : WorldRenderer {
             override val context = manager.context
-            override val layers = LayerSettings()
-            override fun registerLayers() = Unit
+            override val passes = WorldPassRegistry()
+            override fun registerPasses() = Unit
         })
-        producer.layers.registerSemantic(
+        producer.passes.add(
             OpaqueLayer,
             shader = null,
             renderer = {},
             semantic = PipelineSemantic.ENTITIES,
             passId = RenderPassId("minosoft:test/entities-opaque"),
         )
-        producer.layers.registerSemantic(
+        producer.passes.add(
             TranslucentLayer,
             shader = null,
             renderer = {},
             semantic = PipelineSemantic.ENTITIES_TRANSLUCENT,
             passId = RenderPassId("minosoft:test/entities-translucent"),
         )
-        producer.layers.registerSemantic(
+        producer.passes.add(
             TranslucentLayer,
             shader = null,
             renderer = {},
@@ -805,24 +818,24 @@ class RendererPipelineTest {
         val manager = manager()
         val producer = manager.register(object : WorldRenderer {
             override val context = manager.context
-            override val layers = LayerSettings()
-            override fun registerLayers() = Unit
+            override val passes = WorldPassRegistry()
+            override fun registerPasses() = Unit
         })
-        producer.layers.registerSemantic(
+        producer.passes.add(
             OpaqueLayer,
             shader = null,
             renderer = {},
             semantic = PipelineSemantic.ENTITIES,
             passId = RenderPassId("minosoft:test/depth-opaque"),
         )
-        producer.layers.registerSemantic(
+        producer.passes.add(
             TranslucentLayer,
             shader = null,
             renderer = {},
             semantic = PipelineSemantic.ENTITIES_TRANSLUCENT,
             passId = RenderPassId("minosoft:test/depth-entities-translucent"),
         )
-        producer.layers.registerSemantic(
+        producer.passes.add(
             TranslucentLayer,
             shader = null,
             renderer = {},
@@ -892,8 +905,8 @@ class RendererPipelineTest {
         val manager = manager()
         val producer = manager.register(object : WorldRenderer {
             override val context = manager.context
-            override val layers = LayerSettings()
-            override fun registerLayers() = Unit
+            override val passes = WorldPassRegistry()
+            override fun registerPasses() = Unit
         })
         val semantics = listOf(
             PipelineSemantic.TERRAIN_OPAQUE,
@@ -912,7 +925,7 @@ class RendererPipelineTest {
             PipelineSemantic.WORLD_OVERLAY,
         )
         semantics.forEachIndexed { index, semantic ->
-            producer.layers.registerSemantic(
+            producer.passes.add(
                 OpaqueLayer,
                 shader = null,
                 renderer = {},
@@ -997,6 +1010,18 @@ class RendererPipelineTest {
         assertTrue(RendererPipeline.shadowCasterEnabled(PipelineSemantic.BLOCK_ENTITIES, lightBlockEntitiesOnly))
 
         val terrainPlan = plan.copy(shadowDirectives = plan.shadowDirectives.copy(terrain = true))
+        assertTrue(!RendererPipeline.shadowCasterEnabled(PipelineSemantic.DISTANT_TERRAIN, terrainPlan))
+        val distantShadowPlan = terrainPlan.copy(
+            programs = terrainPlan.programs + ShaderProgramSource(
+                name = "dh_shadow",
+                phase = ShaderProgramPhase.SHADOW,
+                vertex = "void main() {}",
+                fragment = "void main() {}",
+                uniforms = emptySet(),
+                samplers = emptySet(),
+            ),
+        )
+        assertTrue(RendererPipeline.shadowCasterEnabled(PipelineSemantic.DISTANT_TERRAIN, distantShadowPlan))
         assertEquals(
             RendererPipeline.shadowTerrainMaterials(terrainPlan),
             listOf(
@@ -1049,8 +1074,8 @@ class RendererPipelineTest {
         override val context get() = Broken()
         override val framebuffer get() = null
 
-        override val layers = LayerSettings()
-        override fun registerLayers() = Unit
+        override val passes = WorldPassRegistry()
+        override fun registerPasses() = Unit
 
 
         fun run(): Unit = TODO()

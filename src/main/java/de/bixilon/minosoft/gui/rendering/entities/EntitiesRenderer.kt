@@ -25,7 +25,7 @@ import de.bixilon.minosoft.gui.rendering.entities.feature.register.EntityRenderF
 import de.bixilon.minosoft.gui.rendering.entities.visibility.VisibilityManager
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.AsyncRenderer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegistry
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisShaderPackPlanner
 import de.bixilon.minosoft.modding.loader.fabric.FabricEntityVisibilityHooks
@@ -35,7 +35,7 @@ class EntitiesRenderer(
     val session: PlaySession,
     override val context: RenderContext,
 ) : WorldRenderer, AsyncRenderer {
-    override val layers = LayerSettings()
+    override val passes = WorldPassRegistry()
     val profile = session.profiles.entity
     val features = EntityRenderFeatures(this)
     val renderers = EntityRendererManager(this)
@@ -52,7 +52,7 @@ class EntitiesRenderer(
 
     private var invalid = false
 
-    override fun registerLayers() = drawer.registerLayers()
+    override fun registerPasses() = drawer.registerPasses()
 
     override fun prePrepareDraw() {
         queue.work()

@@ -104,6 +104,33 @@ class TerrainConsolidatedPipelineTest {
     }
 
     @Test
+    fun `bounded traversal preserves dense implicit-air visibility without dense nodes`() {
+        val camera = SectionPosition(0, 0, 0)
+        val minimum = SectionPosition(0, -1, 0)
+        val maximum = SectionPosition(4, 1, 2)
+        val sparse = mapOf(
+            camera to TerrainVisibilityNode(camera, TerrainDirectionalVisibility.ALL),
+            SectionPosition(1, 0, 0) to TerrainVisibilityNode(SectionPosition(1, 0, 0), TerrainDirectionalVisibility.NONE),
+            SectionPosition(4, 0, 0) to TerrainVisibilityNode(SectionPosition(4, 0, 0), TerrainDirectionalVisibility.ALL),
+        )
+        val dense = HashMap(sparse)
+        for (y in minimum.y..maximum.y) {
+            for (z in minimum.z..maximum.z) {
+                for (x in minimum.x..maximum.x) {
+                    val position = SectionPosition(x, y, z)
+                    dense.putIfAbsent(position, TerrainVisibilityNode(position, TerrainDirectionalVisibility.ALL))
+                }
+            }
+        }
+
+        val expected = TerrainVisibilityTraversal.traverse(camera, dense).filter(sparse::containsKey).toSet()
+        val actual = TerrainVisibilityTraversal.traverseBounded(camera, sparse, minimum, maximum).toSet()
+
+        assertEquals(expected, actual)
+        assertEquals(sparse.keys, actual)
+    }
+
+    @Test
     fun `real consolidated contracts execute the headless terrain pipeline`() {
         val contextClosed = AtomicBoolean()
         val runtime = TerrainBuildRuntime<WorkerContext, TerrainMeshArtifact>(

@@ -176,6 +176,78 @@ object TerrainVisibilityTraversal {
         return result
     }
 
+    /**
+     * Traverses a bounded section volume without materializing an object for
+     * every empty section. Missing cells retain the conservative ALL
+     * connectivity used by the original dense graph.
+     */
+    fun traverseBounded(
+        camera: SectionPosition,
+        nodes: Map<SectionPosition, TerrainVisibilityNode>,
+        minimum: SectionPosition,
+        maximumInclusive: SectionPosition,
+    ): List<SectionPosition> {
+        if (nodes.isEmpty()) return emptyList()
+        require(minimum.x <= maximumInclusive.x && minimum.y <= maximumInclusive.y && minimum.z <= maximumInclusive.z)
+        if (camera.x !in minimum.x..maximumInclusive.x ||
+            camera.y !in minimum.y..maximumInclusive.y ||
+            camera.z !in minimum.z..maximumInclusive.z
+        ) return nodes.keys.sortedWith(distanceComparator(camera))
+
+        val width = Math.addExact(Math.subtractExact(maximumInclusive.x, minimum.x), 1)
+        val height = Math.addExact(Math.subtractExact(maximumInclusive.y, minimum.y), 1)
+        val depth = Math.addExact(Math.subtractExact(maximumInclusive.z, minimum.z), 1)
+        val plane = Math.multiplyExact(width, depth)
+        val volume = Math.multiplyExact(plane, height)
+        val explicit = arrayOfNulls<TerrainVisibilityNode>(volume)
+
+        fun index(x: Int, y: Int, z: Int): Int =
+            (y - minimum.y) * plane + (z - minimum.z) * width + (x - minimum.x)
+
+        for ((position, node) in nodes) {
+            if (position.x in minimum.x..maximumInclusive.x &&
+                position.y in minimum.y..maximumInclusive.y &&
+                position.z in minimum.z..maximumInclusive.z
+            ) explicit[index(position.x, position.y, position.z)] = node
+        }
+
+        val visited = BooleanArray(volume)
+        val queueIndices = IntArray(volume)
+        val queueEntries = ByteArray(volume)
+        val result = ArrayList<SectionPosition>(nodes.size)
+        var read = 0
+        var write = 1
+        queueIndices[0] = index(camera.x, camera.y, camera.z)
+        visited[queueIndices[0]] = true
+
+        while (read < write) {
+            val current = queueIndices[read]
+            val entryOrdinal = queueEntries[read++].toInt() - 1
+            val node = explicit[current]
+            if (node != null) result += node.position
+
+            val localY = current / plane
+            val remainder = current - localY * plane
+            val localZ = remainder / width
+            val localX = remainder - localZ * width
+            for (exit in Directions.VALUES) {
+                if (entryOrdinal >= 0 && node?.connectivity?.connects(Directions.VALUES[entryOrdinal], exit) == false) continue
+                val nextX = localX + exit.x
+                val nextY = localY + exit.y
+                val nextZ = localZ + exit.z
+                if (nextX !in 0 until width || nextY !in 0 until height || nextZ !in 0 until depth) continue
+                val next = nextY * plane + nextZ * width + nextX
+                if (!visited[next]) {
+                    visited[next] = true
+                    queueIndices[write] = next
+                    queueEntries[write] = (exit.inverted.ordinal + 1).toByte()
+                    write++
+                }
+            }
+        }
+        return result
+    }
+
     fun ordered(
         camera: SectionPosition,
         visible: Collection<SectionPosition>,
