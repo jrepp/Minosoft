@@ -490,24 +490,30 @@ render revisions.
 
 The selector indexes its previous selection by ancestor and detects adjacent
 detail violations through aligned hierarchy neighbours rather than repeated
-all-pairs scans. The production runtime reselects only when its block-quantized
+all-pairs scans. Balancing resolves every currently valid detail violation in
+one deterministic pass and stops after 64 passes. The former single-violation
+loop could sort and rescan the complete selection up to twice per indexed page
+inside each of 24 page-budget quality trials, monopolizing the render thread
+for more than a minute on a hydrated medium world. The production runtime
+reselects only when its block-quantized
 camera, viewport/FOV, seam distance, or CPU-page publication revision changes,
 and captures one hierarchy snapshot per reselection. Upload promotion and fence
 retirement still advance every frame. This removes the former whole-domain
 selection copies and scans from an unchanged frame without turning camera
 movement into geometry rebuilds.
 
-The semantic page mesher emits page-relative top, required bottom, and four
-true run-derived side directions. It subtracts occluding vertical intervals,
+The semantic page mesher emits page-relative observed top and four true
+run-derived side directions. It subtracts occluding vertical intervals,
 preserves fluid beds, material, actual block/sky light, resolved tint, flags,
 and confidence, greedily merges compatible rectangles, splits mixed-detail
-edges deterministically, and emits a bounded 32-block skirt only for a missing
-or incomplete neighbour. Cliff, cave, fluid/bed, light/tint, flat greedy,
-fallback, and mixed-detail fixtures pin stable artifact digests and counts.
+edges deterministically, compares the known runs of partial neighbours, and
+does not turn missing coverage into a cliff, skirt, or unobserved lowest-run
+underside. Cliff, cave, fluid/bed, light/tint, flat greedy, unknown-boundary,
+and mixed-detail fixtures pin stable artifact digests and counts.
 The completed headless geometry matrix additionally freezes a coastline with a
 non-Minecraft custom fluid, independent bed/shore relief, two light pairs, and
 a resolved custom biome tint at digest
-`24fda655859bdaf5bbc279f272596267fa3ae9c20009ea720f1c6185942894c5`.
+`a1103f87f1200c6eb1dc86cdaa256b50d6d25dd72867a71bed217343c235365e`.
 
 The existing top-only tile format has an explicit deterministic partial-quality
 projection. It never infers fluids from identifier suffixes: production resolves
@@ -569,8 +575,11 @@ world epoch, normalized level, and bounded type-specific fields. Requests carry
 64-bit correlation, exact page keys/detail and minimum source revision;
 responses carry independently bounded canonical page records. The client keeps
 the exact expected set per request and atomically rejects wrong-world, unknown,
-unrequested, duplicate, unsupported-detail and stale responses. Dimension
-replacement cancels the complete ledger. Timed-out v2 requests now remove their
+unrequested, duplicate, and unsupported-detail responses. A page made stale by
+newer local or restored data is consumed as superseded without publication;
+this preserves the request ledger for the remaining one-page server responses
+instead of turning them into an unknown-request cascade. Dimension replacement
+cancels the complete ledger. Timed-out v2 requests now remove their
 exact page set, cancel the local ledger, and send a correlated wire cancellation;
 a failed send rolls local admission back. The production channel negotiates v2;
 v1 remains readable but the managed server no longer advertises or admits v1
@@ -591,12 +600,18 @@ provenance through the same vertical sampler.
 
 A headless authority-neutral fixture now proves identical normalized semantics
 through native/local/server capture inputs, the network codec, and persisted
-page restore. Client v2 world retirement and renegotiation now cancel every
-exact outstanding request before clearing the local ledger; cancellation send
-and failure counts plus world resets are included in bounded network
-inspection. Failed sends are best-effort and cannot retain a local request.
-The Java integration fixture proves exact world/request correlation and empty
-post-retirement ledgers.
+page restore. Client v2 world retirement cancels every exact outstanding
+request before clearing the local ledger. A receive-side renegotiation or
+terminal rejected response instead clears the superseded ledger without
+re-entering the transport's outbound path with a redundant cancellation.
+Cancellation send/failure counts, ordered decode-queue depth/bytes/drops, and
+world resets are included in bounded network inspection. Large response decode
+runs on one bounded serial I/O drain instead of the Netty event loop, while page
+palette/material and per-page fluid classification caches bound repeated codec
+work. Failed sends are best-effort and cannot retain a local request. The Java
+integration fixture proves exact world/request correlation, full stale-stream
+consumption without an unknown-request cascade, receive-path monitor
+independence, and empty post-retirement ledgers.
 
 Local authority now prepares a complete 3x3 detached `ChunkBuilder`
 neighbourhood before publishing the center page. `DistantDetachedLighting`
@@ -958,6 +973,31 @@ mutating the store. The focused adapter and network lifecycle gates cover the
 boundary. Graceful stop then left no process, endpoint, server port, external
 client, lease, or transient override active.
 
+The final managed-world DH follow-up moved PLAY heartbeat and ping handling off
+the shared packet worker pool and onto the network event loop. This keeps the
+bounded control replies independent of page hydration and terrain work. A
+fresh `fabric-stack` client joined at 13:14:37 and remained healthy beyond the
+former 120-second disconnect boundary while asynchronously hydrating 9,116
+schema-v2 pages. The settled store held 9,151 records and 2,368,558,454 bytes
+with zero temporary records, pins, or evictions. Network inspection reported
+108 received pages, a drained zero-drop decode queue, zero wrong-world,
+unknown-request, unrequested-page, duplicate-page, and unsupported-detail
+responses, and 50 consumed superseded pages. The fixed-pose hierarchy had 498
+selected main pages, zero missing pages, zero skirts, and zero distant
+allocation or upload failures. A DH-disabled/enabled framebuffer A/B retained
+the same screen-wide black stippling on clouds, water, near terrain, and the
+player hand, so that separate Iris/material defect is not attributed to DH.
+
+The same hydrated-world visual follow-up exposed the selector balancing cost
+above in a live render-thread sample at `firstDetailViolation`. After batched
+balancing and the fixed 64-pass ceiling, a fresh generation published 566 GPU
+pages from 706 indexed pages, selected 488 main and 254 shadow pages with zero
+missing pages, zero skirts, and zero distant allocation/upload failures. After
+the startup/hydration boundary, 123 fixed-pose frames reported median 126.5 ms
+and p95 281.0 ms; a later thread sample was in ordinary entity shader binding,
+not distant selection. The focused selector suite also covers a 2,048-base-page
+quality search with a 1,024-page ceiling and the one-level adjacency invariant.
+
 ## Validation
 
 Java 25.0.1 was used throughout. The complete combined diff passed the
@@ -1114,6 +1154,48 @@ with the candidate running entirely from the isolated distribution. The old
 generation completed world/Fabric/audio teardown without the prior synthetic-
 class linkage failure, generation 2 reached render-ready, and supervised stop
 removed the client, endpoint, staged generation, and trajectory lease.
+
+## Diverse-medium DH and visual follow-up
+
+The `diverse-medium-biomes-2026-08-01` managed trajectory exercised the
+populated authoritative world on Apple OpenGL 4.1. The DH hierarchy selected
+479 resident main pages with zero missing pages and zero allocation/upload
+failures. Its angular hydration frontier reported configured distance 128
+chunks and effective distance 12 chunks while native storage held 453 pages
+and the intentionally paced server had supplied 26 more. This prevents the
+renderer from projecting or fogging beyond broadly hydrated angular coverage
+without letting an isolated hole or far outlier collapse the view distance.
+Network inspection retained 32 bounded pending requests, 28 sent and 26
+received pages, with no response rejection or cancellation ledger entries.
+The managed request timeout is 120 seconds because the accepted server policy
+is one generated page per player per second.
+
+The initial screen-wide stippling was not a DH failure: it survived disabling
+DH and other scene producers, while the same world, pose, selected spruce log,
+and nearby authoritative block sample rendered cleanly after disabling only
+Iris presentation. A later fully hydrated A/B with Iris already disabled found
+a separate DH defect: giant dark foreground slabs disappeared immediately when
+only DH presentation was disabled. At that boundary DH reported 510 active main
+pages, zero missing pages, zero allocation/upload failures, and 117 masked pages
+while near coverage was still evolving. Treat this as a near/distant page-span
+ownership defect; it does not overturn the earlier Iris stippling isolation.
+The Iris investigation added deterministic first-generation
+initialization for `LOAD` targets, framebuffer restoration after depth blits,
+per-program raw-versus-comparison depth sampler state, reflected comparison
+diagnostics, and bounded `frameTimeSmooth` and shadow-size uniform inputs.
+These focused contracts pass, but the untouched Complementary generation still
+produced block-aligned/stippled corruption and later wedged the render thread.
+The affected trajectory therefore intentionally remains on the built-in
+presentation. `/tmp/minosoft-base-renderer-original-2026-08-01.png` is the
+clean same-pose framebuffer; Iris screenshots are diagnostic artifacts, not
+acceptance references.
+
+The authoritative player pose was restored to overworld
+`32.6740054977249,79,-608.6999999880791`, yaw `115.75401`, pitch `4.5429916`.
+That live sequence initially left the client and server running with DH enabled,
+Iris presentation disabled, and no transient terrain or reference fixture. The
+subsequent summary closeout stopped both processes and released both trajectory
+leases; see the [recent trajectory summary](2026-08-01-recent-trajectory-summary.md).
 
 ## Implemented Phase 0 through Phase 9 boundaries
 

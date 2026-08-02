@@ -581,6 +581,73 @@ and shows the ordinary textured first-person hand. The final
 tiles, 162 uploaded native chunks excluded at the handoff, 358,582 planned
 cells, and a four-block maximum skirt drop.
 
+### Region-origin, absent-shadow, and network-epoch follow-up
+
+The 2026-08-01 medium diverse-world replay isolated two DH/Iris routing
+defects. The detached mesh stores each vertex relative to its region and the
+draw supplies `uPageOffset`, but the legacy `dh_terrain`/`dh_water` bridge had
+replaced `gl_Vertex` with the relative position alone. Every retained region
+therefore stacked around the camera as large rectangular panels. The distant
+scene bridge now declares `uPageOffset`, includes it in the exact runtime
+contract, and reconstructs `vec4(vinPosition + uPageOffset, 1.0)`. A planner
+regression test verifies that this draw uniform remains both transformed and
+runtime-bindable.
+
+The same untouched Complementary Unbound r5.8.1 archive contains
+`dh_terrain` and `dh_water` but no `dh_shadow`. Distant terrain had nevertheless
+entered the auxiliary shadow view through the generic host fallback on every
+frame. Shadow collection now admits the distant semantic only when terrain
+shadows are enabled *and* the planned pack owns an actual shadow-phase
+`dh_shadow` program. Packs with that program retain the route; packs without it
+do not invent one.
+
+At the restored fixed coastal pose, the enabled defect capture is
+`797fee5c4ee2fccc78b7a363ec7d821f5e76f2df27ae4426199854bdc4195356`;
+the same-pose disabled control is
+`a865b4287bb5e123c90f770d5acbfef50906800748dccbc805106b3021909b08`.
+After both fixes, capture
+`2c86e17fcf74d901e72a18fffd324e6764ad4a098ad38405a87afb4376e5db0c`
+has no stacked panels. `render.substrate` reported 61 linked main scene
+programs, six shadow scene programs, exact `dh_terrain` and `dh_water`
+selection, and empty rejected and fallback scene-bind ledgers.
+
+The first corrected Complementary frame still presented the finite distant
+frontier as pale discontinuous sheets. The network inspection exposed the
+remaining cause: it counted 1,092 admitted schema-v2 pages, but the retained
+529-page store contained only native and persistence sources. The managed
+server's protocol world epoch was zero while the local renderer world epoch was
+one. Admission correctly validated pages in the remote protocol identity, but
+the controller then rejected them at the local publication boundary because
+they had not been re-keyed to the client world epoch.
+
+`DistantLodNetworkClient` now re-keys each admitted page only after the remote
+request/response tracker accepts it and before it enters local persistence and
+render publication. Remote connection/world identity therefore remains the
+wire rejection boundary, while the monotonic client epoch remains the render
+lifecycle boundary. The focused integration test uses deliberately different
+remote and local epochs and requires the published page to carry the local one.
+
+After restart, the retained store grew to 580 pages while the network reported
+51 received pages. Render diagnostics classified 49 pages as network, 453 as
+native, and 76 as persistence, with no response rejection, pending upload, or
+upload failure. Same-pose capture
+`3d65f75f11ab2fa2bb9a27a325714d573324c34c118b281e355d00b8e1ce5236`
+shows the former panels replaced by a continuous fogged distant silhouette.
+A longer fixed-pose sample reached 1,180 GPU pages: 651 network, 453 native, and
+76 persistence, with zero queued, pending-upload, allocation-failure, or
+upload-failure pages. This is functional real-driver evidence; broader
+completed-radius and checked pixel references remain the next fidelity gate.
+
+A separate natural-light check used an existing magma field under the nearby
+water column, without changing blocks or time. At the exact underwater pose,
+the Complementary capture
+`0161a0b1919c544711ddbf712fe31e74c5aa88c10a60f1c5b140d2032d47a880`
+retained visible magma and adjacent terrain (center luminance 0.22256), while
+the built-in control
+`5a89c171ea229fe0741e9c7e658b9f731f92012a20a76b257de8890c72c51075`
+was nearly black (center luminance 0.01012). This is evidence for an independent
+built-in underwater/local-light presentation defect, not a DH regression.
+
 ## Next rung
 
 Add platform-qualified checked near/far seam, water, relief, first-person hand,

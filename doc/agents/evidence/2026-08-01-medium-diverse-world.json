@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-01T10:37:00Z",
+  "claim": "a fresh medium bounded Terralith and Terratonic server world was generated, joined, saved, stopped, and inspected without chunk-read failure",
+  "world": {
+    "path": "server/world-diverse-medium-2026-08-01",
+    "minecraftVersion": "1.20.4",
+    "seed": 80812202647291357,
+    "borderDiameterBlocks": 2048,
+    "borderRadiusBlocks": 1024,
+    "spawn": {
+      "x": 22.5,
+      "y": 81.0,
+      "z": -629.5
+    },
+    "terrainSha256": "6adf5a6897dda69d68e4a1e6f3b39a4526b13165ced0eac8af04ea245ab03489"
+  },
+  "runtime": {
+    "trajectory": "diverse-medium-biomes-2026-08-01",
+    "terralithVersion": "2.4.11",
+    "tectonicVersion": "2.3.5b",
+    "clientJoined": true,
+    "clientRenderReady": true,
+    "borderRoundTripRestored": true
+  },
+  "inspection": {
+    "regionFiles": 6,
+    "chunks": 2601,
+    "fullChunks": 841,
+    "failedChunks": 0,
+    "truncated": false,
+    "dataPacks": [
+      "fabric",
+      "fabric-convention-tags-v1",
+      "file/minosoft-medium-world",
+      "naturalist",
+      "tectonic/terratonic",
+      "terralith",
+      "vanilla"
+    ],
+    "biomes": [
+      "minecraft:cold_ocean",
+      "minecraft:deep_cold_ocean",
+      "minecraft:deep_ocean",
+      "minecraft:forest",
+      "minecraft:lush_caves",
+      "minecraft:ocean",
+      "minecraft:old_growth_birch_forest",
+      "minecraft:plains",
+      "minecraft:taiga",
+      "terralith:cave/andesite_caves",
+      "terralith:cave/deep_caves",
+      "terralith:cave/thermal_caves",
+      "terralith:skylands_spring",
+      "terralith:yellowstone"
+    ],
+    "surface": {
+      "columns": 274432,
+      "minY": 58,
+      "maxY": 244,
+      "medianY": 78,
+      "p90Y": 90,
+      "meanY": 76.33759182602611,
+      "maxChunkRelief": 179,
+      "maxAdjacentGradient": 176
+    }
+  },
+  "cleanup": {
+    "clientRunning": false,
+    "serverRunning": false,
+    "serverPortOpen": false,
+    "externalClientPids": [],
+    "leases": []
+  }
+}
