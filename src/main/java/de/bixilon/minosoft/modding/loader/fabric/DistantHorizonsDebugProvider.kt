@@ -97,6 +97,8 @@ internal class DistantHorizonsDebugProvider(
                 }
                 diagnostics.hierarchy?.let { hierarchy ->
                     putObject("hierarchy").apply {
+                        put("configuredRenderDistanceChunks", hierarchy.configuredRenderDistanceChunks)
+                        put("effectiveRenderDistanceChunks", hierarchy.effectiveRenderDistanceChunks)
                         put("deviceCapacityBytes", hierarchy.deviceCapacityBytes)
                         put("storageHighWaterBytes", hierarchy.storageHighWaterBytes)
                         put("stagingCapacityBytes", hierarchy.stagingCapacityBytes)
@@ -136,6 +138,20 @@ internal class DistantHorizonsDebugProvider(
                         put("drawCommands", hierarchy.drawCommands)
                         put("drawVertices", hierarchy.drawVertices)
                         put("pendingSubmissionFences", hierarchy.pendingSubmissionFences)
+                        putObject("selectionPublication").apply {
+                            put("generation", hierarchy.selectionPublication.generation)
+                            put("retainedPageCount", hierarchy.selectionPublication.retainedPageCount)
+                            putArray("views").also { views ->
+                                hierarchy.selectionPublication.views.forEach { view ->
+                                    views.addObject().apply {
+                                        put("view", view.view.value)
+                                        put("desiredPageCount", view.desiredPageCount)
+                                        put("activePageCount", view.activePageCount)
+                                        put("missingPageCount", view.missingPageCount)
+                                    }
+                                }
+                            }
+                        }
                         putObject("detailCounts").also { counts ->
                             hierarchy.detailCounts.toSortedMap().forEach { (detail, count) ->
                                 counts.put(detail.toString(), count)
@@ -186,6 +202,7 @@ internal class DistantHorizonsDebugProvider(
             val store = controller.storeInspection(session)
             val network = controller.networkInspection(session)
                 ?: throw DebugOperationException("not_ready", "distant network state is not initialized")
+            val payloads = controller.networkPayloadInspection()
             completed(DebugJson.MAPPER.createObjectNode().apply {
                 put("schemaVersion", 1)
                 putObject("store").apply {
@@ -211,6 +228,9 @@ internal class DistantHorizonsDebugProvider(
                     put("cancellationsSent", network.cancellationsSent)
                     put("cancellationFailures", network.cancellationFailures)
                     put("worldResets", network.worldResets)
+                    put("pendingDecodePayloads", payloads.pendingPayloads)
+                    put("pendingDecodeBytes", payloads.pendingBytes)
+                    put("droppedDecodePayloads", payloads.droppedPayloads)
                     putObject("responseRejections").also { rejections ->
                         network.responseRejections.forEach { (reason, count) ->
                             rejections.put(reason.name, count)

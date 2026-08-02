@@ -19,6 +19,7 @@ import de.bixilon.minosoft.gui.rendering.camera.CameraUtil
 import de.bixilon.minosoft.gui.rendering.graph.RenderPhase
 import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRenderer
 import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRendererBuilder
+import de.bixilon.minosoft.gui.rendering.terrain.distant.distantCoverageRenderDistanceChunks
 import de.bixilon.minosoft.gui.rendering.terrain.distant.distantViewProjection
 import de.bixilon.minosoft.terrain.distant.DistantLodColumn
 import de.bixilon.minosoft.terrain.distant.DistantSourceCompleteness
@@ -71,6 +72,34 @@ class DistantHorizonsCompatibilityAdapterTest {
         assertFailsWith<ArithmeticException> {
             distantViewProjection(host, Mat4f(), 0.01f, Int.MAX_VALUE)
         }
+    }
+
+    @Test
+    fun `hydrating distant coverage keeps fog inside the resident frontier`() {
+        val camera = ChunkPosition(0, 0)
+        assertEquals(13, distantCoverageRenderDistanceChunks(emptyList(), camera, 12.0f, 128))
+        val resident = buildList {
+            for (z in -20L..20L) for (x in -20L..20L) {
+                add(TerrainPageKey(TerrainDomain.DISTANT, 0, x, 0, z, 1))
+            }
+        }
+        val covered = distantCoverageRenderDistanceChunks(resident, camera, 12.0f, 128)
+        val withOutlier = distantCoverageRenderDistanceChunks(
+            resident + TerrainPageKey(TerrainDomain.DISTANT, 0, 120, 0, 120, 1),
+            camera,
+            12.0f,
+            128,
+        )
+
+        assertEquals(20, covered)
+        assertEquals(covered, withOutlier)
+
+        val withGap = resident - TerrainPageKey(TerrainDomain.DISTANT, 0, 10, 0, 0, 1)
+        assertEquals(covered, distantCoverageRenderDistanceChunks(withGap, camera, 4.0f, 128))
+        val withMissingWedge = resident.filterNot { page ->
+            page.x >= 10 && page.z in -10L..10L
+        }
+        assertEquals(11, distantCoverageRenderDistanceChunks(withMissingWedge, camera, 4.0f, 128))
     }
 
     @Test

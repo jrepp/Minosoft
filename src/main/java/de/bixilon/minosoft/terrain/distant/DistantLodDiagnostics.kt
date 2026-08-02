@@ -114,6 +114,8 @@ internal data class DistantHierarchyRegionDiagnostic(
 )
 
 internal data class DistantHierarchyRenderDiagnostics(
+    val configuredRenderDistanceChunks: Int,
+    val effectiveRenderDistanceChunks: Int,
     val deviceCapacityBytes: Long,
     val storageHighWaterBytes: Long,
     val stagingCapacityBytes: Int,

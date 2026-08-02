@@ -236,6 +236,10 @@ internal class DistantHierarchicalTerrainRuntime(
     private var shadowSelection: List<TerrainPageKey> = emptyList()
     private var mainDrawSelection: List<TerrainPageKey> = emptyList()
     private var shadowDrawSelection: List<TerrainPageKey> = emptyList()
+    private var coverageDistanceSelection: List<TerrainPageKey> = emptyList()
+    private var coverageDistanceCamera: ChunkPosition? = null
+    private var coverageDistanceSeamBits = 0
+    private var effectiveRenderDistanceChunks = config.renderDistanceChunks
     private var selectionDataRevision = 0L
     private var lastSelectionInput: SelectionInput? = null
     private var lastSelectionFrame = 0L
@@ -269,6 +273,7 @@ internal class DistantHierarchicalTerrainRuntime(
             // capacity or prevent a bounded idle boundary.
             drainCompletions()
             clearContent()
+            updateEffectiveRenderDistance(cameraChunk, seamDistanceChunks)
             return
         }
         if (source.revision != sourceRevision) synchronize(source.changesSince(sourceRevision))
@@ -279,6 +284,7 @@ internal class DistantHierarchicalTerrainRuntime(
         updateSelections(cameraChunk, seamDistanceChunks)
         drainUploads()
         promoteSelections()
+        updateEffectiveRenderDistance(cameraChunk, seamDistanceChunks)
         evictUnselectedPages()
         scheduleQueued()
     }
@@ -294,6 +300,8 @@ internal class DistantHierarchicalTerrainRuntime(
     fun hasShadow(): Boolean = shadowDrawSelection.any { key ->
         key in gpuPages && cpuArtifacts[key]?.artifact?.quads?.any { it.fluid == null } == true
     }
+
+    fun effectiveRenderDistanceChunks(): Int = effectiveRenderDistanceChunks
 
     fun drawSolid(shadow: Boolean) {
         val pages = if (shadow) shadowDrawSelection else mainDrawSelection
@@ -677,6 +685,9 @@ internal class DistantHierarchicalTerrainRuntime(
                 page to neighbours
             }
 
+            // The contract reducer accepts only footprint-majority intervals,
+            // and its mesher leaves unknown boundaries open, so sparse child
+            // relief, fluid, or missing data cannot become a coarse slab/wall.
             is DerivedInput -> DistantVerticalPageReducer.reduce(
                 request.identity.page,
                 input.children,
@@ -1049,8 +1060,19 @@ internal class DistantHierarchicalTerrainRuntime(
                 maximumSelectionChanges = changeBudget,
                 requireCompleteChildren = false,
             )
-            mainSelector.select(view, cpuSelectionMetadata, request(quality = 1.0)).pages to
-                shadowSelector.select(view, cpuSelectionMetadata, request(quality = SHADOW_QUALITY)).pages
+            val mainBudget = max(MAX_MAIN_SELECTION_PAGES, roots.size)
+            val shadowBudget = max(MAX_SHADOW_SELECTION_PAGES, roots.size)
+            mainSelector.select(
+                view,
+                cpuSelectionMetadata,
+                request(quality = 1.0),
+                maximumPages = mainBudget,
+            ).pages to shadowSelector.select(
+                view,
+                cpuSelectionMetadata,
+                request(quality = SHADOW_QUALITY),
+                maximumPages = shadowBudget,
+            ).pages
         }
         if (selected == null) {
             selectionPublication.desire(MAIN_VIEW, emptyList())
@@ -1134,6 +1156,23 @@ internal class DistantHierarchicalTerrainRuntime(
         val mask = TerrainCoveragePageMask(nativeOwnership.lifecycle, COVERAGE_TRANSITION_POLICY)
         mainDrawSelection = mainSelection.filter(mask::drawDistant)
         shadowDrawSelection = shadowSelection.filter(mask::drawDistant)
+    }
+
+    private fun updateEffectiveRenderDistance(camera: ChunkPosition, seamDistanceChunks: Float) {
+        val seamBits = seamDistanceChunks.toRawBits()
+        if (
+            camera == coverageDistanceCamera && seamBits == coverageDistanceSeamBits &&
+            mainSelection == coverageDistanceSelection
+        ) return
+        coverageDistanceCamera = camera
+        coverageDistanceSeamBits = seamBits
+        coverageDistanceSelection = mainSelection
+        effectiveRenderDistanceChunks = distantCoverageRenderDistanceChunks(
+            pages = mainSelection,
+            camera = camera,
+            seamDistanceChunks = seamDistanceChunks,
+            configuredDistanceChunks = config.renderDistanceChunks,
+        )
     }
 
     private fun evictUnselectedPages() {
@@ -1376,6 +1415,8 @@ internal class DistantHierarchicalTerrainRuntime(
         val regionMetrics = regions.values.flatten().map { it to it.storage.metrics() }
         val storageMetrics = regionMetrics.map { it.second }
         return DistantHierarchyRenderDiagnostics(
+            configuredRenderDistanceChunks = config.renderDistanceChunks,
+            effectiveRenderDistanceChunks = effectiveRenderDistanceChunks,
             deviceCapacityBytes = Math.addExact(
                 Math.multiplyExact(
                     MAX_REGIONS.toLong(),
@@ -1634,6 +1675,10 @@ internal class DistantHierarchicalTerrainRuntime(
         shadowSelection = emptyList()
         mainDrawSelection = emptyList()
         shadowDrawSelection = emptyList()
+        coverageDistanceSelection = emptyList()
+        coverageDistanceCamera = null
+        coverageDistanceSeamBits = 0
+        effectiveRenderDistanceChunks = config.renderDistanceChunks
         batchCache.clear()
         frameDrawBatches = 0
         frameDrawCommands = 0
@@ -1718,6 +1763,11 @@ internal class DistantHierarchicalTerrainRuntime(
         private val COVERAGE_TRANSITION_POLICY = TerrainCoverageTransitionPolicy(true, 8)
         private const val MAX_NODE_VISITS = 4_096
         private const val MAX_SELECTION_CHANGES = 1_024
+        // Bound both retained replacement sets below the shared region-store
+        // capacity. Best-first refinement stops at this ceiling; an unbounded
+        // desired set cannot become active atomically.
+        private const val MAX_MAIN_SELECTION_PAGES = 512
+        private const val MAX_SHADOW_SELECTION_PAGES = 256
         private const val DATA_RESELECTION_INTERVAL_FRAMES = 4L
         private const val REFINE_ERROR_PIXELS = 48.0
         private const val COARSEN_ERROR_PIXELS = 36.0

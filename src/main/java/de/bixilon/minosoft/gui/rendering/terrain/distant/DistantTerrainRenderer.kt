@@ -24,7 +24,7 @@ import de.bixilon.minosoft.gui.rendering.graph.RenderPassId
 import de.bixilon.minosoft.gui.rendering.light.LightmapBuffer
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.RendererBuilder
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
-import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.LayerSettings
+import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldPassRegistry
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.world.WorldRenderer
 import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
 import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
@@ -50,6 +50,9 @@ import de.bixilon.minosoft.terrain.model.interop.DistantTerrainProvider
 import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPageDiagnosticSnapshot
 import de.bixilon.minosoft.terrain.runtime.diagnostic.TerrainPageQuery
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.PI
+import kotlin.math.atan2
+import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 
@@ -60,7 +63,7 @@ internal class DistantTerrainRenderer(
 ) : WorldRenderer, DistantTerrainProvider {
     override val generation = NEXT_PROVIDER_GENERATION.getAndUpdate { Math.incrementExact(it) }
     override val descriptor = DistantTerrainInterop.descriptor
-    override val layers = LayerSettings()
+    override val passes = WorldPassRegistry()
     private val solidShader = context.system.shader.create(minosoft("distant/terrain")) {
         DistantTerrainShader(it, SceneProgramFamily.DISTANT_TERRAIN)
     }
@@ -79,9 +82,13 @@ internal class DistantTerrainRenderer(
         )
     }
     @Volatile private var closed = false
+    @Volatile private var effectiveRenderDistanceBlocks = Math.multiplyExact(config.renderDistanceChunks, 16)
 
-    override fun registerLayers() {
-        layers.registerSemantic(
+    internal val renderDistanceBlocks: Int
+        get() = effectiveRenderDistanceBlocks
+
+    override fun registerPasses() {
+        passes.add(
             layer = OpaqueLayer,
             shader = solidShader,
             renderer = { hierarchy?.drawSolid(shadow = false) },
@@ -93,7 +100,7 @@ internal class DistantTerrainRenderer(
             ),
             skip = { hierarchy?.hasSolid()?.not() ?: true },
         )
-        layers.registerSemantic(
+        passes.add(
             layer = TranslucentLayer,
             shader = waterShader,
             renderer = { hierarchy?.drawWater() },
@@ -117,11 +124,23 @@ internal class DistantTerrainRenderer(
     ): List<TerrainPageDiagnosticSnapshot> = hierarchy?.diagnosticPages(query, afterPage).orEmpty()
 
     override fun prePrepareDraw() {
+        val eye = context.camera.view.view.eyePosition
+        val cameraChunk = ChunkPosition(
+            floor(eye.x / 16.0).toInt(),
+            floor(eye.z / 16.0).toInt(),
+        )
+        val nativeOwnership = context.renderer[ChunkRenderer]?.loaded?.ownershipSnapshot()
+            ?: NativeTerrainOwnershipSnapshot(0L, emptySet())
+        val seamDistanceChunks = context.session.world.view.viewDistance + 1.0f
+        hierarchy?.prepare(cameraChunk, seamDistanceChunks, nativeOwnership)
+        val effectiveDistanceChunks = hierarchy?.effectiveRenderDistanceChunks()
+            ?: config.renderDistanceChunks
+        effectiveRenderDistanceBlocks = Math.multiplyExact(effectiveDistanceChunks, 16)
         val viewProjection = distantViewProjection(
             hostProjection = context.camera.matrix.projectionMatrix,
             view = context.camera.matrix.viewMatrix,
             near = context.camera.matrix.nearPlane,
-            renderDistanceChunks = config.renderDistanceChunks,
+            renderDistanceChunks = effectiveDistanceChunks,
         )
         solidShader.viewProjectionMatrix = viewProjection
         waterShader.viewProjectionMatrix = viewProjection
@@ -133,16 +152,8 @@ internal class DistantTerrainRenderer(
             solidShader.distantFogColor = it
             waterShader.distantFogColor = it
         }
-        val eye = context.camera.view.view.eyePosition
-        val cameraChunk = ChunkPosition(
-            floor(eye.x / 16.0).toInt(),
-            floor(eye.z / 16.0).toInt(),
-        )
-        val nativeOwnership = context.renderer[ChunkRenderer]?.loaded?.ownershipSnapshot()
-            ?: NativeTerrainOwnershipSnapshot(0L, emptySet())
-        val seamDistance = (context.session.world.view.viewDistance + 1) * 16.0f
-        hierarchy?.prepare(cameraChunk, seamDistance / 16.0f, nativeOwnership)
-        val effectiveDistance = config.renderDistanceChunks * 16.0f
+        val seamDistance = seamDistanceChunks * 16.0f
+        val effectiveDistance = effectiveRenderDistanceBlocks.toFloat()
         solidShader.farFogStart = max(seamDistance, effectiveDistance * FAR_FOG_START_RATIO)
         waterShader.farFogStart = max(seamDistance, effectiveDistance * FAR_FOG_START_RATIO)
         solidShader.farFogEnd = effectiveDistance
@@ -228,3 +239,71 @@ internal fun distantViewProjection(
     ).projection
     return projection * view
 }
+
+/**
+ * Conservative hydrated distance used by both the DH projection and shader-pack frame ABI.
+ * The nearest uncovered base chunk is measured independently in fixed angular sectors. A low
+ * sector percentile ignores isolated holes without allowing an elongated strip or sparse far
+ * outlier to expose a broad raw source frontier while bounded loaders converge.
+ */
+internal fun distantCoverageRenderDistanceChunks(
+    pages: Collection<TerrainPageKey>,
+    camera: ChunkPosition,
+    seamDistanceChunks: Float,
+    configuredDistanceChunks: Int,
+): Int {
+    require(seamDistanceChunks.isFinite() && seamDistanceChunks >= 0.0f)
+    require(configuredDistanceChunks > 0)
+    val minimum = if (seamDistanceChunks >= configuredDistanceChunks) {
+        configuredDistanceChunks
+    } else {
+        ceil(seamDistanceChunks).toInt() + 1
+    }
+    if (pages.isEmpty()) return minimum
+    val diameter = Math.multiplyExact(configuredDistanceChunks, 2)
+    val covered = BooleanArray(Math.multiplyExact(diameter, diameter))
+    val minimumChunkX = Math.subtractExact(camera.x, configuredDistanceChunks)
+    val minimumChunkZ = Math.subtractExact(camera.z, configuredDistanceChunks)
+    val maximumChunkXExclusive = Math.addExact(camera.x, configuredDistanceChunks)
+    val maximumChunkZExclusive = Math.addExact(camera.z, configuredDistanceChunks)
+    for (page in pages) {
+        require(page.detailLevel in 0..MAXIMUM_COVERAGE_DETAIL_LEVEL) {
+            "Distant coverage detail level is unsupported: ${page.detailLevel}"
+        }
+        val span = 1L shl page.detailLevel
+        val pageMinimumX = Math.multiplyExact(page.x, span)
+        val pageMinimumZ = Math.multiplyExact(page.z, span)
+        val fromX = maxOf(pageMinimumX, minimumChunkX.toLong())
+        val fromZ = maxOf(pageMinimumZ, minimumChunkZ.toLong())
+        val toX = minOf(Math.addExact(pageMinimumX, span), maximumChunkXExclusive.toLong())
+        val toZ = minOf(Math.addExact(pageMinimumZ, span), maximumChunkZExclusive.toLong())
+        for (z in fromZ until toZ) for (x in fromX until toX) {
+            val localX = Math.toIntExact(x - minimumChunkX)
+            val localZ = Math.toIntExact(z - minimumChunkZ)
+            covered[Math.addExact(Math.multiplyExact(localZ, diameter), localX)] = true
+        }
+    }
+    val sectorFrontiersSquared = DoubleArray(COVERAGE_SECTORS) {
+        configuredDistanceChunks.toDouble() * configuredDistanceChunks
+    }
+    for (localZ in 0 until diameter) for (localX in 0 until diameter) {
+        if (covered[Math.addExact(Math.multiplyExact(localZ, diameter), localX)]) continue
+        val deltaX = minimumChunkX.toDouble() + localX + 0.5 - camera.x
+        val deltaZ = minimumChunkZ.toDouble() + localZ + 0.5 - camera.z
+        val distanceSquared = deltaX * deltaX + deltaZ * deltaZ
+        if (distanceSquared > configuredDistanceChunks.toDouble() * configuredDistanceChunks) continue
+        val normalizedAngle = (atan2(deltaZ, deltaX) + PI) / (2.0 * PI)
+        val sector = floor(normalizedAngle * COVERAGE_SECTORS).toInt().coerceIn(0, COVERAGE_SECTORS - 1)
+        if (distanceSquared < sectorFrontiersSquared[sector]) {
+            sectorFrontiersSquared[sector] = distanceSquared
+        }
+    }
+    sectorFrontiersSquared.sort()
+    val percentileIndex = floor((COVERAGE_SECTORS - 1) * COVERAGE_FRONTIER_PERCENTILE).toInt()
+    val frontier = kotlin.math.sqrt(sectorFrontiersSquared[percentileIndex]).toInt()
+    return frontier.coerceIn(minimum, configuredDistanceChunks)
+}
+
+private const val MAXIMUM_COVERAGE_DETAIL_LEVEL = 30
+private const val COVERAGE_SECTORS = 64
+private const val COVERAGE_FRONTIER_PERCENTILE = 0.1
