@@ -71,6 +71,7 @@ class EntityOutlineFeatureTest {
 
         renderer.features.update(Duration.ZERO)
         renderer.features.collect(drawer)
+        drawer.prepare()
 
         assertEquals(feature.updates, 1)
         assertEquals(feature.normalCollections, 0)
@@ -89,6 +90,7 @@ class EntityOutlineFeatureTest {
 
         renderer.features.update(Duration.ZERO)
         renderer.features.collect(drawer)
+        drawer.prepare()
 
         assertEquals(feature.updates, 1)
         assertEquals(feature.normalCollections, 0)
