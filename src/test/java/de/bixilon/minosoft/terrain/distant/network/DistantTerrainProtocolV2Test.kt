@@ -74,7 +74,7 @@ class DistantTerrainProtocolV2Test {
     }
 
     @Test
-    fun `tracker atomically rejects wrong world unknown unrequested duplicate and stale pages`() {
+    fun `tracker rejects invalid responses and consumes pages superseded by newer local data`() {
         val local = mutableMapOf<TerrainPageKey, Long>()
         val tracker = DistantTerrainRequestTracker(world, 2, 2, local::get)
         val requested = listOf(DistantRequestedPage(key(0, 0), 3), DistantRequestedPage(key(1, 0), 5))
@@ -92,15 +92,37 @@ class DistantTerrainProtocolV2Test {
         )
         assertRejected(tracker.admit(DistantTerrainMessageV2.Response(world, 99, listOf(page(0, 0, 4)))), DistantResponseRejection.UNKNOWN_REQUEST)
         assertRejected(tracker.admit(DistantTerrainMessageV2.Response(world, 50, listOf(page(9, 9, 8)))), DistantResponseRejection.UNREQUESTED_PAGE)
-        assertRejected(tracker.admit(DistantTerrainMessageV2.Response(world, 50, listOf(page(1, 0, 4)))), DistantResponseRejection.STALE_PAGE)
+        val supersededMinimum = assertIs<DistantResponseAdmission.Superseded>(
+            tracker.admit(DistantTerrainMessageV2.Response(world, 50, listOf(page(1, 0, 4)))),
+        )
+        assertEquals(false, supersededMinimum.requestComplete)
 
         val first = assertIs<DistantResponseAdmission.Accepted>(tracker.admit(DistantTerrainMessageV2.Response(world, 50, listOf(page(0, 0, 4)))))
-        assertEquals(false, first.requestComplete)
-        assertRejected(tracker.admit(DistantTerrainMessageV2.Response(world, 50, listOf(page(0, 0, 6)))), DistantResponseRejection.DUPLICATE_PAGE)
-        local[key(1, 0)] = 7
-        assertRejected(tracker.admit(DistantTerrainMessageV2.Response(world, 50, listOf(page(1, 0, 6)))), DistantResponseRejection.STALE_PAGE)
-        val complete = assertIs<DistantResponseAdmission.Accepted>(tracker.admit(DistantTerrainMessageV2.Response(world, 50, listOf(page(1, 0, 7)))))
-        assertTrue(complete.requestComplete)
+        assertTrue(first.requestComplete)
+        assertTrue(tracker.outstandingRequestIds().isEmpty())
+
+        val localKey = key(2, 0)
+        local[localKey] = 7
+        assertTrue(tracker.register(DistantTerrainMessageV2.Request(world, 51, listOf(DistantRequestedPage(localKey, 0)))))
+        val supersededLocal = assertIs<DistantResponseAdmission.Superseded>(
+            tracker.admit(DistantTerrainMessageV2.Response(world, 51, listOf(page(2, 0, 6)))),
+        )
+        assertTrue(supersededLocal.requestComplete)
+
+        val freshKey = key(3, 0)
+        val staleKey = key(4, 0)
+        local[staleKey] = 9
+        assertTrue(tracker.register(DistantTerrainMessageV2.Request(
+            world,
+            52,
+            listOf(DistantRequestedPage(freshKey, 0), DistantRequestedPage(staleKey, 0)),
+        )))
+        val mixed = assertIs<DistantResponseAdmission.PartiallyAccepted>(
+            tracker.admit(DistantTerrainMessageV2.Response(world, 52, listOf(page(3, 0, 4), page(4, 0, 8)))),
+        )
+        assertEquals(mixed.pages.map(DistantVerticalPage::key), listOf(freshKey))
+        assertEquals(mixed.supersededKeys, listOf(staleKey))
+        assertTrue(mixed.requestComplete)
         assertTrue(tracker.outstandingRequestIds().isEmpty())
     }
 

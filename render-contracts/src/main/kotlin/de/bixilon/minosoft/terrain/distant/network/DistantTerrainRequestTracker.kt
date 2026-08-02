@@ -17,6 +17,17 @@ sealed interface DistantResponseAdmission {
     class Accepted(pages: Collection<DistantVerticalPage>, val requestComplete: Boolean) : DistantResponseAdmission {
         val pages: List<DistantVerticalPage> = java.util.List.copyOf(pages)
     }
+    class Superseded(keys: Collection<TerrainPageKey>, val requestComplete: Boolean) : DistantResponseAdmission {
+        val keys: List<TerrainPageKey> = java.util.List.copyOf(keys)
+    }
+    class PartiallyAccepted(
+        pages: Collection<DistantVerticalPage>,
+        supersededKeys: Collection<TerrainPageKey>,
+        val requestComplete: Boolean,
+    ) : DistantResponseAdmission {
+        val pages: List<DistantVerticalPage> = java.util.List.copyOf(pages)
+        val supersededKeys: List<TerrainPageKey> = java.util.List.copyOf(supersededKeys)
+    }
     data class Rejected(val reason: DistantResponseRejection) : DistantResponseAdmission
 }
 
@@ -83,18 +94,22 @@ class DistantTerrainRequestTracker(
             validateKeys(keys, request)?.let {
                 return@synchronized DistantResponseAdmission.Rejected(it)
             }
-            if (response.pages.any { page ->
-                    val minimum = maxOf(request.expected.getValue(page.key), localRevisions.getValue(page.key))
-                    page.sourceRevision < minimum
-                }
-            ) {
-                return@synchronized DistantResponseAdmission.Rejected(DistantResponseRejection.STALE_PAGE)
+            val (superseded, accepted) = response.pages.partition { page ->
+                val minimum = maxOf(request.expected.getValue(page.key), localRevisions.getValue(page.key))
+                page.sourceRevision < minimum
             }
-
             request.completed += keys
             val complete = request.completed.size == request.expected.size
             if (complete) outstanding.remove(response.requestId)
-            DistantResponseAdmission.Accepted(java.util.List.copyOf(response.pages), complete)
+            when {
+                superseded.isEmpty() -> DistantResponseAdmission.Accepted(accepted, complete)
+                accepted.isEmpty() -> DistantResponseAdmission.Superseded(keys, complete)
+                else -> DistantResponseAdmission.PartiallyAccepted(
+                    accepted,
+                    superseded.map(DistantVerticalPage::key),
+                    complete,
+                )
+            }
         }
     }
 

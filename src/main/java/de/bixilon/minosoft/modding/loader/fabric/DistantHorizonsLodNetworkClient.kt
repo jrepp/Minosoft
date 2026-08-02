@@ -49,6 +49,7 @@ internal class DistantLodNetworkClient(
 ) : Runnable, AutoCloseable {
     private val spiral = DistantChunkSpiral()
     private val pending = linkedMapOf<ChunkPosition, Long>()
+    private val receivedV1Positions = hashSetOf<ChunkPosition>()
     private val v2PendingRequests = linkedMapOf<Long, V2PendingRequest>()
     private var serverMaximumTiles = 0
     private var serverMaximumRadius = 0
@@ -91,6 +92,7 @@ internal class DistantLodNetworkClient(
             is DistantLodMessage.Hello -> {
                 serverMaximumTiles = message.maximumTilesPerRequest
                 serverMaximumRadius = message.maximumRadiusChunks
+                receivedV1Positions.clear()
                 exhausted = true
                 Log.log(LogMessageType.MOD_LOADING, LogLevels.INFO) {
                     "DISTANT_HORIZONS_NETWORK_READY radiusChunks=$serverMaximumRadius " +
@@ -101,6 +103,7 @@ internal class DistantLodNetworkClient(
             is DistantLodMessage.Response -> {
                 for (tile in message.tiles) {
                     pending.remove(tile.position)
+                    receivedV1Positions += tile.position
                     publishTile(tile)
                     receivedTiles++
                 }
@@ -123,8 +126,12 @@ internal class DistantLodNetworkClient(
             is DistantTerrainMessageV2.Hello -> {
                 val activeLevel = session.world.name?.toString() ?: "minosoft:unknown"
                 require(message.world.levelKey == activeLevel) { "Distant v2 hello targets another level" }
+                receivedV1Positions.clear()
                 if (v2World != null) {
-                    cancelOutstanding(send = true)
+                    // The new server epoch supersedes every old request. A
+                    // receive callback must never enqueue a payload back onto
+                    // its own transport event loop.
+                    cancelOutstanding(send = false)
                     worldResets++
                 }
                 serverMaximumTiles = message.maximumPagesPerRequest
@@ -156,10 +163,36 @@ internal class DistantLodNetworkClient(
                 when (admission) {
                     is DistantResponseAdmission.Accepted -> {
                         for (page in admission.pages) {
-                            val tile = page.toTopOnlyCompatibilityTile()
+                            val localPage = page.withWorldEpoch(session.world.terrainEpoch)
+                            val tile = localPage.toTopOnlyCompatibilityTile()
                             pending.remove(tile.position)
-                            publishPage(tile, page)
+                            publishPage(tile, localPage)
                             receivedTiles++
+                        }
+                        if (admission.requestComplete) v2PendingRequests.remove(message.requestId)
+                    }
+                    is DistantResponseAdmission.Superseded -> {
+                        responseRejections[DistantResponseRejection.STALE_PAGE.ordinal] = Math.incrementExact(
+                            responseRejections[DistantResponseRejection.STALE_PAGE.ordinal],
+                        )
+                        admission.keys.forEach { key ->
+                            pending.remove(ChunkPosition(Math.toIntExact(key.x), Math.toIntExact(key.z)))
+                        }
+                        if (admission.requestComplete) v2PendingRequests.remove(message.requestId)
+                    }
+                    is DistantResponseAdmission.PartiallyAccepted -> {
+                        for (page in admission.pages) {
+                            val localPage = page.withWorldEpoch(session.world.terrainEpoch)
+                            val tile = localPage.toTopOnlyCompatibilityTile()
+                            pending.remove(tile.position)
+                            publishPage(tile, localPage)
+                            receivedTiles++
+                        }
+                        responseRejections[DistantResponseRejection.STALE_PAGE.ordinal] = Math.incrementExact(
+                            responseRejections[DistantResponseRejection.STALE_PAGE.ordinal],
+                        )
+                        admission.supersededKeys.forEach { key ->
+                            pending.remove(ChunkPosition(Math.toIntExact(key.x), Math.toIntExact(key.z)))
                         }
                         if (admission.requestComplete) v2PendingRequests.remove(message.requestId)
                     }
@@ -223,7 +256,7 @@ internal class DistantLodNetworkClient(
                 exhausted = true
                 break
             }
-            if (contains(position) || position in pending) continue
+            if (contains(position) || position in receivedV1Positions || position in pending) continue
             pending[position] = tick
             positions += position
         }
@@ -294,8 +327,9 @@ internal class DistantLodNetworkClient(
         val request = v2PendingRequests.remove(message.requestId)
         request?.positions?.forEach(pending::remove)
         v2Tracker?.cancel(message.requestId)
-        val activeWorld = v2World
-        if (request != null && activeWorld != null) trySendCancellation(activeWorld, message.requestId)
+        // A response is already terminal at the server. Sending a cancellation
+        // while handling it is redundant and can stall a single-threaded
+        // transport by re-entering its outbound path.
         val total = responseRejections.sum()
         if (total == 1L || total % 128L == 0L) {
             Log.log(LogMessageType.MOD_LOADING, LogLevels.WARN) {
@@ -325,6 +359,7 @@ internal class DistantLodNetworkClient(
         closed = true
         cancelOutstanding(sendCancellation)
         pending.clear()
+        receivedV1Positions.clear()
         v2PendingRequests.clear()
         v2Tracker = null
         v2World = null
@@ -360,8 +395,25 @@ internal class DistantLodNetworkClient(
     private companion object {
         private data class V2PendingRequest(val startedTick: Long, val positions: Set<ChunkPosition>)
 
-        const val REQUEST_TIMEOUT_TICKS = 20L * 30L
+        // The negotiated server may drain the complete bounded 32-page window
+        // at only one page per second before accounting for asynchronous chunk
+        // generation. Keep the timeout safely beyond that valid service window
+        // so an accepted response cannot become UNKNOWN_REQUEST by construction.
+        const val REQUEST_TIMEOUT_TICKS = 20L * 120L
         const val MAXIMUM_PENDING_TILES = 32
         val NEXT_REQUEST = AtomicInteger()
     }
+}
+
+/** Protocol epochs validate remote request/response identity; render pages use the local world epoch. */
+private fun DistantVerticalPage.withWorldEpoch(worldEpoch: Long): DistantVerticalPage {
+    if (key.worldEpoch == worldEpoch) return this
+    return DistantVerticalPage(
+        key = key.copy(worldEpoch = worldEpoch),
+        width = width,
+        originY = originY,
+        sourceRevision = sourceRevision,
+        completeness = completeness,
+        columns = columns,
+    )
 }
