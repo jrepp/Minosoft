@@ -14,6 +14,7 @@
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import de.bixilon.minosoft.debug.DebugChannelServer;
 import de.bixilon.minosoft.debug.DebugClient;
 import de.bixilon.minosoft.debug.DebugClientException;
 import de.bixilon.minosoft.debug.DebugDiscovery;
@@ -613,11 +614,29 @@ public final class Play {
                 case "visual" -> debugVisual(client, arguments, endpoint.getTrajectory(), selection.json);
                 case "input" -> debugInput(client, arguments, selection.json);
                 case "request" -> {
-                    require(!arguments.isEmpty(), "Usage: ./play.sh debug request OPERATION [JSON_BODY]");
+                    require(!arguments.isEmpty(), "Usage: ./play.sh debug request OPERATION [JSON_BODY] [--deadline 30s]");
                     String operation = arguments.remove(0);
-                    JsonNode body = arguments.isEmpty() ? DebugJson.MAPPER.createObjectNode() : DebugJson.MAPPER.readTree(arguments.remove(0));
-                    require(arguments.isEmpty(), "debug request accepts one optional JSON body.");
-                    printDebugJson(client.request(operation, body, 5_000), selection.json);
+                    JsonNode body = !arguments.isEmpty() && !arguments.get(0).startsWith("--")
+                        ? DebugJson.MAPPER.readTree(arguments.remove(0))
+                        : DebugJson.MAPPER.createObjectNode();
+                    long deadlineMs = 5_000;
+                    while (!arguments.isEmpty()) {
+                        String option = arguments.remove(0);
+                        if (option.equals("--deadline")) {
+                            require(!arguments.isEmpty(), "--deadline requires a duration up to 30s.");
+                            deadlineMs = parseDuration(arguments.remove(0), "debug request deadline").toMillis();
+                        } else if (option.startsWith("--deadline=")) {
+                            deadlineMs = parseDuration(
+                                option.substring("--deadline=".length()),
+                                "debug request deadline"
+                            ).toMillis();
+                        } else {
+                            throw failure("Unknown debug request option: " + option);
+                        }
+                    }
+                    require(deadlineMs >= 1 && deadlineMs <= DebugChannelServer.MAX_DEADLINE_MS,
+                        "debug request deadline must be between 1ms and 30s.");
+                    printDebugJson(client.request(operation, body, deadlineMs), selection.json);
                 }
                 default -> throw failure("Unknown debug command: " + command);
             }

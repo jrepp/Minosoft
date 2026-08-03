@@ -106,8 +106,16 @@ internal data class TerrainIdleState(
         TerrainFlushIdleCondition.ALL ->
             matches(TerrainFlushIdleCondition.BUILDS) &&
                 matches(TerrainFlushIdleCondition.UPLOADS) &&
-                matches(TerrainFlushIdleCondition.RETIREMENT)
+                matches(TerrainFlushIdleCondition.RETIREMENT) &&
+                pendingSubmissions == 0 && pendingFences == 0
     }
+
+    fun requiresGpuDrain(condition: TerrainFlushIdleCondition): Boolean =
+        condition == TerrainFlushIdleCondition.ALL &&
+            matches(TerrainFlushIdleCondition.BUILDS) &&
+            matches(TerrainFlushIdleCondition.UPLOADS) &&
+            matches(TerrainFlushIdleCondition.RETIREMENT) &&
+            (pendingSubmissions > 0 || pendingFences > 0)
 }
 
 object TerrainDiagnosticDebugOperation {

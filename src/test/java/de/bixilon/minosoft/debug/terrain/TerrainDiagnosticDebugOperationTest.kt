@@ -175,7 +175,11 @@ class TerrainDiagnosticDebugOperationTest {
         val activeDrawFence = TerrainIdleState(0, 0, 0, 0, 0, 128, 1, 0, 0L)
         assertTrue(activeDrawFence.matches(TerrainFlushIdleCondition.UPLOADS))
         assertTrue(activeDrawFence.matches(TerrainFlushIdleCondition.RETIREMENT))
-        assertTrue(activeDrawFence.matches(TerrainFlushIdleCondition.ALL))
+        assertFalse(activeDrawFence.matches(TerrainFlushIdleCondition.ALL))
+        assertTrue(activeDrawFence.requiresGpuDrain(TerrainFlushIdleCondition.ALL))
+        assertFalse(activeDrawFence.requiresGpuDrain(TerrainFlushIdleCondition.BUILDS))
+        assertFalse(buildsBusy.requiresGpuDrain(TerrainFlushIdleCondition.ALL))
+        assertFalse(idle.requiresGpuDrain(TerrainFlushIdleCondition.ALL))
 
         assertNull(TerrainDiagnosticDebugOperation.parseFlushIdleRequest(body.deepCopy().put("timeoutMs", 0L)))
         assertNull(TerrainDiagnosticDebugOperation.parseFlushIdleRequest(body.deepCopy().put("condition", "UNKNOWN")))

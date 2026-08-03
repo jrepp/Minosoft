@@ -282,6 +282,12 @@ class OpenGlNearTerrainRegionRuntime private constructor(
         if (removed) frameSubmission.clearCache()
     }
 
+    /** Advances prior-frame ownership at a context-current diagnostic boundary. */
+    fun collectSubmissionCompletions() {
+        check(!closed) { "Near terrain region runtime is closed" }
+        collectStorage()
+    }
+
     fun clear() {
         if (Thread.currentThread() !== context.thread || Rendering.currentContext !== context) {
             // A JVM shutdown hook can disconnect the play session after the

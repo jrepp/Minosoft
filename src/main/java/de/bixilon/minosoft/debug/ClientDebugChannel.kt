@@ -118,6 +118,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.imageio.ImageIO
+import org.lwjgl.opengl.GL11.glFinish
 
 object ClientDebugChannel : AutoCloseable {
     private const val MAX_INPUT_EVENTS = 256
@@ -158,6 +159,8 @@ object ClientDebugChannel : AutoCloseable {
     private var preparedItemEntity: PreparedItemEntity? = null
     private var preparedBeacon: PreparedBeacon? = null
     private var preparedTerrainMaterials: PreparedTerrainMaterials? = null
+    private var preparedVisualReferenceTime: PreparedVisualReferenceTime? = null
+    private var preparedVisualReferenceWeather: PreparedVisualReferenceWeather? = null
     private var preparedStorageBlockEntity: PreparedStorageBlockEntity? = null
     private var preparedSignText: PreparedSignText? = null
     private var preparedBlockBreak: PreparedBlockBreak? = null
@@ -429,9 +432,17 @@ object ClientDebugChannel : AutoCloseable {
                 put("time", session.world.time.time)
                 put("age", session.world.time.age)
                 put("dayPhase", session.world.time.phase.name.lowercase())
+                put("presentationTime", session.world.presentationTime.time)
+                put("presentationDayPhase", session.world.presentationTime.phase.name.lowercase())
+                put("presentationTimeOverridden", session.world.presentationTimeOverride != null)
                 putObject("weather").apply {
                     put("rain", session.world.weather.rain)
                     put("thunder", session.world.weather.thunder)
+                }
+                putObject("presentationWeather").apply {
+                    put("rain", session.world.presentationWeather.rain)
+                    put("thunder", session.world.presentationWeather.thunder)
+                    put("overridden", session.world.presentationWeatherOverride != null)
                 }
                 put("loadedChunks", session.world.chunks.chunks.size)
             }
@@ -697,7 +708,37 @@ object ClientDebugChannel : AutoCloseable {
      * mutate gameplay, and it makes a reference run independent of whether the
      * window previously lost focus or displayed the pause menu.
      */
+    @Synchronized
     private fun prepareVisualReference(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val timeOfDayNode = body["timeOfDay"]
+        if (timeOfDayNode != null && !timeOfDayNode.canConvertToLong()) {
+            throw DebugOperationException("invalid_request", "timeOfDay must be an integer from 0 through 23999")
+        }
+        val restoreTimeNode = body["restoreTime"]
+        if (restoreTimeNode != null && !restoreTimeNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "restoreTime must be boolean")
+        }
+        val timeOfDay = timeOfDayNode?.asLong()
+        if (timeOfDay != null && timeOfDay !in 0L..23_999L) {
+            throw DebugOperationException("invalid_request", "timeOfDay must be an integer from 0 through 23999")
+        }
+        val restoreTime = restoreTimeNode?.asBoolean() ?: false
+        if (timeOfDay != null && restoreTime) {
+            throw DebugOperationException("invalid_request", "timeOfDay and restoreTime are mutually exclusive")
+        }
+        val clearWeatherNode = body["clearWeather"]
+        if (clearWeatherNode != null && !clearWeatherNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "clearWeather must be boolean")
+        }
+        val restoreWeatherNode = body["restoreWeather"]
+        if (restoreWeatherNode != null && !restoreWeatherNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "restoreWeather must be boolean")
+        }
+        val clearWeather = clearWeatherNode?.asBoolean() ?: false
+        val restoreWeather = restoreWeatherNode?.asBoolean() ?: false
+        if (clearWeather && restoreWeather) {
+            throw DebugOperationException("invalid_request", "clearWeather and restoreWeather are mutually exclusive")
+        }
         val hideHudNode = body["hideHud"]
         if (hideHudNode != null && !hideHudNode.isBoolean) {
             throw DebugOperationException("invalid_request", "hideHud must be boolean")
@@ -730,6 +771,59 @@ object ClientDebugChannel : AutoCloseable {
         val hideParticles = hideParticlesNode?.asBoolean() ?: false
         val gui = context.renderer[GUIRenderer]
             ?: throw DebugOperationException("not_ready", "GUI renderer is not active")
+        val world = context.session.world
+        val preparedTime = preparedVisualReferenceTime
+        if (timeOfDay != null && preparedTime != null && preparedTime.session !== context.session) {
+            throw DebugOperationException("not_ready", "the prepared visual-reference world is no longer active")
+        }
+        if (restoreTime && preparedTime == null) {
+            throw DebugOperationException("invalid_request", "no visual-reference time is prepared")
+        }
+        if (restoreTime && preparedTime?.session !== context.session) {
+            throw DebugOperationException("not_ready", "the prepared visual-reference world is no longer active")
+        }
+        val preparedWeather = preparedVisualReferenceWeather
+        if (clearWeather && preparedWeather != null && preparedWeather.session !== context.session) {
+            throw DebugOperationException("not_ready", "the prepared visual-reference world is no longer active")
+        }
+        if (restoreWeather && preparedWeather == null) {
+            throw DebugOperationException("invalid_request", "no visual-reference weather is prepared")
+        }
+        if (restoreWeather && preparedWeather?.session !== context.session) {
+            throw DebugOperationException("not_ready", "the prepared visual-reference world is no longer active")
+        }
+        if (timeOfDay != null) {
+            val appliedOverride = WorldTime(timeOfDay.toInt(), world.time.age)
+            if (preparedTime == null) {
+                preparedVisualReferenceTime = PreparedVisualReferenceTime(
+                    context.session,
+                    world.presentationTimeOverride,
+                    appliedOverride,
+                )
+            } else {
+                preparedTime.appliedOverride = appliedOverride
+            }
+            world.presentationTimeOverride = appliedOverride
+        } else if (restoreTime) {
+            world.presentationTimeOverride = requireNotNull(preparedTime).previousOverride
+            preparedVisualReferenceTime = null
+        }
+        if (clearWeather) {
+            val appliedOverride = WorldWeather.SUNNY
+            if (preparedWeather == null) {
+                preparedVisualReferenceWeather = PreparedVisualReferenceWeather(
+                    context.session,
+                    world.presentationWeatherOverride,
+                    appliedOverride,
+                )
+            } else {
+                preparedWeather.appliedOverride = appliedOverride
+            }
+            world.presentationWeatherOverride = appliedOverride
+        } else if (restoreWeather) {
+            world.presentationWeatherOverride = requireNotNull(preparedWeather).previousOverride
+            preparedVisualReferenceWeather = null
+        }
         gui.gui.clear()
         gui.hud.enabled = !hideHud
         if (hideHitboxes) {
@@ -747,9 +841,27 @@ object ClientDebugChannel : AutoCloseable {
             put("worldBorderSuppressed", context.renderer[WorldBorderRenderer]?.referenceSuppressed)
             put("entitiesSuppressed", context.renderer[EntitiesRenderer]?.referenceSuppressed)
             put("particlesSuppressed", context.renderer[ParticleRenderer]?.referenceSuppressed)
+            put("time", world.presentationTime.time)
+            put("authoritativeTime", world.time.time)
+            put("timePrepared", preparedVisualReferenceTime != null)
+            put("rain", world.presentationWeather.rain)
+            put("authoritativeRain", world.weather.rain)
+            put("weatherPrepared", preparedVisualReferenceWeather != null)
             put("frame", context.frameNumber)
         })
     }
+
+    private data class PreparedVisualReferenceTime(
+        val session: PlaySession,
+        val previousOverride: WorldTime?,
+        var appliedOverride: WorldTime,
+    )
+
+    private data class PreparedVisualReferenceWeather(
+        val session: PlaySession,
+        val previousOverride: WorldWeather?,
+        var appliedOverride: WorldWeather,
+    )
 
     /**
      * Compare-and-set control for the non-persistent background frame limiter.
@@ -3175,7 +3287,19 @@ object ClientDebugChannel : AutoCloseable {
                 )
                 return@poll
             }
-            val state = terrainIdleState(context)
+            fun collectSubmissionCompletions() {
+                context.renderer[ChunkRenderer]?.regionTerrain?.collectSubmissionCompletions()
+                context.renderer.filterIsInstance<DistantTerrainRenderer>()
+                    .singleOrNull()
+                    ?.collectSubmissionCompletions()
+            }
+            collectSubmissionCompletions()
+            var state = terrainIdleState(context)
+            if (state.requiresGpuDrain(parsed.condition)) {
+                glFinish()
+                collectSubmissionCompletions()
+                state = terrainIdleState(context)
+            }
             if (state.matches(parsed.condition)) {
                 completeAtIdle(state)
                 return@poll
@@ -3435,6 +3559,11 @@ object ClientDebugChannel : AutoCloseable {
                         put(program, outputs)
                     }
                 }
+                putObject("programFlips").apply {
+                    shaderDiagnostics.programFlips.toSortedMap().forEach { (program, flips) ->
+                        put(program, flips)
+                    }
+                }
                 putObject("programStages").apply {
                     shaderDiagnostics.programStages.toSortedMap().forEach { (program, stages) ->
                         put(program, stages)
@@ -3468,6 +3597,8 @@ object ClientDebugChannel : AutoCloseable {
                 put("frameUniformUploads", shaderDiagnostics.frameUniformUploads)
                 put("drawUniformUploads", shaderDiagnostics.drawUniformUploads)
                 put("diagnosticTraceSampleRate", shaderDiagnostics.diagnosticTraceSampleRate)
+                shaderDiagnostics.activePassCutoff?.let { put("activePassCutoff", it) }
+                    ?: putNull("activePassCutoff")
                 putObject("drawStateBinds").apply {
                     shaderDiagnostics.drawStateBinds.toSortedMap().forEach { (state, count) ->
                         put(state, count)
@@ -4162,6 +4293,23 @@ object ClientDebugChannel : AutoCloseable {
     @Synchronized
     override fun close() {
         lastOpenGlWorkCapture = null
+        // A client generation owns these presentation checkpoints. Restore
+        // only values still owned by this channel, then release the session
+        // references so a later generation can prepare its own reference.
+        preparedVisualReferenceTime?.let { prepared ->
+            val world = prepared.session.world
+            if (world.presentationTimeOverride === prepared.appliedOverride) {
+                world.presentationTimeOverride = prepared.previousOverride
+            }
+        }
+        preparedVisualReferenceWeather?.let { prepared ->
+            val world = prepared.session.world
+            if (world.presentationWeatherOverride === prepared.appliedOverride) {
+                world.presentationWeatherOverride = prepared.previousOverride
+            }
+        }
+        preparedVisualReferenceTime = null
+        preparedVisualReferenceWeather = null
         val current = channel ?: return
         channel = null
         PlaySession.collectSessions().asSequence()
