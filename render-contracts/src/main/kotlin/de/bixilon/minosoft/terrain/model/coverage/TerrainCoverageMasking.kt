@@ -87,6 +87,12 @@ object TerrainCoverageMasking {
         (ageFrames.toDouble() / durationFrames.toDouble()).coerceIn(0.0, 1.0)
 }
 
+enum class TerrainCoverageRelationship {
+    NONE,
+    PARTIAL,
+    FULL,
+}
+
 /**
  * Frame-pinned, page-granular distant mask derived from near coverage cells.
  *
@@ -100,9 +106,15 @@ class TerrainCoveragePageMask(
     private val snapshot: TerrainCoverageSnapshot?,
     private val policy: TerrainCoverageTransitionPolicy,
 ) {
+    private data class CellCoordinate(val x: Long, val z: Long)
+
     private val nearCells = snapshot?.cells?.filter {
         it.page.domain == TerrainDomain.NEAR && it.page.detailLevel == 0
     }.orEmpty()
+    private val nearCellsByCoordinate = nearCells.groupByTo(
+        LinkedHashMap(),
+    ) { CellCoordinate(it.page.x, it.page.z) }
+    private val coverageCountsByDetail = HashMap<Int, Map<CellCoordinate, Long>>()
     private val thresholdPolicies = if (policy.enabled) {
         Array(policy.durationFrames) { threshold ->
             TerrainCoverageTransitionPolicy(true, threshold + 1)
@@ -114,24 +126,69 @@ class TerrainCoveragePageMask(
     fun drawDistant(page: TerrainPageKey): Boolean {
         require(page.domain == TerrainDomain.DISTANT) { "Coverage page masking requires a distant page" }
         if (!policy.enabled) return true
-        val snapshot = snapshot ?: return true
-        if (snapshot.worldEpoch != page.worldEpoch || page.detailLevel > MAXIMUM_CHECKED_DETAIL_LEVEL) return true
-
-        val span = 1L shl page.detailLevel
-        val expectedCells = Math.multiplyExact(span, span)
-        if (expectedCells > nearCells.size.toLong()) return true
-        val minimumX = exactOrNull { Math.multiplyExact(page.x, span) } ?: return true
-        val minimumZ = exactOrNull { Math.multiplyExact(page.z, span) } ?: return true
-        val maximumX = exactOrNull { Math.addExact(minimumX, span) } ?: return true
-        val maximumZ = exactOrNull { Math.addExact(minimumZ, span) } ?: return true
+        if (relationship(page) != TerrainCoverageRelationship.FULL) return true
+        val bounds = bounds(page) ?: return true
         val thresholdPolicy = thresholdPolicies[stableThreshold(page, policy.durationFrames) - 1]
-        var matchedCells = 0L
-        for (cell in nearCells) {
-            if (cell.page.x !in minimumX..<maximumX || cell.page.z !in minimumZ..<maximumZ) continue
-            matchedCells++
-            if (TerrainCoverageMasking.decide(cell, thresholdPolicy).drawDistant) return true
+        for (z in bounds.minimumZ..<bounds.maximumZ) {
+            for (x in bounds.minimumX..<bounds.maximumX) {
+                val cell = nearCellsByCoordinate[CellCoordinate(x, z)]
+                    ?.firstOrNull(TerrainCoverageCell::contributesCoverage)
+                    ?: return true
+                if (TerrainCoverageMasking.decide(cell, thresholdPolicy).drawDistant) return true
+            }
         }
-        return matchedCells != expectedCells
+        return false
+    }
+
+    /**
+     * Spatial near ownership for one distant page, independent of transition
+     * age. Invalid worlds and coordinate spans fail open as [TerrainCoverageRelationship.NONE].
+     */
+    fun relationship(page: TerrainPageKey): TerrainCoverageRelationship {
+        require(page.domain == TerrainDomain.DISTANT) { "Coverage relationship requires a distant page" }
+        val snapshot = snapshot ?: return TerrainCoverageRelationship.NONE
+        if (snapshot.worldEpoch != page.worldEpoch) return TerrainCoverageRelationship.NONE
+        val bounds = bounds(page) ?: return TerrainCoverageRelationship.NONE
+        val covered = coverageCounts(page.detailLevel)[CellCoordinate(page.x, page.z)] ?: 0L
+        return when (covered) {
+            0L -> TerrainCoverageRelationship.NONE
+            bounds.expectedCells -> TerrainCoverageRelationship.FULL
+            else -> TerrainCoverageRelationship.PARTIAL
+        }
+    }
+
+    private fun coverageCounts(detailLevel: Int): Map<CellCoordinate, Long> =
+        coverageCountsByDetail.getOrPut(detailLevel) {
+            val span = 1L shl detailLevel
+            val counts = HashMap<CellCoordinate, Long>()
+            for ((coordinate, cells) in nearCellsByCoordinate) {
+                if (cells.none(TerrainCoverageCell::contributesCoverage)) continue
+                val parent = CellCoordinate(
+                    Math.floorDiv(coordinate.x, span),
+                    Math.floorDiv(coordinate.z, span),
+                )
+                counts[parent] = Math.addExact(counts[parent] ?: 0L, 1L)
+            }
+            counts
+        }
+
+    private data class Bounds(
+        val minimumX: Long,
+        val maximumX: Long,
+        val minimumZ: Long,
+        val maximumZ: Long,
+        val expectedCells: Long,
+    )
+
+    private fun bounds(page: TerrainPageKey): Bounds? {
+        if (page.detailLevel > MAXIMUM_CHECKED_DETAIL_LEVEL) return null
+        val span = 1L shl page.detailLevel
+        val expectedCells = exactOrNull { Math.multiplyExact(span, span) } ?: return null
+        val minimumX = exactOrNull { Math.multiplyExact(page.x, span) } ?: return null
+        val minimumZ = exactOrNull { Math.multiplyExact(page.z, span) } ?: return null
+        val maximumX = exactOrNull { Math.addExact(minimumX, span) } ?: return null
+        val maximumZ = exactOrNull { Math.addExact(minimumZ, span) } ?: return null
+        return Bounds(minimumX, maximumX, minimumZ, maximumZ, expectedCells)
     }
 
     private fun stableThreshold(page: TerrainPageKey, durationFrames: Int): Int {

@@ -18,13 +18,22 @@ out vec4 foutColor;
 uniform bool uDistantFogEnabled;
 uniform bool uDistantWater;
 uniform vec4 uDistantFogColor;
+uniform float uDistantNearFadeStart;
+uniform float uDistantNearFadeEnd;
 uniform float uDistantFarFogStart;
 uniform float uDistantFarFogEnd;
 
 void main() {
     if ((finSurfaceFlags & 0x1u) != 0u) discard;
     foutColor = finColor;
-    if (uDistantWater) foutColor.a = 1.0;
+    if (uDistantWater) {
+        foutColor.a *= smoothstep(uDistantNearFadeStart, uDistantNearFadeEnd, finHorizontalDistance);
+    } else if (finHorizontalDistance < uDistantNearFadeStart) {
+        // CPU coverage ownership is page-granular. Its partial-page refinement can remain
+        // conservative while children are unavailable, so enforce the native seam at fragment
+        // precision instead of allowing a coarse solid page to project through nearby terrain.
+        discard;
+    }
     if (!uDistantFogEnabled) return;
 
     float farFog = smoothstep(uDistantFarFogStart, uDistantFarFogEnd, finHorizontalDistance);

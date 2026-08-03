@@ -56,6 +56,54 @@ class DistantPageMeshingTest {
     }
 
     @Test
+    fun `legacy surface-only relief closes to the adjacent sampled height without floating plates`() {
+        val surfaceFlags = setOf(DistantRunFlag.GENERATED)
+        val high = column(run(99, 1, STONE, opaque = true, flags = surfaceFlags, confidence = 25))
+        val low = column(run(63, 1, STONE, opaque = true, flags = surfaceFlags, confidence = 25))
+        val page = page(
+            key(0, 0),
+            width = 2,
+            columns = listOf(high, low, high, low),
+            completeness = DistantSourceCompleteness.PARTIAL,
+        )
+
+        val artifact = DistantPageMesher.mesh(page)
+        val support = artifact.quads.single {
+            it.direction == DistantFaceDirection.EAST && it.plane == 1
+        }
+
+        assertEquals(64, support.minimumV)
+        assertEquals(100, support.maximumVExclusive)
+        assertEquals(0, support.minimumU)
+        assertEquals(2, support.maximumUExclusive)
+    }
+
+    @Test
+    fun `native volume beside legacy surface does not expose its unsampled depth`() {
+        val native = column(run(0, 64, STONE, opaque = true, blockLight = 0, skyLight = 0))
+        val legacy = column(run(
+            63,
+            1,
+            STONE,
+            opaque = true,
+            flags = setOf(DistantRunFlag.GENERATED),
+            confidence = 25,
+        ))
+        val page = page(
+            key(0, 0),
+            width = 2,
+            columns = listOf(native, legacy, native, legacy),
+            completeness = DistantSourceCompleteness.PARTIAL,
+        )
+
+        val artifact = DistantPageMesher.mesh(page)
+
+        assertFalse(artifact.quads.any {
+            it.direction == DistantFaceDirection.EAST && it.minimumV == 0 && it.maximumVExclusive == 63
+        })
+    }
+
+    @Test
     fun `cave intervals emit independent top bottom and side faces`() {
         val caveColumn = column(
             run(8, 2, STONE, opaque = true, flags = setOf(DistantRunFlag.CAVE)),
@@ -78,7 +126,7 @@ class DistantPageMeshingTest {
     }
 
     @Test
-    fun `fluid bed light and tint remain semantic and independently drawable`() {
+    fun `fluid bed face inherits adjacent fluid light while tint remains independently drawable`() {
         val tint = DistantTintSample(0x3366AA, "minecraft:swamp", 9)
         val fluid = DistantFluidSample(WATER, 3, "water")
         val subject = page(
@@ -101,9 +149,29 @@ class DistantPageMeshingTest {
         assertTrue(waterFaces.isNotEmpty())
         assertTrue(waterFaces.all { it.fluid == fluid && it.tint == tint && it.blockLight == 4 && it.skyLight == 12 })
         assertEquals(5, bedTop.plane)
-        assertEquals(2, bedTop.blockLight)
-        assertEquals(7, bedTop.skyLight)
+        assertEquals(4, bedTop.blockLight)
+        assertEquals(12, bedTop.skyLight)
         assertEquals(first.digest, second.digest)
+    }
+
+    @Test
+    fun `shore face inherits adjacent fluid light instead of opaque voxel darkness`() {
+        val fluid = DistantFluidSample(WATER, 0, "water")
+        val darkStone = column(run(0, 4, STONE, opaque = true, blockLight = 0, skyLight = 0))
+        val litWater = column(run(0, 4, WATER, fluid = fluid, blockLight = 3, skyLight = 13))
+        val subject = page(
+            key(0, 0),
+            width = 2,
+            columns = listOf(darkStone, litWater, darkStone, litWater),
+        )
+
+        val artifact = DistantPageMesher.mesh(subject)
+        val shoreFaces = artifact.quads.filter {
+            it.direction == DistantFaceDirection.EAST && it.material == STONE && it.plane == 1
+        }
+
+        assertTrue(shoreFaces.isNotEmpty())
+        assertTrue(shoreFaces.all { it.blockLight == 3 && it.skyLight == 13 })
     }
 
     @Test
@@ -143,7 +211,7 @@ class DistantPageMeshingTest {
             it.direction == DistantFaceDirection.EAST && it.material == STONE && it.maximumVExclusive == 12
         })
         assertEquals(first.digest, second.digest)
-        assertEquals("a1103f87f1200c6eb1dc86cdaa256b50d6d25dd72867a71bed217343c235365e", first.digest)
+        assertEquals("8f59f86fd4371408460462b982a0d86586f6a1dd6e605635b2c64502935554ae", first.digest)
     }
 
     @Test
@@ -300,6 +368,7 @@ class DistantPageMeshingTest {
         skyLight: Int = 15,
         tint: DistantTintSample? = null,
         flags: Set<DistantRunFlag> = emptySet(),
+        confidence: Int = 100,
     ) = DistantColumnRun(
         minimumY,
         height,
@@ -309,7 +378,7 @@ class DistantPageMeshingTest {
         skyLight,
         tint,
         flags + if (opaque) setOf(DistantRunFlag.OPAQUE) else emptySet(),
-        confidence = 100,
+        confidence = confidence,
     )
 
     private fun cardinalPages(page: TerrainPageKey) = DistantPageHierarchy.cardinalNeighbours(page)

@@ -23,6 +23,7 @@ import java.nio.file.Paths
 import kotlin.io.path.name
 import kotlin.io.path.readText
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class TerrainArchitectureBoundaryTest {
@@ -302,6 +303,9 @@ class TerrainArchitectureBoundaryTest {
         assertTrue("mainDrawSelection" in distant && "shadowDrawSelection" in distant)
         assertTrue("nativeOwnership.lifecycle" in distant)
         assertTrue("TerrainCoverageTransitionPolicy(true, 8)" in distant)
+        assertTrue("nearCoverageRevision" in distant)
+        assertTrue("input.copy(dataRevision = previousInput.dataRevision)" in distant)
+        assertEquals(2, "nearCoverage = nearCoverage".toRegex().findAll(distant).count())
     }
 
     @Test

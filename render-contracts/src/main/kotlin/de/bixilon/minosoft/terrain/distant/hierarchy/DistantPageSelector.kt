@@ -18,6 +18,10 @@
 package de.bixilon.minosoft.terrain.distant.hierarchy
 
 import de.bixilon.minosoft.terrain.distant.DistantSourceCompleteness
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoveragePageMask
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageRelationship
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageSnapshot
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageTransitionPolicy
 import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import java.util.Collections
 import java.util.PriorityQueue
@@ -123,11 +127,15 @@ class DistantPageSelection(
     val selectionChanges: Int,
     val visitBudgetExhausted: Boolean,
     val changeBudgetExhausted: Boolean,
+    unresolvedPartialCoveragePages: Collection<TerrainPageKey> = emptyList(),
 ) {
     val pages: List<TerrainPageKey> = Collections.unmodifiableList(
         pages.distinct().sortedWith(DistantPageHierarchy.order),
     )
     val maximumAdjacentDetailDelta: Int = maximumAdjacentDetailDelta(this.pages)
+    val unresolvedPartialCoveragePages: List<TerrainPageKey> = Collections.unmodifiableList(
+        unresolvedPartialCoveragePages.distinct().sortedWith(DistantPageHierarchy.order),
+    )
 
     init {
         require(worldEpoch >= 0L) { "Distant selection world epoch must not be negative" }
@@ -136,6 +144,9 @@ class DistantPageSelection(
         require(selectionChanges >= 0) { "Distant selection changes must not be negative" }
         require(this.pages.all { it.worldEpoch == worldEpoch }) {
             "Every selected distant page must share the selection world epoch"
+        }
+        require(this.unresolvedPartialCoveragePages.all(this.pages::contains)) {
+            "Unresolved partial-coverage pages must remain in the conservative selection"
         }
         require(maximumAdjacentDetailDelta <= 1) { "Adjacent distant pages differ by more than one detail level" }
     }
@@ -167,12 +178,17 @@ class DistantPageSelector(private val worldEpoch: Long) {
         metadata: Map<TerrainPageKey, DistantPageSelectionMetadata>,
         request: DistantPageSelectionRequest,
         maximumPages: Int = Int.MAX_VALUE,
+        nearCoverage: TerrainCoverageSnapshot? = null,
     ): DistantPageSelection {
         require(maximumPages >= request.roots.size) {
             "Distant page budget must at least admit every root"
         }
-        if (maximumPages == Int.MAX_VALUE) return selectOnce(index, metadata, request)
-        return selectBudgeted(index, metadata, request, maximumPages)
+        val coverage = TerrainCoveragePageMask(
+            nearCoverage,
+            TerrainCoverageTransitionPolicy.CONSERVATIVE_OVERLAP,
+        )
+        if (maximumPages == Int.MAX_VALUE) return selectOnce(index, metadata, request, coverage)
+        return selectBudgeted(index, metadata, request, maximumPages, coverage)
     }
 
     private data class RefinementCandidate(val page: TerrainPageKey, val error: Double)
@@ -183,6 +199,7 @@ class DistantPageSelector(private val worldEpoch: Long) {
         metadata: Map<TerrainPageKey, DistantPageSelectionMetadata>,
         request: DistantPageSelectionRequest,
         maximumPages: Int,
+        coverage: TerrainCoveragePageMask,
     ): DistantPageSelection {
         require(index.worldEpoch == worldEpoch) { "Distant hierarchy belongs to another selector world" }
         require(request.roots.all { it.worldEpoch == worldEpoch && it in index.pages }) {
@@ -210,10 +227,23 @@ class DistantPageSelector(private val worldEpoch: Long) {
                 .thenBy { it.page.z }
                 .thenBy { it.page.x },
         )
-        val proposal = request.roots.toMutableSet()
-        request.roots.forEach { queue += RefinementCandidate(it, projectedError(it, metadata[it], request)) }
+        val initialBalance = balance(
+            request.roots.toSet(),
+            index,
+            request.requireCompleteChildren,
+            request.availablePages,
+        )
+        require(!initialBalance.exhausted) {
+            "Distant selection roots cannot be balanced with the available hierarchy"
+        }
+        require(initialBalance.pages.size <= maximumPages) {
+            "Distant page budget $maximumPages cannot admit the balanced root selection of " +
+                "${initialBalance.pages.size} pages"
+        }
+        val proposal = initialBalance.pages.toMutableSet()
+        proposal.forEach { queue += RefinementCandidate(it, projectedError(it, metadata[it], request)) }
         var visits = 0
-        var balanceExhausted = false
+        var balanceExhausted = initialBalance.exhausted
 
         while (queue.isNotEmpty() && visits < request.maximumNodeVisits) {
             val candidate = queue.remove()
@@ -228,40 +258,53 @@ class DistantPageSelector(private val worldEpoch: Long) {
                 }
             ) continue
 
-            val refine = if (page in previouslyRefinedPages) {
+            val refineForCoverage = coverage.relationship(page) == TerrainCoverageRelationship.PARTIAL
+            val refine = refineForCoverage || if (page in previouslyRefinedPages) {
                 candidate.error >= request.coarsenErrorPixels
             } else {
                 candidate.error > request.refineErrorPixels
             }
             if (!refine) continue
 
-            val tentative = proposal.toMutableSet()
-            tentative.remove(page)
-            tentative.addAll(children)
-            val balanced = balance(tentative, index, request.requireCompleteChildren, request.availablePages)
-            if (balanced.exhausted) {
+            val balanced = refineBalanced(
+                proposal,
+                page,
+                children,
+                index,
+                request.requireCompleteChildren,
+                request.availablePages,
+                maximumPages,
+            )
+            if (!balanced.accepted) {
+                if (!balanced.exhausted) continue
                 balanceExhausted = true
                 continue
             }
-            if (balanced.pages.size > maximumPages) continue
-            proposal.clear()
-            proposal.addAll(balanced.pages)
-            for (child in children) {
-                if (child in proposal) queue += RefinementCandidate(child, projectedError(child, metadata[child], request))
+            for (refined in balanced.addedPages) {
+                queue += RefinementCandidate(refined, projectedError(refined, metadata[refined], request))
             }
         }
 
         val visitBudgetExhausted = queue.isNotEmpty() && visits >= request.maximumNodeVisits || balanceExhausted
         val changes = symmetricDifferenceSize(previousSelection, proposal)
         val changeBudgetExhausted = changes > request.maximumSelectionChanges
-        val accepted = if (changeBudgetExhausted && previousSelection.size <= maximumPages) {
-            if (previousSelection.isEmpty()) request.roots.toSet() else previousSelection
+        val reusablePrevious = previousSelection.takeIf {
+            it.isNotEmpty() &&
+                it.size <= maximumPages &&
+                maximumAdjacentDetailDelta(it.toList()) <= 1 &&
+                selectionCoversRoots(it, request.roots)
+        }
+        val accepted = if (changeBudgetExhausted && reusablePrevious != null) {
+            reusablePrevious
         } else {
             proposal
         }
         val acceptedChanges = symmetricDifferenceSize(selected, accepted)
         if (accepted != selected) generation = Math.addExact(generation, 1L)
         selected = accepted
+        val unresolvedPartialCoveragePages = accepted.filter {
+            coverage.relationship(it) == TerrainCoverageRelationship.PARTIAL
+        }
         return DistantPageSelection(
             worldEpoch,
             generation,
@@ -270,13 +313,93 @@ class DistantPageSelector(private val worldEpoch: Long) {
             acceptedChanges,
             visitBudgetExhausted,
             changeBudgetExhausted,
+            unresolvedPartialCoveragePages,
         )
+    }
+
+    /**
+     * Refines one page in an already-balanced selection and repairs only the
+     * newly exposed boundary. A global balance pass here makes best-first
+     * selection quadratic in the number of admitted pages, while an undo log
+     * keeps rejected budget or availability refinements allocation-bounded.
+     */
+    private data class RefinementBalanceResult(
+        val accepted: Boolean,
+        val exhausted: Boolean,
+        val addedPages: Set<TerrainPageKey> = emptySet(),
+    )
+
+    private data class SelectionModification(val page: TerrainPageKey, val added: Boolean)
+
+    private fun refineBalanced(
+        pages: MutableSet<TerrainPageKey>,
+        page: TerrainPageKey,
+        children: List<TerrainPageKey>,
+        index: DistantPageIndexView,
+        requireCompleteChildren: Boolean,
+        availablePages: Set<TerrainPageKey>?,
+        maximumPages: Int,
+    ): RefinementBalanceResult {
+        val modifications = ArrayDeque<SelectionModification>()
+        val addedPages = linkedSetOf<TerrainPageKey>()
+
+        fun remove(candidate: TerrainPageKey) {
+            if (!pages.remove(candidate)) return
+            modifications.addLast(SelectionModification(candidate, added = false))
+            addedPages.remove(candidate)
+        }
+
+        fun add(candidate: TerrainPageKey) {
+            if (!pages.add(candidate)) return
+            modifications.addLast(SelectionModification(candidate, added = true))
+            addedPages += candidate
+        }
+
+        fun rollback(exhausted: Boolean): RefinementBalanceResult {
+            while (modifications.isNotEmpty()) {
+                val modification = modifications.removeLast()
+                if (modification.added) pages.remove(modification.page) else pages.add(modification.page)
+            }
+            return RefinementBalanceResult(accepted = false, exhausted = exhausted)
+        }
+
+        remove(page)
+        children.forEach(::add)
+        if (pages.size > maximumPages) return rollback(exhausted = false)
+
+        val maximumDetail = index.pages.keys.maxOfOrNull(TerrainPageKey::detailLevel) ?: 0
+        val boundary = ArrayDeque(children)
+        while (boundary.isNotEmpty()) {
+            val fine = boundary.removeFirst()
+            for (neighbour in DistantPageHierarchy.cardinalNeighbours(fine)) {
+                var coarse = neighbour
+                while (coarse.detailLevel <= maximumDetail && coarse !in pages) {
+                    if (coarse.detailLevel == maximumDetail) break
+                    coarse = DistantPageHierarchy.parent(coarse)
+                }
+                if (coarse !in pages || coarse.detailLevel - fine.detailLevel <= 1) continue
+
+                val coarseChildren = DistantPageHierarchy.children(coarse)
+                val canRefine = coarseChildren.all { child ->
+                    val state = index.pages[child] ?: return@all false
+                    (availablePages == null || child in availablePages) &&
+                        (!requireCompleteChildren || state.completeness == DistantSourceCompleteness.COMPLETE)
+                }
+                if (!canRefine) return rollback(exhausted = true)
+                remove(coarse)
+                coarseChildren.forEach(::add)
+                if (pages.size > maximumPages) return rollback(exhausted = false)
+                boundary.addAll(coarseChildren)
+            }
+        }
+        return RefinementBalanceResult(accepted = true, exhausted = false, addedPages = addedPages)
     }
 
     private fun selectOnce(
         index: DistantPageIndexView,
         metadata: Map<TerrainPageKey, DistantPageSelectionMetadata>,
         request: DistantPageSelectionRequest,
+        coverage: TerrainCoveragePageMask,
     ): DistantPageSelection {
         require(index.worldEpoch == worldEpoch) { "Distant hierarchy belongs to another selector world" }
         require(request.roots.all { it.worldEpoch == worldEpoch }) { "Distant roots belong to another selector world" }
@@ -322,7 +445,8 @@ class DistantPageSelector(private val worldEpoch: Long) {
 
             val currentlyRefined = previousWithin(page).any { it != page }
             val error = projectedError(page, metadata[page], request)
-            val refine = if (currentlyRefined) {
+            val refineForCoverage = coverage.relationship(page) == TerrainCoverageRelationship.PARTIAL
+            val refine = refineForCoverage || if (currentlyRefined) {
                 error >= request.coarsenErrorPixels
             } else {
                 error > request.refineErrorPixels
@@ -347,6 +471,9 @@ class DistantPageSelector(private val worldEpoch: Long) {
         val acceptedChanges = symmetricDifferenceSize(selected, accepted)
         if (accepted != selected) generation = Math.addExact(generation, 1L)
         selected = accepted
+        val unresolvedPartialCoveragePages = accepted.filter {
+            coverage.relationship(it) == TerrainCoverageRelationship.PARTIAL
+        }
         return DistantPageSelection(
             worldEpoch = worldEpoch,
             generation = generation,
@@ -355,6 +482,7 @@ class DistantPageSelector(private val worldEpoch: Long) {
             selectionChanges = acceptedChanges,
             visitBudgetExhausted = visitBudgetExhausted,
             changeBudgetExhausted = changeBudgetExhausted,
+            unresolvedPartialCoveragePages = unresolvedPartialCoveragePages,
         )
     }
 
@@ -454,6 +582,29 @@ private fun isDescendantOrSame(page: TerrainPageKey, ancestor: TerrainPageKey): 
 
 private fun symmetricDifferenceSize(first: Set<TerrainPageKey>, second: Set<TerrainPageKey>): Int =
     first.count { it !in second } + second.count { it !in first }
+
+private fun selectionCoversRoots(
+    selection: Set<TerrainPageKey>,
+    roots: List<TerrainPageKey>,
+): Boolean {
+    val selected = selection.toHashSet()
+    val maximumRootDetail = roots.maxOf(TerrainPageKey::detailLevel)
+    val selectedAncestors = HashSet<TerrainPageKey>()
+    for (page in selected) {
+        var ancestor = page
+        while (ancestor.detailLevel < maximumRootDetail) {
+            ancestor = DistantPageHierarchy.parent(ancestor)
+            selectedAncestors += ancestor
+        }
+    }
+
+    fun covered(page: TerrainPageKey): Boolean {
+        if (page in selected) return true
+        if (page.detailLevel == 0 || page !in selectedAncestors) return false
+        return DistantPageHierarchy.children(page).all(::covered)
+    }
+    return roots.all(::covered)
+}
 
 private fun detailViolations(pages: Set<TerrainPageKey>): List<Pair<TerrainPageKey, TerrainPageKey>> {
     val ordered = pages.sortedWith(DistantPageHierarchy.order)

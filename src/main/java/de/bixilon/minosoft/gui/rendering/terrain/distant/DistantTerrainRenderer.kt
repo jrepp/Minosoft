@@ -56,6 +56,7 @@ import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
+import kotlin.math.min
 
 internal class DistantTerrainRenderer(
     override val context: RenderContext,
@@ -123,6 +124,8 @@ internal class DistantTerrainRenderer(
 
     internal fun hierarchyDiagnostics(): DistantHierarchyRenderDiagnostics? = hierarchy?.diagnostics()
 
+    internal fun collectSubmissionCompletions() = hierarchy?.collectSubmissionCompletions()
+
     internal fun hierarchyPageDiagnostics(
         query: TerrainPageQuery,
         afterPage: TerrainPageKey?,
@@ -159,6 +162,11 @@ internal class DistantTerrainRenderer(
         }
         val seamDistance = seamDistanceChunks * 16.0f
         val effectiveDistance = effectiveRenderDistanceBlocks.toFloat()
+        val waterFadeSpan = min(WATER_NEAR_FADE_BLOCKS, max(1.0f, effectiveDistance - seamDistance))
+        solidShader.nearFadeStart = seamDistance
+        waterShader.nearFadeStart = seamDistance
+        solidShader.nearFadeEnd = seamDistance + waterFadeSpan
+        waterShader.nearFadeEnd = seamDistance + waterFadeSpan
         solidShader.farFogStart = max(seamDistance, effectiveDistance * FAR_FOG_START_RATIO)
         waterShader.farFogStart = max(seamDistance, effectiveDistance * FAR_FOG_START_RATIO)
         solidShader.farFogEnd = effectiveDistance
@@ -191,6 +199,7 @@ internal class DistantTerrainRenderer(
     companion object {
         val OWNER = RenderOwnerId("minosoft:distant-terrain")
         private const val FAR_FOG_START_RATIO = 0.85f
+        private const val WATER_NEAR_FADE_BLOCKS = 32.0f
         private val NEXT_PROVIDER_GENERATION = AtomicLong(1L)
     }
 }
@@ -225,6 +234,8 @@ internal class DistantTerrainShader(
     var distantFogEnabled: Boolean by uniform("uDistantFogEnabled", false)
     var distantWater: Boolean by uniform("uDistantWater", family == SceneProgramFamily.DISTANT_WATER)
     var distantFogColor: RGBAColor by uniform("uDistantFogColor", RGBAColor(0, 0, 0))
+    var nearFadeStart: Float by uniform("uDistantNearFadeStart", 0.0f)
+    var nearFadeEnd: Float by uniform("uDistantNearFadeEnd", 1.0f)
     var farFogStart: Float by uniform("uDistantFarFogStart", Float.MAX_VALUE)
     var farFogEnd: Float by uniform("uDistantFarFogEnd", Float.MAX_VALUE)
 }

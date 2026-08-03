@@ -175,6 +175,8 @@ internal object DistantTerrainRegionArtifactEncoder {
                 alpha = material.color.alpha,
             )
         } ?: material.color
+        // Meshing resolves exposed-face light from the adjacent non-occluding medium before this
+        // compact renderer boundary; keep the resulting sky/block pair intact in the vertex ABI.
         val light = (quad.skyLight shl 4) or quad.blockLight
         val normal = when (quad.direction) {
             DistantFaceDirection.UP -> UP_NORMAL

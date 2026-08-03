@@ -67,6 +67,7 @@ import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
 import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
 import de.bixilon.minosoft.terrain.model.coverage.TerrainCoveragePageMask
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageSnapshot
 import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageState
 import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageTransitionPolicy
 import de.bixilon.minosoft.terrain.runtime.TerrainProcessBuildService
@@ -104,6 +105,26 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.log2
 import kotlin.math.max
+
+internal data class DistantCoverageDrawSelection(
+    val selected: List<TerrainPageKey>,
+    val drawable: List<TerrainPageKey>,
+) {
+    val maskedPages: Int = Math.subtractExact(selected.size, drawable.size)
+}
+
+internal fun distantCoverageDrawSelection(
+    selected: List<TerrainPageKey>,
+    coverage: TerrainCoverageSnapshot?,
+    transitionPolicy: TerrainCoverageTransitionPolicy,
+): DistantCoverageDrawSelection {
+    val stableSelection = java.util.List.copyOf(selected)
+    val mask = TerrainCoveragePageMask(coverage, transitionPolicy)
+    return DistantCoverageDrawSelection(
+        selected = stableSelection,
+        drawable = stableSelection.filter(mask::drawDistant),
+    )
+}
 
 /** Production bridge for the distant page hierarchy and semantic mesher. */
 internal class DistantHierarchicalTerrainRuntime(
@@ -204,6 +225,7 @@ internal class DistantHierarchicalTerrainRuntime(
         val viewportHeightPixels: Int,
         val seamDistanceBits: Int,
         val dataRevision: Long,
+        val nearCoverageRevision: Long,
     )
 
     private data class Region(
@@ -254,6 +276,8 @@ internal class DistantHierarchicalTerrainRuntime(
     private var shadowSelection: List<TerrainPageKey> = emptyList()
     private var mainDrawSelection: List<TerrainPageKey> = emptyList()
     private var shadowDrawSelection: List<TerrainPageKey> = emptyList()
+    private var mainMaskedPages = 0
+    private var shadowMaskedPages = 0
     private var mainDrawPlan = DrawPlan.EMPTY
     private var shadowDrawPlan = DrawPlan.EMPTY
     private var gpuRevision = 0L
@@ -311,6 +335,13 @@ internal class DistantHierarchicalTerrainRuntime(
     fun hasShadow(): Boolean = shadowDrawPlan.hasSolid
 
     fun effectiveRenderDistanceChunks(): Int = effectiveRenderDistanceChunks
+
+    /** Advances prior-frame ownership at a context-current diagnostic boundary. */
+    fun collectSubmissionCompletions() {
+        if (closed) return
+        completion.collect()
+        regions.values.asSequence().flatten().forEach { it.storage.collectRetired() }
+    }
 
     fun drawSolid(shadow: Boolean) {
         val plan = if (shadow) shadowDrawPlan else mainDrawPlan
@@ -995,6 +1026,7 @@ internal class DistantHierarchicalTerrainRuntime(
         val eye = context.camera.view.view.eyePosition
         val verticalFieldOfView = context.session.profiles.rendering.camera.fov.toDouble()
         val viewportHeight = context.window.size.y.coerceAtLeast(1)
+        val nearCoverage = nativeOwnership.lifecycle
         val input = SelectionInput(
             cameraChunkX = camera.x,
             cameraChunkZ = camera.z,
@@ -1005,6 +1037,7 @@ internal class DistantHierarchicalTerrainRuntime(
             viewportHeightPixels = viewportHeight,
             seamDistanceBits = seamDistanceChunks.toRawBits(),
             dataRevision = selectionDataRevision,
+            nearCoverageRevision = nearCoverage?.revision ?: 0L,
         )
         val previousInput = lastSelectionInput
         if (input == previousInput) return
@@ -1044,11 +1077,13 @@ internal class DistantHierarchicalTerrainRuntime(
                 cpuSelectionMetadata,
                 request(quality = 1.0),
                 maximumPages = mainBudget,
+                nearCoverage = nearCoverage,
             ).pages to shadowSelector.select(
                 view,
                 cpuSelectionMetadata,
                 request(quality = SHADOW_QUALITY),
                 maximumPages = shadowBudget,
+                nearCoverage = nearCoverage,
             ).pages
         }
         if (selected == null) {
@@ -1130,9 +1165,13 @@ internal class DistantHierarchicalTerrainRuntime(
         selectionPublication.promote(SHADOW_VIEW, gpuPublicationVersions)
         mainSelection = selectionPublication.active(MAIN_VIEW)
         shadowSelection = selectionPublication.active(SHADOW_VIEW)
-        val mask = TerrainCoveragePageMask(nativeOwnership.lifecycle, COVERAGE_TRANSITION_POLICY)
-        mainDrawSelection = mainSelection.filter(mask::drawDistant)
-        shadowDrawSelection = shadowSelection.filter(mask::drawDistant)
+        val coverage = nativeOwnership.lifecycle
+        val mainCoverage = distantCoverageDrawSelection(mainSelection, coverage, COVERAGE_TRANSITION_POLICY)
+        val shadowCoverage = distantCoverageDrawSelection(shadowSelection, coverage, COVERAGE_TRANSITION_POLICY)
+        mainDrawSelection = mainCoverage.drawable
+        shadowDrawSelection = shadowCoverage.drawable
+        mainMaskedPages = mainCoverage.maskedPages
+        shadowMaskedPages = shadowCoverage.maskedPages
         mainDrawPlan = drawPlan(mainDrawSelection, mainDrawPlan)
         shadowDrawPlan = drawPlan(shadowDrawSelection, shadowDrawPlan)
     }
@@ -1447,8 +1486,8 @@ internal class DistantHierarchicalTerrainRuntime(
             pendingUploadPages = pendingUploadPages,
             mainSelectedPages = mainSelection.size,
             shadowSelectedPages = shadowSelection.size,
-            mainMaskedPages = mainSelection.size - mainDrawSelection.size,
-            shadowMaskedPages = shadowSelection.size - shadowDrawSelection.size,
+            mainMaskedPages = mainMaskedPages,
+            shadowMaskedPages = shadowMaskedPages,
             coverageRevision = nativeOwnership.lifecycle?.revision ?: 0L,
             coverageLifecycleRevision = nativeOwnership.lifecycle?.lifecycleRevision ?: 0L,
             coverageTransitionFrames = COVERAGE_TRANSITION_POLICY.durationFrames,

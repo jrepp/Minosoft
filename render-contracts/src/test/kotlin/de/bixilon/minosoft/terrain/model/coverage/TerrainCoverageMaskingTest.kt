@@ -76,6 +76,80 @@ class TerrainCoverageMaskingTest {
     }
 
     @Test
+    fun `page relationship distinguishes partial coarse ownership without hiding its hole`() {
+        for (detail in 0..2) {
+            val distant = page(TerrainDomain.DISTANT, detail = detail, x = -1L, z = -1L)
+            val span = 1L shl detail
+            val cells = buildList {
+                for (z in -span until 0L) {
+                    for (x in -span until 0L) add(cell(x = x, z = z, coverageAge = 100))
+                }
+            }
+            val mask = TerrainCoveragePageMask(snapshot(cells), policy)
+
+            assertEquals(TerrainCoverageRelationship.FULL, mask.relationship(distant))
+            assertFalse(mask.drawDistant(distant))
+            if (cells.size > 1) {
+                val partial = TerrainCoveragePageMask(snapshot(cells.dropLast(1)), policy)
+                assertEquals(TerrainCoverageRelationship.PARTIAL, partial.relationship(distant))
+                assertTrue(partial.drawDistant(distant), "Partial detail-$detail coverage must fail open")
+            }
+        }
+    }
+
+    @Test
+    fun `detail two page with fifteen ready cells and one pending cell is partial`() {
+        val distant = page(TerrainDomain.DISTANT, detail = 2, x = 3L, z = -2L)
+        val cells = buildList {
+            for (z in -8L until -4L) {
+                for (x in 12L until 16L) {
+                    add(
+                        if (x == 15L && z == -5L) {
+                            cell(
+                                TerrainCoverageState.UPLOAD_PENDING,
+                                coverageAge = 0,
+                                x = x,
+                                z = z,
+                                contributesCoverage = false,
+                            )
+                        } else {
+                            cell(x = x, z = z, coverageAge = 100)
+                        },
+                    )
+                }
+            }
+        }
+        val mask = TerrainCoveragePageMask(snapshot(cells), policy)
+
+        assertEquals(TerrainCoverageRelationship.PARTIAL, mask.relationship(distant))
+        assertTrue(mask.drawDistant(distant))
+    }
+
+    @Test
+    fun `relationship fails open for absent wrong epoch unsupported and overflowing spans`() {
+        val covered = snapshot(listOf(cell(x = 0L, z = 0L, coverageAge = 100)))
+        val mask = TerrainCoveragePageMask(covered, policy)
+
+        assertEquals(
+            TerrainCoverageRelationship.NONE,
+            TerrainCoveragePageMask(snapshot(emptyList()), policy)
+                .relationship(page(TerrainDomain.DISTANT)),
+        )
+        assertEquals(
+            TerrainCoverageRelationship.NONE,
+            mask.relationship(page(TerrainDomain.DISTANT).copy(worldEpoch = 2L)),
+        )
+        assertEquals(
+            TerrainCoverageRelationship.NONE,
+            mask.relationship(page(TerrainDomain.DISTANT, detail = 31)),
+        )
+        assertEquals(
+            TerrainCoverageRelationship.NONE,
+            mask.relationship(page(TerrainDomain.DISTANT, detail = 2, x = Long.MAX_VALUE)),
+        )
+    }
+
+    @Test
     fun `page mask transition is deterministic and retains failed replacement coverage`() {
         val distant = page(TerrainDomain.DISTANT, x = 4L, z = -3L)
         val initial = TerrainCoveragePageMask(
@@ -168,12 +242,13 @@ class TerrainCoverageMaskingTest {
         coverageAge: Int,
         x: Long = 0L,
         z: Long = 0L,
+        contributesCoverage: Boolean = true,
     ) = TerrainCoverageCell(
         page(TerrainDomain.NEAR, x = x, z = z),
         state,
         true,
         transitionAge,
-        true,
+        contributesCoverage,
         coverageAge,
     )
 

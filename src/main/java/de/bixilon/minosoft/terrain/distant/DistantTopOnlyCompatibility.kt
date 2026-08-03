@@ -209,6 +209,9 @@ private fun compatibilityRun(
     tint = null,
     flags = buildSet {
         add(DistantRunFlag.GENERATED)
+        // Either side of this height-map sample needs neighbour-height closure, not volumetric
+        // subtraction; otherwise a later native replacement exposes its full unsampled depth.
+        add(DistantRunFlag.SURFACE_ONLY)
         if (material.opaque && fluid == null) add(DistantRunFlag.OPAQUE)
     },
     confidence = TOP_ONLY_CONFIDENCE,

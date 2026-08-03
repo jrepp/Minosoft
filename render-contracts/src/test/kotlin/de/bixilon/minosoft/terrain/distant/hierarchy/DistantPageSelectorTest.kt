@@ -12,14 +12,133 @@ package de.bixilon.minosoft.terrain.distant.hierarchy
 
 import de.bixilon.minosoft.terrain.distant.DistantSemanticDigest
 import de.bixilon.minosoft.terrain.distant.DistantSourceCompleteness
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageCell
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoveragePageMask
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageSnapshot
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageState
+import de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageTransitionPolicy
 import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
 import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DistantPageSelectorTest {
+    @Test
+    fun `partial near ownership refines only the overlapping hierarchy path`() {
+        val index = completeIndex(width = 4, height = 4, maximumDetail = 2)
+        val root = key(0, 0, detail = 2)
+        val coverage = coverage(
+            revision = 15L,
+            covered = (0L until 4L).flatMap { z ->
+                (0L until 4L).map { x -> x to z }
+            }.dropLast(1),
+        )
+        val semanticRevisions = revisionSignature(index.snapshot())
+        val selection = DistantPageSelector(WORLD_EPOCH).select(
+            index.snapshot(),
+            emptyMap(),
+            request(listOf(root), cameraX = 10_000.0),
+            nearCoverage = coverage,
+        )
+        val mask = TerrainCoveragePageMask(coverage, TerrainCoverageTransitionPolicy(true, 1))
+        val drawable = selection.pages.filter(mask::drawDistant)
+
+        assertEquals(7, selection.pages.size)
+        assertEquals(listOf(key(3, 3)), drawable)
+        assertEquals(6, selection.pages.size - drawable.size)
+        assertTrue(selection.unresolvedPartialCoveragePages.isEmpty())
+        assertEquals(semanticRevisions, revisionSignature(index.snapshot()))
+        assertTrue(selection.maximumAdjacentDetailDelta <= 1)
+        assertTrue((0L until 4L).all { z ->
+            (0L until 4L).all { x -> selection.pages.any { it.coversBasePage(x, z) } }
+        })
+        assertTrue(coverage.cells.all { near ->
+            drawable.none { it.coversBasePage(near.page.x, near.page.z) }
+        })
+    }
+
+    @Test
+    fun `checkerboard ownership refines to base pages while full and empty spans stay coarse`() {
+        val index = completeIndex(width = 4, height = 4, maximumDetail = 2)
+        val root = key(0, 0, detail = 2)
+        val empty = coverage(revision = 0L, covered = emptyList())
+        val full = coverage(
+            revision = 16L,
+            covered = (0L until 4L).flatMap { z -> (0L until 4L).map { x -> x to z } },
+        )
+        val checkerboard = coverage(
+            revision = 8L,
+            covered = (0L until 4L).flatMap { z ->
+                (0L until 4L).mapNotNull { x -> (x to z).takeIf { (x + z) % 2L == 0L } }
+            },
+        )
+
+        assertEquals(
+            listOf(root),
+            DistantPageSelector(WORLD_EPOCH).select(
+                index.snapshot(), emptyMap(), request(listOf(root), cameraX = 10_000.0), nearCoverage = empty,
+            ).pages,
+        )
+        val fullSelection = DistantPageSelector(WORLD_EPOCH).select(
+            index.snapshot(), emptyMap(), request(listOf(root), cameraX = 10_000.0), nearCoverage = full,
+        )
+        assertEquals(listOf(root), fullSelection.pages)
+        assertTrue(
+            fullSelection.pages.none(
+                TerrainCoveragePageMask(full, TerrainCoverageTransitionPolicy(true, 1))::drawDistant,
+            ),
+        )
+        val checkerboardSelection = DistantPageSelector(WORLD_EPOCH).select(
+            index.snapshot(), emptyMap(), request(listOf(root), cameraX = 10_000.0), nearCoverage = checkerboard,
+        )
+        assertEquals(16, checkerboardSelection.pages.size)
+        assertTrue(checkerboardSelection.pages.all { it.detailLevel == 0 })
+    }
+
+    @Test
+    fun `unavailable child retains and reports a conservative partial page`() {
+        val index = completeIndex(width = 4, height = 4, maximumDetail = 2)
+        val snapshot = index.snapshot()
+        val root = key(0, 0, detail = 2)
+        val unavailableChild = key(1, 1, detail = 1)
+        val available = snapshot.pages.keys - unavailableChild
+        val partial = coverage(revision = 1L, covered = listOf(0L to 0L))
+        val selection = DistantPageSelector(WORLD_EPOCH).select(
+            snapshot,
+            emptyMap(),
+            request(listOf(root), cameraX = 10_000.0, availablePages = available),
+            nearCoverage = partial,
+        )
+
+        assertEquals(listOf(root), selection.pages)
+        assertEquals(listOf(root), selection.unresolvedPartialCoveragePages)
+    }
+
+    @Test
+    fun `same pinned coverage is deterministic for main and shadow and changed coverage refines`() {
+        val index = completeIndex(width = 4, height = 4, maximumDetail = 2)
+        val root = key(0, 0, detail = 2)
+        val request = request(listOf(root), cameraX = 10_000.0)
+        val empty = coverage(revision = 0L, covered = emptyList())
+        val partial = coverage(revision = 1L, covered = listOf(0L to 0L))
+        val main = DistantPageSelector(WORLD_EPOCH)
+        val shadow = DistantPageSelector(WORLD_EPOCH)
+
+        val before = main.select(index.snapshot(), emptyMap(), request, nearCoverage = empty)
+        val after = main.select(index.snapshot(), emptyMap(), request, nearCoverage = partial)
+        val repeated = main.select(index.snapshot(), emptyMap(), request, nearCoverage = partial)
+        val shadowAfter = shadow.select(index.snapshot(), emptyMap(), request, nearCoverage = partial)
+
+        assertEquals(listOf(root), before.pages)
+        assertTrue(after.generation > before.generation)
+        assertEquals(after.pages, repeated.pages)
+        assertEquals(after.generation, repeated.generation)
+        assertEquals(after.pages, shadowAfter.pages)
+    }
+
     @Test
     fun `camera movement changes selection without changing page revisions`() {
         val index = completeIndex(width = 4, height = 4, maximumDetail = 2)
@@ -108,6 +227,43 @@ class DistantPageSelectorTest {
         assertTrue(selection.pages.any { it.detailLevel == 0 })
         assertTrue(selection.pages.any { it.detailLevel > 0 })
         assertFalse(selection.visitBudgetExhausted)
+    }
+
+    @Test
+    fun `mixed detail roots are balanced before budgeted refinement`() {
+        val index = completeIndex(width = 16, height = 8, maximumDetail = 3)
+        val coarse = key(0, 0, detail = 3)
+        val fine = key(8, 0, detail = 0)
+
+        val selection = DistantPageSelector(WORLD_EPOCH).select(
+            index.snapshot(),
+            emptyMap(),
+            request(listOf(coarse, fine), cameraX = 10_000.0),
+            maximumPages = 64,
+        )
+
+        assertTrue(selection.pages.size in 3..64)
+        assertTrue(selection.maximumAdjacentDetailDelta <= 1)
+        assertTrue((0L until 8L).all { z ->
+            (0L until 8L).all { x -> selection.pages.any { it.coversBasePage(x, z) } }
+        })
+        assertTrue(selection.pages.any { it.coversBasePage(8L, 0L) })
+    }
+
+    @Test
+    fun `budgeted selection rejects a root set whose mandatory balance exceeds the budget`() {
+        val index = completeIndex(width = 16, height = 8, maximumDetail = 3)
+        val coarse = key(0, 0, detail = 3)
+        val fine = key(8, 0, detail = 0)
+
+        assertFailsWith<IllegalArgumentException> {
+            DistantPageSelector(WORLD_EPOCH).select(
+                index.snapshot(),
+                emptyMap(),
+                request(listOf(coarse, fine), cameraX = 10_000.0),
+                maximumPages = 2,
+            )
+        }
     }
 
     @Test
@@ -212,6 +368,7 @@ class DistantPageSelectorTest {
         cameraX: Double,
         maximumVisits: Int = 1_000,
         maximumChanges: Int = 1_000,
+        availablePages: Collection<TerrainPageKey>? = null,
     ) = DistantPageSelectionRequest(
         camera = DistantSelectionCamera(cameraX, 100.0, 1.0, verticalFieldOfViewDegrees = 90.0),
         viewportHeightPixels = 1_000,
@@ -221,6 +378,26 @@ class DistantPageSelectorTest {
         coarsenErrorPixels = 4.0,
         maximumNodeVisits = maximumVisits,
         maximumSelectionChanges = maximumChanges,
+        availablePages = availablePages,
+    )
+
+    private fun coverage(
+        revision: Long,
+        covered: Collection<Pair<Long, Long>>,
+    ) = TerrainCoverageSnapshot(
+        worldEpoch = WORLD_EPOCH,
+        revision = revision,
+        providerGeneration = 1L,
+        cells = covered.map { (x, z) ->
+            TerrainCoverageCell(
+                page = TerrainPageKey(TerrainDomain.NEAR, 0, x, 0L, z, WORLD_EPOCH),
+                state = TerrainCoverageState.READY,
+                surfaceRelevant = true,
+                transitionAgeFrames = 100,
+                contributesCoverage = true,
+                coverageAgeFrames = 100,
+            )
+        },
     )
 
     private fun revisionSignature(snapshot: DistantPageIndexSnapshot) = snapshot.pages.mapValues { (_, page) ->

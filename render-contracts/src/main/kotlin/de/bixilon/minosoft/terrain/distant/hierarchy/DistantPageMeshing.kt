@@ -475,7 +475,7 @@ object DistantPageMesher {
         val minimumZ = z * page.cellSizeBlocks
         for (run in column.runs) {
             if (!isRenderable(run)) continue
-            val above = column.runs.firstOrNull { it.minimumY == run.maximumYExclusive && it.material != null }
+            val above = column.runs.firstOrNull { it.minimumY == run.maximumYExclusive }
             if (above == null || !occludes(run, above)) {
                 destination += quad(
                     DistantFaceDirection.UP,
@@ -485,6 +485,7 @@ object DistantPageMesher {
                     minimumZ,
                     minimumZ + page.cellSizeBlocks,
                     run,
+                    adjacentLight(run, above),
                 )
             }
             val below = column.runs.firstOrNull { it.maximumYExclusive == run.minimumY }
@@ -503,6 +504,7 @@ object DistantPageMesher {
                     minimumZ,
                     minimumZ + page.cellSizeBlocks,
                     run,
+                    adjacentLight(run, below),
                 )
             }
         }
@@ -602,10 +604,29 @@ object DistantPageMesher {
         destination: MutableList<DistantMeshQuad>,
     ) {
         val (minimumU, maximumU, plane) = sideCoordinates(page, x, z, direction, segmentOffset, segmentLength)
-        val neighbourRuns = neighbour.runs.filter(::isRenderable)
+        val currentSurfaceOnly = isSurfaceOnlyCompatibilityColumn(column)
+        val neighbourSurfaceOnly = isSurfaceOnlyCompatibilityColumn(neighbour)
+        if (currentSurfaceOnly || neighbourSurfaceOnly) {
+            val currentSurface = column.runs.firstOrNull(::isRenderable) ?: return
+            val neighbourSurface = neighbour.runs.firstOrNull(::isRenderable) ?: return
+            if (currentSurface.maximumYExclusive > neighbourSurface.maximumYExclusive) {
+                destination += quad(
+                    direction,
+                    plane,
+                    minimumU,
+                    maximumU,
+                    neighbourSurface.maximumYExclusive - page.originY,
+                    currentSurface.maximumYExclusive - page.originY,
+                    currentSurface,
+                    adjacentLight(currentSurface, neighbourSurface),
+                )
+            }
+            return
+        }
+        val neighbourRuns = neighbour.runs
         for (run in column.runs) {
             if (!isRenderable(run)) continue
-            val occluders = neighbourRuns.filter { occludes(run, it) }
+            val occluders = neighbourRuns.filter { isRenderable(it) && occludes(run, it) }
             for (interval in subtract(run.minimumY, run.maximumYExclusive, occluders)) {
                 destination += quad(
                     direction,
@@ -615,6 +636,7 @@ object DistantPageMesher {
                     interval.first - page.originY,
                     interval.second - page.originY,
                     run,
+                    adjacentLight(run, neighbourRuns, interval.first, interval.second),
                 )
             }
         }
@@ -658,6 +680,15 @@ object DistantPageMesher {
     private fun isRenderable(run: DistantColumnRun): Boolean =
         run.material != null && DistantRunFlag.VOID !in run.flags
 
+    private fun isSurfaceOnlyCompatibilityColumn(column: DistantVerticalColumn): Boolean {
+        val occupied = column.runs.filter(::isRenderable)
+        if (occupied.isEmpty()) return false
+        return occupied.all {
+            DistantRunFlag.SURFACE_ONLY in it.flags ||
+                (DistantRunFlag.GENERATED in it.flags && it.confidence <= LEGACY_SURFACE_ONLY_CONFIDENCE)
+        }
+    }
+
     private fun occludes(current: DistantColumnRun, neighbour: DistantColumnRun): Boolean {
         if (neighbour.material == null || DistantRunFlag.VOID in neighbour.flags) return false
         if (DistantRunFlag.OPAQUE in neighbour.flags) return true
@@ -697,6 +728,7 @@ object DistantPageMesher {
         minimumV: Int,
         maximumV: Int,
         run: DistantColumnRun,
+        light: FaceLight = FaceLight(run.blockLight, run.skyLight),
         fallback: Boolean = false,
     ) = DistantMeshQuad(
         direction,
@@ -707,13 +739,49 @@ object DistantPageMesher {
         maximumV,
         requireNotNull(run.material),
         run.fluid,
-        run.blockLight,
-        run.skyLight,
+        light.block,
+        light.sky,
         run.tint,
         run.flags,
         run.confidence,
         fallback,
     )
+
+    /**
+     * Voxel light belongs to the volume containing the sample, while Minecraft face light belongs
+     * to the non-occluding volume immediately outside the face. Retaining the brighter component
+     * from that adjacent medium prevents opaque shore and cave-boundary faces from inheriting the
+     * zero light inside their own block. The source value remains the fallback when an exterior
+     * interval was intentionally omitted from a partial page.
+     */
+    private fun adjacentLight(run: DistantColumnRun, adjacent: DistantColumnRun?): FaceLight {
+        if (adjacent == null || occludes(run, adjacent)) return FaceLight(run.blockLight, run.skyLight)
+        return FaceLight(
+            max(run.blockLight, adjacent.blockLight),
+            max(run.skyLight, adjacent.skyLight),
+        )
+    }
+
+    private fun adjacentLight(
+        run: DistantColumnRun,
+        adjacent: List<DistantColumnRun>,
+        minimumY: Int,
+        maximumYExclusive: Int,
+    ): FaceLight {
+        var block = run.blockLight
+        var sky = run.skyLight
+        for (candidate in adjacent) {
+            if (candidate.maximumYExclusive <= minimumY || candidate.minimumY >= maximumYExclusive) continue
+            if (occludes(run, candidate)) continue
+            block = max(block, candidate.blockLight)
+            sky = max(sky, candidate.skyLight)
+        }
+        return FaceLight(block, sky)
+    }
+
+    private data class FaceLight(val block: Int, val sky: Int)
+
+    private const val LEGACY_SURFACE_ONLY_CONFIDENCE = 25
 
     private fun greedyMerge(input: List<DistantMeshQuad>): List<DistantMeshQuad> {
         val groups = input.groupBy(::mergeKey)

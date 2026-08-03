@@ -27,6 +27,7 @@ enum class DistantRunFlag {
     CAVE,
     VOID,
     GENERATED,
+    SURFACE_ONLY,
 }
 
 data class DistantFluidSample(
