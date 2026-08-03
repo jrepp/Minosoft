@@ -16,6 +16,7 @@ import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
 import de.bixilon.minosoft.terrain.model.mesh.TerrainArtifactStream
 import de.bixilon.minosoft.terrain.model.mesh.TerrainMeshArtifact
+import de.bixilon.minosoft.terrain.model.mesh.TerrainPrimitiveTopology
 import de.bixilon.minosoft.terrain.runtime.TerrainDeviceRuntimeId
 import de.bixilon.minosoft.terrain.runtime.TerrainProcessScopeId
 import de.bixilon.minosoft.terrain.runtime.TerrainSubmission
@@ -24,8 +25,10 @@ import de.bixilon.minosoft.terrain.runtime.TerrainSubmissionSerial
 import de.bixilon.minosoft.terrain.runtime.TerrainSubmissionState
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
+import kotlin.test.assertSame
 
 class TerrainBatchingTest {
     private val deviceId = TerrainDeviceRuntimeId(TerrainProcessScopeId(1L), 1L)
@@ -54,9 +57,14 @@ class TerrainBatchingTest {
         assertEquals(2, TerrainConventionalDrawLoop.submit(first) { drawn += it.page })
         assertEquals(listOf(secondPage, firstPage), drawn)
         first.submit(TerrainSubmission(deviceId, TerrainSubmissionSerial(1L)))
+        val packet = first.packet
+        assertEquals(6, packet.totalIndices)
+        assertEquals(1, packet.groups.size)
+        assertEquals(listOf(3, 3), List(packet.groups.single().commandCount, packet.groups.single()::indexCount))
         first.close()
 
         val second = assertNotNull(cache.batch(storage, material, view, listOf(secondPage, firstPage), 3L, 4L))
+        assertSame(packet, second.packet)
         second.close()
         assertEquals(1L, cache.metrics().builds)
         assertEquals(1L, cache.metrics().hits)
@@ -65,6 +73,38 @@ class TerrainBatchingTest {
         assertEquals(1, storage.metrics().retiredPages)
         completion.states[TerrainSubmissionSerial(1L)] = TerrainSubmissionState.COMPLETE
         assertEquals(1, storage.collectRetired())
+    }
+
+    @Test
+    fun `draw packet copies arrays and rejects overflowing totals`() {
+        val counts = intArrayOf(3)
+        val offsets = longArrayOf(4L)
+        val bases = intArrayOf(5)
+        val group = TerrainDrawPacketGroup(TerrainPrimitiveTopology.TRIANGLES, counts, offsets, bases)
+        val groups = mutableListOf(group)
+        val packet = TerrainDrawPacket(groups)
+        counts[0] = 30
+        offsets[0] = 40L
+        bases[0] = 50
+        groups.clear()
+
+        assertEquals(3, group.indexCount(0))
+        assertEquals(4L, group.indexByteOffset(0))
+        assertEquals(5, group.baseVertex(0))
+        assertEquals(1, packet.groups.size)
+        assertFailsWith<ArithmeticException> {
+            TerrainDrawPacket(
+                listOf(
+                    TerrainDrawPacketGroup(
+                        TerrainPrimitiveTopology.TRIANGLES,
+                        intArrayOf(Int.MAX_VALUE),
+                        longArrayOf(0L),
+                        intArrayOf(0),
+                    ),
+                    group,
+                ),
+            )
+        }
     }
 
     @Test

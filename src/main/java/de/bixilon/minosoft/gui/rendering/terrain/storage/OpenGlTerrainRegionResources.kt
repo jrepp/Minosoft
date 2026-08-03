@@ -35,13 +35,14 @@ import de.bixilon.minosoft.terrain.model.mesh.TerrainPrimitiveTopology
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainBufferArena
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainDrawBatch
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainDrawCommand
+import de.bixilon.minosoft.terrain.runtime.storage.TerrainDrawPacket
+import de.bixilon.minosoft.terrain.runtime.storage.TerrainDrawPacketGroup
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainRegionUploadDevice
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainUploadPlan
 import de.bixilon.minosoft.terrain.runtime.storage.TerrainUploadOperation
 import org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER
 import org.lwjgl.opengl.GL15.GL_DYNAMIC_DRAW
 import org.lwjgl.opengl.GL15.GL_ELEMENT_ARRAY_BUFFER
-import org.lwjgl.opengl.GL15.glBindBuffer
 import org.lwjgl.opengl.GL15.glBufferData
 import org.lwjgl.opengl.GL15.glBufferSubData
 import org.lwjgl.opengl.GL15.glDeleteBuffers
@@ -56,9 +57,12 @@ import org.lwjgl.opengl.GL32.glDeleteSync
 import org.lwjgl.opengl.GL32.glDrawElementsBaseVertex
 import org.lwjgl.opengl.GL32.glFenceSync
 import org.lwjgl.opengl.GL32.glMultiDrawElementsBaseVertex
-import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil.memAlloc
+import org.lwjgl.system.MemoryUtil.memAllocInt
+import org.lwjgl.system.MemoryUtil.memAllocPointer
 import org.lwjgl.system.MemoryUtil.memFree
+import org.lwjgl.PointerBuffer
+import java.nio.IntBuffer
 
 /** Shared ordinary-buffer OpenGL adapter for provider-owned terrain layouts. */
 internal class OpenGlTerrainRegionDevice(
@@ -76,6 +80,7 @@ internal class OpenGlTerrainRegionDevice(
     private var indexBuffer = -1
     private var vaoInitialized = false
     private var initialized = false
+    private val nativePackets = OpenGlTerrainDrawPacketCache()
 
     override fun upload(plan: TerrainUploadPlan) {
         require(plan.layoutGeneration == layoutGeneration)
@@ -112,48 +117,48 @@ internal class OpenGlTerrainRegionDevice(
         require(batch.commands.all {
             it.vertexStrideBytes == vertexStrideBytes && it.indexElementBytes == Int.SIZE_BYTES
         }) { "Terrain region batch uses an unsupported physical layout" }
-        val total = batch.commands.sumOf(TerrainDrawCommand::indexCount)
-        system.context.shaderPipeline.recordDraw(total)
+        system.context.shaderPipeline.recordDraw(batch.packet.totalIndices)
+        val nativePacket = nativePacket(batch.packet)
         vao.bind()
         try {
             bind(GL_ELEMENT_ARRAY_BUFFER, indexBuffer)
-            val groups = batch.commands.groupBy(TerrainDrawCommand::topology)
-            for ((topology, commands) in groups) {
+            for ((groupIndex, group) in batch.packet.groups.withIndex()) {
                 val mode = OpenGlVertexBuffer.drawMode(
-                    when (topology) {
+                    when (group.topology) {
                         TerrainPrimitiveTopology.TRIANGLES -> PrimitiveTypes.TRIANGLE
                         TerrainPrimitiveTopology.QUADS -> PrimitiveTypes.QUAD
                     },
-                    commands.sumOf(TerrainDrawCommand::indexCount),
+                    group.totalIndices,
                     system.shader.activePatchVertices,
                 )
-                if (MULTI_DRAW && commands.size > 1) {
-                    MemoryStack.stackPush().use { stack ->
-                        val counts = stack.mallocInt(commands.size)
-                        val offsets = stack.mallocPointer(commands.size)
-                        val bases = stack.mallocInt(commands.size)
-                        commands.forEachIndexed { index, command ->
-                            counts.put(index, command.indexCount)
-                            offsets.put(index, command.indexRange.offset.toLong())
-                            bases.put(index, command.vertexRange.offset / command.vertexStrideBytes)
-                        }
-                        gl { glMultiDrawElementsBaseVertex(mode, counts, GL_UNSIGNED_INT, offsets, bases) }
+                if (MULTI_DRAW && group.commandCount > 1) {
+                    val nativeGroup = nativePacket.groups[groupIndex]
+                    system.work.multiDrawElementsBaseVertex(group.commandCount, group.totalIndices)
+                    gl {
+                        glMultiDrawElementsBaseVertex(
+                            mode,
+                            nativeGroup.counts,
+                            GL_UNSIGNED_INT,
+                            nativeGroup.offsets,
+                            nativeGroup.bases,
+                        )
                     }
                 } else {
-                    commands.forEach { command ->
+                    for (index in 0 until group.commandCount) {
+                        system.work.drawElementsBaseVertex(group.indexCount(index))
                         gl {
                             glDrawElementsBaseVertex(
                                 mode,
-                                command.indexCount,
+                                group.indexCount(index),
                                 GL_UNSIGNED_INT,
-                                command.indexRange.offset.toLong(),
-                                command.vertexRange.offset / command.vertexStrideBytes,
+                                group.indexByteOffset(index),
+                                group.baseVertex(index),
                             )
                         }
                     }
                 }
             }
-            return groups.size
+            return batch.packet.groups.size
         } finally {
             vao.unbind()
         }
@@ -161,12 +166,17 @@ internal class OpenGlTerrainRegionDevice(
 
     override fun close() {
         var failure: Throwable? = null
+        try {
+            nativePackets.close()
+        } catch (error: Throwable) {
+            failure = error
+        }
         if (vaoInitialized) {
             try {
                 vao.unload()
                 vaoInitialized = false
             } catch (error: Throwable) {
-                failure = error
+                failure?.addSuppressed(error) ?: run { failure = error }
             }
         }
         try {
@@ -183,6 +193,10 @@ internal class OpenGlTerrainRegionDevice(
         }
         initialized = false
         if (failure != null) throw failure
+    }
+
+    private fun nativePacket(packet: TerrainDrawPacket): NativeDrawPacket {
+        return nativePackets[packet]
     }
 
     private fun ensureInitialized() {
@@ -219,20 +233,122 @@ internal class OpenGlTerrainRegionDevice(
 
     private fun bind(target: Int, handle: Int) {
         if (system.boundBuffer[target] == handle) return
-        gl { glBindBuffer(target, handle) }
-        system.boundBuffer.put(target, handle)
+        system.bindBuffer(target, handle)
     }
 
     private fun deleteBuffer(handle: Int) {
         if (handle <= 0) return
         gl { glDeleteBuffers(handle) }
         system.resources.deleted(OpenGlResourceType.BUFFER, handle)
-        if (system.boundBuffer[GL_ARRAY_BUFFER] == handle) system.boundBuffer -= GL_ARRAY_BUFFER
-        if (system.boundBuffer[GL_ELEMENT_ARRAY_BUFFER] == handle) system.boundBuffer -= GL_ELEMENT_ARRAY_BUFFER
+        system.invalidateBuffer(handle)
     }
 
     private companion object {
         val MULTI_DRAW = !java.lang.Boolean.getBoolean("minosoft.terrain.region-conventional-draw")
+    }
+}
+
+internal class OpenGlTerrainDrawPacketCache(private val maximumEntries: Int = 256) : AutoCloseable {
+    private val packets = object : LinkedHashMap<TerrainDrawPacket, NativeDrawPacket>(16, 0.75f, true) {}
+    private var closed = false
+    val size: Int get() = packets.size
+
+    init {
+        require(maximumEntries > 0) { "Native terrain packet capacity must be positive" }
+    }
+
+    operator fun get(packet: TerrainDrawPacket): NativeDrawPacket {
+        check(!closed) { "Native terrain packet cache is closed" }
+        packets[packet]?.let { return it }
+        val native = NativeDrawPacket(packet.groups)
+        packets[packet] = native
+        while (packets.size > maximumEntries) {
+            val eldest = packets.entries.iterator()
+            val removed = eldest.next()
+            eldest.remove()
+            removed.value.close()
+        }
+        return native
+    }
+
+    override fun close() {
+        if (closed) return
+        closed = true
+        var failure: Throwable? = null
+        packets.values.forEach { packet ->
+            try {
+                packet.close()
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        packets.clear()
+        failure?.let { throw it }
+    }
+}
+
+internal class NativeDrawPacket(groups: List<TerrainDrawPacketGroup>) : AutoCloseable {
+    val groups: List<NativeDrawPacketGroup>
+    var closed = false
+        private set
+
+    init {
+        val realized = ArrayList<NativeDrawPacketGroup>(groups.size)
+        try {
+            groups.mapTo(realized, ::NativeDrawPacketGroup)
+        } catch (failure: Throwable) {
+            realized.forEach(NativeDrawPacketGroup::close)
+            throw failure
+        }
+        this.groups = java.util.List.copyOf(realized)
+    }
+
+    override fun close() {
+        if (closed) return
+        closed = true
+        groups.forEach(NativeDrawPacketGroup::close)
+    }
+}
+
+internal class NativeDrawPacketGroup(group: TerrainDrawPacketGroup) : AutoCloseable {
+    private val buffers = allocate(group)
+    val counts = buffers.counts
+    val offsets = buffers.offsets
+    val bases = buffers.bases
+    private var closed = false
+
+    override fun close() {
+        if (closed) return
+        closed = true
+        memFree(counts)
+        memFree(offsets)
+        memFree(bases)
+    }
+
+    private companion object {
+        data class Buffers(val counts: IntBuffer, val offsets: PointerBuffer, val bases: IntBuffer)
+
+        fun allocate(group: TerrainDrawPacketGroup): Buffers {
+            var counts: IntBuffer? = null
+            var offsets: PointerBuffer? = null
+            var bases: IntBuffer? = null
+            try {
+                counts = memAllocInt(group.commandCount)
+                offsets = memAllocPointer(group.commandCount)
+                bases = memAllocInt(group.commandCount)
+                for (index in 0 until group.commandCount) {
+                    counts.put(index, group.indexCount(index))
+                    offsets.put(index, group.indexByteOffset(index))
+                    bases.put(index, group.baseVertex(index))
+                }
+                return Buffers(counts, offsets, bases)
+            } catch (failure: Throwable) {
+                counts?.let { memFree(it) }
+                offsets?.let { memFree(it) }
+                bases?.let { memFree(it) }
+                throw failure
+            }
+        }
     }
 }
 

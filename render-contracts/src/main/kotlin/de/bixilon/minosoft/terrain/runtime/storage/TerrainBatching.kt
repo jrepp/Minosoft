@@ -64,6 +64,7 @@ class TerrainDrawBatch internal constructor(
     val view: TerrainViewKey,
     val layoutGeneration: Long,
     commands: Collection<TerrainDrawCommand>,
+    val packet: TerrainDrawPacket,
     private val lease: TerrainRegionLease,
 ) : AutoCloseable {
     val commands: List<TerrainDrawCommand> = java.util.List.copyOf(commands)
@@ -71,6 +72,59 @@ class TerrainDrawBatch internal constructor(
     fun submit(submission: TerrainSubmission) = lease.submit(submission)
 
     override fun close() = lease.close()
+}
+
+/** Immutable physical command arrays compiled with a cached draw template. */
+class TerrainDrawPacket(groups: Collection<TerrainDrawPacketGroup>) {
+    val groups: List<TerrainDrawPacketGroup> = java.util.List.copyOf(groups)
+    val totalIndices: Int = this.groups.fold(0) { total, group -> Math.addExact(total, group.totalIndices) }
+
+    companion object {
+        fun compile(commands: List<TerrainDrawCommand>): TerrainDrawPacket {
+            val groups = commands.groupBy(TerrainDrawCommand::topology).map { (topology, commands) ->
+                TerrainDrawPacketGroup(
+                    topology = topology,
+                    counts = IntArray(commands.size) { commands[it].indexCount },
+                    indexByteOffsets = LongArray(commands.size) { commands[it].indexRange.offset.toLong() },
+                    baseVertices = IntArray(commands.size) {
+                        commands[it].vertexRange.offset / commands[it].vertexStrideBytes
+                    },
+                )
+            }
+            return TerrainDrawPacket(groups)
+        }
+    }
+}
+
+class TerrainDrawPacketGroup(
+    val topology: TerrainPrimitiveTopology,
+    counts: IntArray,
+    indexByteOffsets: LongArray,
+    baseVertices: IntArray,
+) {
+    private val counts: IntArray
+    private val indexByteOffsets: LongArray
+    private val baseVertices: IntArray
+    val commandCount: Int get() = counts.size
+    val totalIndices: Int
+
+    fun indexCount(index: Int): Int = counts[index]
+    fun indexByteOffset(index: Int): Long = indexByteOffsets[index]
+    fun baseVertex(index: Int): Int = baseVertices[index]
+
+    init {
+        require(counts.isNotEmpty()) { "Terrain packet group must not be empty" }
+        require(counts.size == indexByteOffsets.size && counts.size == baseVertices.size) {
+            "Terrain packet arrays must have equal lengths"
+        }
+        require(counts.all { it >= 0 }) { "Terrain packet index counts must not be negative" }
+        require(indexByteOffsets.all { it >= 0L }) { "Terrain packet offsets must not be negative" }
+        require(baseVertices.all { it >= 0 }) { "Terrain packet base vertices must not be negative" }
+        this.counts = counts.copyOf()
+        this.indexByteOffsets = indexByteOffsets.copyOf()
+        this.baseVertices = baseVertices.copyOf()
+        this.totalIndices = counts.fold(0, Math::addExact)
+    }
 }
 
 fun interface TerrainConventionalDrawBackend {
@@ -105,7 +159,12 @@ class TerrainBatchCache(private val maximumEntries: Int = 256) {
         val members: List<Pair<TerrainPageKey, Long>>,
     )
 
-    private val cache = object : LinkedHashMap<Key, List<TerrainDrawCommand>>(16, 0.75f, true) {}
+    private data class CachedBatch(
+        val commands: List<TerrainDrawCommand>,
+        val packet: TerrainDrawPacket,
+    )
+
+    private val cache = object : LinkedHashMap<Key, CachedBatch>(16, 0.75f, true) {}
     private var builds = 0L
     private var hits = 0L
     private var evictions = 0L
@@ -143,7 +202,7 @@ class TerrainBatchCache(private val maximumEntries: Int = 256) {
             layoutGeneration,
             java.util.List.copyOf(pages.map { it.key to it.publicationId }),
         )
-        val commands = try {
+        val cached = try {
             cache[key]?.also {
                 hits = saturatingIncrement(hits)
             } ?: pages.flatMap { page ->
@@ -162,9 +221,11 @@ class TerrainBatchCache(private val maximumEntries: Int = 256) {
                         )
                     }
                     .toList()
+            }.let { commands ->
+                CachedBatch(java.util.List.copyOf(commands), TerrainDrawPacket.compile(commands))
             }.also { built ->
                 if (key !in cache) {
-                    cache[key] = java.util.List.copyOf(built)
+                    cache[key] = built
                     builds = saturatingIncrement(builds)
                     while (cache.size > maximumEntries) {
                         val eldest = cache.entries.iterator()
@@ -178,7 +239,7 @@ class TerrainBatchCache(private val maximumEntries: Int = 256) {
             lease.close()
             throw failure
         }
-        if (commands.isEmpty()) {
+        if (cached.commands.isEmpty()) {
             lease.close()
             return null
         }
@@ -187,7 +248,8 @@ class TerrainBatchCache(private val maximumEntries: Int = 256) {
             material = material,
             view = view,
             layoutGeneration = layoutGeneration,
-            commands = java.util.List.copyOf(commands),
+            commands = cached.commands,
+            packet = cached.packet,
             lease = lease,
         )
     }
