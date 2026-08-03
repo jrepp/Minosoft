@@ -79,6 +79,7 @@ not sufficient visual evidence.
 
 ## Durable records
 
+- [Root-cause test plan for the two open visual defects](../backlog/recent-terrain-visual-root-cause-test-plan.md)
 - [Terrain consolidation implementation and live follow-up](2026-07-30-terrain-consolidation-start.md)
 - [L5 profile, movement, reload, and crash regression](2026-07-31-terrain-l5-profile-movement-reload.json)
 - [L6 workload matrix and quiescent soak](2026-08-01-terrain-l6-workload-matrix.json)

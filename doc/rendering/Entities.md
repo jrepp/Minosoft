@@ -1,21 +1,38 @@
+<!-- Copyright (C) 2026 Jacob Repp -->
+
 # Entity rendering
 
 Entity rendering is a quite hard topic.
 
-## Classes
+## Production path
 
-- Player renderer
-    - player model
-    - feature renderer:
-        - armor
-        - stuck arrows
+`EntitiesRenderer` owns renderer instances, feature registration, visibility,
+and one `EntityDrawer`. Preparation computes camera, main-view, and optional
+shadow visibility once per entity. Worker-local collection batches are merged
+once on the render thread; opaque, translucent, shadow, and outline queues are
+then sorted and submitted by graph passes.
+
+An `EntityRenderer` owns a primary model renderer plus independent
+`EntityRenderFeature` objects such as armor, held items, names, flames,
+hitboxes, outlines, leashes, and projected shadows. A feature declares its
+layer, additional layers, shadow behavior, priority, distance, and stable order.
+Composite features can submit only their translucent sublayers without
+replaying the opaque base.
 
 ## Skeletal models
 
-- SkeletalModel (raw data)
-- BakedSkeletalModel (baked mesh)
-- SkeletalInstance (renders baked mesh, contains transform values)
-- Wrapper (indirectly accesses skeletal instance transforms)
+- `SkeletalModel`: normalized source model and animation declarations.
+- `BakedSkeletalModel`: retained meshes, transform tree, material layers, and
+  content-generation ownership.
+- `SkeletalInstance`: per-entity animation, material choice, root matrix, and
+  evaluated transforms.
+- `TransformInstance`: mutable pose nodes packed into the skeletal uniform
+  buffer immediately before a mesh draw.
+
+Baked geometry is shared by model/material where possible. Draw submission is
+still per feature/model-layer instance because `SkeletalManager` currently
+overwrites one transform UBO before each instance. This is the principal
+boundary for future repeated-model instancing.
 
 ## Model designing
 
@@ -41,41 +58,33 @@ Entities are always designed without any rotation (i.e. `yaw`=`0`)
     - held item
 - light (shade and lightmap)
 
-## General
+## Ordering and shader routing
 
-- render layers (opaque -> transparent -> translucent -> ...) (but face culling enabled)
-    - sort in layers after distance (or -distance)
-    - there are also invisible renderers (like AreaEffectCloud is just emitting particles)
-- update all models async (with their visibility, etc)
-- queue for unloading and loading meshes before draw (better while async preparing to save time. Maybe port that system to block entities)
-- Loop over all visible entity renderers and work on the entity layer as needed
-- update visible and not visible
-    - entity name is also visible through walls, rest not
-    - also with frustum (no need to update renderers that are out of the frustum)
-    - -> handle occlusion differently from visibility
-- option to turn on/off "features"
-- how to register entity models?
-    - loop over all entity (and block entity) types and register?
-- store entities in octree like structure
-    - ways faster collisions with them -> physics
-    - way faster getInRadius -> particles, maybe entities in the future
+Opaque queues sort by feature priority, a producer-declared immutable render
+state key, near-to-far distance, and stable entity order. The state key names
+the program family, vertex/state ABI, material layer, and mesh group instead of
+using a class hash. Translucent queues preserve far-to-near distance before the
+state key; shadow queues use priority, state key, and stable order. Iris draw
+scopes add entity/item/block identity and overlay color, and the pinned shader
+pipeline maps each feature's semantic contract to a shader-pack program.
+
+Repeated-model instancing remains open performance work. Translucent changes
+must preserve depth ordering. The grounded constraints
+and measurement workloads are in
+[Render performance and OpenGL submission](Performance.md).
 
 ## Hitboxes
 
-- Create line mesh with default aabb
-    - interpolate
-        - aabb (not at all, taken from renderInfo)
-        - color: 0.5s
-        - velocity (ticks)
-        - direction (taken from renderInfo)
-        - eye height (taken from renderInfo)
-    - they must alight with the matrix handler -> mustn't be a frame too late/early
-- Store offset and rotation as uniform
-- Make hitbox a default feature of entity renderer
-- highest priority (enables cheap gpu clipping)
-- dynamic enabling and disabling (hitbox manager, keybinding)
+Each enabled hitbox subfeature owns one fixed-capacity indexed line mesh.
+Position, rotation, velocity, and interpolated color update its loaded vertex
+buffer in place; degenerate padding keeps the upload size invariant. The mesh
+is not replaced every frame. Feature toggles are dynamic and newly created
+profiles keep hitboxes disabled by default.
 
 ## Tests
 
-- hitbox (data, loading, unloading)
-- collect visible meshes (with sorting, priority type and distance)
+- persistent hitbox geometry, self-assignment, and retirement cleanup;
+- main/shadow visibility and collection;
+- layer, priority, distance, and stable-order sorting;
+- Iris scene-contract selection and draw-state propagation; and
+- content-model reload, rejected-candidate cleanup, and entity removal.

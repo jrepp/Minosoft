@@ -75,19 +75,25 @@ last-known-good OpenGL program and texture-array publication. Terrain provider
 generations snapshot their negotiated vertex-layout declaration so a backend
 cannot mutate the shader ABI after publication.
 
-The remaining gap is behavioral rather than structural. The compatibility
-terrain provider is exclusive, but delegates the existing Minosoft chunk core
-instead of owning an optimized scheduler, mesher, upload path, visibility
-system, and batcher. The Iris provider executes a bounded
-project reference pack through terrain/shadow/composite programs, but has not
-accepted an independent pinned real-world Iris/OptiFine pack or its broader
-uniform, sampler, program-family, and target contract. Full GPU-object
-steady-state baselines, complete base-scene visual coverage, and the recorded
-performance thresholds also remain open. Typed per-context OpenGL accounting
-now supplies the required counts but has not yet accepted the reload/unload
-baseline protocol. A real independently owned terrain backend must still prove
-that its physical layout buffers retire with the pinned provider generation.
-See the dated checkpoint for exact evidence.
+The remaining gap is behavioral rather than structural. Production near and
+distant terrain now use shared scheduling, semantic artifacts, transactional
+region upload/storage, revision-cached view plans, region/material/view command
+templates, fences, and base-vertex multi-draw. The compatibility terrain
+provider is exclusive but still delegates this Minosoft-owned chunk core rather
+than independently owning the complete optimized terrain pipeline required by
+the completion function.
+
+The Iris provider now accepts pinned independent Complementary and Bliss paths
+through real terrain/shadow/composite programs and typed OpenGL targets, but
+the open Apple Complementary corruption gate and broader portability matrix
+prevent a complete shader-pipeline acceptance claim. Apple OpenGL has accepted
+terrain submission, reload/resource cleanup, and a quiescent 30-minute soak;
+the second-driver baseline, complete deterministic scene, R0-relative frame
+thresholds, and non-terrain allocation/state churn remain open. The
+[2026-08-01 performance audit](../evidence/2026-08-01-render-performance-opengl-audit.md)
+records the current Iris binding, particle/entity, texture-state, and
+complete-frame counter gaps. See the graphics map and latest dated evidence for
+the exact accepted and open gates.
 
 ## Canonical target shape
 

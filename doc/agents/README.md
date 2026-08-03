@@ -74,6 +74,21 @@ instructions that differ from the root contract.
   prioritizes runtime leases, atomic diagnosis bundles, safe world snapshots,
   compare-and-restore checkpoints, visual A/B automation, and isolated
   world/server creation. It labels implemented slices and remaining targets.
+- [Recent terrain and visual trajectory summary](evidence/2026-08-01-recent-trajectory-summary.md)
+  separates the accepted July 31/August 1 terrain gates from the independent
+  open DH foreground-ownership and Iris/Complementary corruption defects. The
+  [root-cause test plan](backlog/recent-terrain-visual-root-cause-test-plan.md)
+  maps both defects onto the repository's headless, exact-pack, real-OpenGL,
+  scenario, ownership, and restoration scaffolds.
+- [Render-performance and OpenGL submission audit](evidence/2026-08-01-render-performance-opengl-audit.md)
+  grounds the current region multi-draw, Iris binding, particle/entity churn,
+  OpenGL state-cache, measurement gaps, and ranked optimization trajectory in
+  current source plus retained Apple OpenGL evidence.
+- [Render-performance and OpenGL optimization implementation](evidence/2026-08-02-render-performance-opengl-optimization.md)
+  records the six implemented source contracts: complete physical-work
+  counters, unit/target texture state, Iris binding revisions, retained particle
+  capacities, cached terrain packets, and explicit entity state keys. Matched
+  real-OpenGL performance acceptance remains separate.
 - [Blockbench producer-integration protocol](acceptance/blockbench.md) defines
   the isolated desktop export boundary, captured-output contract, automated
   Minosoft fixture gate, and the separate real-render and remote-server gates.

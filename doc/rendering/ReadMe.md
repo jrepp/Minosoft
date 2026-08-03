@@ -1,26 +1,45 @@
-# Minosoft rendering system
+<!-- Copyright (C) 2026 Jacob Repp -->
 
-(I'll extend this document when I find time or motivation)
+# Minosoft rendering system
 
 ## General
 
-Minosoft keeps OpenGL 3.3 as its compatibility floor. On non-Apple platforms
-it first requests an OpenGL 4.3 core context, which enables the compute-shader
-and shader-storage paths used by advanced shader packs when the actual driver
-capabilities and limits pass validation. GLFW may return a newer compatible
-context. macOS requests OpenGL 4.1 because Apple does not expose 4.3, so 4.3-only
-features remain disabled there. The rendering system stays abstract and
-headless planning does not require OpenGL.
+Minosoft keeps OpenGL 3.3 as its compatibility floor. Non-Apple GLFW launches
+request a 4.3 core context first and may receive a newer compatible context.
+macOS requests 4.1 before falling back to 3.3 because Apple does not expose
+OpenGL 4.3. Compute, image, shader-storage, tessellation, and related paths are
+gated on the actual context capabilities and driver limits; a requested version
+is not treated as proof that a feature exists.
 
-Everything is working in shaders (written in glsl), some things even have multiple shaders.
+The rendering system remains abstract. Immutable graph/resource declarations,
+provider ownership, terrain artifacts, scheduling, residency, submission, and
+telemetry contracts live in the GUI-independent `render-contracts` module.
+Window, Minecraft-world, LWJGL, and OpenGL realization stays in the application
+module, so headless planning and tests do not require a graphics context.
 
-## Integration
+## Frame architecture
 
-The whole render system is like a separate module. There are almost no references to it, only in `PlaySession.kt`. Everything is event driven (or abstract).
+Each `PlaySession` owns a `Rendering` instance and `RenderContext`.
+`RendererPipeline` builds one immutable graph from producer-owned
+`WorldRenderPass` declarations. Stable passes cover the main and optional
+shadow views, sky, near and distant terrain material classes, entities, block
+entities, particles, weather/overlays, hand, shader-pack fullscreen stages,
+world presentation, and HUD.
 
-## Loading
+`TerrainBackendRegistry` and `ShaderPipelineRegistry` pin one selected
+generation for the complete frame. Built-in, optimized-terrain-labelled, Iris,
+and combined profiles execute the same graph; provider selection changes
+ownership and resources, not the frame architecture. Candidate preparation is
+transactional, failed publication preserves the active generation, and retired
+GPU resources wait for outstanding frame/storage leases.
 
-The whole render system gets loaded, as soon as you tell eros to connect to a server. Everything gets downloaded then and the render subsystem loads.
+## Lifecycle
+
+Rendering initializes with the play session after assets and normalized content
+are available. Shader, texture, framebuffer, mesh, terrain, and provider objects
+have explicit load/unload or candidate/publish/retire ownership. OpenGL names
+are tracked per context and resource namespace. Content or shader reloads build
+complete candidates before swapping the last-known-good generation.
 
 ## Textures
 
@@ -31,45 +50,79 @@ storage design.
 
 ### Static textures
 
-Textures that don't get modified anymore (like block textures or items).
-The textures are stored in 5 dimensional way (2d for x and y coordinates, 1d for the texture index (aka. what texture), 1d for the resolution (like `16x16` or `32x32`) and the last dimension for mipmaps).
-Every vertex can have an additional animation id, that is done via an uniform buffer.
+Static block/item textures are bucketed by resolution in `GL_TEXTURE_2D_ARRAY`
+objects. Vertices retain a packed array/layer identifier, so terrain, entity,
+GUI, and particle batches can mix texture pages without per-object texture
+binds. Mipmap levels form the remaining storage dimension. LabPBR normal and
+specular data occupy companion pages in the same physical array allocation.
+
+Ordinary `.png.mcmeta` animation updates the retained array layer. Material
+companion animations advance on the CPU and upload only when their revision
+changes.
 
 ### Dynamic textures
 
-Used for e.g. skins.
+Dynamic textures, including player skins, use a separately growable texture
+array with transactional replacement. Font glyphs use their own array.
 
-## (Performance) optimizations
+## Performance
 
-- Chunking (like minecraft does it)
+Near and distant terrain use transactional region arenas, cached
+region/material/view command templates with topology-grouped physical packets,
+OpenGL fences, and
+`glMultiDrawElementsBaseVertex`; a conventional per-mesh loop remains for
+non-region or non-OpenGL paths. Particles retain capacity-tracked buffers for
+one opaque and one translucent draw. Entities retain feature/model meshes and
+use explicit opaque/shadow state keys plus distance-first translucent queues,
+but still submit individual meshes.
+
+The source-grounded submission inventory, retained measurements, implemented
+state/allocation optimizations, and measurement queue are in
+[Render performance and OpenGL submission](Performance.md).
 
 ### Culling
 
-Minosoft is using multiple culling techniques that all work together to archive the best performance.
+Minosoft combines multiple culling techniques:
 
-- Face culling (`glCullFace`; gpu only)
-- Neighbour culling (hide unseen faces; cpu only)
-- Frustum culling (hide what is behind you/not in the camera perspective)
-- View distance clipping (maximum render distance)
-- Occlusion culling (hide chunks that are not visible (e.g. caves from the surface); cpu and gpu)
-- ~~Greedy meshing (combining multiple blocks into a single face)~~ not really worked and even got removed
+- face culling in OpenGL;
+- block-neighbour face elimination during terrain meshing;
+- frustum and configured-distance selection;
+- revision-checked terrain visibility traversal and asynchronous occlusion
+  queries for conventional chunk meshes; and
+- provider-specific main/shadow view selection and near/distant coverage
+  masking.
+
+Distant page meshing uses bounded semantic merging. The removed legacy near
+greedy-meshing experiment is not part of the production near terrain contract.
 
 ## Renderers
 
-Even the render system is dynamic. There are a lot of so-called renderers (e.g. `WorldRenderer`, `ParticleRenderer` or `GUIRenderer`) that get registered dynamically while loading. So extending the system is pretty easy and moddable.
+Renderers such as `ChunkRenderer`, `EntitiesRenderer`, and `ParticleRenderer`
+declare their graph passes through `WorldPassRegistry`. Presentation/HUD
+renderers also enter the graph, while Fabric compatibility hooks register at
+explicit producer, visibility, frame, terrain-provider, or shader-provider
+boundaries. Code must not add a second mutable world-renderer loop.
 
 ## Render phases
 
-There are multiple render phases. 3D breaks when it comes to transparency, or it gets optimized when drawing in a specific order (gpu occlusion culling). For example a render phase is `OPAQUE` or `TRANSLUCENT`.
-It basically lets all renderers draw their opaque objects first and then draw transparent ones.
+`RenderGraphGeneration` orders passes by explicit phase, dependency, view, and
+stable ID. The graph distinguishes distant solid/water, opaque/cutout/emissive
+world geometry, the pre-translucent depth boundaries, translucent producers,
+hand, overlays, shader-pack fullscreen families, composite, and HUD. A shadow
+view is a first-class set of graph nodes, not a hidden second traversal.
 
 ## Transparency
 
-100% transparent pixels get `discard`ed in the shader. That makes no problem. Translucency is getting hacked with `glDepthMask(false)`. It is not the best solution but a good workaround. Some face sorting is needed in the future.
+Cutout materials use alpha tests/discard. Translucent layers enable blending,
+disable depth writes where required, and preserve back-to-front terrain page
+ordering. Entity feature queues retain layer-specific ordering, but the engine
+does not provide general per-face order-independent transparency.
 
 ## Lighting
 
-Lighting is done as soon as a block changes in the world. Increasing light is a lot faster than decreasing light.
-A custom light engine is included, all server light is ignored by default (documentation needed).
-
-The lighting on the render side is done via a lightmap, basically another uniform buffer.
+Near terrain snapshots sample four independent corner light/color values and
+continuous ambient occlusion while meshing. A section-local tint cache supplies
+blended biome colors. Dynamic entities and particles consume the retained
+lightmap path. Distant pages retain their own bounded block/skylight data and
+resolved tint/material fields. Version-normalized light input and render
+consumption are separate from the server/world simulation implementation.
