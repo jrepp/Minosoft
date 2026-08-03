@@ -16,6 +16,7 @@ package de.bixilon.minosoft.gui.rendering.camera
 import de.bixilon.kmath.mat.mat4.f.Mat4f
 import de.bixilon.kmath.vec.vec3.f.Vec3f
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class CameraUtilTest {
@@ -44,5 +45,33 @@ class CameraUtilTest {
         )
 
         assertEquals(mat, expected)
+    }
+
+    @Test
+    fun `look at remains finite and orthogonal at vertical pitch`() {
+        for (centerY in listOf(-1.0f, 1.0f)) {
+            val mat = CameraUtil.lookAt(Vec3f.EMPTY, Vec3f(0.0f, centerY, 0.0f), Vec3f(0.0f, 1.0f, 0.0f))
+            val side = Vec3f(mat[0, 0], mat[0, 1], mat[0, 2])
+            val up = Vec3f(mat[1, 0], mat[1, 1], mat[1, 2])
+            val forward = Vec3f(mat[2, 0], mat[2, 1], mat[2, 2])
+
+            assertTrue((0 until 4).all { row -> (0 until 4).all { column -> mat[row, column].isFinite() } })
+            assertEquals(1.0f, side.length(), 1.0e-6f)
+            assertEquals(1.0f, up.length(), 1.0e-6f)
+            assertEquals(1.0f, forward.length(), 1.0e-6f)
+            assertEquals(0.0f, side dot up, 1.0e-6f)
+            assertEquals(0.0f, side dot forward, 1.0e-6f)
+            assertEquals(0.0f, up dot forward, 1.0e-6f)
+        }
+    }
+
+    @Test
+    fun `look at uses a finite bootstrap basis before the camera direction is populated`() {
+        val mat = CameraUtil.lookAt(Vec3f.EMPTY, Vec3f.EMPTY, Vec3f(0.0f, 1.0f, 0.0f))
+
+        assertTrue((0 until 4).all { row -> (0 until 4).all { column -> mat[row, column].isFinite() } })
+        assertEquals(1.0f, Vec3f(mat[0, 0], mat[0, 1], mat[0, 2]).length(), 1.0e-6f)
+        assertEquals(1.0f, Vec3f(mat[1, 0], mat[1, 1], mat[1, 2]).length(), 1.0e-6f)
+        assertEquals(1.0f, Vec3f(mat[2, 0], mat[2, 1], mat[2, 2]).length(), 1.0e-6f)
     }
 }

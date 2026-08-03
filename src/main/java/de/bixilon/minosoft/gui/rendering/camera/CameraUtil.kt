@@ -50,8 +50,21 @@ object CameraUtil {
     }
 
     fun lookAt(eye: Vec3f, center: Vec3f, up: Vec3f): Mat4f {
-        val f = (center - eye).normalize()
-        val s = (f cross up).normalize()
+        val forward = center - eye
+        val forwardLength = forward.length2()
+        val f = if (forwardLength.isFinite() && forwardLength > LOOK_AT_EPSILON) {
+            forward.normalize()
+        } else {
+            DEFAULT_FORWARD
+        }
+        var side = f cross up
+        if (!side.length2().isFinite() || side.length2() <= LOOK_AT_EPSILON) {
+            // Looking exactly along the conventional world-up axis has no unique roll. Choose a
+            // stable orthogonal axis so the view stays invertible at the legal +/-90 degree pitch.
+            val fallbackUp = if (abs(f.z) < 0.9f) Vec3f(0.0f, 0.0f, 1.0f) else Vec3f(1.0f, 0.0f, 0.0f)
+            side = f cross fallbackUp
+        }
+        val s = side.normalize()
         val u = s cross f
 
         val mat = MMat4f(1.0f)
@@ -70,4 +83,7 @@ object CameraUtil {
 
         return mat.unsafe
     }
+
+    private const val LOOK_AT_EPSILON = 1.0e-12f
+    private val DEFAULT_FORWARD = Vec3f(0.0f, 0.0f, -1.0f)
 }
