@@ -1042,7 +1042,16 @@ internal object IrisLegacyShaderTransformer {
     }
 
     private fun transformModernFullscreenFragment(source: String): String =
-        transformCoreFragmentOutputs(core(source).replace(Regex("""\bvarying\b"""), "in"))
+        transformCoreFragmentOutputs(
+            transformShaderTokens(
+                source = core(source),
+                replacements = mapOf(
+                    "varying" to "in",
+                    "gbufferModelView" to "minosoftPlayerModelView",
+                    "gbufferModelViewInverse" to "minosoftPlayerModelViewInverse",
+                ),
+            ),
+        )
 
     private fun initializeFullscreenOutputs(source: String): String {
         var conditionalDepth = 0

@@ -218,7 +218,10 @@ testing {
                 all {
                     testTask.configure {
                         if (
-                            System.getenv("MINOSOFT_OPENGL_IRIS_COMPUTE_TEST") == "true" &&
+                            (
+                                System.getenv("MINOSOFT_OPENGL_IRIS_COMPUTE_TEST") == "true" ||
+                                    System.getenv("MINOSOFT_OPENGL_IRIS_TARGETS_TEST") == "true"
+                                ) &&
                             System.getProperty("os.name").contains("mac", ignoreCase = true)
                         ) {
                             jvmArgs("-XstartOnFirstThread")

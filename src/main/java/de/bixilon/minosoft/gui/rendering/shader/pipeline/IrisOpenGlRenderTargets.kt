@@ -25,6 +25,10 @@ import de.bixilon.minosoft.gui.rendering.graph.resource.RenderColorFormat
 import de.bixilon.minosoft.gui.rendering.graph.resource.RenderDepthFormat
 import de.bixilon.minosoft.gui.rendering.graph.resource.RenderTargetSize
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.Framebuffer
+import de.bixilon.minosoft.gui.rendering.system.base.BlendFunctionState
+import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
+import de.bixilon.minosoft.gui.rendering.system.base.PolygonModes
+import de.bixilon.minosoft.gui.rendering.system.base.RenderingCapabilities
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.FramebufferState
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.depth.DepthAttachment
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.stencil.StencilAttachment
@@ -79,16 +83,23 @@ internal class IrisOpenGlRenderTargets(
     private var initialized = false
     private var closed = false
     private var blendOverrideActive = false
+    private var blendOverrideBufferCount = 0
     private var blendBinding: BlendBinding? = null
     private val blendOverrideApplications = linkedMapOf<String, Long>()
     private val samplerUniforms = IdentityHashMap<NativeShader, MutableMap<String, Int>>()
     private val samplerPlans = IdentityHashMap<NativeShader, SamplerBindingPlan>()
     private val imagePlans = IdentityHashMap<NativeShader, ImageBindingPlan>()
     private val comparisonModes = mutableMapOf<Int, Int>()
+    private val minificationFilters = mutableMapOf<Int, Int>()
 
     val logicalBufferCount: Int get() = buffers.size
     val physicalTextureCount: Int get() = buffers.values.sumOf { if (it.alternate < 0) 1 else 2 }
     val appliedBlendOverrides: Map<String, Long> get() = blendOverrideApplications.toMap()
+
+    internal fun textureName(id: ShaderBufferId, read: Boolean = true): Int =
+        requireNotNull(buffers[id]) { "Missing Iris buffer $id" }.let { buffer ->
+            if (read) buffer.readTexture() else buffer.writeTexture(alternateWrite = true)
+        }
 
     fun prepare() {
         check(!closed) { "Iris render targets are closed" }
@@ -174,10 +185,22 @@ internal class IrisOpenGlRenderTargets(
         require(outputs.all { it.kind == kind }) {
             "Program outputs $outputs do not belong to view $view"
         }
+        val alternateWrites = program.phase in FULLSCREEN_BUFFER_PHASES
+        validatePassTextureAccess(
+            program.name,
+            attachedTextures = outputs.map { id ->
+                requireNotNull(buffers[id]) { "${program.name} writes undeclared Iris buffer $id" }
+                    .writeTexture(alternateWrites)
+            },
+            sampledTextures = program.resourceUsage.sampledBuffers.mapValues { (_, id) ->
+                requireNotNull(buffers[id]) { "${program.name} samples undeclared Iris buffer $id" }
+                    .readTexture()
+            },
+        )
         bindOutputs(
             view,
             outputs,
-            program.phase in FULLSCREEN_BUFFER_PHASES,
+            alternateWrites,
             depthKind = if (program.phase == ShaderProgramPhase.DISTANT_HORIZONS) {
                 ShaderBufferKind.DHDEPTHTEX
             } else {
@@ -189,9 +212,31 @@ internal class IrisOpenGlRenderTargets(
 
     fun restoreHostBlend() {
         if (!blendOverrideActive) return
-        val enabled = system[de.bixilon.minosoft.gui.rendering.system.base.RenderingCapabilities.BLENDING]
+        val enabled = system[RenderingCapabilities.BLENDING]
         val function = system.blendFunction
         gl {
+            for (index in 0 until blendOverrideBufferCount) {
+                if (enabled) glEnablei(GL_BLEND, index) else glDisablei(GL_BLEND, index)
+                val capabilities = GL.getCapabilities()
+                if (capabilities.OpenGL40) {
+                    glBlendFuncSeparatei(
+                        index,
+                        function.sourceRGB.gl,
+                        function.destinationRGB.gl,
+                        function.sourceAlpha.gl,
+                        function.destinationAlpha.gl,
+                    )
+                } else {
+                    require(capabilities.irisPerBufferBlending)
+                    glBlendFuncSeparateiARB(
+                        index,
+                        function.sourceRGB.gl,
+                        function.destinationRGB.gl,
+                        function.sourceAlpha.gl,
+                        function.destinationAlpha.gl,
+                    )
+                }
+            }
             if (enabled) glEnable(GL_BLEND) else glDisable(GL_BLEND)
             glBlendFuncSeparate(
                 function.sourceRGB.gl,
@@ -201,6 +246,7 @@ internal class IrisOpenGlRenderTargets(
             )
         }
         blendOverrideActive = false
+        blendOverrideBufferCount = 0
         blendBinding = null
     }
 
@@ -224,6 +270,7 @@ internal class IrisOpenGlRenderTargets(
             }
         }
         if (override.requiresPerBufferBlending) {
+            blendOverrideBufferCount = maxOf(blendOverrideBufferCount, modes.size)
             modes.forEachIndexed { index, mode ->
                 gl {
                     if (mode.enabled) glEnablei(GL_BLEND, index) else glDisablei(GL_BLEND, index)
@@ -294,6 +341,18 @@ internal class IrisOpenGlRenderTargets(
             val buffer = requireNotNull(buffers[entry.id]) { "${program.name} samples undeclared Iris buffer ${entry.id}" }
             val texture = buffer.readTexture()
             system.bindTexture(entry.unit, GL_TEXTURE_2D, texture)
+            // Iris's MipmapEnabled declaration applies to this program's
+            // sampling boundary. A later writer replaces level zero without
+            // regenerating the chain, so retaining mipmap minification would
+            // make following passes blend stale higher levels.
+            val minificationFilter = minificationFilter(
+                buffer.descriptor.filter,
+                mipmaps = entry.id in program.resourceUsage.mipmapsBefore,
+            )
+            if (minificationFilters[texture] != minificationFilter) {
+                system.textureParameter { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minificationFilter) }
+                minificationFilters[texture] = minificationFilter
+            }
             if (comparisonModes[texture] != entry.comparisonMode) {
                 system.textureParameter { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, entry.comparisonMode) }
                 comparisonModes[texture] = entry.comparisonMode
@@ -302,6 +361,26 @@ internal class IrisOpenGlRenderTargets(
         binding.customTextures.forEach { customTextures.bind(it.id, it.unit) }
         binding.customImages.forEach { customResources.bindSampler(it.sampler, it.unit) }
         binding.uniforms.forEach { (name, unit) -> bindSamplerUniform(native, name, unit) }
+    }
+
+    fun bindDiagnosticSampler(id: ShaderBufferId, native: NativeShader, uniform: String) {
+        require(id.kind == ShaderBufferKind.COLORTEX) {
+            "Iris cutoff presentation requires a main-view color buffer: $id"
+        }
+        val buffer = requireNotNull(buffers[id]) { "Missing Iris cutoff presentation buffer $id" }
+        val texture = buffer.readTexture()
+        val unit = 0
+        system.bindTexture(unit, GL_TEXTURE_2D, texture)
+        val minificationFilter = minificationFilter(buffer.descriptor.filter, mipmaps = false)
+        if (minificationFilters[texture] != minificationFilter) {
+            system.textureParameter { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minificationFilter) }
+            minificationFilters[texture] = minificationFilter
+        }
+        if (comparisonModes[texture] != GL_NONE) {
+            system.textureParameter { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE) }
+            comparisonModes[texture] = GL_NONE
+        }
+        bindSamplerUniform(native, uniform, unit)
     }
 
     private fun buildSamplerPlan(
@@ -494,6 +573,29 @@ internal class IrisOpenGlRenderTargets(
         internal fun shouldClearTexture(policy: RenderClearPolicy, initializing: Boolean): Boolean =
             initializing || policy == RenderClearPolicy.CLEAR
 
+        internal fun minificationFilter(filter: ShaderBufferFilter, mipmaps: Boolean): Int = when {
+            mipmaps && filter == ShaderBufferFilter.NEAREST -> GL_NEAREST_MIPMAP_NEAREST
+            mipmaps -> GL_LINEAR_MIPMAP_LINEAR
+            filter == ShaderBufferFilter.NEAREST -> GL_NEAREST
+            else -> GL_LINEAR
+        }
+
+        internal fun validatePassTextureAccess(
+            program: String,
+            attachedTextures: Collection<Int>,
+            sampledTextures: Map<String, Int>,
+            explicitlyPermittedTextures: Set<Int> = emptySet(),
+        ) {
+            val attachments = attachedTextures.toSet()
+            val aliases = sampledTextures.filterValues { texture ->
+                texture in attachments && texture !in explicitlyPermittedTextures
+            }
+            require(aliases.isEmpty()) {
+                "$program samples texture(s) attached for output: " +
+                    aliases.entries.joinToString { (sampler, texture) -> "$sampler=$texture" }
+            }
+        }
+
         private val FULLSCREEN_BUFFER_PHASES = setOf(
             ShaderProgramPhase.BEGIN,
             ShaderProgramPhase.SHADOW_COMPOSITE,
@@ -639,18 +741,11 @@ internal class IrisOpenGlRenderTargets(
                 }
             }
             val linear = descriptor.filter != ShaderBufferFilter.NEAREST
+            val minificationFilter = minificationFilter(descriptor.filter, mipmaps = false)
             system.textureParameter {
-                glTexParameteri(
-                    GL_TEXTURE_2D,
-                    GL_TEXTURE_MIN_FILTER,
-                    when {
-                        descriptor.mipmapped && linear -> GL_LINEAR_MIPMAP_LINEAR
-                        descriptor.mipmapped -> GL_NEAREST_MIPMAP_NEAREST
-                        linear -> GL_LINEAR
-                        else -> GL_NEAREST
-                    },
-                )
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minificationFilter)
             }
+            minificationFilters[texture] = minificationFilter
             system.textureParameter { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, if (linear) GL_LINEAR else GL_NEAREST) }
             system.textureParameter { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE) }
             system.textureParameter { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE) }
@@ -778,6 +873,7 @@ internal class IrisOpenGlRenderTargets(
             system.resources.deleted(OpenGlResourceType.TEXTURE, texture)
             system.invalidateTexture(texture)
             comparisonModes.remove(texture)
+            minificationFilters.remove(texture)
         } catch (cleanup: Throwable) {
             if (original == null) throw cleanup
             original.addSuppressed(cleanup)
@@ -1100,6 +1196,59 @@ internal class IrisOpenGlRenderTargets(
         )
     }
 
+}
+
+/** Exact mutable OpenGL state crossed by one Iris fullscreen family. */
+internal data class IrisOpenGlStateSnapshot(
+    val framebuffer: Framebuffer?,
+    val readFramebuffer: Int,
+    val drawFramebuffer: Int,
+    val viewport: Vec2i,
+    val activeTextureUnit: Int,
+    val blending: Boolean,
+    val depthTest: Boolean,
+    val faceCulling: Boolean,
+    val depthMask: Boolean,
+    val depth: DepthFunctions,
+    val polygonMode: PolygonModes,
+    val blendFunction: BlendFunctionState,
+) {
+    fun restore(system: OpenGlRenderSystem) {
+        system.framebuffer = framebuffer
+        system.bindFramebuffer(GL_READ_FRAMEBUFFER, readFramebuffer)
+        system.bindFramebuffer(GL_DRAW_FRAMEBUFFER, drawFramebuffer)
+        system.viewport = viewport
+        system.setBlendFunction(
+            blendFunction.sourceRGB,
+            blendFunction.destinationRGB,
+            blendFunction.sourceAlpha,
+            blendFunction.destinationAlpha,
+        )
+        system[RenderingCapabilities.BLENDING] = blending
+        system[RenderingCapabilities.DEPTH_TEST] = depthTest
+        system[RenderingCapabilities.FACE_CULLING] = faceCulling
+        system.depth = depth
+        system.depthMask = depthMask
+        system.polygonMode = polygonMode
+        system.activeTexture(activeTextureUnit)
+    }
+
+    companion object {
+        fun capture(system: OpenGlRenderSystem): IrisOpenGlStateSnapshot = IrisOpenGlStateSnapshot(
+            framebuffer = system.framebuffer,
+            readFramebuffer = gl { glGetInteger(GL_READ_FRAMEBUFFER_BINDING) },
+            drawFramebuffer = gl { glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING) },
+            viewport = system.viewport,
+            activeTextureUnit = gl { glGetInteger(GL_ACTIVE_TEXTURE) } - GL_TEXTURE0,
+            blending = system[RenderingCapabilities.BLENDING],
+            depthTest = system[RenderingCapabilities.DEPTH_TEST],
+            faceCulling = system[RenderingCapabilities.FACE_CULLING],
+            depthMask = system.depthMask,
+            depth = system.depth,
+            polygonMode = system.polygonMode,
+            blendFunction = system.blendFunction,
+        )
+    }
 }
 
 /** Committed physical framebuffer state; failed GL realization is never cached. */

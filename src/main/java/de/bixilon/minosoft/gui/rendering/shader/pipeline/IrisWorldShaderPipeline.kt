@@ -45,6 +45,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShaderSource
 import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
+import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.irisPerBufferBlending
 import de.bixilon.minosoft.gui.rendering.light.LightmapBuffer
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
@@ -93,6 +94,83 @@ private data class IrisComputeProgram(
     val shader: Shader,
 )
 
+/** Generation-scoped live diagnostic with an identity presentation at each retained boundary. */
+internal sealed class IrisPassCutoff(val wireName: String) {
+    data object Shadow : IrisPassCutoff("shadow")
+    data object Geometry : IrisPassCutoff("geometry")
+    data object Deferred : IrisPassCutoff("deferred")
+    data class Composite(val program: String) : IrisPassCutoff(program)
+    data object Final : IrisPassCutoff("final")
+
+    internal fun allows(phase: ShaderProgramPhase): Boolean = when (phase) {
+        ShaderProgramPhase.BEGIN,
+        ShaderProgramPhase.SHADOW_COMPOSITE,
+        -> true
+        ShaderProgramPhase.PREPARE -> this !is Shadow
+        ShaderProgramPhase.DEFERRED -> this is Deferred || this is Composite || this is Final
+        ShaderProgramPhase.COMPOSITE -> this is Composite || this is Final
+        else -> true
+    }
+
+    internal fun programs(phase: ShaderProgramPhase, ordered: List<String>): List<String> {
+        if (!allows(phase)) return emptyList()
+        if (phase != ShaderProgramPhase.COMPOSITE || this !is Composite) return ordered
+        val cutoff = ordered.indexOf(program)
+        check(cutoff >= 0) { "Iris composite cutoff is not present in the active plan: $program" }
+        return ordered.take(cutoff + 1)
+    }
+
+    internal fun allowsFinalCompute(): Boolean = this is Final
+
+    internal fun presentationBuffer(
+        finalBuffer: ShaderBufferId,
+        compositePrograms: List<ShaderProgramSource>,
+    ): ShaderBufferId {
+        val base = ShaderBufferId(ShaderBufferKind.COLORTEX, 0)
+        if (this !is Composite || finalBuffer == base) return base
+        val completed = programs(ShaderProgramPhase.COMPOSITE, compositePrograms.map(ShaderProgramSource::name)).toSet()
+        return if (compositePrograms.any { it.name in completed && finalBuffer in it.resourceUsage.colorWrites }) {
+            finalBuffer
+        } else {
+            base
+        }
+    }
+
+    companion object {
+        internal fun options(plan: ShaderPipelinePlan): List<String> = buildList {
+            add(Shadow.wireName)
+            add(Geometry.wireName)
+            add(Deferred.wireName)
+            addAll(
+                plan.programs.asSequence()
+                    .filter { it.phase == ShaderProgramPhase.COMPOSITE }
+                    .map(ShaderProgramSource::name),
+            )
+            add(Final.wireName)
+        }.distinct()
+
+        internal fun parse(value: String, plan: ShaderPipelinePlan): IrisPassCutoff {
+            require(value.length <= MAXIMUM_CUTOFF_NAME_LENGTH) {
+                "Iris pass cutoff exceeds $MAXIMUM_CUTOFF_NAME_LENGTH characters"
+            }
+            return when (value) {
+                Shadow.wireName -> Shadow
+                Geometry.wireName -> Geometry
+                Deferred.wireName -> Deferred
+                Final.wireName -> Final
+                else -> {
+                    require(value in options(plan)) {
+                        "Unknown Iris pass cutoff '$value'; expected one of ${options(plan).joinToString()}"
+                    }
+                    Composite(value)
+                }
+            }
+        }
+
+        private const val MAXIMUM_CUTOFF_NAME_LENGTH = 256
+    }
+}
+
 class IrisWorldShaderPipeline private constructor(
     private val context: RenderContext,
     override val plan: ShaderPipelinePlan,
@@ -101,6 +179,8 @@ class IrisWorldShaderPipeline private constructor(
     private val scenes: Map<IrisSceneProgramKey, IrisSceneProgram>,
     private val composite: FramebufferShader,
     private val compositeSource: ShaderProgramSource,
+    private val presentationBuffer: ShaderBufferId,
+    private val diagnosticComposite: FramebufferShader,
     private val shadowTerrain: Map<TerrainMaterialClass, IrisShadowTerrainShader>,
     private val shadowTerrainSources: Map<TerrainMaterialClass, ShaderProgramSource>,
     private val shadowTerrainProgramNames: Map<String, String>,
@@ -169,6 +249,7 @@ class IrisWorldShaderPipeline private constructor(
     private var rejectedSceneBindEvents = 0L
     private var drawStateDiagnosticEvents = 0L
     private var renderStageDiagnosticEvents = 0L
+    @Volatile private var passCutoff: IrisPassCutoff? = null
 
     init {
         (scenes.values + shadowScenes.values).forEach { program ->
@@ -180,6 +261,7 @@ class IrisWorldShaderPipeline private constructor(
 
     override fun beginFrame(state: IrisFrameState) {
         check(!closed) { "Iris shader pipeline is closed" }
+        // Frame state and target roles are pinned before any graph producer executes.
         val selected = state.selectedBlock
         val selectedId = plan.idMaps.block(selected.state, missing = 0) { tag, blockState ->
             context.session.tags.isIn(BLOCK, tag, blockState.block) ||
@@ -594,6 +676,9 @@ class IrisWorldShaderPipeline private constructor(
         programOutputs = plan.programs
             .filter { it.resourceUsage.colorWrites.isNotEmpty() }
             .associate { it.name to it.resourceUsage.colorWrites.joinToString(",") },
+        programFlips = plan.programs
+            .filter { it.resourceUsage.flipsAfter.isNotEmpty() }
+            .associate { it.name to it.resourceUsage.flipsAfter.joinToString(",") },
         programSamplers = plan.programs
             .filter {
                 it.resourceUsage.sampledBuffers.isNotEmpty() ||
@@ -657,6 +742,9 @@ class IrisWorldShaderPipeline private constructor(
                 "hasCeiling" to if (it.worldInfo.hasCeiling) 1.0f else 0.0f,
                 "hasSkylight" to if (it.worldInfo.hasSkylight) 1.0f else 0.0f,
                 "ambientLight" to it.worldInfo.ambientLight,
+                "near" to it.near,
+                "far" to it.far,
+                "dhRenderDistance" to it.distantHorizons.renderDistance.toFloat(),
                 "cloudTime" to it.cloudTime,
                 "currentColorSpace" to 0.0f,
                 "currentSelectedBlockId" to it.selectedBlock.id.toFloat(),
@@ -681,7 +769,15 @@ class IrisWorldShaderPipeline private constructor(
         renderStageBinds = renderStageBinds.toMap(),
         depthSnapshots = depthSnapshots.toMap(),
         fullscreenProgramExecutions = fullscreenProgramExecutions.toMap(),
+        activePassCutoff = passCutoff?.wireName,
     )
+
+    internal fun passCutoffOptions(): List<String> = IrisPassCutoff.options(plan)
+
+    internal fun setPassCutoff(value: String?): String? {
+        passCutoff = value?.let { IrisPassCutoff.parse(it, plan) }
+        return passCutoff?.wireName
+    }
 
     override fun beginView(view: RenderViewId) {
         check(!closed) { "Iris shader pipeline is closed" }
@@ -714,16 +810,24 @@ class IrisWorldShaderPipeline private constructor(
 
     override fun composite(fallback: FramebufferShader): FramebufferShader {
         check(!closed) { "Iris shader pipeline is closed" }
-        val finalComputes = computePrograms[ShaderProgramPhase.FINAL].orEmpty()
-        if (finalComputes.isNotEmpty()) {
-            context.system.reset(
-                depthTest = false,
-                blending = false,
-                faceCulling = false,
-                depthMask = false,
+        val cutoff = passCutoff
+        if (cutoff != null && cutoff !is IrisPassCutoff.Final) {
+            diagnosticComposite.activate()
+            targets.bindDiagnosticSampler(
+                cutoff.presentationBuffer(
+                    presentationBuffer,
+                    fullscreenPrograms[ShaderProgramPhase.COMPOSITE].orEmpty().map(IrisFullscreenProgram::source),
+                ),
+                diagnosticComposite.native,
+                "colortex0",
             )
-            context.system.polygonMode = PolygonModes.FILL
-            executeComputePrograms(ShaderProgramPhase.FINAL, targets.size(RenderViewId.MAIN))
+            return diagnosticComposite
+        }
+        val finalComputes = computePrograms[ShaderProgramPhase.FINAL].orEmpty()
+        if (finalComputes.isNotEmpty() && (cutoff?.allowsFinalCompute() != false)) {
+            withFullscreenOpenGlState {
+                executeComputePrograms(ShaderProgramPhase.FINAL, targets.size(RenderViewId.MAIN))
+            }
         }
         composite.activate()
         uploadFrameState(composite, IrisRenderStage.NONE)
@@ -740,51 +844,51 @@ class IrisWorldShaderPipeline private constructor(
 
     override fun executePrograms(phase: ShaderProgramPhase, drawFullscreen: () -> Unit) {
         check(!closed) { "Iris shader pipeline is closed" }
+        val cutoff = passCutoff
+        if (cutoff?.allows(phase) == false) return
         val programs = fullscreenPrograms[phase].orEmpty()
         val computes = computePrograms[phase].orEmpty()
         if (programs.isEmpty() && computes.isEmpty()) return
         require(phase in FULLSCREEN_PHASES) { "$phase is not an executable Iris fullscreen phase" }
-        context.system.reset(
-            depthTest = false,
-            blending = false,
-            faceCulling = false,
-            depthMask = false,
-        )
-        context.system.polygonMode = PolygonModes.FILL
-        val graphicsByName = programs.associateBy { it.source.name }
-        val computeByName = computes.associateBy { it.source.name }
-        val orderedNames = fullscreenProgramNames(graphicsByName.keys, computeByName.keys)
-        val view = if (phase == ShaderProgramPhase.SHADOW_COMPOSITE) {
-            IrisShaderPackPlanner.SHADOW_VIEW
-        } else {
-            RenderViewId.MAIN
-        }
-        val dispatchSize = targets.size(view)
-        orderedNames.forEach { name ->
-            computeByName[name]?.let { program ->
-                executeCompute(program, dispatchSize)
+        withFullscreenOpenGlState {
+            val graphicsByName = programs.associateBy { it.source.name }
+            val computeByName = computes.associateBy { it.source.name }
+            val orderedNames = cutoff?.programs(
+                phase,
+                fullscreenProgramNames(graphicsByName.keys, computeByName.keys),
+            ) ?: fullscreenProgramNames(graphicsByName.keys, computeByName.keys)
+            val view = if (phase == ShaderProgramPhase.SHADOW_COMPOSITE) {
+                IrisShaderPackPlanner.SHADOW_VIEW
+            } else {
+                RenderViewId.MAIN
             }
-            graphicsByName[name]?.let { program ->
-                customResources.memoryBarrier(program.source.resourceUsage.renderTargetImages.isNotEmpty())
-                targets.bindProgram(view, program.source)
-                program.shader.activate()
-                uploadFrameState(program.shader, IrisRenderStage.NONE)
-                targets.bindSamplers(
-                    program.source,
-                    program.shader.native,
-                    customTextures,
-                    customResources,
-                    textureArrayLayouts[program.shader]?.physicalSlots?.toSet(),
-                )
-                uploadDrawState(program.shader, IrisDrawState.EMPTY)
-                drawFullscreen()
-                targets.finish(program.source)
-                customResources.memoryBarrier(program.source.resourceUsage.renderTargetImages.isNotEmpty())
-                fullscreenProgramExecutions[program.source.name] =
-                    (fullscreenProgramExecutions[program.source.name] ?: 0L) + 1L
+            val dispatchSize = targets.size(view)
+            orderedNames.forEach { name ->
+                computeByName[name]?.let { program ->
+                    executeCompute(program, dispatchSize)
+                }
+                graphicsByName[name]?.let { program ->
+                    customResources.memoryBarrier(program.source.resourceUsage.renderTargetImages.isNotEmpty())
+                    targets.bindProgram(view, program.source)
+                    program.shader.activate()
+                    uploadFrameState(program.shader, IrisRenderStage.NONE)
+                    targets.bindSamplers(
+                        program.source,
+                        program.shader.native,
+                        customTextures,
+                        customResources,
+                        textureArrayLayouts[program.shader]?.physicalSlots?.toSet(),
+                    )
+                    uploadDrawState(program.shader, IrisDrawState.EMPTY)
+                    drawFullscreen()
+                    targets.finish(program.source)
+                    customResources.memoryBarrier(program.source.resourceUsage.renderTargetImages.isNotEmpty())
+                    fullscreenProgramExecutions[program.source.name] =
+                        (fullscreenProgramExecutions[program.source.name] ?: 0L) + 1L
+                }
             }
+            targets.bindView(RenderViewId.MAIN)
         }
-        targets.bindView(RenderViewId.MAIN)
     }
 
     private fun executeSetupIfNeeded() {
@@ -792,17 +896,30 @@ class IrisWorldShaderPipeline private constructor(
         if (requested == setupSize) return
         val programs = computePrograms[ShaderProgramPhase.SETUP].orEmpty()
         if (programs.isNotEmpty()) {
-            context.system.reset(
+            withFullscreenOpenGlState {
+                executeComputePrograms(ShaderProgramPhase.SETUP, requested)
+                targets.bindView(RenderViewId.MAIN)
+            }
+        }
+        setupSize = requested
+    }
+
+    private inline fun withFullscreenOpenGlState(block: () -> Unit) {
+        val system = requireNotNull(context.system as? OpenGlRenderSystem)
+        val state = IrisOpenGlStateSnapshot.capture(system)
+        try {
+            system.reset(
                 depthTest = false,
                 blending = false,
                 faceCulling = false,
                 depthMask = false,
             )
-            context.system.polygonMode = PolygonModes.FILL
-            executeComputePrograms(ShaderProgramPhase.SETUP, requested)
-            targets.bindView(RenderViewId.MAIN)
+            system.polygonMode = PolygonModes.FILL
+            block()
+        } finally {
+            targets.restoreHostBlend()
+            state.restore(system)
         }
-        setupSize = requested
     }
 
     private fun executeComputePrograms(phase: ShaderProgramPhase, dispatchSize: Vec2i) {
@@ -941,7 +1058,7 @@ class IrisWorldShaderPipeline private constructor(
         closed = true
         var failure: Throwable? = null
         (
-            listOf(composite) +
+            listOf(composite, diagnosticComposite) +
                 fullscreenPrograms.values.flatten().map(IrisFullscreenProgram::shader) +
                 computePrograms.values.flatten().map(IrisComputeProgram::shader) +
                 terrain.values +
@@ -1131,6 +1248,9 @@ class IrisWorldShaderPipeline private constructor(
                 ) {
                     "Iris presentation program ${compositeSource.name} must sample a declared render buffer"
                 }
+                val presentationBuffer = requireNotNull(
+                    compositeSource.resourceUsage.sampledBuffers[presentationSampler],
+                ) { "Iris presentation sampler $presentationSampler has no render-buffer binding" }
                 val composite = object : FramebufferShader(
                     context.native(compositeSource, plan, textureLayout = compositeTextureLayout),
                     presentationSampler,
@@ -1143,6 +1263,16 @@ class IrisWorldShaderPipeline private constructor(
                     // The Iris target manager has already bound every active
                     // final sampler. Binding Minosoft's host framebuffer here
                     // would overwrite the first Iris sampler on texture unit 0.
+                    override val bindFramebufferTexture: Boolean = false
+                }.also {
+                    it.load()
+                    loaded += it
+                }
+                val diagnosticComposite = object : FramebufferShader(
+                    context.native(SYNTHETIC_FINAL, plan),
+                    "colortex0",
+                ) {
+                    override val blending: Boolean = false
                     override val bindFramebufferTexture: Boolean = false
                 }.also {
                     it.load()
@@ -1218,6 +1348,8 @@ class IrisWorldShaderPipeline private constructor(
                     scenes,
                     composite,
                     compositeSource,
+                    presentationBuffer,
+                    diagnosticComposite,
                     shadowTerrain,
                     selectedPrograms.shadowTerrain,
                     selectedPrograms.shadowTerrain.mapKeys { (material, _) -> material.name.lowercase() }

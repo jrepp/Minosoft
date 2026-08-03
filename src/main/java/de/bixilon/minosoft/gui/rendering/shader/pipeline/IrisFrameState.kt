@@ -184,6 +184,8 @@ data class IrisFrameState(
         projectionInverse = projectionMatrixInverse,
         previousProjection = previousProjectionMatrix,
     ),
+    val playerModelViewMatrix: Mat4f = irisPlayerModelView(modelViewMatrix),
+    val playerModelViewMatrixInverse: Mat4f = playerModelViewMatrix.inverse(),
 ) {
     init {
         require(playerMood in 0.0f..1.0f)
@@ -212,6 +214,9 @@ data class IrisFrameState(
                 "modelViewMatrix", "gbufferModelView" -> native.setMat4f(uniform, modelViewMatrix)
                 "modelViewMatrixInverse", "gbufferModelViewInverse" ->
                     native.setMat4f(uniform, modelViewMatrixInverse)
+                "minosoftPlayerModelView" -> native.setMat4f(uniform, playerModelViewMatrix)
+                "minosoftPlayerModelViewInverse" ->
+                    native.setMat4f(uniform, playerModelViewMatrixInverse)
                 "gbufferPreviousModelView" -> native.setMat4f(uniform, previousModelViewMatrix)
 
                 "projectionMatrix", "gbufferProjection" -> native.setMat4f(uniform, projectionMatrix)
@@ -480,6 +485,8 @@ data class IrisFrameState(
             "projectionMatrixInverse",
             "gbufferModelView",
             "gbufferModelViewInverse",
+            "minosoftPlayerModelView",
+            "minosoftPlayerModelViewInverse",
             "gbufferPreviousModelView",
             "gbufferProjection",
             "gbufferProjectionInverse",
@@ -992,6 +999,18 @@ data class IrisBiomeFrameState(
 
 private fun Vec4f.xyz() = Vec3f(x, y, z)
 
+/**
+ * Fullscreen Iris programs reconstruct player-relative positions. Minosoft's
+ * geometry bridge separately retains a rebased translation in its model-view
+ * pair because scene vertices remain relative to the world offset; that
+ * host-only translation must not leak into post-process reconstruction.
+ */
+internal fun irisPlayerModelView(host: Mat4f): Mat4f = MMat4f(host).apply {
+    this[0, 3] = 0.0f
+    this[1, 3] = 0.0f
+    this[2, 3] = 0.0f
+}.unsafe
+
 internal fun irisShadowProjection(directives: IrisShadowDirectives): Mat4f =
     directives.mapFov?.let { fov ->
         // Pinned Iris uses the legacy fixed depth range for perspective shadow maps.
@@ -1081,7 +1100,7 @@ internal class IrisFrameStateClock {
         val matrix = context.camera.matrix
         val world = context.session.world
         val dimension = world.dimension
-        val time = world.time
+        val time = world.presentationTime
         val player = context.session.player
         val playerPosition = player.physics.positionInfo.position
         val playerBiome = player.physics.positionInfo.biome
@@ -1131,7 +1150,7 @@ internal class IrisFrameStateClock {
             localTime.minute * SECONDS_PER_MINUTE +
             localTime.second
         val secondsInYear = localTime.toLocalDate().lengthOfYear() * SECONDS_PER_DAY
-        val weather = world.weather
+        val weather = world.presentationWeather
         val fog = context.camera.fog.state
         val fogColor = fog.color ?: context.system.clearColor
         val cameraEntity = context.session.camera.entity

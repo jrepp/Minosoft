@@ -20,9 +20,14 @@ package de.bixilon.minosoft.gui.rendering.shader.pipeline
 import de.bixilon.minosoft.gui.rendering.system.base.BlendFunctionState
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.graph.resource.RenderClearPolicy
+import org.lwjgl.opengl.GL11.GL_LINEAR
+import org.lwjgl.opengl.GL11.GL_LINEAR_MIPMAP_LINEAR
+import org.lwjgl.opengl.GL11.GL_NEAREST
+import org.lwjgl.opengl.GL11.GL_NEAREST_MIPMAP_NEAREST
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class IrisOpenGlRenderTargetsTest {
@@ -84,6 +89,24 @@ class IrisOpenGlRenderTargetsTest {
         assertEquals(false, IrisOpenGlRenderTargets.shouldClearTexture(RenderClearPolicy.LOAD, initializing = false))
         assertEquals(true, IrisOpenGlRenderTargets.shouldClearTexture(RenderClearPolicy.CLEAR, initializing = true))
         assertEquals(true, IrisOpenGlRenderTargets.shouldClearTexture(RenderClearPolicy.CLEAR, initializing = false))
+    }
+
+    @Test
+    fun `mipmap filtering is scoped to the program requesting generation`() {
+        assertEquals(GL_LINEAR, IrisOpenGlRenderTargets.minificationFilter(ShaderBufferFilter.LINEAR, mipmaps = false))
+        assertEquals(
+            GL_LINEAR_MIPMAP_LINEAR,
+            IrisOpenGlRenderTargets.minificationFilter(ShaderBufferFilter.LINEAR, mipmaps = true),
+        )
+        assertEquals(GL_NEAREST, IrisOpenGlRenderTargets.minificationFilter(ShaderBufferFilter.NEAREST, mipmaps = false))
+        assertEquals(
+            GL_NEAREST_MIPMAP_NEAREST,
+            IrisOpenGlRenderTargets.minificationFilter(ShaderBufferFilter.NEAREST, mipmaps = true),
+        )
+        assertEquals(
+            GL_LINEAR,
+            IrisOpenGlRenderTargets.minificationFilter(ShaderBufferFilter.SHADOW_COMPARE, mipmaps = false),
+        )
     }
 
     @Test
@@ -171,6 +194,36 @@ class IrisOpenGlRenderTargetsTest {
         assertEquals(10, state.read(primary = 10, alternate = -1))
         assertEquals(10, state.write(primary = 10, alternate = -1, alternateWrite = true))
         assertEquals(20, state.write(primary = 10, alternate = 20, alternateWrite = false))
+    }
+
+    @Test
+    fun `pass texture access rejects direct and stale flip feedback before submission`() {
+        val state = IrisBufferFlipState()
+        IrisOpenGlRenderTargets.validatePassTextureAccess(
+            "safe-first",
+            attachedTextures = listOf(state.write(10, 20, alternateWrite = true)),
+            sampledTextures = mapOf("history" to state.read(10, 20)),
+        )
+        state.flip()
+        IrisOpenGlRenderTargets.validatePassTextureAccess(
+            "safe-flipped",
+            attachedTextures = listOf(state.write(10, 20, alternateWrite = true)),
+            sampledTextures = mapOf("history" to state.read(10, 20)),
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            IrisOpenGlRenderTargets.validatePassTextureAccess(
+                "direct-feedback",
+                attachedTextures = listOf(state.write(10, 20, alternateWrite = false)),
+                sampledTextures = mapOf("history" to state.read(10, 20)),
+            )
+        }
+        IrisOpenGlRenderTargets.validatePassTextureAccess(
+            "declared-feedback",
+            attachedTextures = listOf(20),
+            sampledTextures = mapOf("history" to 20),
+            explicitlyPermittedTextures = setOf(20),
+        )
     }
 
     @Test

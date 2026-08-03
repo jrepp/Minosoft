@@ -57,6 +57,7 @@ class IrisShaderPackPlannerTest {
                 entry.substring(0, separator) to entry.substring(separator + 1)
             }
 
+        val distantHorizons = System.getenv("MINOSOFT_IRIS_TEST_DISTANT_HORIZONS").toBoolean()
         val plan = IrisShaderPackPlanner.plan(
             Path.of(configured),
             overrides = options,
@@ -64,7 +65,7 @@ class IrisShaderPackPlannerTest {
             preprocessorDefines = IrisShaderPackPlanner.standardEnvironmentDefines(
                 12004,
                 perBufferBlending = true,
-                distantHorizons = System.getenv("MINOSOFT_IRIS_TEST_DISTANT_HORIZONS").toBoolean(),
+                distantHorizons = distantHorizons,
             ).let { environment ->
                 if (System.getenv("MINOSOFT_IRIS_TEST_NON_MAC").toBoolean()) {
                     environment - "MC_OS_MAC"
@@ -82,9 +83,10 @@ class IrisShaderPackPlannerTest {
             .filter { it.phase != ShaderProgramPhase.SHADOW }
             .flatMap { it.sceneBridges.asSequence() }
             .mapTo(linkedSetOf()) { it.stateAbi }
-        val missingMainStates = SceneStateAbi.entries.toSet() -
+        val requiredMainStates = SceneStateAbi.entries.toSet() -
             SceneStateAbi.TERRAIN -
-            mainSceneStates
+            if (distantHorizons) emptySet() else setOf(SceneStateAbi.DISTANT_TERRAIN)
+        val missingMainStates = requiredMainStates - mainSceneStates
         assertTrue(
             missingMainStates.isEmpty(),
             "External pack has no executable main-view bridge for $missingMainStates; " +

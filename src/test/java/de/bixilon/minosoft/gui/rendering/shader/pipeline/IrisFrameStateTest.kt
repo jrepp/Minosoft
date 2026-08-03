@@ -11,6 +11,7 @@
 package de.bixilon.minosoft.gui.rendering.shader.pipeline
 
 import de.bixilon.kmath.mat.mat4.f.Mat4f
+import de.bixilon.kmath.mat.mat4.f.MMat4f
 import de.bixilon.kmath.vec.vec2.f.Vec2f
 import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.kmath.vec.vec3.d.Vec3d
@@ -32,6 +33,30 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class IrisFrameStateTest {
+    @Test
+    fun `fullscreen player model view excludes rebased camera translation`() {
+        val host = MMat4f(1.0f).apply {
+            this[0, 0] = 0.25f
+            this[0, 1] = -0.75f
+            this[1, 0] = 0.5f
+            this[2, 2] = -1.0f
+            this[0, 3] = 32.0f
+            this[1, 3] = -79.0f
+            this[2, 3] = 96.0f
+        }.unsafe
+
+        val player = irisPlayerModelView(host)
+
+        assertEquals(0.25f, player[0, 0])
+        assertEquals(-0.75f, player[0, 1])
+        assertEquals(0.5f, player[1, 0])
+        assertEquals(-1.0f, player[2, 2])
+        assertEquals(0.0f, player[0, 3])
+        assertEquals(0.0f, player[1, 3])
+        assertEquals(0.0f, player[2, 3])
+        assertEquals(1.0f, player[3, 3])
+    }
+
     @Test
     fun `distant projection retains host field of view with an independent far plane`() {
         val host = de.bixilon.minosoft.gui.rendering.camera.CameraUtil.perspective(

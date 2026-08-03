@@ -46,6 +46,7 @@ data class WorldShaderPipelineDiagnostics(
     val customShaderResources: Map<String, String> = emptyMap(),
     val programStages: Map<String, String> = emptyMap(),
     val programOutputs: Map<String, String> = emptyMap(),
+    val programFlips: Map<String, String> = emptyMap(),
     val programSamplers: Map<String, String> = emptyMap(),
     val programShadowComparisonSamplers: Map<String, String> = emptyMap(),
     val programAlphaTests: Map<String, String> = emptyMap(),
@@ -77,6 +78,7 @@ data class WorldShaderPipelineDiagnostics(
     val renderStageBinds: Map<String, Long> = emptyMap(),
     val depthSnapshots: Map<String, Long> = emptyMap(),
     val fullscreenProgramExecutions: Map<String, Long> = emptyMap(),
+    val activePassCutoff: String? = null,
 )
 
 enum class ShaderDepthSnapshot {

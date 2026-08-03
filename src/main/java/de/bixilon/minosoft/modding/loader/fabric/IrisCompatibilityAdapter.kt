@@ -631,6 +631,58 @@ private class IrisDebugProvider(
             }
             future
         }
+        registrar.operation("pass-cutoff") { _, body ->
+            val restoreNode = body["restore"]
+            if (restoreNode != null && !restoreNode.isBoolean) {
+                throw DebugOperationException("invalid_request", "restore must be boolean")
+            }
+            val restore = restoreNode?.booleanValue() ?: false
+            if (restore && body.has("cutoff")) {
+                throw DebugOperationException("invalid_request", "restore and cutoff are mutually exclusive")
+            }
+            val updateRequested = restore || body.has("cutoff")
+            val requestedCutoff = when {
+                restore -> null
+                body.has("cutoff") && body.path("cutoff").isTextual -> body.path("cutoff").textValue()
+                body.has("cutoff") && body.path("cutoff").isNull -> null
+                body.has("cutoff") -> throw DebugOperationException(
+                    "invalid_request",
+                    "cutoff must be a string or null",
+                )
+                else -> null
+            }
+            val (_, context) = activeRenderSession()
+            val future = CompletableFuture<DebugOperationResult>()
+            context.queue += {
+                try {
+                    context.shaderPipeline.acquire().use { lease ->
+                        val pipeline = lease.pipeline as? IrisWorldShaderPipeline
+                            ?: throw DebugOperationException("not_ready", "No Iris shader pipeline is active")
+                        val active = if (updateRequested) pipeline.setPassCutoff(requestedCutoff)
+                        else pipeline.diagnostics().activePassCutoff
+                        future.complete(
+                            DebugOperationResult.json(
+                                DebugJson.MAPPER.createObjectNode().apply {
+                                    active?.let { put("activeCutoff", it) } ?: putNull("activeCutoff")
+                                    putArray("availableCutoffs").also { values ->
+                                        pipeline.passCutoffOptions().forEach(values::add)
+                                    }
+                                    put("generationScoped", true)
+                                    put("frame", context.frameNumber)
+                                },
+                            ),
+                        )
+                    }
+                } catch (error: IllegalArgumentException) {
+                    future.completeExceptionally(
+                        DebugOperationException("invalid_request", error.message ?: "invalid Iris pass cutoff"),
+                    )
+                } catch (error: Throwable) {
+                    future.completeExceptionally(error)
+                }
+            }
+            future
+        }
         registrar.operation("reload-shaders") { _, _ ->
             val (session, context) = activeRenderSession()
             val future = CompletableFuture<DebugOperationResult>()

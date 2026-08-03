@@ -1032,6 +1032,32 @@ class IrisLegacyShaderTransformerTest {
     }
 
     @Test
+    fun `fullscreen fragments use player relative model view aliases`() {
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "deferred1",
+            ShaderProgramPhase.DEFERRED,
+            "#version 330 core\nvoid main() { gl_Position = vec4(0.0); }",
+            """
+                #version 330 core
+                uniform mat4 gbufferModelView;
+                uniform mat4 gbufferModelViewInverse;
+                out vec4 color;
+                void main() {
+                    color = gbufferModelViewInverse * gbufferModelView * vec4(1.0);
+                }
+            """.trimIndent(),
+        )
+
+        assertContains(transformed.fragment, "uniform mat4 minosoftPlayerModelView;")
+        assertContains(transformed.fragment, "uniform mat4 minosoftPlayerModelViewInverse;")
+        assertContains(
+            transformed.fragment,
+            "minosoftPlayerModelViewInverse * minosoftPlayerModelView * vec4(1.0)",
+        )
+        assertFalse("gbufferModelView" in transformed.fragment)
+    }
+
+    @Test
     fun `modern fullscreen token rewrite stays bounded on large expanded stages`() {
         val vertex = buildString {
             appendLine("#version 330 core")
