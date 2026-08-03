@@ -39,6 +39,8 @@ class ParticleMeshBuilder(context: RenderContext, data: FloatList) : MeshBuilder
         light.buffer(),
     )
 
+    fun addPaddingVertex() = data.add(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f)
+
 
     fun addVertex(position: Vec3d, scale: Float, texture: ShaderTexture, tint: RGBAColor, uvMin: Vec2f? = null, uvMax: Vec2f? = null, light: Int) {
         val minTransformedUV = if (uvMin == null) texture.transformUV(PackedUV.ZERO) else texture.transformUV(PackedUV(uvMin))

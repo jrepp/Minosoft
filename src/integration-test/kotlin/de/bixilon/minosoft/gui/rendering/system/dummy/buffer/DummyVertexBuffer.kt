@@ -21,9 +21,11 @@ import java.nio.FloatBuffer
 
 class DummyVertexBuffer(
     override val struct: MeshStruct,
-    override val vertices: Int = 0,
+    vertices: Int = 0,
     override val primitive: PrimitiveTypes = PrimitiveTypes.QUAD,
 ) : VertexBuffer {
+    override var vertices: Int = vertices
+        private set
     override val state: GpuBufferStates = GpuBufferStates.PREPARING
 
     override fun init() {
@@ -36,6 +38,10 @@ class DummyVertexBuffer(
     override fun draw() = Unit
 
     override fun updateVertices(data: FloatBuffer) = Unit
+
+    override fun setVertices(usedVertices: Int) {
+        vertices = usedVertices
+    }
 
     override fun drop() = Unit
 }

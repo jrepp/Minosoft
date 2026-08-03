@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -36,6 +37,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.layer.OpaqueLayer
 import de.bixilon.minosoft.gui.rendering.system.base.layer.TranslucentLayer
 import de.bixilon.minosoft.gui.rendering.system.base.texture.texture.Texture
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
+import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
 import de.bixilon.minosoft.modding.event.listener.CallbackEventListener.Companion.listen
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.modding.loader.fabric.FabricParticleEventContext
@@ -56,7 +58,18 @@ class ParticleRenderer(
     private val meshData = FloatListUtil.direct(1024 * ParticleMeshBuilder.ParticleMeshStruct.floats, false)
     private val translucentData = FloatListUtil.direct(512 * ParticleMeshBuilder.ParticleMeshStruct.floats, false)
     var mesh: Mesh? = null
+        private set
     var translucentMesh: Mesh? = null
+        private set
+    private var retainedMesh: Mesh? = null
+    private var retainedTranslucentMesh: Mesh? = null
+    private var meshCapacity = 0
+    private var translucentMeshCapacity = 0
+    private var pendingMesh: ParticleMeshBuilder? = null
+    private var pendingTranslucentMesh: ParticleMeshBuilder? = null
+    private var pendingMeshVertices = 0
+    private var pendingTranslucentVertices = 0
+    private var unloaded = false
 
     val particles = ParticleList(profile.maxAmount)
     val queue = ParticleQueue(this)
@@ -169,14 +182,10 @@ class ParticleRenderer(
             updateShader()
             matrixUpdate = false
         }
-        mesh?.unload()
-        translucentMesh?.unload()
-
-        this.mesh = null
-        this.translucentMesh = null
     }
 
     override fun prepareDrawAsync() {
+        check(!unloaded) { "Particle renderer is unloaded" }
         this.meshData.clear()
         this.translucentData.clear()
 
@@ -185,13 +194,74 @@ class ParticleRenderer(
 
         ticker.tick(mesh, translucent)
 
-        mesh._data?.takeIf { !it.isEmpty }?.let { this.mesh = mesh.bake() }
-        translucent._data?.takeIf { !it.isEmpty }?.let { this.translucentMesh = translucent.bake() }
+        pendingMeshVertices = meshData.size / ParticleMeshBuilder.ParticleMeshStruct.floats
+        pendingTranslucentVertices = translucentData.size / ParticleMeshBuilder.ParticleMeshStruct.floats
+        pendingMesh = prepareCapacity(mesh, pendingMeshVertices, meshCapacity)
+        pendingTranslucentMesh = prepareCapacity(translucent, pendingTranslucentVertices, translucentMeshCapacity)
     }
 
     override fun postPrepareDraw() {
-        mesh?.load()
-        translucentMesh?.load()
+        retainedMesh = realize(
+            retainedMesh,
+            pendingMesh,
+            pendingMeshVertices,
+            meshCapacity,
+        ).also {
+            meshCapacity = it.capacity
+            mesh = it.visible
+        }.retained
+        retainedTranslucentMesh = realize(
+            retainedTranslucentMesh,
+            pendingTranslucentMesh,
+            pendingTranslucentVertices,
+            translucentMeshCapacity,
+        ).also {
+            translucentMeshCapacity = it.capacity
+            translucentMesh = it.visible
+        }.retained
+        pendingMesh = null
+        pendingTranslucentMesh = null
+    }
+
+    private fun prepareCapacity(builder: ParticleMeshBuilder, vertices: Int, currentCapacity: Int): ParticleMeshBuilder? {
+        if (vertices == 0) return null
+        val capacity = if (vertices <= currentCapacity) currentCapacity else nextCapacity(vertices)
+        repeat(capacity - vertices) { builder.addPaddingVertex() }
+        return builder
+    }
+
+    private fun realize(
+        retained: Mesh?,
+        builder: ParticleMeshBuilder?,
+        vertices: Int,
+        currentCapacity: Int,
+    ): RetainedResult {
+        if (builder == null) return RetainedResult(retained, null, currentCapacity)
+        val capacity = builder.data.size / ParticleMeshBuilder.ParticleMeshStruct.floats
+        if (retained != null && retained.state == MeshStates.LOADED && capacity == currentCapacity) {
+            builder.updateVertices(retained, vertices)
+            return RetainedResult(retained, retained, currentCapacity)
+        }
+        val replacement = builder.bake()
+        replacement.buffer.setVertices(vertices)
+        try {
+            replacement.load()
+            retained?.let {
+                when (it.state) {
+                    MeshStates.PREPARING -> it.drop()
+                    MeshStates.LOADED -> it.unload()
+                    MeshStates.UNLOADED -> Unit
+                }
+            }
+        } catch (error: Throwable) {
+            when (replacement.state) {
+                MeshStates.PREPARING -> replacement.drop()
+                MeshStates.LOADED -> replacement.unload()
+                MeshStates.UNLOADED -> Unit
+            }
+            throw error
+        }
+        return RetainedResult(replacement, replacement, capacity)
     }
 
     override fun removeAll() {
@@ -200,12 +270,47 @@ class ParticleRenderer(
     }
 
     override fun unload() {
-        meshData.free()
-        translucentData.free()
+        if (unloaded) return
+        unloaded = true
+        var failure: Throwable? = null
+        for (owned in listOfNotNull(retainedMesh, retainedTranslucentMesh).distinct()) {
+            try {
+                when (owned.state) {
+                    MeshStates.PREPARING -> owned.drop()
+                    MeshStates.LOADED -> owned.unload()
+                    MeshStates.UNLOADED -> Unit
+                }
+            } catch (error: Throwable) {
+                failure?.addSuppressed(error) ?: run { failure = error }
+            }
+        }
+        retainedMesh = null
+        retainedTranslucentMesh = null
+        mesh = null
+        translucentMesh = null
+        try {
+            meshData.free()
+        } catch (error: Throwable) {
+            failure?.addSuppressed(error) ?: run { failure = error }
+        }
+        try {
+            translucentData.free()
+        } catch (error: Throwable) {
+            failure?.addSuppressed(error) ?: run { failure = error }
+        }
+        failure?.let { throw it }
     }
+
+    private data class RetainedResult(val retained: Mesh?, val visible: Mesh?, val capacity: Int)
 
     companion object : RendererBuilder<ParticleRenderer> {
         const val MAXIMUM_AMOUNT = 50000
+
+        fun nextCapacity(required: Int): Int {
+            require(required > 0) { "Particle buffer capacity must be positive" }
+            val highest = Integer.highestOneBit(required)
+            return if (highest == required) required else Math.multiplyExact(highest, 2)
+        }
 
         override fun build(session: PlaySession, context: RenderContext): ParticleRenderer? {
             if (session.profiles.particle.skipLoading) {

@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -28,17 +29,27 @@ import de.bixilon.minosoft.gui.rendering.particle.mesh.ParticleMeshBuilder
 import de.bixilon.minosoft.gui.rendering.particle.types.Particle
 import de.bixilon.minosoft.gui.rendering.system.dummy.DummyRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTextureManager
+import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil.createSession
 import de.bixilon.minosoft.test.ITUtil.allocate
 import org.testng.Assert.assertEquals
 import org.testng.Assert.assertFalse
+import org.testng.Assert.assertNotSame
+import org.testng.Assert.assertNull
+import org.testng.Assert.assertSame
 import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
 import kotlin.time.TimeSource.Monotonic.ValueTimeMark
 
 @Test(groups = ["particle"])
 class ParticleRendererTest {
+
+    fun `retained capacities grow geometrically`() {
+        assertEquals(1, ParticleRenderer.nextCapacity(1))
+        assertEquals(4, ParticleRenderer.nextCapacity(3))
+        assertEquals(1024, ParticleRenderer.nextCapacity(513))
+    }
 
     private fun create(): ParticleRenderer {
         val context = RenderContext::class.java.allocate()
@@ -63,7 +74,7 @@ class ParticleRendererTest {
 
 
     fun setup() {
-        create()
+        create().unload()
     }
 
     fun `draw once`() {
@@ -76,6 +87,7 @@ class ParticleRendererTest {
         assertEquals(particle.tryTicks, 1)
         assertFalse(particle.dead)
         assertEquals(renderer.size, 1)
+        renderer.unload()
     }
 
     fun `draw twice`() {
@@ -86,6 +98,7 @@ class ParticleRendererTest {
         assertEquals(particle.vertices, 2)
         assertEquals(particle.tryTicks, 2)
         assertEquals(renderer.size, 1)
+        renderer.unload()
     }
 
     fun kill() {
@@ -101,6 +114,7 @@ class ParticleRendererTest {
         assertEquals(particle.tryTicks, 2)
         assertEquals(renderer.size, 0)
         assertFalse(renderer.hasParticle(particle))
+        renderer.unload()
     }
 
     fun `add 2 particles`() {
@@ -114,6 +128,7 @@ class ParticleRendererTest {
         assertEquals(renderer.size, 2)
         assertEquals(a.vertices, 1); assertEquals(a.tryTicks, 1)
         assertEquals(b.vertices, 1); assertEquals(b.tryTicks, 1)
+        renderer.unload()
     }
 
     fun `discard with maxAmount`() {
@@ -128,6 +143,55 @@ class ParticleRendererTest {
         assertEquals(renderer.size, 1)
         assertEquals(a.vertices, 1); assertEquals(a.tryTicks, 1)
         assertEquals(b.vertices, 0); assertEquals(b.tryTicks, 0)
+        renderer.unload()
+    }
+
+    fun `opaque particle allocation is retained resized and hidden across empty frames`() {
+        val renderer = create()
+        val firstParticle = TestParticle(renderer.context.session)
+        renderer += firstParticle
+        renderer.draw()
+        val first = renderer.mesh ?: error("Expected an opaque particle mesh")
+        assertEquals(first.buffer.vertices, 1)
+
+        renderer.draw()
+        assertSame(renderer.mesh, first)
+
+        val secondParticle = TestParticle(renderer.context.session)
+        renderer += secondParticle
+        renderer.draw()
+        val second = renderer.mesh ?: error("Expected a resized opaque particle mesh")
+        assertNotSame(second, first)
+        assertEquals(first.state, MeshStates.UNLOADED)
+        assertEquals(second.buffer.vertices, 2)
+
+        val thirdParticle = TestParticle(renderer.context.session)
+        renderer += thirdParticle
+        renderer.draw()
+        val third = renderer.mesh ?: error("Expected a geometrically resized opaque particle mesh")
+        assertNotSame(third, second)
+        assertEquals(second.state, MeshStates.UNLOADED)
+        assertEquals(third.buffer.vertices, 3)
+
+        renderer.draw()
+        assertSame(renderer.mesh, third)
+        assertEquals(third.buffer.vertices, 3)
+
+        firstParticle.dead = true
+        secondParticle.dead = true
+        thirdParticle.dead = true
+        renderer.draw()
+        assertNull(renderer.mesh)
+        assertEquals(third.state, MeshStates.LOADED)
+
+        renderer += TestParticle(renderer.context.session)
+        renderer.draw()
+        assertSame(renderer.mesh, third)
+        assertEquals(third.buffer.vertices, 1)
+
+        renderer.unload()
+        renderer.unload()
+        assertEquals(third.state, MeshStates.UNLOADED)
     }
 
 
@@ -146,6 +210,7 @@ class ParticleRendererTest {
         }
 
         override fun addVertex(mesh: ParticleMeshBuilder, translucentMesh: ParticleMeshBuilder, time: ValueTimeMark) {
+            mesh.addPaddingVertex()
             vertices++
         }
 

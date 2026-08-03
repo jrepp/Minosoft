@@ -98,7 +98,7 @@ abstract class MeshBuilder(
     open fun bake() = Mesh(createVertexBuffer())
 
     /** Updates an already loaded mesh while retaining its GPU names and index data. */
-    fun updateVertices(mesh: Mesh) {
+    fun updateVertices(mesh: Mesh, usedVertices: Int? = null) {
         check(reused) { "Dynamic mesh updates require reusable CPU storage" }
         check(mesh.state == de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates.LOADED) {
             "Cannot update mesh vertices in state ${mesh.state}"
@@ -106,7 +106,11 @@ abstract class MeshBuilder(
         check(mesh.buffer.struct == struct) { "Cannot update a mesh with a different vertex layout" }
         val data = createNativeData()
         dropIndex(free = true)
-        mesh.buffer.updateVertices(data)
+        if (usedVertices == null) {
+            mesh.buffer.updateVertices(data)
+        } else {
+            mesh.buffer.updateVertices(data, usedVertices)
+        }
     }
 
     protected fun dropIndex(free: Boolean) {
