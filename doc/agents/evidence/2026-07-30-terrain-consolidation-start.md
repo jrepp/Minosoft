@@ -1191,11 +1191,45 @@ clean same-pose framebuffer; Iris screenshots are diagnostic artifacts, not
 acceptance references.
 
 The authoritative player pose was restored to overworld
-`32.6740054977249,79,-608.6999999880791`, yaw `115.75401`, pitch `4.5429916`.
+`32.6740054977249,78,-608.6999999880791`, yaw `115.75401`, pitch `4.5429916`.
+The prior Y=79 checkpoint was transient: once the entity-tick lock wedge was
+removed and local physics resumed, the same X/Z position settled onto the
+sampled grass surface at Y=78. Acceptance uses that stable post-fix pose.
 That live sequence initially left the client and server running with DH enabled,
 Iris presentation disabled, and no transient terrain or reference fixture. The
 subsequent summary closeout stopped both processes and released both trajectory
 leases; see the [recent trajectory summary](2026-08-01-recent-trajectory-summary.md).
+
+## August 3 visual root-cause completion
+
+The two later visual defects are now closed. DH page masking exposes a
+dependency-clean `NONE`/`PARTIAL`/`FULL` relationship, refines partial pages
+when complete children exist, masks settled full children, retains conservative
+coarse coverage when they do not, and includes the spatial near-coverage
+revision in fixed-camera selection caching. The qualified same-pose lane passed
+twice across fresh client generations with positive distant output and masked
+pages, zero missing pages, and no terrain failures.
+
+Iris pass bisection localized the screen corruption to generic host state rather
+than pack-authored geometry. Fullscreen compatibility aliases had used the
+inverse of the camera-rebased host model view, and texture targets retained
+mipmapped minification after any prior `mipmapsBefore` use. Complementary's
+`composite6` then replaced `colortex3` level zero while `composite7` FXAA could
+blend stale upper levels. Fullscreen aliases now use a translation-free player
+model view, and each program binding selects mipmapped or base minification from
+its own resource declaration. Synthetic and hidden OpenGL 4.1 tests pin both
+contracts; the exact hash-pinned r5.8.1 plan and managed options pass with DH.
+
+The mandatory content/shader transition also exposed entity skeletal buffers
+retired in `postPrepareDraw` before the same frame's Iris shadow traversal.
+Entity renderer, model, mesh, item, armor, and feature destruction now drains
+after all frame draws in `postDraw`. The transition/reload scenario, combined
+Iris+DH cell, five-minute Iris soak, 30-minute quiescent resource soak, movement,
+database, dimension, distant-only, built-in seam, and Bliss seam regressions all
+pass. The checked
+[completion record](2026-08-03-recent-terrain-visual-root-cause.json) retains
+run IDs, focused/broad Java 25 checks, and the final fully stopped, no-lease
+restoration outcome.
 
 ## Implemented Phase 0 through Phase 9 boundaries
 

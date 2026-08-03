@@ -107,7 +107,9 @@ when a baseline is missing. Standalone image comparison is also available:
 `visual.prepare-reference` is a bounded client render operation for checked
 captures. It clears transient GUI overlays and can disable the HUD,
 non-persistent entity-hitbox rendering, and moving clouds without opening a
-screen or mutating gameplay. `hideHud`, `hideHitboxes`, and `hideClouds`
+screen or mutating gameplay. It can also pin presentation-only `timeOfDay` and
+`clearWeather`; scenarios that use those controls must call `restoreTime` and
+`restoreWeather` before handoff. `hideHud`, `hideHitboxes`, and `hideClouds`
 default to true. Reference scenarios should call it explicitly instead of
 assuming a newly launched or focused window. Multi-capture scenarios call it
 again immediately before each checked screenshot: on hosts that pause when the

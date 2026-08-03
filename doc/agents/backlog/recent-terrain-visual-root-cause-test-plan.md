@@ -19,7 +19,8 @@
 
 ## Status and objective
 
-This is **Target** guidance for closing the two independent defects retained by
+This is **Complete** guidance and retained regression protocol for the two
+independent defects originally retained by
 the [August 1 trajectory summary](../evidence/2026-08-01-recent-trajectory-summary.md):
 
 1. Distant Horizons draws coarse, page-aligned foreground slabs across ready
@@ -36,6 +37,34 @@ automation transport or treat a clean counter ledger as visual acceptance.
 The qualified completion target remains Java 25, Minecraft 1.20.4, the managed
 `diverse-medium-biomes-2026-08-01` world, and Apple M4 Max OpenGL 4.1. A second
 driver remains portability follow-up rather than a blocker for these two fixes.
+
+The plan completed on 2026-08-03. The durable
+[completion record](../evidence/2026-08-03-recent-terrain-visual-root-cause.json)
+contains the accepted scenario run IDs, exact Complementary fingerprint,
+focused and broad checks, root causes, and restoration outcome.
+
+## Completion result
+
+- DH page coverage now has `NONE`, `PARTIAL`, and `FULL` states. Selection
+  refines available partial pages, masks settled full children, preserves a
+  conservative coarse fallback when children are unavailable, and reselects at
+  a fixed camera when the spatial near-coverage revision changes.
+- Iris fullscreen compatibility matrices are player-relative instead of using
+  the inverse of the camera-rebased host model view. Mipmap minification is now
+  program-scoped, so `composite7` cannot blend stale upper levels after
+  `composite6` replaces `colortex3` level zero.
+- The acceptance-only pass cutoff localized the first bad live boundary and
+  presents the correct logical buffer after its producer. Synthetic and hidden
+  OpenGL 4.1 fixtures pin history, clears, flips, depth modes, state restoration,
+  resize, filter scoping, and balanced resource retirement.
+- Entity GPU destruction discovered during the mandatory shader/resource
+  transition now drains after all main and shadow drawing in `postDraw`.
+  Asynchronous entity ticking snapshots the entity index before joins, removing
+  the unrelated lock wedge that had held the earlier checkpoint above ground.
+- Independent DH and Iris cells passed twice across fresh client generations;
+  the five-minute Iris soak, combined Iris+DH cell, transition/reload scenario,
+  quiescent 30-minute resource soak, movement, database, dimension, distant-only,
+  built-in seam, and Bliss seam regressions also passed.
 
 ## Isolation matrix
 
@@ -84,8 +113,11 @@ or material state.
    files. Verify `mods.iris.presentation` returns `enabled=false` and
    `installed=false` after restart. A debug-only disable is not this gate.
 5. Verify the player is in the overworld at
-   `32.6740054977249,79,-608.6999999880791`, yaw `115.75401`, pitch
+   `32.6740054977249,78,-608.6999999880791`, yaw `115.75401`, pitch
    `4.5429916`, in creative mode. Capture a pose checkpoint before any movement.
+   The earlier Y=79 checkpoint was held above this sampled grass surface only
+   while the entity-tick lock wedge prevented local physics from advancing;
+   Y=78 is the stable post-wedge pose and must remain unchanged during a run.
 6. Query `mods.distanthorizons.presentation` without changing it and require a
    null override plus the intended configured state. This gives `restore=true`
    one exact known state to restore.
@@ -268,7 +300,7 @@ historical profile.
 ```sh
 MINOSOFT_IRIS_TEST_PACK=/absolute/path/to/ComplementaryUnbound_r5.8.1.zip \
 MINOSOFT_IRIS_TEST_OPTIONS='RP_MODE=3;SHADOW_QUALITY=1;CLOUD_QUALITY=3;ANISOTROPIC_FILTER=8;TAA_MODE=0;TAA_SMOOTHING=4;TAA_JITTER=0;FXAA_STRENGTH=85;FXAA_TAA_INTERACTION=0;WAVING_FOLIAGE=false;WAVING_LEAVES=false;WATER_ALPHA_MULT=180;WATER_FOG_MULT=50;WATER_BUMPINESS=1.50;UNDERWATERCOLOR_R=110;UNDERWATERCOLOR_G=120;UNDERWATERCOLOR_B=130' \
-./gradlew test --tests \
+./gradlew :test --tests \
   de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisShaderPackPlannerTest
 ```
 
@@ -364,13 +396,13 @@ Run the smallest gate after each change, then broaden:
   de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageMaskingTest
 ./gradlew :render-contracts:test --tests \
   de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageSelectorTest
-./gradlew test --tests \
+./gradlew :test --tests \
   de.bixilon.minosoft.gui.rendering.terrain.near.NearSurfaceCoverageTest
-./gradlew test --tests \
+./gradlew :test --tests \
   de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisOpenGlRenderTargetsTest
-./gradlew test --tests \
+./gradlew :test --tests \
   de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisFrameStateTest
-./gradlew test --tests \
+./gradlew :test --tests \
   de.bixilon.minosoft.architecture.TerrainArchitectureBoundaryTest
 ./gradlew :render-contracts:test
 ./gradlew test

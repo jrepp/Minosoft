@@ -80,6 +80,9 @@ instructions that differ from the root contract.
   [root-cause test plan](backlog/recent-terrain-visual-root-cause-test-plan.md)
   maps both defects onto the repository's headless, exact-pack, real-OpenGL,
   scenario, ownership, and restoration scaffolds.
+- [Medium diverse-biomes visual remediation](evidence/2026-08-03-medium-diverse-visual-remediation.md)
+  closes the independent distant-lighting, seam, remote-persistence, and
+  Complementary motion-transient diagnoses with focused and live evidence.
 - [Render-performance and OpenGL submission audit](evidence/2026-08-01-render-performance-opengl-audit.md)
   grounds the current region multi-draw, Iris binding, particle/entity churn,
   OpenGL state-cache, measurement gaps, and ranked optimization trajectory in

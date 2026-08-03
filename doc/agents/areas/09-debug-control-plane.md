@@ -176,7 +176,7 @@ Windows named pipes.
 | `state.sample` | both | client session or server tick snapshot | named client/server view; `client.entities` is bounded to 128 nearby records |
 | `visual.capture` | client | render queue | final framebuffer PNG plus dimensions/frame/time, SHA-256, suggested filename, user screenshot directory, and top-left RGBA8 semantics |
 | `visual.sample` | client | render queue | ≤4096 points and ≤65536-pixel region hash/luminance |
-| `visual.prepare-reference` | client | render queue | clear transient GUI overlays and explicitly enable/disable the HUD plus non-persistent hitbox, cloud, world-border, entity, and particle presentation before checked capture |
+| `visual.prepare-reference` | client | render queue | clear transient GUI overlays; explicitly control HUD plus non-persistent hitbox, cloud, world-border, entity, and particle presentation; optionally pin/restore presentation-only time and clear/restore presentation-only weather without mutating authoritative world state |
 | `visual.background-throttle` | client | render queue | compare-and-set `default`/`enabled`/`disabled` non-persistent override for unfocused-window throttling; returns prior/current state and never changes the rendering profile |
 | `render.substrate` | client | render queue | selected graph, terrain/shader owners, bounded frame/terrain timings, visible mesh/vertex/state totals, generation/lease/resource counts, authored material-animation publication counters, per-contract scene bind plus actual OpenGL draw/vertex ledgers, and submitted/missing compiled main-view vertex/state ABI sets |
 | `render.terrain-diagnostics` | client | render queue | one complete atomic version-one world/provider/pipeline/material/coverage/scheduling/residency/submission snapshot, with optional 1–1,024 page area/prefix window, domain-registry-bound opaque cursor, and structured request/cursor rejection |
@@ -213,6 +213,7 @@ Windows named pipes.
 | `world.teleport-player` | server | server thread/player manager | teleport one exact connected player to an already loaded dimension at finite bounded coordinates and return previous/current poses |
 | `mods.debug` | both | process-local snapshot | adapted-client or Fabric-server mod lifecycle |
 | `mods.<id>.summary` | client | mod generation | provider-specific adapter/hook summary |
+| `mods.iris.pass-cutoff` | client | Iris generation/render queue | inspect, set, or restore one bounded ordered pass cutoff; presents the correct current logical color buffer after its producer and resets when the owning Iris generation closes |
 | `mods.iris.reload-shaders` | client | render queue | one host shader reload plus bounded JSON completion |
 | `mods.iris.configure-options` | client | render queue/resource reload | validate and transactionally apply 1–64 authored shader-option values |
 | `mods.distanthorizons.presentation` | client | mod generation | report, enable, disable, or restore the non-persistent detached-terrain presentation override |
@@ -238,7 +239,7 @@ a checked reference and defaults to false. Explicit `hideEntities` and
 `hideParticles` controls also default to false. They suppress only the
 corresponding render-graph submissions: entities keep visibility, animation,
 and retained meshes, while particles keep their queue and simulation state.
-The operation does not mutate world or entity state. Scenario screenshot steps may
+The operation does not mutate authoritative world or entity state. Scenario screenshot steps may
 require the full framebuffer dimensions and crop one bounded top-left region
 before comparison.
 

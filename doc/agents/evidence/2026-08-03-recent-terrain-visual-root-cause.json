@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-08-03",
+  "environment": {
+    "java": "25.0.1",
+    "minecraft": "1.20.4",
+    "gpu": "Apple M4 Max",
+    "openGl": "4.1",
+    "qualifiedTrajectory": "diverse-medium-biomes-2026-08-01",
+    "qualifiedPose": {
+      "dimension": "minecraft:overworld",
+      "x": 32.6740054977249,
+      "y": 78.0,
+      "z": -608.6999999880791,
+      "yaw": 115.75401,
+      "pitch": 4.5429916
+    }
+  },
+  "rootCauses": [
+    {
+      "owner": "distant terrain selection",
+      "cause": "A coarse page with partial settled near coverage remained drawable as one page, and fixed-camera selection caching omitted the spatial near-coverage revision.",
+      "fix": "Classify page coverage as NONE, PARTIAL, or FULL; refine available PARTIAL pages, mask settled FULL children, retain conservative coarse coverage when children are unavailable, and include near-coverage revision in selection caching."
+    },
+    {
+      "owner": "Iris fullscreen frame state",
+      "cause": "Fullscreen compatibility aliases used the inverse of the camera-rebased host model-view matrix.",
+      "fix": "Keep the full host model-view for geometry and publish a player-relative, translation-free model-view alias for fullscreen programs."
+    },
+    {
+      "owner": "Iris render targets",
+      "cause": "A texture that had ever generated mipmaps retained mipmapped minification globally; after composite6 replaced colortex3 level zero, composite7 FXAA sampled stale upper mip levels and produced the block-aligned stipple.",
+      "fix": "Apply mipmapped minification only while binding a program that declares mipmapsBefore, and restore each target's base filter for ordinary consumers."
+    },
+    {
+      "owner": "entity GPU retirement",
+      "cause": "Content reload retired skeletal entity buffers in postPrepareDraw while the same frame's Iris shadow traversal still retained them.",
+      "fix": "Queue entity renderer, feature, model, mesh, item, and armor GPU retirement until postDraw."
+    },
+    {
+      "owner": "entity ticking",
+      "cause": "World entity iteration retained the entity-index monitor while joining asynchronous ticks, which could wedge local physics and render-thread diagnostics.",
+      "fix": "Snapshot the entity collection before scheduling and joining asynchronous ticks."
+    }
+  ],
+  "acceptedScenarios": [
+    {
+      "name": "terrain-dh-near-mask-diverse-medium",
+      "runIds": [
+        "terrain-dh-near-mask-diverse-medium-2026-08-03T15-25-51-202689Z-18438",
+        "terrain-dh-near-mask-diverse-medium-2026-08-03T15-30-58-037349Z-20337"
+      ]
+    },
+    {
+      "name": "iris-complementary-diverse-medium",
+      "runIds": [
+        "iris-complementary-diverse-medium-2026-08-03T15-09-23-481151Z-12946",
+        "iris-complementary-diverse-medium-2026-08-03T15-14-43-761914Z-14858"
+      ],
+      "shaderFingerprint": "385d3c1777dc297dde25dc7e5fec55234f593f824a896fd21eca3cde3e6c38a8"
+    },
+    {
+      "name": "iris-complementary-diverse-medium-soak",
+      "runIds": [
+        "iris-complementary-diverse-medium-soak-2026-08-03T15-16-44-563723Z-15511"
+      ],
+      "durationMs": 303993,
+      "cases": 30
+    },
+    {
+      "name": "iris-dh-combined-diverse-medium",
+      "runIds": [
+        "iris-dh-combined-diverse-medium-2026-08-03T15-51-23-102077Z-28428"
+      ]
+    },
+    {
+      "name": "terrain-shader-resource-view-transition",
+      "runIds": [
+        "terrain-shader-resource-view-transition-2026-08-03T15-45-41-394978Z-26111"
+      ]
+    },
+    {
+      "name": "terrain-resource-soak-30m",
+      "runIds": [
+        "terrain-resource-soak-30m-2026-08-03T15-53-11-176539Z-29246"
+      ],
+      "durationMs": 1818205,
+      "cases": 60
+    },
+    {
+      "name": "terrain-distant-database-cold-load",
+      "runIds": [
+        "terrain-distant-database-cold-load-2026-08-03T15-36-09-679602Z-22091"
+      ]
+    },
+    {
+      "name": "terrain-dimension-transitions",
+      "runIds": [
+        "terrain-dimension-transitions-2026-08-03T15-36-20-859516Z-22147"
+      ]
+    },
+    {
+      "name": "terrain-fast-seam-movement",
+      "runIds": [
+        "terrain-fast-seam-movement-2026-08-03T16-26-36-597492Z-42687"
+      ]
+    },
+    {
+      "name": "terrain-distant-only",
+      "runIds": [
+        "terrain-distant-only-2026-08-03T16-27-00-382620Z-42686"
+      ]
+    },
+    {
+      "name": "terrain-seam-built-in-macos-retina",
+      "runIds": [
+        "terrain-seam-built-in-macos-retina-2026-08-03T16-34-40-217617Z-45779"
+      ],
+      "regionSha256": "d3d43fa9b92874ccea972b9183435e423b5aafba006edb866f577d8a81c00503"
+    },
+    {
+      "name": "terrain-seam-bliss-macos-retina",
+      "runIds": [
+        "terrain-seam-bliss-macos-retina-2026-08-03T16-36-20-575149Z-46423"
+      ]
+    }
+  ],
+  "verification": {
+    "focusedContractTests": "passed",
+    "focusedRendererTests": "passed",
+    "focusedLifecycleIntegrationTests": "passed",
+    "realOpenGl41IrisTargets": "passed",
+    "exactComplementaryPlannerWithDistantHorizons": "passed",
+    "renderContractsTest": "passed",
+    "test": "passed",
+    "integrationTest": "passed",
+    "assemble": "passed",
+    "debugPackaging": "passed"
+  },
+  "notRepeated": {
+    "terrainSameNameDifferentWorldReconnect": "Requires two isolated saved worlds at the same address and was not repeated against the shared dedicated-server world; the accepted 2026-08-01 evidence and current persistence/network lifecycle tests remain authoritative."
+  },
+  "restoration": {
+    "qualifiedPoseRestored": true,
+    "distantHorizonsOverride": null,
+    "distantHorizonsConfiguredEnabled": true,
+    "irisPersistedEnabled": false,
+    "transientPresentationOverrideActive": false,
+    "clientRunning": false,
+    "serverRunning": false,
+    "activeLeases": 0
+  }
+}

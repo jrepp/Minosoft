@@ -32,17 +32,30 @@ explicitly deferred and do not block the current single-device goal.
 | Same-address/world-name reconnect | Stable world fingerprints isolated distant stores, and stale semantic responses became nonfatal and nonpublishing. Network retirement and ledger cleanup passed. | The run first exposed store aliasing and a stale-response disconnect; both required code fixes before the accepted rerun. |
 | `diverse-medium-biomes-2026-08-01` world creation | A fresh 2,048-block-diameter Terralith/Terratonic world generated, joined, saved, stopped, and inspected cleanly: 2,601 chunks, 841 full chunks, zero failed chunks, fourteen observed biomes, and terrain hash `6adf5a6897dda69d68e4a1e6f3b39a4526b13165ced0eac8af04ea245ab03489`. | No world-generation corruption was found. Active Anvil inspection must still use a stopped/saved boundary. |
 | Diverse-medium DH hydration and network | The consolidated hierarchy, bounded selector, shared CPU service, angular hydrated frontier, persistence, and protocol lifecycle operated together. Representative settled runs had zero missing selected pages and zero distant allocation/upload failures. A 120-second request timeout matched the accepted server pace of one generated page per player per second. | Raising managed-server generation to two pages per tick previously tripped the watchdog. Keep the accepted one-page-per-second policy. Startup captures made before queues and missing-page counts drain are not visual evidence. |
-| Diverse-medium Iris/Complementary | Fixed contracts now cover deterministic initial `LOAD` target clears, framebuffer restoration after depth blits, typed depth comparison samplers, `frameTimeSmooth`, and shadow-map size inputs. Disabling only Iris presentation produced a responsive built-in path and isolated the shader-pack failure from player embedding and world data. | Complementary still produced block-aligned/stippled corruption and eventually wedged the Apple render thread. DH, entities, particles, light shafts, and shadows did not independently remove that failure. Keep Iris disabled on this trajectory until a checked fix lands. The Iris presentation debug override is non-persistent; use the trajectory option store or the settings UI for restart-safe disablement. |
-| Diverse-medium DH foreground A/B with Iris disabled | A fully hydrated same-pose A/B finally isolated a second, distinct defect: disabling DH immediately removed giant dark foreground slabs and exposed ordinary near grass/terrain. The client stayed responsive, so this is a useful DH ownership/masking reproduction independent of Iris. | DH reported complete main selection and zero allocation/upload failures while still drawing detached pages inside the near region. The last observed settled snapshot had 510 active main pages, zero missing pages, and only 117 masked pages while near coverage was still evolving. Diagnose page-span masking versus current near coverage before changing meshing again. |
+| Diverse-medium Iris/Complementary | The independent lane now passes twice across fresh client generations plus a five-minute checked soak. The exact r5.8.1 fingerprint is retained, every required route advances, framebuffer checks are clean, fallback/rejection maps are empty, and the built-in path remains responsive after disablement. Live pass bisection found two generic host defects: fullscreen aliases inverted the rebased host model view, and a target that had ever generated mipmaps retained mipmapped minification after a later level-zero write. Player-relative fullscreen matrices and program-scoped mipmap filtering close both. | A second OpenGL driver remains portability follow-up. The trajectory remains persistently Iris-disabled as its verified restoration state, not because the accepted generation still fails. |
+| Diverse-medium DH foreground A/B with Iris disabled | Three-state near coverage, partial-page refinement, fixed-camera near-coverage cache revision, and final draw masking now preserve uncovered children without drawing coarse foreground slabs over settled near terrain. The same-pose scenario passed twice across fresh client generations with real distant output, positive masked counts, zero missing pages, and no terrain failures. | No visual ownership defect remains in the qualified lane. Conservative coarse fallback is still required when partial children are unavailable; a clean counter ledger alone remains insufficient evidence. |
+
+## August 3 completion
+
+The two defects were closed independently and then together. The checked
+[completion record](2026-08-03-recent-terrain-visual-root-cause.json) retains
+the exact root causes, scenario run IDs, shader fingerprint, Java 25 checks,
+and final stopped/no-lease restoration state. The mandatory shader/resource
+transition also exposed a separate entity-resource lifetime defect: skeletal
+buffers were retired in `postPrepareDraw` while the same frame's Iris shadow
+pass still retained them. Entity GPU retirement now drains in `postDraw` and
+the transition regression passes.
 
 ## Important distinctions
 
-Two visual failures coexist and require separate acceptance:
+The two visual failures had independent owners and retain separate acceptance:
 
-1. Iris corruption is screen/material/fullscreen shaped, survives DH disable, and
-   can wedge the render thread.
-2. DH foreground overlap reproduces with Iris already disabled and disappears
-   when only DH presentation is disabled.
+1. Iris corruption was screen/material/fullscreen shaped, survived DH disable,
+   and could wedge the render thread; its fullscreen-matrix and mipmap-filter
+   fixes retain an independent checked lane.
+2. DH foreground overlap reproduced with Iris already disabled and disappeared
+   when only DH presentation was disabled; its coverage/refinement fix retains
+   a separate same-pose checked lane.
 
 The earlier conclusion that the observed Iris stippling was not caused by DH
 remains true for that artifact. It must not be generalized to the later giant
@@ -59,20 +72,21 @@ not sufficient visual evidence.
    leases before mutation. The closeout state for this record is fully stopped,
    with no endpoint, server port, external client, or lease active.
 2. Start `diverse-medium-biomes-2026-08-01` with `fabric-stack`. Its authoritative
-   player restore pose is overworld `32.6740054977249,79,-608.6999999880791`,
+   player restore pose is overworld `32.6740054977249,78,-608.6999999880791`,
    yaw `115.75401`, pitch `4.5429916`, creative mode.
-3. Keep Iris persistently disabled. Confirm `mods.iris.presentation` reports
-   `enabled=false` and `installed=false`; a process-local debug disable alone
-   will be lost on restart.
+3. The restored profile intentionally keeps Iris persistently disabled. Confirm
+   `mods.iris.presentation` reports `enabled=false` and `installed=false`
+   before a new experiment; enabling the now-qualified generation is an
+   explicit new mutation, not restoration.
 4. Clear transient GUI state, capture the framebuffer, sample player/world and
    loaded blocks, then inspect `render.substrate` in the prescribed order.
 5. Before judging DH pixels, require build/upload queues and missing selected
    pages to reach zero. Record near coverage state counts, DH
    `renderReadyNativeChunks`, selected detail counts, and `mainMaskedPages` at
    the same frame boundary.
-6. Capture DH enabled and disabled at the exact same pose. The immediate target
-   is the page-granular rule that allows a coarse distant page overlapping ready
-   near chunks to draw as one foreground slab.
+6. For regression work, capture DH enabled and disabled at the exact same pose
+   and require the checked foreground/distant crops plus positive distant draw
+   and masked-page evidence. Do not replace this with counter-only acceptance.
 7. Restore the DH override, pose, GUI, and any fixture; release leases at
    handoff. Do not raise server generation pace or re-enable Iris as part of the
    DH fix.
@@ -87,6 +101,7 @@ not sufficient visual evidence.
 - [Streaming performance](2026-07-31-terrain-streaming-performance.json)
 - [Same-name world reconnect](2026-08-01-terrain-l5-world-reconnect.json)
 - [Medium diverse world](2026-08-01-medium-diverse-world.json)
+- [Completed DH/Iris root-cause qualification](2026-08-03-recent-terrain-visual-root-cause.json)
 
 Framebuffer captures used during the final A/B remained under `/tmp` and are
 diagnostic-only, not durable checked-pixel references.
