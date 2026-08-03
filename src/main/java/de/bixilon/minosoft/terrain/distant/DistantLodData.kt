@@ -184,6 +184,9 @@ internal class DistantLodTileStore(
     fun snapshot(): List<DistantLodTile> = java.util.List.copyOf(tiles.values)
 
     @Synchronized
+    fun remove(position: ChunkPosition): DistantLodTile? = tiles.remove(position)
+
+    @Synchronized
     fun clear() = tiles.clear()
 
     private companion object {

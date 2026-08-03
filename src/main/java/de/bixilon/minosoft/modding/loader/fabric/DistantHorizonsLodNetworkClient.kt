@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger
 internal class DistantLodNetworkClient(
     private val session: PlaySession,
     private val options: DistantHorizonsOptions,
+    private val maximumResidentTiles: Int = options.maximumTiles,
     private val contains: (ChunkPosition) -> Boolean,
     private val localSourceRevision: (ChunkPosition) -> Long?,
     private val publishTile: (DistantLodTile) -> Unit,
@@ -218,7 +219,7 @@ internal class DistantLodNetworkClient(
             options.networkRadiusChunks,
             options.renderDistanceChunks,
             serverMaximumRadius,
-            maximumContiguousDistantRadius(options.maximumTiles),
+            maximumContiguousDistantRadius(maximumResidentTiles),
         )
         if (!schedulerLogged) {
             schedulerLogged = true

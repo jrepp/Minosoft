@@ -73,6 +73,9 @@ class DistantLodDataTest {
         assertSame(first, store[first.position])
         assertNull(store[second.position])
         assertSame(third, store[third.position])
+        assertSame(first, store.remove(first.position))
+        assertNull(store[first.position])
+        assertEquals(1, store.size())
     }
 
     @Test
@@ -106,7 +109,9 @@ class DistantLodDataTest {
         assertEquals(63, column.runs[1].minimumY)
         assertEquals(64, column.runs[1].maximumYExclusive)
         assertTrue(DistantRunFlag.OPAQUE in column.runs[1].flags)
-        assertTrue(column.runs.all { DistantRunFlag.GENERATED in it.flags && it.confidence == 25 })
+        assertTrue(column.runs.all {
+            DistantRunFlag.GENERATED in it.flags && DistantRunFlag.SURFACE_ONLY in it.flags && it.confidence == 25
+        })
     }
 
     @Test

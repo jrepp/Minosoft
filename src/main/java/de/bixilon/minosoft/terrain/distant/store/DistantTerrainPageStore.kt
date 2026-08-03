@@ -119,6 +119,11 @@ class DistantDirectoryTerrainStore(
     private val maximumPages: Int,
 ) : DistantTerrainStore {
     private data class RecordMetadata(val key: TerrainPageKey, var lastAccessMillis: Long)
+    private data class SelectedRecord(
+        val path: Path,
+        val metadata: RecordMetadata,
+        val encodedBytes: Long,
+    )
 
     private val records = linkedMapOf<String, RecordMetadata>()
     private val pinned = linkedSetOf<TerrainPageKey>()
@@ -136,15 +141,128 @@ class DistantDirectoryTerrainStore(
         while (records.size > maximumPages) evict(requireNotNull(selectVictim()))
     }
 
-    @Synchronized
     override fun load(worldEpoch: Long): List<DistantVerticalPage> {
-        require(worldEpoch >= 0L) { "Distant store target epoch must not be negative" }
-        val files = pageFiles()
-        require(files.size <= maximumPages) { "Distant store exceeds $maximumPages pages" }
-        return files.map { path ->
-            records[path.fileName.toString()]?.lastAccessMillis = System.currentTimeMillis()
-            readRecord(path).withWorldEpoch(worldEpoch)
+        val loaded = ArrayList<DistantVerticalPage>()
+        loadInBatches(worldEpoch, maximumPages) { pages ->
+            loaded += pages
+            true
         }
+        return java.util.List.copyOf(loaded)
+    }
+
+    /**
+     * Decodes a stable file snapshot in bounded batches. Returning false from
+     * [consume] stops before another batch is decoded, which lets generation
+     * teardown cancel large-world hydration without retaining the full store.
+     */
+    fun loadInBatches(
+        worldEpoch: Long,
+        maximumBatchPages: Int,
+        consume: (List<DistantVerticalPage>) -> Boolean,
+    ): Int {
+        require(worldEpoch >= 0L) { "Distant store target epoch must not be negative" }
+        require(maximumBatchPages > 0) { "Distant store load batch must be positive" }
+        val selected = synchronized(this) { selectAllRecords() }
+        require(selected.size <= maximumPages) { "Distant store exceeds $maximumPages pages" }
+        return loadRecordsInBatches(selected, worldEpoch, maximumBatchPages, consume)
+    }
+
+    /** Loads the closest durable records without conflating disk capacity with decoded residency. */
+    fun loadNearestInBatches(
+        worldEpoch: Long,
+        centerX: Long,
+        centerZ: Long,
+        maximumLoadedPages: Int,
+        maximumEncodedBytes: Long,
+        maximumBatchPages: Int,
+        consume: (List<DistantVerticalPage>) -> Boolean,
+    ): Int {
+        require(worldEpoch >= 0L) { "Distant store target epoch must not be negative" }
+        require(maximumLoadedPages > 0) { "Distant resident page limit must be positive" }
+        require(maximumEncodedBytes > 0L) { "Distant resident byte limit must be positive" }
+        require(maximumBatchPages > 0) { "Distant store load batch must be positive" }
+        val selected = nearestRecords(centerX, centerZ, maximumLoadedPages, maximumEncodedBytes)
+        return loadRecordsInBatches(selected, worldEpoch, maximumBatchPages, consume)
+    }
+
+    /** Returns the deterministic durable window without decoding any page payloads. */
+    fun nearestKeys(
+        centerX: Long,
+        centerZ: Long,
+        maximumLoadedPages: Int,
+        maximumEncodedBytes: Long,
+    ): Set<TerrainPageKey> = java.util.Set.copyOf(
+        nearestRecords(centerX, centerZ, maximumLoadedPages, maximumEncodedBytes)
+            .map { it.metadata.key },
+    )
+
+    @Synchronized
+    fun keys(): Set<TerrainPageKey> = java.util.Set.copyOf(records.values.map(RecordMetadata::key))
+
+    @Synchronized
+    fun contains(key: TerrainPageKey): Boolean = fileName(key) in records
+
+    private fun nearestRecords(
+        centerX: Long,
+        centerZ: Long,
+        maximumLoadedPages: Int,
+        maximumEncodedBytes: Long,
+    ): List<SelectedRecord> {
+        require(maximumLoadedPages > 0) { "Distant resident page limit must be positive" }
+        require(maximumEncodedBytes > 0L) { "Distant resident byte limit must be positive" }
+        val candidates = synchronized(this) {
+            selectAllRecords().sortedWith(
+                compareBy<SelectedRecord> { selected ->
+                    distanceSquared(selected.metadata.key, centerX, centerZ)
+                }
+                    .thenBy { selected -> selected.metadata.key.x }
+                    .thenBy { selected -> selected.metadata.key.z },
+            )
+        }
+        val selected = ArrayList<SelectedRecord>(minOf(maximumLoadedPages, candidates.size))
+        var encodedBytes = 0L
+        for (candidate in candidates) {
+            if (selected.size >= maximumLoadedPages) break
+            val nextBytes = Math.addExact(encodedBytes, candidate.encodedBytes)
+            if (nextBytes > maximumEncodedBytes) break
+            selected.add(candidate)
+            encodedBytes = nextBytes
+        }
+        return java.util.List.copyOf(selected)
+    }
+
+    @Synchronized
+    private fun selectAllRecords(): List<SelectedRecord> = pageFiles().map { path ->
+        val metadata = requireNotNull(records[path.fileName.toString()]) {
+            "Distant page record has an invalid file name: $path"
+        }
+        SelectedRecord(path, metadata, Files.size(path))
+    }
+
+    private fun loadRecordsInBatches(
+        records: List<SelectedRecord>,
+        worldEpoch: Long,
+        maximumBatchPages: Int,
+        consume: (List<DistantVerticalPage>) -> Boolean,
+    ): Int {
+        var loadedPages = 0
+        var start = 0
+        while (start < records.size) {
+            val end = minOf(Math.addExact(start, maximumBatchPages), records.size)
+            val pages = records.subList(start, end).mapNotNull { selected ->
+                synchronized(this) {
+                    val active = this.records[selected.path.fileName.toString()]
+                    if (active !== selected.metadata) return@synchronized null
+                    val page = readRecord(selected.path).withWorldEpoch(worldEpoch)
+                    active.lastAccessMillis = System.currentTimeMillis()
+                    page
+                }
+            }
+            loadedPages = Math.addExact(loadedPages, pages.size)
+            if (pages.isNotEmpty() && !consume(java.util.List.copyOf(pages))) break
+            start = end
+        }
+        return loadedPages
     }
 
     @Synchronized
@@ -287,9 +405,13 @@ class DistantDirectoryTerrainStore(
         )
     }
 
-    private fun distanceSquared(key: TerrainPageKey): java.math.BigInteger {
-        val dx = java.math.BigInteger.valueOf(key.x).subtract(java.math.BigInteger.valueOf(retentionX))
-        val dz = java.math.BigInteger.valueOf(key.z).subtract(java.math.BigInteger.valueOf(retentionZ))
+    private fun distanceSquared(
+        key: TerrainPageKey,
+        centerX: Long = retentionX,
+        centerZ: Long = retentionZ,
+    ): java.math.BigInteger {
+        val dx = java.math.BigInteger.valueOf(key.x).subtract(java.math.BigInteger.valueOf(centerX))
+        val dz = java.math.BigInteger.valueOf(key.z).subtract(java.math.BigInteger.valueOf(centerZ))
         return dx.multiply(dx).add(dz.multiply(dz))
     }
 

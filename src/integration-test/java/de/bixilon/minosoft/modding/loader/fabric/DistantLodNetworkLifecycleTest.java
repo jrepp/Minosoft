@@ -18,6 +18,7 @@
 package de.bixilon.minosoft.modding.loader.fabric;
 
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation;
+import de.bixilon.minosoft.local.LocalConnection;
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession;
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil;
 import de.bixilon.minosoft.terrain.distant.DistantSourceCompleteness;
@@ -101,7 +102,7 @@ public final class DistantLodNetworkLifecycleTest {
 
     @Test
     public void persistenceHydrationIsDispatchedAwayFromWorldJoin() throws Exception {
-        final PlaySession session = session();
+        final PlaySession session = persistentLocalSession();
         final Path persistenceRoot = Files.createTempDirectory("minosoft-dh-hydration-");
         final List<Function0<Unit>> scheduled = new ArrayList<>();
         final DistantHorizonsLodController controller = new DistantHorizonsLodController(
@@ -131,6 +132,42 @@ public final class DistantLodNetworkLifecycleTest {
             scheduled.getFirst().invoke();
 
             assertNotNull(controller.storeInspection$de_bixilon_minosoft_minosoft(session));
+        } finally {
+            controller.close();
+            try (var paths = Files.walk(persistenceRoot)) {
+                paths.sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+            }
+        }
+    }
+
+    @Test
+    public void unfingerprintedRemoteWorldDoesNotDispatchPersistenceHydration() throws Exception {
+        final PlaySession session = session();
+        final Path persistenceRoot = Files.createTempDirectory("minosoft-dh-remote-persistence-");
+        final List<Function0<Unit>> scheduled = new ArrayList<>();
+        final DistantHorizonsLodController controller = new DistantHorizonsLodController(
+            DistantHorizonsOptions.Companion.inMemory(),
+            persistenceRoot,
+            task -> {
+                scheduled.add(task);
+                return Unit.INSTANCE;
+            },
+            task -> {
+                task.invoke();
+                return Unit.INSTANCE;
+            }
+        );
+        try {
+            controller.onWorldJoined(new FabricWorldEventContext(
+                session,
+                null,
+                new FabricWorldIdentity(session.getWorld().getDimension(), session.getWorld().getName()),
+                FabricWorldChangeCause.INITIALIZE,
+                1L
+            ));
+
+            assertTrue(scheduled.isEmpty());
+            assertNull(controller.storeInspection$de_bixilon_minosoft_minosoft(session));
         } finally {
             controller.close();
             try (var paths = Files.walk(persistenceRoot)) {
@@ -274,6 +311,7 @@ public final class DistantLodNetworkLifecycleTest {
         final DistantLodNetworkClient client = new DistantLodNetworkClient(
             session,
             DistantHorizonsOptions.Companion.inMemory(),
+            16_384,
             ignored -> false,
             ignored -> 10L,
             ignored -> {
@@ -324,6 +362,7 @@ public final class DistantLodNetworkLifecycleTest {
         final DistantLodNetworkClient client = new DistantLodNetworkClient(
             session,
             DistantHorizonsOptions.Companion.inMemory(),
+            16_384,
             ignored -> false,
             ignored -> null,
             ignored -> {
@@ -368,6 +407,24 @@ public final class DistantLodNetworkLifecycleTest {
         return session;
     }
 
+    private static PlaySession persistentLocalSession() throws Exception {
+        final PlaySession session = session();
+        final LocalConnection connection = new LocalConnection(
+            ignored -> {
+                throw new AssertionError("local generator must not be opened by this test");
+            },
+            ignored -> {
+                throw new AssertionError("local storage must not be opened by this test");
+            },
+            "test:stable-world"
+        );
+        final var connectionField = PlaySession.class.getDeclaredField("connection");
+        connectionField.setAccessible(true);
+        connectionField.set(session, connection);
+        session.getWorld().updateTerrainPersistenceFingerprint("test:stable-world");
+        return session;
+    }
+
     @SuppressWarnings("unchecked")
     private static Object sessionState(DistantHorizonsLodController controller, PlaySession session) throws Exception {
         final var field = DistantHorizonsLodController.class.getDeclaredField("states");
@@ -395,6 +452,7 @@ public final class DistantLodNetworkLifecycleTest {
         return new DistantLodNetworkClient(
             session,
             DistantHorizonsOptions.Companion.inMemory(),
+            16_384,
             ignored -> false,
             ignored -> null,
             ignored -> {

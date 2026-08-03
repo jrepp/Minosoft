@@ -25,6 +25,7 @@ import de.bixilon.minosoft.data.world.chunk.chunk.Chunk
 import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.data.world.positions.InChunkPosition
 import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRendererBuilder
+import de.bixilon.minosoft.local.LocalConnection
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.terrain.distant.DistantLodColumn
 import de.bixilon.minosoft.terrain.distant.DistantSourceCompleteness
@@ -52,6 +53,7 @@ import de.bixilon.minosoft.terrain.distant.network.DistantTerrainMessageV2
 import de.bixilon.minosoft.terrain.distant.DistantTerrainRenderSource
 import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
 import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
+import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
@@ -201,25 +203,40 @@ internal class DistantHorizonsLodController(
     private inner class SessionState(
         val session: PlaySession,
     ) : AutoCloseable {
-        val store = DistantLodTileStore(options.maximumTiles)
+        private val residentPageLimit = minOf(options.maximumTiles, MAX_RESIDENT_PAGES)
+        val store = DistantLodTileStore(residentPageLimit)
         val sources = HashMap<ChunkPosition, DistantLodTileSource>()
         val verticalPages = HashMap<ChunkPosition, DistantVerticalPage>()
         private val changeJournal = DistantLodChangeJournal(MAX_CHANGE_POSITIONS)
-        private val persistence = persistenceRoot?.takeIf { options.persistenceEnabled }?.let {
+        // A server address and dimension do not identify a remote level after an operator replaces
+        // its world. Reusing that store produces convincing but false detached terrain. Persist only
+        // when the connection supplied a stable terrain fingerprint; unfingerprinted sessions still
+        // retain and render pages for their current lifetime.
+        private val persistence = persistenceRoot?.takeIf {
+            options.persistenceEnabled && session.connection is LocalConnection &&
+                session.world.terrainPersistenceFingerprint != null
+        }?.let {
             DistantLodPersistence(DistantLodPersistence.path(it, session), options.maximumTiles)
         }
+        private var persistenceHydrating = persistence != null
+        private var residentCenter: ChunkPosition? = null
+        private var requestedResidentCenter: ChunkPosition? = null
+        private var residentRefreshScheduled = false
         @Volatile private var pageStore: DistantDirectoryTerrainStore? = null
         @Volatile private var pageWriter: DistantTerrainStoreWriter? = null
         private val pendingPersistencePages = linkedMapOf<ChunkPosition, DistantVerticalPage>()
+        private val residentPersistence = Runnable(::refreshResidentPersistenceIfMoved)
         private val generator = DistantUnexploredGenerator(
             session = session,
             options = options,
+            maximumResidentTiles = residentPageLimit,
             contains = ::containsCanonicalPage,
             publish = { tile, page -> publish(tile, DistantLodTileSource.LOCAL_GENERATION, page) },
         )
         private val network = DistantLodNetworkClient(
             session = session,
             options = options,
+            maximumResidentTiles = residentPageLimit,
             contains = ::containsCanonicalPage,
             localSourceRevision = ::completeSourceRevision,
             publishTile = { publish(it, DistantLodTileSource.NETWORK) },
@@ -228,19 +245,38 @@ internal class DistantHorizonsLodController(
         @Volatile private var closed = false
 
         init {
+            var residentPersistenceRegistered = false
             var generatorRegistered = false
+            var networkRegistered = false
             try {
+                session.ticker += residentPersistence
+                residentPersistenceRegistered = true
                 session.ticker += generator
                 generatorRegistered = true
                 session.ticker += network
+                networkRegistered = true
                 if (persistence != null) {
                     persistenceHydrationDispatcher(::hydratePersistence)
                 }
             } catch (error: Throwable) {
                 closed = true
+                if (networkRegistered) {
+                    try {
+                        session.ticker -= network
+                    } catch (cleanup: Throwable) {
+                        error.addSuppressed(cleanup)
+                    }
+                }
                 if (generatorRegistered) {
                     try {
                         session.ticker -= generator
+                    } catch (cleanup: Throwable) {
+                        error.addSuppressed(cleanup)
+                    }
+                }
+                if (residentPersistenceRegistered) {
+                    try {
+                        session.ticker -= residentPersistence
                     } catch (cleanup: Throwable) {
                         error.addSuppressed(cleanup)
                     }
@@ -264,6 +300,7 @@ internal class DistantHorizonsLodController(
             var localPageStore: DistantDirectoryTerrainStore? = null
             var localWriter: DistantTerrainStoreWriter? = null
             try {
+                if (isClosed()) return
                 val loadedTiles = legacyPersistence.load()
                 val installedTiles = installPersistentTiles(loadedTiles)
                 if (isClosed()) return
@@ -282,11 +319,23 @@ internal class DistantHorizonsLodController(
                     maximumPages = options.maximumTiles,
                 )
                 localPageStore = initializedPageStore
-                val loadedPages = initializedPageStore.load(session.world.terrainEpoch)
-                loadedPages.maxOfOrNull(DistantVerticalPage::sourceRevision)?.let { loadedRevision ->
-                    revision.accumulateAndGet(loadedRevision, ::maxOf)
+                val center = session.player.physics.positionInfo.chunkPosition
+                var installedPages = 0
+                val loadedPages = initializedPageStore.loadNearestInBatches(
+                    worldEpoch = session.world.terrainEpoch,
+                    centerX = center.x.toLong(),
+                    centerZ = center.z.toLong(),
+                    maximumLoadedPages = residentPageLimit,
+                    maximumEncodedBytes = MAX_RESIDENT_ENCODED_BYTES,
+                    maximumBatchPages = PERSISTENCE_INSTALL_BATCH,
+                ) consume@{ pages ->
+                    if (isClosed()) return@consume false
+                    pages.maxOfOrNull(DistantVerticalPage::sourceRevision)?.let { loadedRevision ->
+                        revision.accumulateAndGet(loadedRevision, ::maxOf)
+                    }
+                    installedPages = Math.addExact(installedPages, installPersistentPages(pages))
+                    !isClosed()
                 }
-                val installedPages = installPersistentPages(loadedPages)
                 if (isClosed()) return
 
                 val migrationCandidates = synchronized(this) {
@@ -320,6 +369,7 @@ internal class DistantHorizonsLodController(
                     pendingPersistencePages.clear()
                     pageStore = localPageStore
                     pageWriter = localWriter
+                    residentCenter = center
                 }
                 // Ownership moved into the session state. Clear the local
                 // cleanup handles before diagnostics, which must not be able
@@ -328,12 +378,14 @@ internal class DistantHorizonsLodController(
                 localWriter = null
                 Log.log(LogMessageType.MOD_LOADING, LogLevels.INFO) {
                     "DISTANT_HORIZONS_DATABASE_LOADED tiles=${loadedTiles.size} installedTiles=$installedTiles " +
-                        "pages=${loadedPages.size} installedPages=$installedPages " +
+                        "records=${initializedPageStore.inspect().recordCount} residentPages=$loadedPages " +
+                        "installedPages=$installedPages " +
                         "migratedPages=$installedMigrations path=${legacyPersistence.path}"
                 }
             } catch (error: Throwable) {
                 Log.log(LogMessageType.MOD_LOADING, LogLevels.WARN, error)
             } finally {
+                synchronized(this) { persistenceHydrating = false }
                 try {
                     localWriter?.close() ?: localPageStore?.close()
                 } catch (error: Throwable) {
@@ -349,7 +401,7 @@ internal class DistantHorizonsLodController(
                     if (closed) return installed
                     var publicationRevision: Long? = null
                     for (tile in batch) {
-                        if (tile.position in sources || store.size() >= options.maximumTiles) continue
+                        if (tile.position in sources || store.size() >= residentPageLimit) continue
                         val changeRevision = publicationRevision
                             ?: revision.incrementExact().also { publicationRevision = it }
                         store.put(tile).forEach { evicted ->
@@ -382,7 +434,7 @@ internal class DistantHorizonsLodController(
                     var publicationRevision: Long? = null
                     for ((page, position, tile) in prepared) {
                         val source = sources[position]
-                        val canInstall = (source == null && store.size() < options.maximumTiles) ||
+                        val canInstall = (source == null && store.size() < residentPageLimit) ||
                             (source == DistantLodTileSource.PERSISTENCE && position !in verticalPages)
                         if (!canInstall) continue
                         val changeRevision = publicationRevision
@@ -415,9 +467,107 @@ internal class DistantHorizonsLodController(
 
         @Synchronized
         private fun containsCanonicalPage(position: ChunkPosition): Boolean {
-            val page = verticalPages[position] ?: return false
+            if (persistenceHydrating) return true
+            val page = verticalPages[position]
+                ?: return pageStore?.contains(
+                    TerrainPageKey(
+                        TerrainDomain.DISTANT,
+                        detailLevel = 0,
+                        x = position.x.toLong(),
+                        y = 0L,
+                        z = position.z.toLong(),
+                        worldEpoch = session.world.terrainEpoch,
+                    ),
+                ) == true
             return page.completeness == DistantSourceCompleteness.COMPLETE ||
                 sources[position] != DistantLodTileSource.PERSISTENCE
+        }
+
+        @Synchronized
+        private fun refreshResidentPersistenceIfMoved() {
+            if (closed || persistenceHydrating || pageStore == null) return
+            val center = session.player.physics.positionInfo.chunkPosition
+            if (center == residentCenter && requestedResidentCenter == null) return
+            requestedResidentCenter = center
+            if (residentRefreshScheduled) return
+            residentRefreshScheduled = true
+            persistenceHydrationDispatcher(::refreshResidentPersistence)
+        }
+
+        /** Replaces only persistence-owned residency; native and network pages retain precedence. */
+        private fun refreshResidentPersistence() {
+            while (true) {
+                val request = synchronized(this) {
+                    if (closed) {
+                        residentRefreshScheduled = false
+                        return
+                    }
+                    val center = requestedResidentCenter
+                    val store = pageStore
+                    if (center == null || store == null) {
+                        residentRefreshScheduled = false
+                        return
+                    }
+                    requestedResidentCenter = null
+                    store to center
+                }
+                val (persistentStore, center) = request
+                try {
+                    val residentKeys = persistentStore.nearestKeys(
+                        centerX = center.x.toLong(),
+                        centerZ = center.z.toLong(),
+                        maximumLoadedPages = residentPageLimit,
+                        maximumEncodedBytes = MAX_RESIDENT_ENCODED_BYTES,
+                    )
+                    val residentPositions = residentKeys.mapTo(hashSetOf()) { key ->
+                        ChunkPosition(Math.toIntExact(key.x), Math.toIntExact(key.z))
+                    }
+                    synchronized(this) {
+                        if (closed) return
+                        val removals = sources.entries.asSequence()
+                            .filter { (position, source) ->
+                                source == DistantLodTileSource.PERSISTENCE && position !in residentPositions
+                            }
+                            .map { it.key }
+                            .toList()
+                        if (removals.isNotEmpty()) {
+                            val changeRevision = revision.incrementExact()
+                            removals.forEach { position ->
+                                store.remove(position)
+                                sources.remove(position)
+                                verticalPages.remove(position)
+                                recordChange(position, changeRevision)
+                            }
+                        }
+                    }
+                    persistentStore.loadNearestInBatches(
+                        worldEpoch = session.world.terrainEpoch,
+                        centerX = center.x.toLong(),
+                        centerZ = center.z.toLong(),
+                        maximumLoadedPages = residentPageLimit,
+                        maximumEncodedBytes = MAX_RESIDENT_ENCODED_BYTES,
+                        maximumBatchPages = PERSISTENCE_INSTALL_BATCH,
+                    ) consume@{ pages ->
+                        if (isClosed()) return@consume false
+                        pages.maxOfOrNull(DistantVerticalPage::sourceRevision)?.let { loadedRevision ->
+                            revision.accumulateAndGet(loadedRevision, ::maxOf)
+                        }
+                        installPersistentPages(pages)
+                        !isClosed()
+                    }
+                    synchronized(this) {
+                        if (!closed) residentCenter = center
+                    }
+                } catch (error: Throwable) {
+                    Log.log(LogMessageType.MOD_LOADING, LogLevels.WARN, error)
+                }
+                synchronized(this) {
+                    if (closed || requestedResidentCenter == null) {
+                        residentRefreshScheduled = false
+                        return
+                    }
+                }
+            }
         }
 
         @Synchronized
@@ -460,6 +610,7 @@ internal class DistantHorizonsLodController(
             store.put(tile).forEach { evicted ->
                 sources.remove(evicted)
                 verticalPages.remove(evicted)
+                pendingPersistencePages.remove(evicted)
                 recordChange(evicted, publicationRevision)
             }
             sources[tile.position] = source
@@ -468,7 +619,7 @@ internal class DistantHorizonsLodController(
                 pendingPersistencePages.remove(tile.position)
             } else {
                 verticalPages[tile.position] = publishedPage
-                if (options.persistenceEnabled) {
+                if (persistence != null) {
                     val writer = pageWriter
                     if (writer == null) {
                         pendingPersistencePages[tile.position] = publishedPage
@@ -550,13 +701,16 @@ internal class DistantHorizonsLodController(
             }
 
             cleanup { network.close(sendNetworkCancellation) }
+            cleanup { session.ticker -= residentPersistence }
             cleanup { session.ticker -= generator }
             cleanup { session.ticker -= network }
-            if (options.persistenceEnabled) cleanup { writer?.close() }
+            if (persistence != null) cleanup { writer?.close() }
             synchronized(this) {
                 cleanup(store::clear)
                 sources.clear()
                 verticalPages.clear()
+                requestedResidentCenter = null
+                residentRefreshScheduled = false
                 pendingPersistencePages.clear()
                 changeJournal.clear()
             }
@@ -607,6 +761,8 @@ internal class DistantHorizonsLodController(
     private companion object {
         const val MAX_CHANGE_POSITIONS = 4_096
         const val PERSISTENCE_INSTALL_BATCH = 64
+        const val MAX_RESIDENT_PAGES = 2_048
+        const val MAX_RESIDENT_ENCODED_BYTES = 512L * 1_024L * 1_024L
         const val MAX_PENDING_NETWORK_PAYLOADS = 128
         const val MAX_PENDING_NETWORK_PAYLOAD_BYTES = 64 * FabricClientPayloadChannels.MAX_PAYLOAD_BYTES
         val AIR_IDENTIFIERS = setOf(

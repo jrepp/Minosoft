@@ -23,6 +23,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -72,6 +73,89 @@ class DistantTerrainPageStoreTest {
         val restored = store.load(worldEpoch = 88).associateBy { it.key.x to it.key.z }
         assertEquals(88, restored.getValue(-4L to 7L).key.worldEpoch)
         assertEquals(4, restored.getValue(-4L to 7L).sourceRevision)
+    }
+
+    @Test
+    fun `large recovery can be consumed and cancelled in bounded batches`() {
+        val store = store(maximumPages = 6)
+        repeat(5) { index -> store.write(page(index.toLong(), -index.toLong(), 10, index + 1L)) }
+        val batches = mutableListOf<List<DistantVerticalPage>>()
+
+        val stoppedCount = store.loadInBatches(worldEpoch = 88, maximumBatchPages = 2) { batch ->
+            batches += batch
+            batches.size < 2
+        }
+
+        assertEquals(4, stoppedCount)
+        assertEquals(listOf(2, 2), batches.map(List<DistantVerticalPage>::size))
+        assertTrue(batches.flatten().all { it.key.worldEpoch == 88L })
+
+        val completed = mutableListOf<DistantVerticalPage>()
+        assertEquals(5, store.loadInBatches(worldEpoch = 99, maximumBatchPages = 2) { batch ->
+            completed += batch
+            true
+        })
+        assertEquals(5, completed.size)
+        assertTrue(completed.all { it.key.worldEpoch == 99L })
+        assertThrows<IllegalArgumentException> { store.loadInBatches(99, 0) { true } }
+    }
+
+    @Test
+    fun `batched recovery skips a record evicted after the snapshot without racing its file`() {
+        val store = store(maximumPages = 2)
+        store.write(page(0, 0, 10, 1))
+        store.write(page(1, 0, 10, 2))
+        val loaded = mutableListOf<DistantVerticalPage>()
+
+        val count = store.loadInBatches(worldEpoch = 88, maximumBatchPages = 1) { batch ->
+            loaded += batch
+            if (loaded.size == 1) store.write(page(2, 0, 10, 3))
+            true
+        }
+
+        assertEquals(1, count)
+        assertEquals(listOf(0L), loaded.map { it.key.x })
+        assertEquals(setOf(0L, 2L), store.keys().map { it.x }.toSet())
+        assertTrue(store.contains(page(0, 0, 99, 1).key))
+        assertFalse(store.contains(page(1, 0, 99, 1).key))
+        assertTrue(store.contains(page(2, 0, 99, 1).key))
+    }
+
+    @Test
+    fun `resident recovery selects nearest records within page and byte bounds`() {
+        val store = store(maximumPages = 6)
+        listOf(-20L, 0L, 9L, 11L, 30L).forEachIndexed { index, x ->
+            store.write(page(x, 0, 10, index + 1L))
+        }
+        val loaded = mutableListOf<DistantVerticalPage>()
+
+        val count = store.loadNearestInBatches(
+            worldEpoch = 77,
+            centerX = 10,
+            centerZ = 0,
+            maximumLoadedPages = 2,
+            maximumEncodedBytes = Long.MAX_VALUE,
+            maximumBatchPages = 1,
+        ) { batch ->
+            loaded += batch
+            true
+        }
+
+        assertEquals(2, count)
+        assertEquals(listOf(9L, 11L), loaded.map { it.key.x })
+        assertEquals(
+            setOf(9L, 11L),
+            store.nearestKeys(10, 0, 2, Long.MAX_VALUE).map { it.x }.toSet(),
+        )
+        assertEquals(5, store.keys().size)
+        assertEquals(
+            0,
+            store.loadNearestInBatches(77, 10, 0, 2, 1, 1) { true },
+        )
+        assertThrows<IllegalArgumentException> {
+            store.loadNearestInBatches(77, 10, 0, 0, Long.MAX_VALUE, 1) { true }
+        }
+        assertThrows<IllegalArgumentException> { store.nearestKeys(10, 0, 0, Long.MAX_VALUE) }
     }
 
     @Test

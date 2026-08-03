@@ -72,6 +72,7 @@ internal class DistantChunkSpiral {
 internal class DistantUnexploredGenerator(
     private val session: PlaySession,
     private val options: DistantHorizonsOptions,
+    private val maximumResidentTiles: Int = options.maximumTiles,
     private val contains: (ChunkPosition) -> Boolean,
     private val publish: (DistantLodTile, DistantVerticalPage) -> Unit,
 ) : Runnable {
@@ -100,7 +101,7 @@ internal class DistantUnexploredGenerator(
         val nextOuter = minOf(
             options.generationRadiusChunks,
             options.renderDistanceChunks,
-            maximumContiguousDistantRadius(options.maximumTiles),
+            maximumContiguousDistantRadius(maximumResidentTiles),
         )
         if (nextOuter <= nextInner) return
         if (nextCenter != center || nextInner != innerRadius || nextOuter != outerRadius) {
