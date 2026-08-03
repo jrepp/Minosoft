@@ -21,6 +21,8 @@ import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibModelTarg
 import de.bixilon.minosoft.assets.model.skeletal.gecko.runtime.GeckoLibRenderLayerBlend
 import de.bixilon.minosoft.data.container.stack.ItemStack
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKey
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKeys
 import de.bixilon.minosoft.gui.rendering.entities.feature.block.BlockMeshBuilder
 import de.bixilon.minosoft.gui.rendering.entities.feature.block.BlockShader
 import de.bixilon.minosoft.gui.rendering.entities.feature.item.ItemFeature.ItemRenderDistance.Companion.getCount
@@ -53,7 +55,9 @@ open class ItemFeature(
     stack: ItemStack?,
     display: DisplayPositions,
     val many: Boolean = true,
-) : MeshedFeature<Mesh>(renderer), ContentModelReloadable, EntityOutlineFeature {
+) : MeshedFeature<Mesh>(renderer, EntityRenderStateKeys.ITEM_BLOCK), ContentModelReloadable, EntityOutlineFeature {
+    override val renderStateKey: EntityRenderStateKey
+        get() = if (skeletal == null) EntityRenderStateKeys.ITEM_BLOCK else EntityRenderStateKeys.ITEM_SKELETAL
     override val castsShadow get() = true
     var display: DisplayPositions = display
         set(value) {

@@ -20,6 +20,7 @@ import de.bixilon.minosoft.data.entities.entities.player.PlayerEntity
 import de.bixilon.minosoft.data.world.chunk.light.types.LightLevel
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKeys
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.LivingEntityRenderer
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
 import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
@@ -37,7 +38,7 @@ import kotlin.time.Duration
  */
 class EntityLeashFeature(
     private val livingRenderer: LivingEntityRenderer<*>,
-) : MeshedFeature<Mesh>(livingRenderer), FeatureDrawable {
+) : MeshedFeature<Mesh>(livingRenderer, EntityRenderStateKeys.LEASH), FeatureDrawable {
     private var key: Key? = null
     private var meshData: FloatList? = null
     private var meshIndex: IntList? = null

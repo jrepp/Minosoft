@@ -13,6 +13,7 @@ package de.bixilon.minosoft.gui.rendering.entities.renderer.lightning
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKeys
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
 import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
@@ -21,7 +22,7 @@ import java.util.Random
 /** Retained jagged lightning ribbons in entity-local space. */
 class LightningBoltFeature(
     private val lightningRenderer: LightningBoltRenderer,
-) : MeshedFeature<Mesh>(lightningRenderer), FeatureDrawable {
+) : MeshedFeature<Mesh>(lightningRenderer, EntityRenderStateKeys.LIGHTNING), FeatureDrawable {
     override val layer = EntityLayer.Translucent
     override val priority = -200
 

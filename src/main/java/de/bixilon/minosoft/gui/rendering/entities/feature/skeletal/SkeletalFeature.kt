@@ -19,6 +19,7 @@ import de.bixilon.kmath.vec.vec3.f.MVec3f
 import de.bixilon.kutil.primitive.FloatUtil.rad
 import de.bixilon.minosoft.gui.rendering.entities.easteregg.EntityEasterEggs.isFlipped
 import de.bixilon.minosoft.gui.rendering.entities.feature.DrawableEntityRenderFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKeys
 import de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.LivingEntityRenderer
@@ -44,7 +45,7 @@ import kotlin.random.Random
 open class SkeletalFeature(
     renderer: EntityRenderer<*>,
     val instance: SkeletalInstance,
-) : DrawableEntityRenderFeature(renderer), EntityOutlineFeature {
+) : DrawableEntityRenderFeature(renderer, EntityRenderStateKeys.SKELETAL), EntityOutlineFeature {
     override val castsShadow get() = true
     override val additionalLayers: Set<EntityLayer>
         get() = if (layer == EntityLayer.Translucent) emptySet() else TRANSLUCENT_LAYER

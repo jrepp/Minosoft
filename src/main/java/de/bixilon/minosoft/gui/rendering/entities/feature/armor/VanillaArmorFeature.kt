@@ -20,6 +20,7 @@ import de.bixilon.minosoft.data.registries.item.items.armor.ArmorItem
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
 import de.bixilon.minosoft.data.text.formatting.color.RGBColor
 import de.bixilon.minosoft.gui.rendering.entities.feature.DrawableEntityRenderFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKeys
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.LivingEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
 import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
@@ -39,7 +40,7 @@ import kotlin.time.Duration
  */
 class VanillaArmorFeature(
     private val livingRenderer: LivingEntityRenderer<*>,
-) : DrawableEntityRenderFeature(livingRenderer) {
+) : DrawableEntityRenderFeature(livingRenderer, EntityRenderStateKeys.ARMOR_BASE) {
     private val entries = EnumMap<EquipmentSlots, Entry>(EquipmentSlots::class.java)
     private val context = livingRenderer.renderer.context
     private var outer: SkeletalInstance? = null
@@ -218,7 +219,7 @@ class VanillaArmorFeature(
 
     class Decorations(
         private val owner: VanillaArmorFeature,
-    ) : DrawableEntityRenderFeature(owner.livingRenderer) {
+    ) : DrawableEntityRenderFeature(owner.livingRenderer, EntityRenderStateKeys.ARMOR_DECORATION) {
         override val layer get() = EntityLayer.Opaque
         override val priority get() = owner.priority + 1
 

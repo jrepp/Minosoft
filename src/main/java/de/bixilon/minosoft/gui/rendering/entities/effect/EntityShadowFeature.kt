@@ -17,6 +17,7 @@ import de.bixilon.minosoft.data.entities.entities.AgeableMob
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKeys
 import de.bixilon.minosoft.gui.rendering.entities.feature.register.EntityRenderFeatures
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
@@ -34,7 +35,7 @@ import kotlin.time.Duration
 /** Native translucent entity shadow projected onto nearby terrain surfaces. */
 class EntityShadowFeature(
     private val entityRenderer: EntityRenderer<*>,
-) : MeshedFeature<Mesh>(entityRenderer), FeatureDrawable {
+) : MeshedFeature<Mesh>(entityRenderer, EntityRenderStateKeys.SHADOW), FeatureDrawable {
     private var key: Key? = null
     private var meshData: FloatList? = null
     private var meshIndex: IntList? = null

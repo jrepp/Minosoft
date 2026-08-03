@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -213,17 +214,29 @@ internal fun compareFeatureDrawables(
     b: FeatureDrawable,
     order: EntityLayer.EntitySortOrders,
 ): Int {
-    var sort = a.compareTo(b)
+    var sort = a.priority.compareTo(b.priority)
     if (sort != 0) return sort
+
+    if (order == EntityLayer.EntitySortOrders.NEAREST_FIRST) {
+        sort = a.renderStateKey.compareTo(b.renderStateKey)
+        if (sort != 0) return sort
+    }
 
     sort = a.distance2.compareTo(b.distance2) * order.sign
     if (sort != 0) return sort
+
+    if (order == EntityLayer.EntitySortOrders.FURTHEST_FIRST) {
+        sort = a.renderStateKey.compareTo(b.renderStateKey)
+        if (sort != 0) return sort
+    }
 
     return a.stableOrder.compareTo(b.stableOrder)
 }
 
 internal fun compareShadowDrawables(a: FeatureDrawable, b: FeatureDrawable): Int {
-    val ordered = a.compareTo(b)
+    var ordered = a.priority.compareTo(b.priority)
+    if (ordered != 0) return ordered
+    ordered = a.renderStateKey.compareTo(b.renderStateKey)
     if (ordered != 0) return ordered
     return a.stableOrder.compareTo(b.stableOrder)
 }

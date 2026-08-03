@@ -20,6 +20,7 @@ import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.gui.rendering.entities.EntityRendererTestUtil
 import de.bixilon.minosoft.gui.rendering.entities.draw.EntityDrawer
 import de.bixilon.minosoft.gui.rendering.entities.feature.DrawableEntityRenderFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKey
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLevels
 import org.testng.Assert.assertEquals
@@ -104,7 +105,7 @@ class EntityOutlineFeatureTest {
 
     private class TestFeature(
         renderer: EntityRenderer<*>,
-    ) : DrawableEntityRenderFeature(renderer), EntityOutlineFeature {
+    ) : DrawableEntityRenderFeature(renderer, EntityRenderStateKey.TEST), EntityOutlineFeature {
         var updates = 0
         var normalCollections = 0
 

@@ -20,13 +20,23 @@
 
 package de.bixilon.minosoft.gui.rendering.entities.draw
 
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKey
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class EntityDrawOrderTest {
+    @Test
+    fun `render state ordering resolves hash collisions`() {
+        val first = EntityRenderStateKey("FB", "vertex", "state", "material", "mesh")
+        val second = EntityRenderStateKey("Ea", "vertex", "state", "material", "mesh")
+
+        assertNotEquals(first, second)
+        assertNotEquals(0, first.compareTo(second))
+    }
 
     @Test
     fun `distance remains ahead of the stable tie breaker`() {
@@ -47,10 +57,30 @@ class EntityDrawOrderTest {
         assertEquals(compareFeatureDrawables(earlier, earlier, EntityLayer.EntitySortOrders.NEAREST_FIRST), 0)
     }
 
+    @Test
+    fun `opaque queues group immutable state before distance`() {
+        val stateA = EntityRenderStateKey("a", "v", "s", "m", "mesh")
+        val stateB = EntityRenderStateKey("b", "v", "s", "m", "mesh")
+        val farA = FakeDrawable(distance2 = 100.0, stableOrder = 1, renderStateKey = stateA)
+        val nearB = FakeDrawable(distance2 = 1.0, stableOrder = 2, renderStateKey = stateB)
+
+        assertTrue(compareFeatureDrawables(farA, nearB, EntityLayer.EntitySortOrders.NEAREST_FIRST) < 0)
+    }
+
+    @Test
+    fun `translucent queues preserve distance before state grouping`() {
+        val stateA = EntityRenderStateKey("a", "v", "s", "m", "mesh")
+        val stateB = EntityRenderStateKey("b", "v", "s", "m", "mesh")
+        val nearA = FakeDrawable(distance2 = 1.0, stableOrder = 1, renderStateKey = stateA)
+        val farB = FakeDrawable(distance2 = 100.0, stableOrder = 2, renderStateKey = stateB)
+
+        assertTrue(compareFeatureDrawables(farB, nearA, EntityLayer.EntitySortOrders.FURTHEST_FIRST) < 0)
+    }
+
     private data class FakeDrawable(
         override val distance2: Double,
         override val stableOrder: Long,
-        override val sort: Int = 0,
+        override val renderStateKey: EntityRenderStateKey = EntityRenderStateKey.TEST,
     ) : FeatureDrawable {
         override fun draw() = Unit
     }

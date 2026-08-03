@@ -59,7 +59,7 @@ class EntityRenderFeatureVisibilityTest {
 
     private class TestFeature(
         renderer: EntityRenderer<*>,
-    ) : DrawableEntityRenderFeature(renderer) {
+    ) : DrawableEntityRenderFeature(renderer, EntityRenderStateKey.TEST) {
         override val castsShadow = true
         var updates = 0
 

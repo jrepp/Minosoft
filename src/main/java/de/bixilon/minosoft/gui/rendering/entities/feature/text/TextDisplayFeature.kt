@@ -23,6 +23,7 @@ import de.bixilon.minosoft.data.entities.entities.display.TextDisplayEntity
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.gui.rendering.RenderConstants
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKeys
 import de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
@@ -38,7 +39,7 @@ import kotlin.time.Duration
 
 class TextDisplayFeature(
     renderer: EntityRenderer<TextDisplayEntity>,
-) : MeshedFeature<Mesh>(renderer), EntityOutlineFeature {
+) : MeshedFeature<Mesh>(renderer, EntityRenderStateKeys.TEXT_DISPLAY), EntityOutlineFeature {
     private val displayEntity = renderer.entity
     private var renderKey: RenderKey? = null
     private var info: TextRenderInfo? = null

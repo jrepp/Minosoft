@@ -24,6 +24,7 @@ import de.bixilon.minosoft.data.text.formatting.color.ColorInterpolation
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKeys
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLevels
 import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
@@ -39,7 +40,7 @@ import de.bixilon.minosoft.util.collections.ints.IntListUtil
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
-class HitboxFeature(renderer: EntityRenderer<*>) : MeshedFeature<Mesh>(renderer), FeatureDrawable {
+class HitboxFeature(renderer: EntityRenderer<*>) : MeshedFeature<Mesh>(renderer, EntityRenderStateKeys.HITBOX), FeatureDrawable {
     private val manager = renderer.renderer.features.hitbox
 
     private var aabb = renderer.entity.renderInfo.cameraAABB

@@ -27,6 +27,7 @@ import de.bixilon.minosoft.data.container.stack.ItemStack
 import de.bixilon.minosoft.gui.rendering.entities.EntityRendererTestUtil
 import de.bixilon.minosoft.gui.rendering.entities.EntityRendererTestUtil.createEntity
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKey
 import de.bixilon.minosoft.gui.rendering.entities.feature.item.ItemFeature
 import de.bixilon.minosoft.gui.rendering.entities.feature.flame.EntityFlameFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
@@ -74,7 +75,7 @@ class EntityDrawerTest {
             override val layer = layer
             override val additionalLayers = additionalLayers
             override val priority = priority
-            override val sort get() = 0
+            override val renderStateKey get() = EntityRenderStateKey.TEST
             override val distance2 = distance
 
             override fun prepare() {
@@ -160,7 +161,7 @@ class EntityDrawerTest {
             de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderFeature(entityRenderer),
             FeatureDrawable {
             override val layer = EntityLayer.Opaque
-            override val sort = 0
+            override val renderStateKey = EntityRenderStateKey.TEST
             override val distance2 = 0.0
             override fun draw() = Unit
             override fun collect(drawer: EntityDrawer) = Unit
@@ -180,7 +181,7 @@ class EntityDrawerTest {
             de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderFeature(entityRenderer),
             FeatureDrawable {
             override val layer = EntityLayer.Opaque
-            override val sort = 0
+            override val renderStateKey = EntityRenderStateKey.TEST
             override val distance2 = 0.0
             override fun draw() = Unit
             override fun collect(drawer: EntityDrawer) = Unit

@@ -15,6 +15,7 @@
 package de.bixilon.minosoft.gui.rendering.entities.feature.mesh
 
 import de.bixilon.minosoft.gui.rendering.entities.feature.DrawableEntityRenderFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKey
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityVisibilityLevels
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
@@ -24,7 +25,8 @@ import java.util.IdentityHashMap
 
 abstract class MeshedFeature<M : Mesh>(
     renderer: EntityRenderer<*>,
-) : DrawableEntityRenderFeature(renderer) {
+    renderStateKey: EntityRenderStateKey,
+) : DrawableEntityRenderFeature(renderer, renderStateKey) {
     protected var unload = false
     private var suppressMeshUnload = false
     private val retiredMeshes: MutableSet<M> = Collections.newSetFromMap(IdentityHashMap())

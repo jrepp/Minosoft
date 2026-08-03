@@ -18,6 +18,7 @@ import de.bixilon.kmath.vec.vec3.f.Vec3f
 import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKeys
 import de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
@@ -30,7 +31,7 @@ open class BlockFeature(
     renderer: EntityRenderer<*>,
     state: BlockState?,
     val scale: Vec3f = DEFAULT_SCALE,
-) : MeshedFeature<Mesh>(renderer), EntityOutlineFeature {
+) : MeshedFeature<Mesh>(renderer, EntityRenderStateKeys.BLOCK), EntityOutlineFeature {
     override val castsShadow get() = true
     private var matrix = MMat4f()
     var state: BlockState? = state

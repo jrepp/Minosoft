@@ -20,6 +20,7 @@ import de.bixilon.minosoft.data.text.formatting.color.ChatColors
 import de.bixilon.minosoft.data.text.formatting.color.Colors
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.gui.rendering.entities.feature.DrawableEntityRenderFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKeys
 import de.bixilon.minosoft.gui.rendering.entities.outline.EntityOutlineFeature
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.ContentModelReloadable
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.LivingEntityRenderer
@@ -42,7 +43,7 @@ import kotlin.time.Duration
  */
 class GeckoLibArmorFeature(
     private val livingRenderer: LivingEntityRenderer<*>,
-) : DrawableEntityRenderFeature(livingRenderer), ContentModelReloadable, EntityOutlineFeature {
+) : DrawableEntityRenderFeature(livingRenderer, EntityRenderStateKeys.GECKO_ARMOR), ContentModelReloadable, EntityOutlineFeature {
     override val castsShadow get() = true
     private val entries = EnumMap<EquipmentSlots, Entry>(EquipmentSlots::class.java)
     private val pending = EnumMap<EquipmentSlots, GeckoLibAnimationManagerSnapshot>(EquipmentSlots::class.java)

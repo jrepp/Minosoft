@@ -18,6 +18,7 @@ import de.bixilon.kutil.primitive.FloatUtil.rad
 import de.bixilon.minosoft.data.entities.EntityRotation
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKeys
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
 import de.bixilon.minosoft.gui.rendering.util.mesh.Mesh
@@ -27,7 +28,7 @@ import kotlin.time.Duration
 /** Camera-facing, full-bright vanilla fire sheets surrounding a burning entity. */
 class EntityFlameFeature(
     private val entityRenderer: EntityRenderer<*>,
-) : MeshedFeature<Mesh>(entityRenderer) {
+) : MeshedFeature<Mesh>(entityRenderer, EntityRenderStateKeys.FLAME) {
     private val matrix = MMat4f()
     private var key: Key? = null
     private var layout = EntityFlameGeometry.Layout(0.0f, 0.0f, 0.0f, emptyList())

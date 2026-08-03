@@ -15,6 +15,7 @@ import de.bixilon.minosoft.data.text.formatting.color.ChatColors
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
 import de.bixilon.minosoft.gui.rendering.entities.EntityRendererTestUtil
 import de.bixilon.minosoft.gui.rendering.entities.feature.FeatureDrawable
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKey
 import de.bixilon.minosoft.gui.rendering.entities.visibility.EntityLayer
 import de.bixilon.minosoft.gui.rendering.framebuffer.FramebufferManager
 import de.bixilon.minosoft.gui.rendering.input.key.manager.InputManager
@@ -64,7 +65,7 @@ class EntityOutlineRendererTest {
         var color: RGBAColor? = null
 
         override val layer = EntityLayer.Opaque
-        override val sort = 0
+        override val renderStateKey = EntityRenderStateKey.TEST
         override val distance2 = 0.0
 
         override fun prepare() {

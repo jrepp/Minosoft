@@ -23,6 +23,8 @@ import de.bixilon.minosoft.data.entities.entities.player.properties.textures.met
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerModelMeshBuilder
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerRenderer
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKey
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKeys
 import de.bixilon.minosoft.gui.rendering.shader.SceneProgramFamily
 import de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisEntityOverlay
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalModel
@@ -34,6 +36,7 @@ open class PlayerModel(
     model: BakedSkeletalModel,
     val type: SkinModel,
 ) : HumanModel<PlayerRenderer<*>>(renderer, model) {
+    override val renderStateKey: EntityRenderStateKey = EntityRenderStateKeys.PLAYER
     private val shader = renderer.renderer.features.player.shader
     var skinParts = 0xFF
         private set

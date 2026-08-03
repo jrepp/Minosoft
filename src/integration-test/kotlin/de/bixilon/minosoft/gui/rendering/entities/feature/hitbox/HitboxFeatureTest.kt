@@ -24,6 +24,7 @@ import de.bixilon.minosoft.data.registries.entities.EntityFactory
 import de.bixilon.minosoft.gui.rendering.entities.EntityRendererTestUtil.create
 import de.bixilon.minosoft.gui.rendering.entities.EntityRendererTestUtil.setInvisible
 import de.bixilon.minosoft.gui.rendering.entities.feature.mesh.MeshedFeature
+import de.bixilon.minosoft.gui.rendering.entities.feature.EntityRenderStateKey
 import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.input.key.manager.InputManager
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.GpuBufferStates
@@ -142,7 +143,7 @@ class HitboxFeatureTest {
         assertEquals(second.unloads, 1)
     }
 
-    private class TestMeshedFeature(renderer: EntityRenderer<*>) : MeshedFeature<Mesh>(renderer) {
+    private class TestMeshedFeature(renderer: EntityRenderer<*>) : MeshedFeature<Mesh>(renderer, EntityRenderStateKey.TEST) {
         fun replace(mesh: Mesh) {
             this.mesh = mesh
         }
