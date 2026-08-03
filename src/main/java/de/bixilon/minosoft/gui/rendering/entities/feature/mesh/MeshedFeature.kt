@@ -57,7 +57,7 @@ abstract class MeshedFeature<M : Mesh>(
             MeshStates.PREPARING -> mesh.drop()
             MeshStates.LOADED -> {
                 synchronized(retiredMeshes) { retiredMeshes += mesh }
-                renderer.renderer.queue += {
+                renderer.renderer.retirementQueue += {
                     // Claim ownership before touching the GPU object. Terminal
                     // teardown clears the same identity set, so a queued task
                     // and unload() can never both unload this mesh.

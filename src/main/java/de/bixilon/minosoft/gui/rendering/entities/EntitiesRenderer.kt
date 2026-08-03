@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -42,6 +43,7 @@ class EntitiesRenderer(
     val visibility = VisibilityManager(this)
     val drawer = EntityDrawer(this)
     val queue = Queue()
+    val retirementQueue = Queue()
 
     /**
      * Bounded visual-reference suppression. This leaves entity state,
@@ -124,6 +126,10 @@ class EntitiesRenderer(
         drawer.prepare()
     }
 
+    override fun postDraw() {
+        retirementQueue.work()
+    }
+
     override fun init(latch: AbstractLatch) {
         context.camera.offset::offset.observe(this) { invalid = true }
         features.init()
@@ -138,6 +144,7 @@ class EntitiesRenderer(
     }
 
     override fun unload() {
+        retirementQueue.work()
         drawer.outline.unload()
     }
 

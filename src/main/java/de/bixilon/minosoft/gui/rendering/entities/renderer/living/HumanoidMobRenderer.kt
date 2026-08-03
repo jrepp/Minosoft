@@ -45,7 +45,7 @@ open class HumanoidMobRenderer<E : LivingEntity>(
         this.model = null
         if (model != null) {
             features -= model
-            renderer.queue += { model.unload() }
+            renderer.retirementQueue += { model.unload() }
         }
         unloadModel = false
     }

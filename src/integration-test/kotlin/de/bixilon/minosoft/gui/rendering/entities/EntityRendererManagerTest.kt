@@ -20,9 +20,11 @@ import de.bixilon.minosoft.data.entities.entities.monster.Husk
 import de.bixilon.minosoft.data.entities.entities.monster.Zombie
 import de.bixilon.minosoft.gui.rendering.entities.EntityRendererTestUtil.createEntity
 import de.bixilon.minosoft.gui.rendering.entities.EntityRendererTestUtil.create
+import de.bixilon.minosoft.gui.rendering.entities.renderer.EntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.FallbackLivingEntityRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.monster.ZombieRenderer
 import org.testng.Assert.assertEquals
+import org.testng.Assert.assertFalse
 import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
 
@@ -89,5 +91,23 @@ class EntityRendererManagerTest {
     fun `unmapped living mob uses visible fallback`() {
         val renderer = EntityRendererTestUtil.create().create(Spider)
         assertTrue(renderer is FallbackLivingEntityRenderer)
+    }
+
+    fun `entity GPU retirement waits until frame drawing completes`() {
+        val entities = EntityRendererTestUtil.create()
+        val entity = entities.createEntity(Pig)
+        var unloaded = false
+        val renderer = object : EntityRenderer<Pig>(entities, entity) {
+            override fun unload() {
+                unloaded = true
+            }
+        }
+
+        entities.renderers.unload(renderer)
+        entities.queue.work()
+        assertFalse(unloaded)
+
+        entities.postDraw()
+        assertTrue(unloaded)
     }
 }

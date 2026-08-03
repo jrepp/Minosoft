@@ -233,7 +233,7 @@ class GeckoLibArmorFeature(
             }
         }
         if (enqueue && instance.state == SkeletalModelStates.LOADED) {
-            livingRenderer.renderer.queue += close
+            livingRenderer.renderer.retirementQueue += close
         } else {
             close()
         }

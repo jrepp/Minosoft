@@ -293,7 +293,7 @@ open class ItemFeature(
             }
         }
         if (enqueue && skeletal.state == SkeletalModelStates.LOADED) {
-            renderer.renderer.queue += release
+            renderer.renderer.retirementQueue += release
         } else {
             release()
         }

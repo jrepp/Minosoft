@@ -92,7 +92,7 @@ class EntityRendererManager(val renderer: EntitiesRenderer) : Iterable<EntityRen
 
 
     fun unload(renderer: EntityRenderer<*>) {
-        this.renderer.queue += { renderer.unload() }
+        this.renderer.retirementQueue += { renderer.unload() }
     }
 
     fun reloadContentModels() {

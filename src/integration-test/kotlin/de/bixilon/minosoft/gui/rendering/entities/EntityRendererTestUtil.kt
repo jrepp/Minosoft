@@ -80,6 +80,7 @@ object EntityRendererTestUtil {
         val renderer = EntitiesRenderer::class.java.allocate()
         renderer::context.forceSet(context)
         renderer::queue.forceSet(Queue())
+        renderer::retirementQueue.forceSet(Queue())
         renderer::session.forceSet(context.session)
         renderer::profile.forceSet(EntityProfile())
         renderer::features.forceSet(EntityRenderFeatures(renderer).also {

@@ -70,7 +70,7 @@ open class PlayerRenderer<E : PlayerEntity>(renderer: EntitiesRenderer, entity: 
         val model = this.model ?: return
         this.model = null
         features -= model
-        renderer.queue += { model.unload() }
+        renderer.retirementQueue += { model.unload() }
         this.unloadModel = false
     }
 
