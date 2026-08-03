@@ -217,11 +217,7 @@ class OpenGlTextureArray(
         val handle = handles[arrayId]
         assert(handle >= 0)
 
-        if (system.boundTexture != handle) {
-            gl { glActiveTexture(GL_TEXTURE0 + data.array) }
-            gl { glBindTexture(GL_TEXTURE_2D_ARRAY, handle) }
-            system.boundTexture = handle
-        }
+        system.bindTexture(data.array, GL_TEXTURE_2D_ARRAY, handle)
 
         glUpload(texture, pageResolution = RESOLUTIONS[arrayId])
     }
@@ -240,7 +236,7 @@ class OpenGlTextureArray(
             if (arrayId < 0) continue
             val handle = handles[arrayId]
             if (handle < 0) continue
-            if (system.boundTexture != handle) bind(data.array, handle)
+            bind(data.array, handle)
             val pageResolution = RESOLUTIONS[arrayId]
             val revision = material.animation.revision
             if (material.uploadedRevision == revision) continue
@@ -681,15 +677,13 @@ class OpenGlTextureArray(
     }
 
     private fun bind(index: Int, handle: Int) {
-        gl { glActiveTexture(GL_TEXTURE0 + index) }
-        gl { glBindTexture(GL_TEXTURE_2D_ARRAY, handle) }
-        system.boundTexture = handle
+        system.bindTexture(index, GL_TEXTURE_2D_ARRAY, handle)
     }
 
     private fun deleteHandle(handle: Int) {
         gl { glDeleteTextures(handle) }
         system.resources.deleted(OpenGlResourceType.TEXTURE, handle)
-        if (system.boundTexture == handle) system.boundTexture = -1
+        system.invalidateTexture(handle)
         handlesDeleted++
     }
 

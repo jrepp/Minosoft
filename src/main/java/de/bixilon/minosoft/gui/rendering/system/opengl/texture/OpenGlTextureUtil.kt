@@ -22,8 +22,6 @@ import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Compan
 import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceType
 import org.lwjgl.opengl.GL11.*
 import org.lwjgl.opengl.GL12.GL_TEXTURE_MAX_LEVEL
-import org.lwjgl.opengl.GL13.GL_TEXTURE0
-import org.lwjgl.opengl.GL13.glActiveTexture
 import org.lwjgl.opengl.GL30.GL_TEXTURE_2D_ARRAY
 
 object OpenGlTextureUtil {
@@ -34,22 +32,20 @@ object OpenGlTextureUtil {
         system.resources.created(OpenGlResourceType.TEXTURE, textureId)
 
         try {
-            gl { glActiveTexture(GL_TEXTURE0 + index) }
-            gl { glBindTexture(GL_TEXTURE_2D_ARRAY, textureId) }
-            system.boundTexture = textureId
+            system.bindTexture(index, GL_TEXTURE_2D_ARRAY, textureId)
 
-            gl { glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT) }
-            gl { glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT) }
-            gl { glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, if (mipmaps == 0) GL_NEAREST else GL_NEAREST_MIPMAP_NEAREST) }
-            gl { glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST) }
-            gl { glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_LEVEL, mipmaps) }
+            system.textureParameter { glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT) }
+            system.textureParameter { glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT) }
+            system.textureParameter { glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, if (mipmaps == 0) GL_NEAREST else GL_NEAREST_MIPMAP_NEAREST) }
+            system.textureParameter { glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST) }
+            system.textureParameter { glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_LEVEL, mipmaps) }
 
             return textureId
         } catch (error: Throwable) {
             try {
                 gl { glDeleteTextures(textureId) }
                 system.resources.deleted(OpenGlResourceType.TEXTURE, textureId)
-                if (system.boundTexture == textureId) system.boundTexture = -1
+                system.invalidateTexture(textureId)
             } catch (cleanup: Throwable) {
                 error.addSuppressed(cleanup)
             }

@@ -63,7 +63,7 @@ class OpenGlFontTextureArray(
                 FontCompressions.COMPRESSED_ALPHA -> GL_COMPRESSED_RED
             }
             if (compression != FontCompressions.NONE) {
-                gl { glTexParameteriv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_SWIZZLE_RGBA, intArrayOf(GL_ONE, GL_ONE, GL_ONE, GL_RED)) }
+                system.textureParameter { glTexParameteriv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_SWIZZLE_RGBA, intArrayOf(GL_ONE, GL_ONE, GL_ONE, GL_RED)) }
             }
 
             gl { glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, format, width, height, textures.size, 0, GL_RGBA, GL_UNSIGNED_BYTE, null as ByteBuffer?) }
@@ -123,7 +123,7 @@ class OpenGlFontTextureArray(
         if (handle < 0) return
         gl { glDeleteTextures(handle) }
         system.resources.deleted(OpenGlResourceType.TEXTURE, handle)
-        if (system.boundTexture == handle) system.boundTexture = -1
+        system.invalidateTexture(handle)
         handle = -1
         shaderTextureSize = Vec2i(0, 0)
         state = TextureArrayStates.UNLOADED

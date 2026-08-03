@@ -81,6 +81,7 @@ class OpenGlFramebuffer(
                 attach(stencil)
             }
 
+            system.work.framebufferCompletenessCheck()
             val state = gl { glCheckFramebufferStatus(GL_FRAMEBUFFER) }
             check(state == GL_FRAMEBUFFER_COMPLETE) { "Framebuffer is incomplete: $state" }
             this.state = FramebufferState.COMPLETE
@@ -98,14 +99,16 @@ class OpenGlFramebuffer(
 
     private fun unsafeBind() {
         system.log { "Binding framebuffer $this" }
-        gl { glBindFramebuffer(GL_FRAMEBUFFER, id) }
+        system.bindFramebuffer(GL_FRAMEBUFFER, id)
     }
 
     private fun attach(renderbuffer: OpenGlBufferAttachment) {
+        system.work.framebufferAttachmentChange()
         gl { glFramebufferRenderbuffer(GL_FRAMEBUFFER, renderbuffer.glAttachment, GL_RENDERBUFFER, renderbuffer.id) }
     }
 
     private fun attach(texture: OpenGlTextureAttachment) {
+        system.work.framebufferAttachmentChange()
         gl { glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture.id, 0) }
     }
 
@@ -149,6 +152,7 @@ class OpenGlFramebuffer(
         if (id < 0) return
         gl { glDeleteFramebuffers(id) }
         system.resources.deleted(OpenGlResourceType.FRAMEBUFFER, id)
+        system.invalidateFramebuffer(id)
         id = -1
     }
 

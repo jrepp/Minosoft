@@ -19,8 +19,6 @@ import de.bixilon.minosoft.gui.rendering.system.base.buffer.uniform.UniformBuffe
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
 import de.bixilon.minosoft.gui.rendering.system.opengl.buffer.OpenGlGpuBuffer
-import org.lwjgl.opengl.GL30.glBindBufferBase
-import org.lwjgl.opengl.GL30.glBindBufferRange
 import org.lwjgl.opengl.GL31.GL_UNIFORM_BUFFER
 
 abstract class OpenGlUniformBuffer(
@@ -36,7 +34,7 @@ abstract class OpenGlUniformBuffer(
 
     override fun init() {
         super.init()
-        gl { glBindBufferRange(glType, bindingIndex, id, 0, size.toLong()) }
+        system.bindBufferRange(glType, bindingIndex, id, 0L, size.toLong())
         initialSize = size
     }
 
@@ -46,7 +44,7 @@ abstract class OpenGlUniformBuffer(
         shader.use()
 
         shader.uniformTarget()[bufferName] = this
-        gl { glBindBufferBase(glType, bindingIndex, id) }
+        system.bindBufferBase(glType, bindingIndex, id)
     }
 
     override fun unload() {

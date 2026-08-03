@@ -42,7 +42,6 @@ import org.lwjgl.opengl.GL11.GL_TEXTURE_WRAP_T
 import org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE
 import org.lwjgl.opengl.GL11.GL_UNSIGNED_INT
 import org.lwjgl.opengl.GL11.GL_UNSIGNED_SHORT
-import org.lwjgl.opengl.GL11.glBindTexture
 import org.lwjgl.opengl.GL11.glDeleteTextures
 import org.lwjgl.opengl.GL11.glGenTextures
 import org.lwjgl.opengl.GL11.glGetInteger
@@ -55,8 +54,6 @@ import org.lwjgl.opengl.GL12.GL_TEXTURE_3D
 import org.lwjgl.opengl.GL12.GL_TEXTURE_MAX_LEVEL
 import org.lwjgl.opengl.GL12.GL_TEXTURE_WRAP_R
 import org.lwjgl.opengl.GL12.glTexImage3D
-import org.lwjgl.opengl.GL13.GL_TEXTURE0
-import org.lwjgl.opengl.GL13.glActiveTexture
 import org.lwjgl.opengl.GL30.GL_HALF_FLOAT
 import org.lwjgl.opengl.GL30.GL_R16F
 import org.lwjgl.opengl.GL30.GL_R16I
@@ -100,19 +97,16 @@ import org.lwjgl.opengl.GL30.GL_RGBA8I
 import org.lwjgl.opengl.GL30.GL_RGBA8UI
 import org.lwjgl.opengl.GL30.GL_RGBA_INTEGER
 import org.lwjgl.opengl.GL30.GL_MAX_TEXTURE_SIZE
-import org.lwjgl.opengl.GL30.glBindBufferBase
 import org.lwjgl.opengl.GL32.glGetInteger64
 import org.lwjgl.opengl.GL42.GL_ALL_BARRIER_BITS
 import org.lwjgl.opengl.GL42.GL_MAX_IMAGE_UNITS
 import org.lwjgl.opengl.GL42.GL_READ_WRITE
-import org.lwjgl.opengl.GL42.glBindImageTexture
 import org.lwjgl.opengl.GL42.glMemoryBarrier
 import org.lwjgl.opengl.GL43.GL_DYNAMIC_COPY
 import org.lwjgl.opengl.GL43.GL_DISPATCH_INDIRECT_BUFFER
 import org.lwjgl.opengl.GL43.GL_MAX_SHADER_STORAGE_BLOCK_SIZE
 import org.lwjgl.opengl.GL43.GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS
 import org.lwjgl.opengl.GL43.GL_SHADER_STORAGE_BUFFER
-import org.lwjgl.opengl.GL43.glBindBuffer
 import org.lwjgl.opengl.GL43.glBufferData
 import org.lwjgl.opengl.GL43.glClearBufferData
 import org.lwjgl.opengl.GL43.glDeleteBuffers
@@ -120,6 +114,7 @@ import org.lwjgl.opengl.GL43.glDispatchComputeIndirect
 import org.lwjgl.opengl.GL43.glGenBuffers
 import org.lwjgl.opengl.GL44.glClearTexImage
 import java.nio.ByteBuffer
+import java.util.IdentityHashMap
 import kotlin.math.max
 
 /**
@@ -140,6 +135,7 @@ internal class IrisOpenGlCustomResources(
     private var size = Vec2i(-1, -1)
     private var initialized = false
     private var closed = false
+    private val imageUniforms = IdentityHashMap<NativeShader, MutableMap<String, Int>>()
 
     val physicalImageCount get() = images.size
     val physicalBufferCount get() = buffers.size
@@ -171,41 +167,41 @@ internal class IrisOpenGlCustomResources(
         bindShaderStorageBuffers()
     }
 
-    fun bindImages(native: NativeShader, names: Set<String>, firstUnit: Int = 0): Int {
+    fun bindImages(native: NativeShader, names: Collection<String>, firstUnit: Int = 0): Int {
         require(firstUnit >= 0) { "First Iris image unit must be non-negative" }
         if (names.isEmpty()) return firstUnit
-        val active = names.mapNotNull { name ->
-            images[name]?.takeIf { native.hasUniform(name) }
-        }
+        val activeCount = names.count { name -> images[name] != null && native.hasUniform(name) }
         val maximum = gl { glGetInteger(GL_MAX_IMAGE_UNITS) }
-        require(firstUnit + active.size <= maximum) {
-            "Shader requires ${firstUnit + active.size} Iris images but the driver exposes $maximum image units"
+        require(firstUnit <= maximum - activeCount) {
+            "Shader requires ${firstUnit + activeCount} Iris images but the driver exposes $maximum image units"
         }
-        active.forEachIndexed { offset, image ->
-            val unit = firstUnit + offset
-            gl {
-                glBindImageTexture(
-                    unit,
-                    image.texture,
-                    0,
-                    image.descriptor.target == IrisCustomImageTarget.TEXTURE_3D,
-                    0,
-                    GL_READ_WRITE,
-                    image.descriptor.internalFormat.gl,
-                )
+        var unit = firstUnit
+        for (name in names) {
+            val image = images[name]?.takeIf { native.hasUniform(name) } ?: continue
+            system.bindImageTexture(
+                unit,
+                image.texture,
+                0,
+                image.descriptor.target == IrisCustomImageTarget.TEXTURE_3D,
+                0,
+                GL_READ_WRITE,
+                image.descriptor.internalFormat.gl,
+            )
+            val uniforms = imageUniforms.getOrPut(native) { mutableMapOf() }
+            if (uniforms[image.descriptor.name] != unit) {
+                native.setInt(image.descriptor.name, unit)
+                uniforms[image.descriptor.name] = unit
             }
-            native.setInt(image.descriptor.name, unit)
+            unit++
         }
-        return firstUnit + active.size
+        return unit
     }
 
     fun bindSampler(name: String, unit: Int) {
         val image = requireNotNull(images.values.firstOrNull { it.descriptor.sampler == name }) {
             "Undeclared Iris custom-image sampler $name"
         }
-        gl { glActiveTexture(GL_TEXTURE0 + unit) }
-        gl { glBindTexture(image.descriptor.target.gl, image.texture) }
-        system.boundTexture = image.texture
+        system.bindTexture(unit, image.descriptor.target.gl, image.texture)
     }
 
     fun memoryBarrier(force: Boolean = false) {
@@ -221,7 +217,7 @@ internal class IrisOpenGlCustomResources(
             "Iris indirect compute dispatch reads $INDIRECT_DISPATCH_BYTES bytes at offset " +
                 "${pointer.offset} from ${buffer.bytes}-byte bufferObject.${pointer.bufferIndex}"
         }
-        gl { glBindBuffer(GL_DISPATCH_INDIRECT_BUFFER, buffer.buffer) }
+        system.bindBuffer(GL_DISPATCH_INDIRECT_BUFFER, buffer.buffer)
         gl { glDispatchComputeIndirect(pointer.offset) }
     }
 
@@ -284,7 +280,7 @@ internal class IrisOpenGlCustomResources(
         val texture = gl { glGenTextures() }
         system.resources.created(OpenGlResourceType.TEXTURE, texture)
         try {
-            gl { glBindTexture(descriptor.target.gl, texture) }
+            system.bindTexture(system.framebufferTextureIndex, descriptor.target.gl, texture)
             when (descriptor.target) {
                 IrisCustomImageTarget.TEXTURE_1D -> gl {
                     glTexImage1D(
@@ -308,16 +304,16 @@ internal class IrisOpenGlCustomResources(
             }
             val filter = if (descriptor.internalFormat.name.endsWith("I") ||
                 descriptor.internalFormat.name.endsWith("UI")) GL_NEAREST else GL_LINEAR
-            gl { glTexParameteri(descriptor.target.gl, GL_TEXTURE_MIN_FILTER, filter) }
-            gl { glTexParameteri(descriptor.target.gl, GL_TEXTURE_MAG_FILTER, filter) }
-            gl { glTexParameteri(descriptor.target.gl, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE) }
+            system.textureParameter { glTexParameteri(descriptor.target.gl, GL_TEXTURE_MIN_FILTER, filter) }
+            system.textureParameter { glTexParameteri(descriptor.target.gl, GL_TEXTURE_MAG_FILTER, filter) }
+            system.textureParameter { glTexParameteri(descriptor.target.gl, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE) }
             if (descriptor.target != IrisCustomImageTarget.TEXTURE_1D) {
-                gl { glTexParameteri(descriptor.target.gl, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE) }
+                system.textureParameter { glTexParameteri(descriptor.target.gl, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE) }
             }
             if (descriptor.target == IrisCustomImageTarget.TEXTURE_3D) {
-                gl { glTexParameteri(descriptor.target.gl, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE) }
+                system.textureParameter { glTexParameteri(descriptor.target.gl, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE) }
             }
-            gl { glTexParameteri(descriptor.target.gl, GL_TEXTURE_MAX_LEVEL, 0) }
+            system.textureParameter { glTexParameteri(descriptor.target.gl, GL_TEXTURE_MAX_LEVEL, 0) }
             return ImageHandle(descriptor, texture).also(::clear)
         } catch (failure: Throwable) {
             deleteTexture(texture, failure)
@@ -333,7 +329,7 @@ internal class IrisOpenGlCustomResources(
         val buffer = gl { glGenBuffers() }
         system.resources.created(OpenGlResourceType.BUFFER, buffer)
         try {
-            gl { glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer) }
+            system.bindBuffer(GL_SHADER_STORAGE_BUFFER, buffer)
             gl { glBufferData(GL_SHADER_STORAGE_BUFFER, bytes, GL_DYNAMIC_COPY) }
             gl {
                 glClearBufferData(
@@ -344,7 +340,7 @@ internal class IrisOpenGlCustomResources(
                     null as ByteBuffer?,
                 )
             }
-            gl { glBindBufferBase(GL_SHADER_STORAGE_BUFFER, descriptor.index, buffer) }
+            system.bindBufferBase(GL_SHADER_STORAGE_BUFFER, descriptor.index, buffer)
             return BufferHandle(descriptor, buffer, bytes)
         } catch (failure: Throwable) {
             deleteBuffer(buffer, failure)
@@ -354,7 +350,7 @@ internal class IrisOpenGlCustomResources(
 
     private fun bindShaderStorageBuffers() {
         buffers.values.forEach { buffer ->
-            gl { glBindBufferBase(GL_SHADER_STORAGE_BUFFER, buffer.descriptor.index, buffer.buffer) }
+            system.bindBufferBase(GL_SHADER_STORAGE_BUFFER, buffer.descriptor.index, buffer.buffer)
         }
     }
 
@@ -413,7 +409,7 @@ internal class IrisOpenGlCustomResources(
         try {
             gl { glDeleteTextures(texture) }
             system.resources.deleted(OpenGlResourceType.TEXTURE, texture)
-            if (system.boundTexture == texture) system.boundTexture = -1
+            system.invalidateTexture(texture)
         } catch (cleanup: Throwable) {
             if (original == null) throw cleanup
             original.addSuppressed(cleanup)
@@ -424,6 +420,7 @@ internal class IrisOpenGlCustomResources(
         try {
             gl { glDeleteBuffers(buffer) }
             system.resources.deleted(OpenGlResourceType.BUFFER, buffer)
+            system.invalidateBuffer(buffer)
         } catch (cleanup: Throwable) {
             if (original == null) throw cleanup
             original.addSuppressed(cleanup)

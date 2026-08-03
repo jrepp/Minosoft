@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -32,6 +33,16 @@ interface VertexBuffer : GpuBuffer {
      */
     fun updateVertices(data: FloatBuffer) {
         throw UnsupportedOperationException("Dynamic vertex updates are not supported by ${this::class.java.name}")
+    }
+
+    /** Updates fixed-capacity storage while selecting a smaller used prefix. */
+    fun updateVertices(data: FloatBuffer, usedVertices: Int) {
+        updateVertices(data)
+        setVertices(usedVertices)
+    }
+
+    fun setVertices(usedVertices: Int) {
+        throw UnsupportedOperationException("A used vertex prefix is not supported by ${this::class.java.name}")
     }
 
     fun drop()

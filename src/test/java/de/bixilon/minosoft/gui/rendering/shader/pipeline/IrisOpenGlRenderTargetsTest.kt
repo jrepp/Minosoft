@@ -6,6 +6,13 @@
  * the terms of the GNU General Public License as published by the Free Software
  * Foundation, either version 3 of the License, or (at your option) any later
  * version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package de.bixilon.minosoft.gui.rendering.shader.pipeline
@@ -15,8 +22,62 @@ import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.graph.resource.RenderClearPolicy
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class IrisOpenGlRenderTargetsTest {
+    @Test
+    fun `identity caches suppress only committed matching Iris state`() {
+        val shaderA = String(charArrayOf('a'))
+        val equalButDistinctShader = String(charArrayOf('a'))
+        val bindingCache = IrisIdentityBindingCache<Any, String>()
+
+        assertEquals(shaderA, equalButDistinctShader)
+        assertFalse(bindingCache.matches(shaderA, "state"))
+        bindingCache.record(shaderA, "state")
+        assertTrue(bindingCache.matches(shaderA, "state"))
+        assertFalse(bindingCache.matches(equalButDistinctShader, "state"))
+        bindingCache.invalidate(shaderA)
+        assertFalse(bindingCache.matches(shaderA, "state"))
+
+        val source = Any()
+        val target = Any()
+        val revisions = IrisIdentityRevisionCache<Any, Any>()
+        assertTrue(revisions.requiresSync(source, target, revision = 0L, uploadInProgress = false))
+        revisions.record(source, target, 0L)
+        assertFalse(revisions.requiresSync(source, target, revision = 0L, uploadInProgress = false))
+        assertFalse(revisions.requiresSync(source, target, revision = 1L, uploadInProgress = true))
+        assertTrue(revisions.requiresSync(source, target, revision = 1L, uploadInProgress = false))
+        revisions.record(source, target, 1L)
+        assertFalse(revisions.requiresSync(source, target, revision = 1L, uploadInProgress = false))
+        assertTrue(revisions.requiresSync(source, Any(), revision = 1L, uploadInProgress = false))
+    }
+
+    @Test
+    fun `framebuffer binding state suppresses exact repeats and notices target flips`() {
+        val state = IrisFramebufferBindingState()
+
+        assertTrue(state.matchesColors(0) { error("No color expected") })
+        assertFalse(state.matchesDepth(30))
+        assertFalse(state.matchesSequentialDrawBuffers(0, 100))
+
+        state.record(intArrayOf(), depth = 30, drawBuffers = intArrayOf(), readBuffer = 0)
+        assertTrue(state.matchesDepth(30))
+        assertTrue(state.matchesSequentialDrawBuffers(0, 100))
+        assertTrue(state.matchesReadBuffer(0))
+
+        state.record(intArrayOf(10, 20), depth = 30, drawBuffers = intArrayOf(100, 101), readBuffer = 100)
+        assertTrue(state.matchesColors(2) { intArrayOf(10, 20)[it] })
+        assertTrue(state.matchesSequentialDrawBuffers(2, 100))
+        assertFalse(state.matchesColors(2) { intArrayOf(10, 21)[it] })
+        assertFalse(state.matchesDepth(31))
+        assertFalse(state.matchesReadBuffer(0))
+
+        state.clear()
+        assertFalse(state.matchesSequentialDrawBuffers(0, 100))
+        assertFalse(state.matchesReadBuffer(100))
+    }
+
     @Test
     fun `load targets initialize once while clear targets reset every frame`() {
         assertEquals(true, IrisOpenGlRenderTargets.shouldClearTexture(RenderClearPolicy.LOAD, initializing = true))

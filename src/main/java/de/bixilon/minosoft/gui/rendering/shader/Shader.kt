@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -28,6 +29,10 @@ abstract class Shader(override val native: NativeShader) : AbstractShader {
     open val sceneContract: SceneShaderContract? = null
     private val sceneProgramFamily = ThreadLocal<SceneProgramFamily?>()
     private val uniforms: MutableMap<String, ShaderUniform> = mutableMapOf()
+    internal var uniformRevision: Long = 0L
+        private set
+    internal var uniformUploadInProgress: Boolean = false
+        private set
     val declaredUniforms: Set<String> = Collections.unmodifiableSet(uniforms.keys)
 
     fun unload() {
@@ -114,6 +119,19 @@ abstract class Shader(override val native: NativeShader) : AbstractShader {
             if (!target.hasUniform(name)) continue
             uniform.uploadTo(target)
         }
+    }
+
+    internal fun beginUniformUpload(): Long {
+        check(!uniformUploadInProgress) { "A shader uniform upload is already active" }
+        uniformRevision++
+        uniformUploadInProgress = true
+        return uniformRevision
+    }
+
+    internal fun finishUniformUpload(target: NativeShader?, revision: Long) {
+        check(uniformUploadInProgress && revision == uniformRevision) { "Mismatched shader uniform revision" }
+        uniformUploadInProgress = false
+        if (target != null) native.context.shaderPipeline?.recordUniformUpload(this, target, revision)
     }
 
     fun reload() {

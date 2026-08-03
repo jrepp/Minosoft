@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -39,6 +40,8 @@ class OpenGlVertexBuffer(
     override var state = GpuBufferStates.PREPARING
         private set
     private val vao = OpenGlVao(system, struct)
+    private var allocatedVertices = -1
+    private var requestedUsedVertices: Int? = null
     override var vertices = -1
         private set
 
@@ -47,10 +50,14 @@ class OpenGlVertexBuffer(
         assert(state == GpuBufferStates.PREPARING)
         this.state = GpuBufferStates.INITIALIZING
 
-        vertices = when {
+        allocatedVertices = when {
             EMPTY_BUFFERS -> 0
             index != null -> index.data.limit()
             else -> data.data.limit() / struct.floats
+        }
+        vertices = if (EMPTY_BUFFERS) 0 else requestedUsedVertices ?: allocatedVertices
+        require(vertices in 0..allocatedVertices) {
+            "Used vertex count $vertices exceeds allocated capacity $allocatedVertices"
         }
 
         if (vertices == 0) {
@@ -88,9 +95,11 @@ class OpenGlVertexBuffer(
         vao.bind()
 
         if (index == null) {
+            system.work.drawArrays(vertices)
             gl { glDrawArrays(drawMode, 0, vertices) }
         } else {
             index.bind()
+            system.work.drawElements(vertices)
             gl { glDrawElements(drawMode, vertices, GL_UNSIGNED_INT, 0) }
             index.unbind()
         }
@@ -101,6 +110,24 @@ class OpenGlVertexBuffer(
     override fun updateVertices(data: FloatBuffer) {
         check(state == GpuBufferStates.INITIALIZED) { "Vertex buffer is not uploaded: $state" }
         this.data.update(data)
+    }
+
+    override fun updateVertices(data: FloatBuffer, usedVertices: Int) {
+        updateVertices(data)
+        setVertices(usedVertices)
+    }
+
+    override fun setVertices(usedVertices: Int) {
+        if (state == GpuBufferStates.PREPARING) {
+            require(usedVertices >= 0) { "Used vertex count must not be negative" }
+            requestedUsedVertices = usedVertices
+            return
+        }
+        check(state == GpuBufferStates.INITIALIZED) { "Vertex buffer is not uploaded: $state" }
+        require(usedVertices in 0..allocatedVertices) {
+            "Used vertex count $usedVertices exceeds allocated capacity $allocatedVertices"
+        }
+        vertices = usedVertices
     }
 
     override fun drop() {

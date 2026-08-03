@@ -27,6 +27,7 @@ class FloatOpenGlBuffer(
     system: OpenGlRenderSystem,
     val data: FloatBuffer,
     val free: Boolean,
+    private val usage: Int = GL_STATIC_DRAW,
 ) : OpenGlGpuBuffer(system) {
     private val floats = data.remaining()
 
@@ -34,7 +35,7 @@ class FloatOpenGlBuffer(
 
 
     override fun initialUpload() {
-        gl { nglBufferData(glType, data, if (EMPTY_BUFFERS) 0 else floats, GL_STATIC_DRAW) }
+        gl { nglBufferData(glType, data, if (EMPTY_BUFFERS) 0 else floats, usage) }
         unsafeDrop()
     }
 

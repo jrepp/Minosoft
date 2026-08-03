@@ -58,8 +58,7 @@ class OpenGlVao(
 
     private fun unsafeBind() {
         assert(handle >= 0)
-        gl { glBindVertexArray(handle) }
-        system.boundVao = handle
+        system.bindVertexArray(handle)
     }
 
     fun bind() {
@@ -73,8 +72,7 @@ class OpenGlVao(
         if (RenderConstants.DIRTY_BUFFER_UNBIND) {
             return
         }
-        gl { glBindVertexArray(-1) }
-        system.boundVao = -1
+        system.bindVertexArray(0)
     }
 
     fun unbind() {
@@ -92,7 +90,7 @@ class OpenGlVao(
         if (handle < 0) return
         gl { glDeleteVertexArrays(handle) }
         system.resources.deleted(OpenGlResourceType.VERTEX_ARRAY, handle)
-        if (system.boundVao == handle) system.boundVao = -1
+        system.invalidateVertexArray(handle)
         handle = -1
     }
 }

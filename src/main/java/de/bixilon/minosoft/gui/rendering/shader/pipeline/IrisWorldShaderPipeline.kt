@@ -119,6 +119,7 @@ class IrisWorldShaderPipeline private constructor(
     private val sceneProgramCount = scenes.size + shadowScenes.size
     private val sceneProgramsById = arrayOfNulls<IrisSceneProgram>(sceneProgramCount)
     private val sceneProgramsByShader = IdentityHashMap<Shader, IrisSceneProgram>()
+    private val sceneShadersByNative = IdentityHashMap<NativeShader, Shader>()
     private val selectedTerrainBinds = LongArray(2 * TerrainMaterialClass.entries.size)
     private val selectedSceneBinds = LongArray(sceneProgramCount)
     private val selectedSceneContracts =
@@ -146,6 +147,9 @@ class IrisWorldShaderPipeline private constructor(
     private var frameUniformUploads = 0L
     private var textureArrayUniformUploads = 0L
     private val textureArrayUploadFrames = IdentityHashMap<Shader, Int>()
+    private val frameBindings = IrisIdentityBindingCache<Shader, FrameBinding>()
+    private val drawBindings = IrisIdentityBindingCache<Shader, IrisResolvedDrawState>()
+    private val hostUniformRevisions = IrisIdentityRevisionCache<Shader, Shader>()
     private var drawUniformUploads = 0L
     private val drawStateBinds = linkedMapOf<String, Long>()
     private val entityColorBinds = linkedMapOf<String, Long>()
@@ -170,6 +174,7 @@ class IrisWorldShaderPipeline private constructor(
         (scenes.values + shadowScenes.values).forEach { program ->
             sceneProgramsById[program.diagnosticId] = program
             sceneProgramsByShader[program.shader] = program
+            sceneShadersByNative[program.shader.native] = program.shader
         }
     }
 
@@ -302,9 +307,24 @@ class IrisWorldShaderPipeline private constructor(
     }
 
     override fun syncSceneState(fallback: Shader, selected: Shader) {
+        if (!hostUniformRevisions.requiresSync(
+                source = fallback,
+                target = selected,
+                revision = fallback.uniformRevision,
+                uploadInProgress = fallback.uniformUploadInProgress,
+            )
+        ) return
         val program = sceneProgramsByShader[selected] ?: return fallback.syncUniformsTo(selected.native)
         fallback.syncUniformsTo(selected.native, program.bridge.uniforms)
+        drawBindings.invalidate(selected)
         textureArrayLayouts[selected]?.bind(selected.native)
+        hostUniformRevisions.record(fallback, selected, fallback.uniformRevision)
+    }
+
+    override fun recordUniformUpload(fallback: Shader, target: NativeShader, revision: Long) {
+        val selected = sceneShadersByNative[target] ?: return
+        drawBindings.invalidate(selected)
+        hostUniformRevisions.record(fallback, selected, revision)
     }
 
     override fun sceneUniforms(fallback: Shader, selected: Shader): Set<String>? {
@@ -823,6 +843,8 @@ class IrisWorldShaderPipeline private constructor(
 
     private fun uploadFrameState(shader: Shader, renderStage: IrisRenderStage) {
         val state = frameState ?: return
+        val binding = FrameBinding(state.frameCounter, renderStage)
+        if (frameBindings.matches(shader, binding)) return
         val uniforms = frameUniforms[shader].orEmpty()
         frameUniformUploads += state.uploadTo(shader.native, uniforms, plan.sunPathRotation)
         frameUniformUploads += customUniformEvaluator.uploadTo(shader.native, uniforms, state)
@@ -841,6 +863,7 @@ class IrisWorldShaderPipeline private constructor(
             val key = "$program/${renderStage.name.lowercase()}/${renderStage.shaderValue}"
             renderStageBinds[key] = (renderStageBinds[key] ?: 0L) + 1L
         }
+        frameBindings.record(shader, binding)
     }
 
     private fun uploadHeldItems(
@@ -879,7 +902,7 @@ class IrisWorldShaderPipeline private constructor(
             hostBlendEnabled,
             context.system.blendFunction,
         ) ?: IrisResolvedBlendMode(hostBlendEnabled, context.system.blendFunction)
-        val uploads = IrisResolvedDrawState(
+        val resolved = IrisResolvedDrawState(
             entityId = entityId,
             blockEntityId = blockEntityId,
             currentRenderedItemId = itemId,
@@ -888,7 +911,10 @@ class IrisWorldShaderPipeline private constructor(
                 enabled = resolvedBlend.enabled,
                 state = resolvedBlend.function,
             ),
-        ).uploadTo(native, uniforms)
+        )
+        if (drawBindings.matches(shader, resolved)) return
+        val uploads = resolved.uploadTo(native, uniforms)
+        drawBindings.record(shader, resolved)
         if (uploads == 0) return
         drawUniformUploads += uploads
         if (!sampleDiagnostic(drawStateDiagnosticEvents++)) return
@@ -904,6 +930,11 @@ class IrisWorldShaderPipeline private constructor(
     }
 
     private fun sampleDiagnostic(event: Long): Boolean = event and DIAGNOSTIC_SAMPLE_MASK == 0L
+
+    private data class FrameBinding(
+        val frame: Int,
+        val stage: IrisRenderStage,
+    )
 
     override fun close() {
         if (closed) return
@@ -1857,5 +1888,36 @@ class IrisWorldShaderPipeline private constructor(
                 }
             }
         }
+    }
+}
+
+/** Identity-keyed binding state that is committed only after realization succeeds. */
+internal class IrisIdentityBindingCache<K : Any, V> {
+    private val values = IdentityHashMap<K, V>()
+
+    fun matches(key: K, value: V): Boolean = values[key] == value
+
+    fun record(key: K, value: V) {
+        values[key] = value
+    }
+
+    fun invalidate(key: K) {
+        values.remove(key)
+    }
+}
+
+/** Tracks complete host-uniform snapshots independently for source/target identities. */
+internal class IrisIdentityRevisionCache<S : Any, T : Any> {
+    private val revisions = IdentityHashMap<T, IdentityHashMap<S, Long>>()
+
+    fun requiresSync(source: S, target: T, revision: Long, uploadInProgress: Boolean): Boolean {
+        val recorded = revisions[target]?.get(source)
+        if (recorded == revision) return false
+        if (uploadInProgress && recorded == revision - 1L) return false
+        return true
+    }
+
+    fun record(source: S, target: T, revision: Long) {
+        revisions.getOrPut(target) { IdentityHashMap() }[source] = revision
     }
 }

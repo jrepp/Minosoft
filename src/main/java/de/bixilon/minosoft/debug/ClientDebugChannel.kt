@@ -91,6 +91,7 @@ import de.bixilon.minosoft.gui.rendering.sky.planet.scatter.SunScatterRenderer
 import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.TextureBuffer
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlCapabilityDiagnostics
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
+import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlWorkSnapshot
 import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceSnapshot
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureManager
 import de.bixilon.minosoft.gui.rendering.system.window.KeyChangeTypes
@@ -162,6 +163,8 @@ object ClientDebugChannel : AutoCloseable {
     private var preparedBlockBreak: PreparedBlockBreak? = null
     private var preparedTranslucentParticle: PreparedTranslucentParticle? = null
     private var preparedChunkBorder: PreparedChunkBorder? = null
+    @Volatile
+    private var lastOpenGlWorkCapture: OpenGlWorkCapture? = null
 
     @Volatile
     private var channel: DebugChannelServer? = null
@@ -392,6 +395,9 @@ object ClientDebugChannel : AutoCloseable {
             put("renderQueueDepth", context.queue.size)
             context.renderer[ChunkRenderer]?.terrainPerformance?.snapshot()?.let {
                 putTerrainPerformance("terrain", it, includeBuckets = false)
+            }
+            (context.system as? OpenGlRenderSystem)?.work?.snapshot()?.let {
+                putOpenGlWork("openGlWork", it)
             }
         }
         val sessions = PlaySession.collectSessions()
@@ -3538,6 +3544,11 @@ object ClientDebugChannel : AutoCloseable {
 
         (context.system as? OpenGlRenderSystem)?.let { system ->
             val snapshot = system.resources.snapshot()
+            val work = system.work.snapshot()
+            val previousWork = lastOpenGlWorkCapture?.takeIf { it.system === system }?.snapshot
+            lastOpenGlWorkCapture = OpenGlWorkCapture(system, work)
+            result.putOpenGlWork("openGlWork", work)
+            if (previousWork != null) result.putOpenGlWork("openGlWorkDelta", work, previousWork)
             val capabilities = OpenGlCapabilityDiagnostics.capture()
             result.putObject("gpuResources").apply {
                 put("backend", "opengl")
@@ -4087,6 +4098,56 @@ object ClientDebugChannel : AutoCloseable {
         put("x", position.x); put("y", position.y); put("z", position.z)
     }
 
+    private fun ObjectNode.putOpenGlWork(
+        name: String,
+        value: OpenGlWorkSnapshot,
+        previous: OpenGlWorkSnapshot? = null,
+    ) = putObject(name).apply {
+        fun delta(current: Long, old: Long = 0L) = if (previous == null) current else current - old
+        put("physicalDrawCalls", delta(value.physicalDrawCalls, previous?.physicalDrawCalls ?: 0L))
+        put("drawArrays", delta(value.drawArrays, previous?.drawArrays ?: 0L))
+        put("drawElements", delta(value.drawElements, previous?.drawElements ?: 0L))
+        put("drawElementsBaseVertex", delta(value.drawElementsBaseVertex, previous?.drawElementsBaseVertex ?: 0L))
+        put("multiDrawElementsBaseVertex", delta(value.multiDrawElementsBaseVertex, previous?.multiDrawElementsBaseVertex ?: 0L))
+        put("logicalDrawCommands", delta(value.logicalDrawCommands, previous?.logicalDrawCommands ?: 0L))
+        put("submittedElements", delta(value.submittedElements, previous?.submittedElements ?: 0L))
+        put("programRequests", delta(value.programRequests, previous?.programRequests ?: 0L))
+        put("programChanges", delta(value.programChanges, previous?.programChanges ?: 0L))
+        put("framebufferBindRequests", delta(value.framebufferBindRequests, previous?.framebufferBindRequests ?: 0L))
+        put("framebufferBinds", delta(value.framebufferBinds, previous?.framebufferBinds ?: 0L))
+        put("framebufferAttachmentChanges", delta(value.framebufferAttachmentChanges, previous?.framebufferAttachmentChanges ?: 0L))
+        put("drawBufferChanges", delta(value.drawBufferChanges, previous?.drawBufferChanges ?: 0L))
+        put("readBufferChanges", delta(value.readBufferChanges, previous?.readBufferChanges ?: 0L))
+        put("framebufferCompletenessChecks", delta(value.framebufferCompletenessChecks, previous?.framebufferCompletenessChecks ?: 0L))
+        put("activeTextureRequests", delta(value.activeTextureRequests, previous?.activeTextureRequests ?: 0L))
+        put("activeTextureChanges", delta(value.activeTextureChanges, previous?.activeTextureChanges ?: 0L))
+        put("textureBindRequests", delta(value.textureBindRequests, previous?.textureBindRequests ?: 0L))
+        put("textureBinds", delta(value.textureBinds, previous?.textureBinds ?: 0L))
+        put("textureBinds2d", delta(value.textureBinds2d, previous?.textureBinds2d ?: 0L))
+        put("textureBinds2dArray", delta(value.textureBinds2dArray, previous?.textureBinds2dArray ?: 0L))
+        put("textureBindsOther", delta(value.textureBindsOther, previous?.textureBindsOther ?: 0L))
+        put("imageBindRequests", delta(value.imageBindRequests, previous?.imageBindRequests ?: 0L))
+        put("imageBinds", delta(value.imageBinds, previous?.imageBinds ?: 0L))
+        put("samplerParameterChanges", delta(value.samplerParameterChanges, previous?.samplerParameterChanges ?: 0L))
+        put("vaoBindRequests", delta(value.vaoBindRequests, previous?.vaoBindRequests ?: 0L))
+        put("vaoBinds", delta(value.vaoBinds, previous?.vaoBinds ?: 0L))
+        put("bufferBindRequests", delta(value.bufferBindRequests, previous?.bufferBindRequests ?: 0L))
+        put("bufferBinds", delta(value.bufferBinds, previous?.bufferBinds ?: 0L))
+        put("uniformUploads", delta(value.uniformUploads, previous?.uniformUploads ?: 0L))
+        put("scalarUniformUploads", delta(value.scalarUniformUploads, previous?.scalarUniformUploads ?: 0L))
+        put("vectorUniformUploads", delta(value.vectorUniformUploads, previous?.vectorUniformUploads ?: 0L))
+        put("matrixUniformUploads", delta(value.matrixUniformUploads, previous?.matrixUniformUploads ?: 0L))
+        put("samplerUniformUploads", delta(value.samplerUniformUploads, previous?.samplerUniformUploads ?: 0L))
+        put("uniformBlockBindings", delta(value.uniformBlockBindings, previous?.uniformBlockBindings ?: 0L))
+        put("uniformBufferUploads", delta(value.uniformBufferUploads, previous?.uniformBufferUploads ?: 0L))
+        put("uniformBufferUploadBytes", delta(value.uniformBufferUploadBytes, previous?.uniformBufferUploadBytes ?: 0L))
+    }
+
+    private data class OpenGlWorkCapture(
+        val system: OpenGlRenderSystem,
+        val snapshot: OpenGlWorkSnapshot,
+    )
+
     private fun encodePng(buffer: TextureBuffer): ByteArray {
         val image = BufferedImage(buffer.size.x, buffer.size.y, BufferedImage.TYPE_INT_ARGB)
         for (x in 0 until buffer.size.x) for (y in 0 until buffer.size.y) {
@@ -4100,6 +4161,7 @@ object ClientDebugChannel : AutoCloseable {
 
     @Synchronized
     override fun close() {
+        lastOpenGlWorkCapture = null
         val current = channel ?: return
         channel = null
         PlaySession.collectSessions().asSequence()

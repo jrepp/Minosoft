@@ -37,8 +37,6 @@ import de.bixilon.minosoft.util.logging.LogMessageType
 import org.lwjgl.opengl.GL11.*
 import org.lwjgl.opengl.GL12.glTexImage3D
 import org.lwjgl.opengl.GL12.glTexSubImage3D
-import org.lwjgl.opengl.GL13.GL_TEXTURE0
-import org.lwjgl.opengl.GL13.glActiveTexture
 import org.lwjgl.opengl.GL30.GL_TEXTURE_2D_ARRAY
 import java.nio.ByteBuffer
 
@@ -82,9 +80,7 @@ class OpenGlDynamicTextureArray(
         }
         if (index >= publishedCapacity) reload()
 
-        if (system.boundTexture != handle) {
-            bind(handle)
-        }
+        bind(handle)
 
         unsafeUpload(index, texture, resolution)
         texture.state = DynamicTextureState.LOADED
@@ -262,15 +258,13 @@ class OpenGlDynamicTextureArray(
     }
 
     private fun bind(handle: Int) {
-        gl { glActiveTexture(GL_TEXTURE0 + index) }
-        gl { glBindTexture(GL_TEXTURE_2D_ARRAY, handle) }
-        system.boundTexture = handle
+        system.bindTexture(index, GL_TEXTURE_2D_ARRAY, handle)
     }
 
     private fun delete(handle: Int) {
         gl { glDeleteTextures(handle) }
         system.resources.deleted(OpenGlResourceType.TEXTURE, handle)
-        if (system.boundTexture == handle) system.boundTexture = -1
+        system.invalidateTexture(handle)
     }
 
     private fun createShaderIdentifier(array: Int = this.index, index: Int): Int {

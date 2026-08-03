@@ -38,14 +38,12 @@ class OpenGlTextureAttachment(
         id = gl { glGenTextures() }
         system.resources.created(OpenGlResourceType.TEXTURE, id)
         try {
-            gl { glActiveTexture(GL_TEXTURE0 + system.framebufferTextureIndex) }
-            gl { glBindTexture(GL_TEXTURE_2D, id) }
-            system.boundTexture = id
+            system.bindTexture(system.framebufferTextureIndex, GL_TEXTURE_2D, id)
             gl { glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, null as ByteBuffer?) }
-            gl { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST) }
-            gl { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST) }
-            gl { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE) }
-            gl { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE) }
+            system.textureParameter { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST) }
+            system.textureParameter { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST) }
+            system.textureParameter { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE) }
+            system.textureParameter { glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE) }
             state = AttachmentStates.GENERATED
         } catch (error: Throwable) {
             try {
@@ -63,11 +61,7 @@ class OpenGlTextureAttachment(
         if (state != AttachmentStates.GENERATED) throw IllegalStateException("Not loaded (state=$state)")
 
 
-        if (system.boundTexture != id) {
-            gl { glActiveTexture(GL_TEXTURE0 + system.framebufferTextureIndex) }
-            gl { glBindTexture(GL_TEXTURE_2D, id) }
-            system.boundTexture = id
-        }
+        system.bindTexture(system.framebufferTextureIndex, GL_TEXTURE_2D, id)
     }
 
     override fun unload() {
@@ -80,7 +74,7 @@ class OpenGlTextureAttachment(
         if (id < 0) return
         gl { glDeleteTextures(id) }
         system.resources.deleted(OpenGlResourceType.TEXTURE, id)
-        if (system.boundTexture == id) system.boundTexture = -1
+        system.invalidateTexture(id)
         id = -1
     }
 }

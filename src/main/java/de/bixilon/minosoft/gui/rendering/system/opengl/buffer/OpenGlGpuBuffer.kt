@@ -64,8 +64,7 @@ abstract class OpenGlGpuBuffer(
         if (system.boundBuffer[glType] == id) {
             return
         }
-        gl { glBindBuffer(glType, id) }
-        system.boundBuffer.put(glType, id) // operator fun allocates an int
+        system.bindBuffer(glType, id)
     }
 
 
@@ -79,7 +78,7 @@ abstract class OpenGlGpuBuffer(
             // This is unclean, yes. But it is not required to do at all (we always bind another buffer), so this saves a ton of gl calls
             return
         }
-        gl { glBindBuffer(glType, -1) }
+        system.bindBuffer(glType, 0)
         system.boundBuffer -= glType
     }
 
@@ -98,7 +97,7 @@ abstract class OpenGlGpuBuffer(
         if (id < 0) return
         gl { glDeleteBuffers(id) }
         system.resources.deleted(OpenGlResourceType.BUFFER, id)
-        if (system.boundBuffer[glType] == id) system.boundBuffer -= glType
+        system.invalidateBuffer(id)
         id = -1
     }
 

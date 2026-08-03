@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2026 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -50,6 +51,8 @@ import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
 import de.bixilon.minosoft.util.logging.LogOptions
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap
 import org.lwjgl.opengl.GL
 import org.lwjgl.opengl.GL30.*
 import org.lwjgl.opengl.GL43.GL_DEBUG_OUTPUT
@@ -63,6 +66,7 @@ class OpenGlRenderSystem(
 ) : RenderSystem {
     override val shader = OpenGlShaderManagement(this)
     val resources = OpenGlResourceTracker()
+    val work = OpenGlWorkCounters()
     private var thread: Thread? = null
     private val capabilities: MutableSet<RenderingCapabilities> = RenderingCapabilities.set()
     override lateinit var vendor: OpenGlVendor
@@ -81,8 +85,11 @@ class OpenGlRenderSystem(
 
     var boundVao = -1
     var boundBuffer = Int2IntOpenHashMap(3).apply { defaultReturnValue(-1) }
-
-    var boundTexture = -1
+    private val textureBindings = OpenGlTextureBindingState()
+    private val boundImages = Int2ObjectOpenHashMap<ImageBinding>()
+    private var boundReadFramebuffer = 0
+    private var boundDrawFramebuffer = 0
+    private var boundProgram = 0
     var nextUniformBufferIndex = 0
     var nextTextureIndex = 0
     val framebufferTextureIndex = nextTextureIndex++
@@ -93,7 +100,7 @@ class OpenGlRenderSystem(
                 return
             }
             if (value == null) {
-                gl { glBindFramebuffer(GL_FRAMEBUFFER, 0) }
+                bindFramebuffer(GL_FRAMEBUFFER, 0)
                 viewport = context.window.size
             } else {
                 value.bind()
@@ -143,7 +150,153 @@ class OpenGlRenderSystem(
             }
         }
         active = false
+        invalidateOpenGlState()
     }
+
+    fun useProgram(program: Int) {
+        val changed = boundProgram != program
+        work.programRequest(changed)
+        if (!changed) return
+        gl { glUseProgram(program) }
+        boundProgram = program
+    }
+
+    fun activeTexture(unit: Int) {
+        require(unit >= 0) { "Texture unit must not be negative" }
+        val changed = textureBindings.needsActivation(unit)
+        work.activeTextureRequest(changed)
+        if (!changed) return
+        gl { glActiveTexture(GL_TEXTURE0 + unit) }
+        textureBindings.recordActive(unit)
+    }
+
+    fun bindTexture(unit: Int, target: Int, texture: Int) {
+        activeTexture(unit)
+        val changed = textureBindings.needsBinding(unit, target, texture)
+        work.textureBindRequest(changed, target)
+        if (!changed) return
+        gl { glBindTexture(target, texture) }
+        textureBindings.recordBinding(unit, target, texture)
+    }
+
+    fun invalidateTexture(texture: Int) {
+        textureBindings.invalidate(texture)
+        val imageIterator = boundImages.int2ObjectEntrySet().fastIterator()
+        while (imageIterator.hasNext()) {
+            if (imageIterator.next().value.texture == texture) imageIterator.remove()
+        }
+    }
+
+    fun bindImageTexture(
+        unit: Int,
+        texture: Int,
+        level: Int,
+        layered: Boolean,
+        layer: Int,
+        access: Int,
+        format: Int,
+    ) {
+        val binding = ImageBinding(texture, level, layered, layer, access, format)
+        val changed = boundImages[unit] != binding
+        work.imageBindRequest(changed)
+        if (!changed) return
+        gl { org.lwjgl.opengl.GL42.glBindImageTexture(unit, texture, level, layered, layer, access, format) }
+        boundImages[unit] = binding
+    }
+
+    inline fun textureParameter(action: () -> Unit) {
+        work.samplerParameterChange()
+        gl(action)
+    }
+
+    fun invalidateBuffer(buffer: Int) {
+        val iterator = boundBuffer.int2IntEntrySet().fastIterator()
+        while (iterator.hasNext()) {
+            if (iterator.next().intValue == buffer) iterator.remove()
+        }
+    }
+
+    fun invalidateFramebuffer(framebuffer: Int) {
+        if (boundReadFramebuffer == framebuffer) boundReadFramebuffer = -1
+        if (boundDrawFramebuffer == framebuffer) boundDrawFramebuffer = -1
+    }
+
+    fun bindBuffer(target: Int, buffer: Int) {
+        val changed = boundBuffer[target] != buffer
+        work.bufferBindRequest(changed)
+        if (!changed) return
+        gl { glBindBuffer(target, buffer) }
+        boundBuffer.put(target, buffer)
+    }
+
+    fun bindBufferBase(target: Int, index: Int, buffer: Int) {
+        work.bufferBindRequest()
+        gl { glBindBufferBase(target, index, buffer) }
+        boundBuffer.put(target, buffer)
+    }
+
+    fun bindBufferRange(target: Int, index: Int, buffer: Int, offset: Long, size: Long) {
+        require(offset >= 0L && size >= 0L) { "Indexed buffer range must not be negative" }
+        work.bufferBindRequest()
+        gl { glBindBufferRange(target, index, buffer, offset, size) }
+        boundBuffer.put(target, buffer)
+    }
+
+    fun bindVertexArray(vao: Int) {
+        val changed = boundVao != vao
+        work.vaoBindRequest(changed)
+        if (!changed) return
+        gl { glBindVertexArray(vao) }
+        boundVao = vao
+        // GL_ELEMENT_ARRAY_BUFFER is VAO state. Switching VAOs restores that
+        // VAO's element binding, so the target-wide cache is no longer known.
+        boundBuffer.remove(GL_ELEMENT_ARRAY_BUFFER)
+    }
+
+    fun invalidateVertexArray(vao: Int) {
+        if (boundVao != vao) return
+        boundVao = -1
+        boundBuffer.remove(GL_ELEMENT_ARRAY_BUFFER)
+    }
+
+    fun bindFramebuffer(target: Int, framebuffer: Int) {
+        val changed = when (target) {
+            GL_FRAMEBUFFER -> boundReadFramebuffer != framebuffer || boundDrawFramebuffer != framebuffer
+            GL_READ_FRAMEBUFFER -> boundReadFramebuffer != framebuffer
+            GL_DRAW_FRAMEBUFFER -> boundDrawFramebuffer != framebuffer
+            else -> true
+        }
+        work.framebufferBindRequest(changed)
+        if (!changed) return
+        gl { glBindFramebuffer(target, framebuffer) }
+        when (target) {
+            GL_FRAMEBUFFER -> {
+                boundReadFramebuffer = framebuffer
+                boundDrawFramebuffer = framebuffer
+            }
+            GL_READ_FRAMEBUFFER -> boundReadFramebuffer = framebuffer
+            GL_DRAW_FRAMEBUFFER -> boundDrawFramebuffer = framebuffer
+        }
+    }
+
+    fun invalidateOpenGlState() {
+        textureBindings.clear()
+        boundImages.clear()
+        boundBuffer.clear()
+        boundVao = -1
+        boundReadFramebuffer = -1
+        boundDrawFramebuffer = -1
+        boundProgram = -1
+    }
+
+    private data class ImageBinding(
+        val texture: Int,
+        val level: Int,
+        val layered: Boolean,
+        val layer: Int,
+        val access: Int,
+        val format: Int,
+    )
 
     override fun enable(capability: RenderingCapabilities) {
         this[capability] = true
@@ -242,7 +395,8 @@ class OpenGlRenderSystem(
     }
 
     override fun createVertexBuffer(struct: MeshStruct, data: FloatBuffer, primitive: PrimitiveTypes, index: IntBuffer?, reused: Boolean): OpenGlVertexBuffer {
-        val buffer = FloatOpenGlBuffer(this, data, !reused)
+        val usage = if (reused) GL_DYNAMIC_DRAW else GL_STATIC_DRAW
+        val buffer = FloatOpenGlBuffer(this, data, !reused, usage)
         val index = index?.let { OpenGlIndexBuffer(this, it, !reused) }
         return OpenGlVertexBuffer(this, primitive, struct, buffer, index)
     }
@@ -333,4 +487,38 @@ class OpenGlRenderSystem(
             return result
         }
     }
+}
+
+/** Pure unit/target texture state used by the context-owned OpenGL boundary. */
+internal class OpenGlTextureBindingState(initialUnit: Int = 0) {
+    private var activeUnit = initialUnit
+    private val bindings = Long2IntOpenHashMap().apply { defaultReturnValue(-1) }
+
+    fun needsActivation(unit: Int): Boolean = activeUnit != unit
+
+    fun recordActive(unit: Int) {
+        activeUnit = unit
+    }
+
+    fun needsBinding(unit: Int, target: Int, texture: Int): Boolean =
+        bindings.get(key(unit, target)) != texture
+
+    fun recordBinding(unit: Int, target: Int, texture: Int) {
+        bindings.put(key(unit, target), texture)
+    }
+
+    fun invalidate(texture: Int) {
+        val iterator = bindings.long2IntEntrySet().fastIterator()
+        while (iterator.hasNext()) {
+            if (iterator.next().intValue == texture) iterator.remove()
+        }
+    }
+
+    fun clear() {
+        activeUnit = -1
+        bindings.clear()
+    }
+
+    private fun key(unit: Int, target: Int): Long =
+        (unit.toLong() shl Int.SIZE_BITS) or Integer.toUnsignedLong(target)
 }

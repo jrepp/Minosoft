@@ -33,7 +33,6 @@ import org.lwjgl.opengl.GL11.GL_UNPACK_ROW_LENGTH
 import org.lwjgl.opengl.GL11.GL_UNPACK_SKIP_PIXELS
 import org.lwjgl.opengl.GL11.GL_UNPACK_SKIP_ROWS
 import org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE
-import org.lwjgl.opengl.GL11.glBindTexture
 import org.lwjgl.opengl.GL11.glDeleteTextures
 import org.lwjgl.opengl.GL11.glGenTextures
 import org.lwjgl.opengl.GL11.glPixelStorei
@@ -44,8 +43,6 @@ import org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE
 import org.lwjgl.opengl.GL12.GL_TEXTURE_3D
 import org.lwjgl.opengl.GL12.GL_TEXTURE_MAX_LEVEL
 import org.lwjgl.opengl.GL12.glTexImage3D
-import org.lwjgl.opengl.GL13.GL_TEXTURE0
-import org.lwjgl.opengl.GL13.glActiveTexture
 import org.lwjgl.opengl.GL30.GL_RGB8
 import org.lwjgl.opengl.GL30.GL_RGBA8
 import org.lwjgl.opengl.GL30.GL_R8
@@ -114,9 +111,7 @@ internal class IrisOpenGlCustomTextures(
     fun bind(id: IrisTextureId, unit: Int) {
         check(initialized && !closed) { "Iris custom textures are unavailable" }
         val handle = requireNotNull(handles[id]) { "Undeclared Iris custom texture $id" }
-        gl { glActiveTexture(GL_TEXTURE0 + unit) }
-        gl { glBindTexture(handle.target, handle.texture) }
-        system.boundTexture = handle.texture
+        system.bindTexture(unit, handle.target, handle.texture)
     }
 
     private fun create(descriptor: IrisCustomTextureDescriptor): Handle = when (descriptor) {
@@ -243,9 +238,7 @@ internal class IrisOpenGlCustomTextures(
         val texture = gl { glGenTextures() }
         system.resources.created(OpenGlResourceType.TEXTURE, texture)
         try {
-            gl { glActiveTexture(GL_TEXTURE0 + system.framebufferTextureIndex) }
-            gl { glBindTexture(target, texture) }
-            system.boundTexture = texture
+            system.bindTexture(system.framebufferTextureIndex, target, texture)
             gl {
                 glPixelStorei(GL_UNPACK_ROW_LENGTH, 0)
                 glPixelStorei(GL_UNPACK_SKIP_ROWS, 0)
@@ -266,13 +259,13 @@ internal class IrisOpenGlCustomTextures(
             } finally {
                 gl { glPixelStorei(GL_UNPACK_ALIGNMENT, 4) }
             }
-            gl { glTexParameteri(target, GL_TEXTURE_MIN_FILTER, if (linear) GL_LINEAR else GL_NEAREST) }
-            gl { glTexParameteri(target, GL_TEXTURE_MAG_FILTER, if (linear) GL_LINEAR else GL_NEAREST) }
+            system.textureParameter { glTexParameteri(target, GL_TEXTURE_MIN_FILTER, if (linear) GL_LINEAR else GL_NEAREST) }
+            system.textureParameter { glTexParameteri(target, GL_TEXTURE_MAG_FILTER, if (linear) GL_LINEAR else GL_NEAREST) }
             val wrap = if (clamp) GL_CLAMP_TO_EDGE else GL_REPEAT
-            gl { glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap) }
-            if (target != GL_TEXTURE_1D) gl { glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap) }
-            if (target == GL_TEXTURE_3D) gl { glTexParameteri(target, org.lwjgl.opengl.GL12.GL_TEXTURE_WRAP_R, wrap) }
-            gl { glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, 0) }
+            system.textureParameter { glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap) }
+            if (target != GL_TEXTURE_1D) system.textureParameter { glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap) }
+            if (target == GL_TEXTURE_3D) system.textureParameter { glTexParameteri(target, org.lwjgl.opengl.GL12.GL_TEXTURE_WRAP_R, wrap) }
+            system.textureParameter { glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, 0) }
             return Handle(texture, target)
         } catch (failure: Throwable) {
             delete(texture, failure)
@@ -298,7 +291,7 @@ internal class IrisOpenGlCustomTextures(
         try {
             gl { glDeleteTextures(texture) }
             system.resources.deleted(OpenGlResourceType.TEXTURE, texture)
-            if (system.boundTexture == texture) system.boundTexture = -1
+            system.invalidateTexture(texture)
         } catch (cleanup: Throwable) {
             if (original == null) throw cleanup
             original.addSuppressed(cleanup)

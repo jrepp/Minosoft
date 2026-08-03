@@ -21,7 +21,6 @@ import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShaderSource
 import de.bixilon.minosoft.gui.rendering.system.base.shader.ShaderManagement
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.opengl.OpenGlRenderSystem.Companion.gl
-import org.lwjgl.opengl.GL30.glUseProgram
 
 class OpenGlShaderManagement(val system: OpenGlRenderSystem) : ShaderManagement {
     private val shaders: MutableSet<Shader> = mutableSetOf()
@@ -30,10 +29,13 @@ class OpenGlShaderManagement(val system: OpenGlRenderSystem) : ShaderManagement 
 
     override var shader: Shader? = null
         set(value) {
-            if (value?.native === field?.native) return
+            if (value?.native === field?.native) {
+                system.work.programRequest(changed = false)
+                return
+            }
 
             if (value == null) {
-                gl { glUseProgram(0) }
+                system.useProgram(0)
                 activePatchVertices = null
                 field = null
                 return

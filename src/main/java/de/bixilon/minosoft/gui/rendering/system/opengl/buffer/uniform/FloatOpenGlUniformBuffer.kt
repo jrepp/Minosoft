@@ -36,23 +36,24 @@ class FloatOpenGlUniformBuffer(
 
     override fun initialUpload() {
         data.position(0)
+        system.work.uniformBufferUpload(size.toLong())
         gl { glBufferData(glType, data, GL_STREAM_DRAW) }
     }
 
     override fun upload() {
         check(initialSize == size) { "Can not change buffer size!" }
         bind()
+        system.work.uniformBufferUpload(size.toLong())
         gl { glBufferSubData(glType, 0, data) }
         unbind()
     }
 
     override fun upload(start: Int, end: Int) {
         check(initialSize == size) { "Can not change buffer size!" }
-        if (start < 0 || end >= data.limit()) {
-            throw IndexOutOfBoundsException(start)
-        }
+        val bytes = uploadByteCount(start, end, data.limit())
         bind()
-        gl { nglBufferSubData(glType, start.toLong() * Float.SIZE_BYTES, Integer.toUnsignedLong(((end + 1) - start) * Float.SIZE_BYTES), MemoryUtil.memAddress(data, start)) }
+        system.work.uniformBufferUpload(bytes.toLong())
+        gl { nglBufferSubData(glType, start.toLong() * Float.SIZE_BYTES, bytes.toLong(), MemoryUtil.memAddress(data, start)) }
         unbind()
     }
 
@@ -63,5 +64,13 @@ class FloatOpenGlUniformBuffer(
 
     internal companion object {
         fun bindingSizeBytes(floatCount: Int): Int = Math.multiplyExact(floatCount, Float.SIZE_BYTES)
+
+        fun uploadByteCount(start: Int, end: Int, limit: Int): Int {
+            require(limit >= 0) { "Uniform buffer limit must not be negative" }
+            if (start < 0 || end < start || end >= limit) {
+                throw IndexOutOfBoundsException("Uniform upload range $start..$end is outside 0 until $limit")
+            }
+            return Math.multiplyExact(Math.addExact(Math.subtractExact(end, start), 1), Float.SIZE_BYTES)
+        }
     }
 }

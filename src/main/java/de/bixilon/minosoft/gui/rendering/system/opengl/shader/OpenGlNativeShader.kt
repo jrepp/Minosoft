@@ -296,15 +296,21 @@ class OpenGlNativeShader(
     }
 
     override fun setFloat(uniform: String, value: Float) {
-        gl { glUniform1f(getUniformLocation(uniform), value) }
+        val location = getUniformLocation(uniform)
+        system.work.scalarUniformUpload()
+        gl { glUniform1f(location, value) }
     }
 
     override fun setInt(uniform: String, value: Int) {
-        gl { glUniform1i(getUniformLocation(uniform), value) }
+        val location = getUniformLocation(uniform)
+        system.work.scalarUniformUpload()
+        gl { glUniform1i(location, value) }
     }
 
     override fun setUInt(uniform: String, value: Int) {
-        gl { glUniform1ui(getUniformLocation(uniform), value) }
+        val location = getUniformLocation(uniform)
+        system.work.scalarUniformUpload()
+        gl { glUniform1ui(location, value) }
     }
 
     override fun setBoolean(uniform: String, boolean: Boolean) {
@@ -312,31 +318,45 @@ class OpenGlNativeShader(
     }
 
     override fun setMat4f(uniform: String, mat4: Mat4f) {
-        gl { glUniformMatrix4fv(getUniformLocation(uniform), false, mat4._0.array) }
+        val location = getUniformLocation(uniform)
+        system.work.matrixUniformUpload()
+        gl { glUniformMatrix4fv(location, false, mat4._0.array) }
     }
 
     override fun setVec2f(uniform: String, vec2: Vec2f) {
-        gl { glUniform2f(getUniformLocation(uniform), vec2.x, vec2.y) }
+        val location = getUniformLocation(uniform)
+        system.work.vectorUniformUpload()
+        gl { glUniform2f(location, vec2.x, vec2.y) }
     }
 
     override fun setVec2i(uniform: String, vec2: Vec2i) {
-        gl { glUniform2i(getUniformLocation(uniform), vec2.x, vec2.y) }
+        val location = getUniformLocation(uniform)
+        system.work.vectorUniformUpload()
+        gl { glUniform2i(location, vec2.x, vec2.y) }
     }
 
     override fun setVec3f(uniform: String, vec3: Vec3f) {
-        gl { glUniform3f(getUniformLocation(uniform), vec3.x, vec3.y, vec3.z) }
+        val location = getUniformLocation(uniform)
+        system.work.vectorUniformUpload()
+        gl { glUniform3f(location, vec3.x, vec3.y, vec3.z) }
     }
 
     override fun setVec3i(uniform: String, vec3: Vec3i) {
-        gl { glUniform3i(getUniformLocation(uniform), vec3.x, vec3.y, vec3.z) }
+        val location = getUniformLocation(uniform)
+        system.work.vectorUniformUpload()
+        gl { glUniform3i(location, vec3.x, vec3.y, vec3.z) }
     }
 
     override fun setVec4f(uniform: String, vec4: Vec4f) {
-        gl { glUniform4f(getUniformLocation(uniform), vec4.x, vec4.y, vec4.z, vec4.w) }
+        val location = getUniformLocation(uniform)
+        system.work.vectorUniformUpload()
+        gl { glUniform4f(location, vec4.x, vec4.y, vec4.z, vec4.w) }
     }
 
     override fun setVec4i(uniform: String, x: Int, y: Int, z: Int, w: Int) {
-        gl { glUniform4i(getUniformLocation(uniform), x, y, z, w) }
+        val location = getUniformLocation(uniform)
+        system.work.vectorUniformUpload()
+        gl { glUniform4i(location, x, y, z, w) }
     }
 
     override fun setRGBColor(uniform: String, color: RGBColor) {
@@ -344,11 +364,15 @@ class OpenGlNativeShader(
     }
 
     override fun setRGBAColor(uniform: String, color: RGBAColor) {
-        gl { glUniform4f(getUniformLocation(uniform), color.redf, color.greenf, color.bluef, color.alphaf) }
+        val location = getUniformLocation(uniform)
+        system.work.vectorUniformUpload()
+        gl { glUniform4f(location, color.redf, color.greenf, color.bluef, color.alphaf) }
     }
 
     override fun setTexture(uniform: String, textureId: Int) {
-        gl { glUniform1i(getUniformLocation(uniform), textureId) }
+        val location = getUniformLocation(uniform)
+        system.work.samplerUniformUpload()
+        gl { glUniform1i(location, textureId) }
     }
 
     override fun setUniformBuffer(uniform: String, buffer: UniformBuffer) {
@@ -360,11 +384,12 @@ class OpenGlNativeShader(
             }
             return@getOrPut index
         }
+        system.work.uniformBlockBinding()
         gl { glUniformBlockBinding(handler, location, buffer.bindingIndex) }
     }
 
     fun unsafeUse() {
-        gl { glUseProgram(handler) }
+        system.useProgram(handler)
         patchVertices?.let { vertices ->
             gl { glPatchParameteri(GL_PATCH_VERTICES, vertices) }
         }

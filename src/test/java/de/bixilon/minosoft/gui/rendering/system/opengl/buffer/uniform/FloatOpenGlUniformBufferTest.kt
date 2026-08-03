@@ -14,6 +14,7 @@
 package de.bixilon.minosoft.gui.rendering.system.opengl.buffer.uniform
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 class FloatOpenGlUniformBufferTest {
@@ -21,5 +22,19 @@ class FloatOpenGlUniformBufferTest {
     @Test
     fun `uniform binding range converts float elements to bytes`() {
         assertEquals(4096, FloatOpenGlUniformBuffer.bindingSizeBytes(64 * 16))
+    }
+
+    @Test
+    fun `partial upload validates its inclusive float range before native access`() {
+        assertEquals(16, FloatOpenGlUniformBuffer.uploadByteCount(start = 2, end = 5, limit = 8))
+        assertThrows(IndexOutOfBoundsException::class.java) {
+            FloatOpenGlUniformBuffer.uploadByteCount(start = 5, end = 4, limit = 8)
+        }
+        assertThrows(IndexOutOfBoundsException::class.java) {
+            FloatOpenGlUniformBuffer.uploadByteCount(start = -1, end = 4, limit = 8)
+        }
+        assertThrows(IndexOutOfBoundsException::class.java) {
+            FloatOpenGlUniformBuffer.uploadByteCount(start = 2, end = 8, limit = 8)
+        }
     }
 }

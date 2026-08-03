@@ -56,6 +56,7 @@ abstract class OpenGlBufferAttachment(
     }
 
     fun unsafeBind() {
+        system.work.bufferBindRequest()
         gl { glBindRenderbuffer(GL_RENDERBUFFER, id) }
     }
 

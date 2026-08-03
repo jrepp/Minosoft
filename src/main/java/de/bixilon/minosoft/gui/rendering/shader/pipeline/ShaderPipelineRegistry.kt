@@ -25,6 +25,7 @@ import de.bixilon.minosoft.gui.rendering.graph.resource.TransactionalOverrideSto
 import de.bixilon.minosoft.gui.rendering.shader.Shader
 import de.bixilon.minosoft.gui.rendering.shader.ShaderPipelineScope
 import de.bixilon.minosoft.gui.rendering.shader.SceneShaderContract
+import de.bixilon.minosoft.gui.rendering.system.base.shader.NativeShader
 import de.bixilon.minosoft.gui.rendering.renderer.renderer.pipeline.world.PipelineSemantic
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainBackendDescriptor
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
@@ -106,6 +107,8 @@ interface WorldShaderPipeline : AutoCloseable {
         contract: SceneShaderContract,
     ) = Unit
     fun bindDrawState(shader: Shader, state: IrisDrawState) = Unit
+
+    fun recordUniformUpload(fallback: Shader, target: NativeShader, revision: Long) = Unit
     fun recordSceneDraw(
         semantic: PipelineSemantic,
         contract: SceneShaderContract,
@@ -415,6 +418,12 @@ class ShaderPipelineRegistry : AutoCloseable {
                 vertices,
             )
         }
+    }
+
+    internal fun recordUniformUpload(fallback: Shader, target: NativeShader, revision: Long) {
+        val binding = sceneBinding.get() ?: return
+        if (binding.fallback !== fallback || binding.selected.native !== target) return
+        withPipeline { it.recordUniformUpload(fallback, target, revision) }
     }
 
     /**
