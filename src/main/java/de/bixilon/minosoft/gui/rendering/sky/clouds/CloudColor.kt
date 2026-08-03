@@ -96,7 +96,7 @@ class CloudColor(
 
 
     fun calculate(): Vec3f {
-        return calculate(sky.session.world.weather, sky.time)
+        return calculate(sky.session.world.presentationWeather, sky.time)
     }
 
     companion object {

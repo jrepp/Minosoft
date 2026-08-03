@@ -45,13 +45,13 @@ class MoonRenderer(
     }
 
     override fun calculateAngle(): Float {
-        val time = sky.context.session.world.time
+        val time = sky.context.session.world.presentationTime
 
         return ((time.time / WorldTime.TICKS_PER_DAYf) - 0.75f) * 360.0f
     }
 
     override fun calculateIntensity(): Float {
-        val time = sky.context.session.world.time
+        val time = sky.context.session.world.presentationTime
         return when (time.phase) {
             DayPhases.NIGHT -> 1.0f
             DayPhases.DAY -> 0.0f

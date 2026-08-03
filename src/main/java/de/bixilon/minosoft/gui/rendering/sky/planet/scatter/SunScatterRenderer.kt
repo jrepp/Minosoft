@@ -83,7 +83,7 @@ class SunScatterRenderer(
         ) {
             return
         }
-        val weather = sky.session.world.weather
+        val weather = sky.session.world.presentationWeather
         val weatherLevel = if (referenceEnabledOverride == true) 0.0f else maxOf(weather.rain, weather.thunder)
         if (weatherLevel >= 1.0f) {
             // maximum rain or thunder, don't render

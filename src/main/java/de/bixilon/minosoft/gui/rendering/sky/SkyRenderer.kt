@@ -45,7 +45,7 @@ class SkyRenderer(
     var effects by observed(session.world.dimension.effects)
     var matrix by observed(Mat4f())
     val profile = session.profiles.rendering.sky
-    var time = session.world.time
+    var time = session.world.presentationTime
         private set
     private var updateTime: Boolean = true
 
@@ -80,6 +80,7 @@ class SkyRenderer(
             renderer.postInit()
         }
         session.world::time.observe(this) { updateTime = true }
+        session.world::presentationTimeOverride.observe(this) { updateTime = true }
         session.events.listen<CameraMatrixChangeEvent> {
             matrix = it.projectionMatrix * Mat4f(Mat3f(it.viewMatrix))
         }
@@ -88,7 +89,7 @@ class SkyRenderer(
 
     override fun prepareDrawAsync() {
         if (updateTime) {
-            this.time = session.world.time
+            this.time = session.world.presentationTime
             for (renderer in renderer) {
                 renderer.onTimeUpdate(time)
             }

@@ -68,7 +68,17 @@ class World(
     var dimension: DimensionProperties by observed(DimensionProperties())
     var difficulty: WorldDifficulty? by observed(null)
     var time by observed(WorldTime())
+    /**
+     * Optional client-presentation time used by renderers without changing the
+     * authoritative time advanced by ticks and server packets.
+     */
+    var presentationTimeOverride: WorldTime? by observed(null)
+    val presentationTime: WorldTime
+        get() = presentationTimeOverride ?: time
     var weather by observed(WorldWeather.SUNNY)
+    var presentationWeatherOverride: WorldWeather? by observed(null)
+    val presentationWeather: WorldWeather
+        get() = presentationWeatherOverride ?: weather
     val view = WorldView(session)
     val border = WorldBorder()
 
@@ -116,7 +126,9 @@ class World(
             terrainPersistenceFingerprint = null
             cleared = chunks.clear()
             time = WorldTime()
+            presentationTimeOverride = null
             weather = WorldWeather.SUNNY
+            presentationWeatherOverride = null
             border.reset()
             mood.reset()
         } finally {

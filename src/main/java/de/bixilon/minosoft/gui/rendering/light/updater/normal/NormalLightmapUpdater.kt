@@ -80,8 +80,8 @@ class NormalLightmapUpdater(
     }
 
     private fun updateBlockSky(dimension: DimensionProperties, buffer: LightmapBuffer) {
-        val time = session.world.time
-        val weather = session.world.weather
+        val time = session.world.presentationTime
+        val weather = session.world.presentationWeather
 
         val skyColors = Array(LightLevel.LEVELS) { calculateSky(dimension.ambientLight[it], weather, time) }
         val blockColors = Array(LightLevel.LEVELS) { calculateBlock(dimension.ambientLight[it]) }

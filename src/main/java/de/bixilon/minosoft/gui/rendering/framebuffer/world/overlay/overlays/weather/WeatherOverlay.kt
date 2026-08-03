@@ -39,7 +39,7 @@ class WeatherOverlay(private val context: RenderContext) : Overlay {
     var referencePrecipitationOverride: BiomePrecipitation? = null
     val effectivePrecipitation get() = referencePrecipitationOverride ?: sourcePrecipitation
     override val render: Boolean
-        get() = world.dimension.effects.weather && world.weather.raining && when (effectivePrecipitation) { // ToDo: Check if exposed to the sky
+        get() = world.dimension.effects.weather && world.presentationWeather.raining && when (effectivePrecipitation) { // ToDo: Check if exposed to the sky
             null -> false
             BiomePrecipitation.RAIN -> config.rain
             BiomePrecipitation.SNOW -> config.snow
@@ -96,7 +96,7 @@ class WeatherOverlay(private val context: RenderContext) : Overlay {
     }
 
     private fun updateShader() {
-        shader.intensity = world.weather.rain
+        shader.intensity = world.presentationWeather.rain
         val offset = (System.currentTimeMillis() % 500.0f) / 500.0f
         shader.offset = -offset
         shader.textureIndexLayer = texture!!.shaderId

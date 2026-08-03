@@ -102,7 +102,7 @@ abstract class PlanetRenderer(
     }
 
     override fun draw() {
-        val weather = sky.session.world.weather
+        val weather = sky.session.world.presentationWeather
         if (weather.rain > 0.8f || weather.thunder > 0.8f) {
             // sky not clear
             return

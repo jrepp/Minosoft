@@ -180,7 +180,7 @@ data class ItemPredicate(val thresholds: Map<ResourceLocation, Float>) {
         val entity = context.entity ?: return 0.0f
         val world = entity.session.world
         val runtime = context.runtime ?: return 0.0f
-        return runtime.clock(world.time.age, world.time.time, world.dimension.natural)
+        return runtime.clock(world.presentationTime.age, world.presentationTime.time, world.dimension.natural)
     }
 
     private fun ItemStack.compassAngle(context: ItemPredicateContext): Float? {

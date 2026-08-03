@@ -174,7 +174,7 @@ class SkyboxColor(
         }
         // TODO: Check if wither is present
 
-        var weather = sky.context.session.world.weather
+        var weather = sky.context.session.world.presentationWeather
         if (!properties.weather) {
             weather = WorldWeather.SUNNY
         }

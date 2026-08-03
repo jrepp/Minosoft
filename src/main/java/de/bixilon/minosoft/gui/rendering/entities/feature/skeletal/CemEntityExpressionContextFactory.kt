@@ -71,13 +71,13 @@ class CemEntityExpressionContextFactory(
         val localPosition = localPlayer.physics.position
         val partialTick = renderInfo.partialTick
         val world = renderContext.session.world
-        val worldTime = world.time
+        val worldTime = world.presentationTime
         val positionInfo = physics.positionInfo
         val skyHeight = positionInfo.chunk?.light?.heightmap?.get(positionInfo.position.inChunkPosition)
             ?.takeUnless { it == Int.MIN_VALUE }
         val wet = CemEntityExpressionMath.wet(
             inWater = physics.inWater,
-            raining = world.weather.raining,
+            raining = world.presentationWeather.raining,
             dimensionWeather = world.dimension.effects.weather,
             rainBiome = positionInfo.biome?.precipitationAt(positionInfo.position) == BiomePrecipitation.RAIN,
             skyHeight = skyHeight,

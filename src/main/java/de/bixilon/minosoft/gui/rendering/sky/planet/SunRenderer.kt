@@ -31,7 +31,7 @@ class SunRenderer(
     override val texture = sky.context.textures.static.create(SUN)
 
     public override fun calculateAngle(): Float {
-        val time = sky.context.session.world.time
+        val time = sky.context.session.world.presentationTime
 
         // 270: sunrise (23k-0k)
         // 0: day (0-12k)
@@ -43,7 +43,7 @@ class SunRenderer(
     }
 
     override fun calculateIntensity(): Float {
-        val time = sky.context.session.world.time
+        val time = sky.context.session.world.presentationTime
         return when (time.phase) {
             DayPhases.NIGHT -> 0.0f
             DayPhases.DAY -> 1.0f
