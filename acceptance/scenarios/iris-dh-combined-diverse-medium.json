@@ -1,0 +1,273 @@
+{
+  "name": "iris-dh-combined-diverse-medium",
+  "steps": [
+    {
+      "name": "managed client and server are ready",
+      "type": "wait",
+      "predicate": "both.ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "Iris starts persistently disabled",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.presentation",
+      "body": {},
+      "assert": [
+        { "pointer": "/enabled", "equals": false },
+        { "pointer": "/installed", "equals": false }
+      ]
+    },
+    {
+      "name": "authoritative diverse medium pose is unchanged",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.player" },
+      "assert": [
+        { "pointer": "/worldState/dimension", "equals": "minecraft:overworld" },
+        { "pointer": "/player/x", "equals": 32.6740054977249 },
+        { "pointer": "/player/y", "equals": 78.0 },
+        { "pointer": "/player/z", "equals": -608.6999999880791 },
+        { "pointer": "/player/yaw", "equals": 115.75401 },
+        { "pointer": "/player/pitch", "equals": 4.5429916 },
+        { "pointer": "/player/gamemode", "equals": "creative" }
+      ]
+    },
+    {
+      "name": "enable configured distant terrain presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.presentation",
+      "body": { "enabled": true },
+      "assert": [
+        { "pointer": "/configuredEnabled", "equals": true },
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/nonPersistent", "equals": true }
+      ]
+    },
+    {
+      "name": "prepare deterministic combined presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "timeOfDay": 6000,
+        "clearWeather": true,
+        "hideHud": true,
+        "hideHitboxes": true,
+        "hideClouds": true,
+        "hideWorldBorder": true,
+        "hideEntities": true,
+        "hideParticles": true
+      },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": false },
+        { "pointer": "/time", "equals": 6000 },
+        { "pointer": "/rain", "equals": 0.0 }
+      ]
+    },
+    {
+      "name": "allow distant hierarchy publication",
+      "type": "sleep",
+      "duration": "15s"
+    },
+    {
+      "name": "combined terrain reaches the complete idle boundary",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/outstandingBuilds", "equals": 0 },
+        { "pointer": "/idleState/activeBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/pendingSubmissions", "equals": 0 },
+        { "pointer": "/idleState/pendingFences", "equals": 0 },
+        { "pointer": "/idleState/retiredPages", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "install exact Complementary pipeline with DH active",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.presentation",
+      "deadlineMs": 30000,
+      "body": { "enabled": true },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/installed", "equals": true },
+        { "pointer": "/shaderPack", "equals": "ComplementaryUnbound_r5.8.1.zip" },
+        { "pointer": "/fingerprint", "equals": "385d3c1777dc297dde25dc7e5fec55234f593f824a896fd21eca3cde3e6c38a8" }
+      ]
+    },
+    {
+      "name": "verify the complete managed option set",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.configure-options",
+      "deadlineMs": 30000,
+      "body": {
+        "options": {
+          "RP_MODE": "3",
+          "SHADOW_QUALITY": "1",
+          "CLOUD_QUALITY": "3",
+          "ANISOTROPIC_FILTER": "8",
+          "TAA_MODE": "0",
+          "TAA_SMOOTHING": "4",
+          "TAA_JITTER": "0",
+          "FXAA_STRENGTH": "85",
+          "FXAA_TAA_INTERACTION": "0",
+          "WAVING_FOLIAGE": "false",
+          "WAVING_LEAVES": "false",
+          "WATER_ALPHA_MULT": "180",
+          "WATER_FOG_MULT": "50",
+          "WATER_BUMPINESS": "1.50",
+          "UNDERWATERCOLOR_R": "110",
+          "UNDERWATERCOLOR_G": "120",
+          "UNDERWATERCOLOR_B": "130"
+        }
+      },
+      "assert": [
+        { "pointer": "/configured", "equals": true },
+        { "pointer": "/presentationInstalled", "equals": true },
+        { "pointer": "/fingerprint", "equals": "385d3c1777dc297dde25dc7e5fec55234f593f824a896fd21eca3cde3e6c38a8" }
+      ]
+    },
+    {
+      "name": "allow every combined first-frame pass to advance",
+      "type": "sleep",
+      "duration": "5s"
+    },
+    {
+      "name": "post-Iris terrain generation reaches the complete idle boundary",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/outstandingBuilds", "equals": 0 },
+        { "pointer": "/idleState/activeBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/pendingSubmissions", "equals": 0 },
+        { "pointer": "/idleState/pendingFences", "equals": 0 },
+        { "pointer": "/idleState/retiredPages", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "allow final combined DH selections to publish",
+      "type": "sleep",
+      "duration": "10s"
+    },
+    {
+      "name": "DH contributes selected masked pages without resource failures",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.render-diagnostics",
+      "body": {},
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/renderReadyNativeChunks", "min": 1 },
+        { "pointer": "/hierarchy/mainSelectedPages", "min": 1 },
+        { "pointer": "/hierarchy/mainMaskedPages", "min": 1 },
+        { "pointer": "/hierarchy/queuedPages", "equals": 0 },
+        { "pointer": "/hierarchy/pendingPages", "equals": 0 },
+        { "pointer": "/hierarchy/pendingUploadPages", "equals": 0 },
+        { "pointer": "/hierarchy/allocationFailures", "equals": 0 },
+        { "pointer": "/hierarchy/uploadFailures", "equals": 0 },
+        { "pointer": "/hierarchy/failedSubmissionCount", "equals": 0 }
+      ]
+    },
+    {
+      "name": "Complementary executes near distant shadow and final routes",
+      "type": "request",
+      "role": "client",
+      "operation": "render.substrate",
+      "deadlineMs": 30000,
+      "body": {},
+      "assert": [
+        { "pointer": "/shaderOwner", "equals": "minosoft:iris-1.7.2-shader-pipeline" },
+        { "pointer": "/shaderFingerprint", "equals": "385d3c1777dc297dde25dc7e5fec55234f593f824a896fd21eca3cde3e6c38a8" },
+        { "pointer": "/shaderPrograms/rejectedSceneBinds", "size": 0 },
+        { "pointer": "/shaderPrograms/fallbackSceneBinds", "size": 0 },
+        { "pointer": "/shaderPrograms/selectedTerrainBinds/minosoft:main~1opaque~1gbuffers_terrain", "min": 1 },
+        { "pointer": "/shaderPrograms/selectedTerrainBinds/minosoft:shadow~1opaque~1shadow", "min": 1 },
+        { "pointer": "/shaderPrograms/selectedSceneBinds/dh_terrain~1DISTANT_TERRAIN~1DISTANT_TERRAIN", "min": 1 },
+        { "pointer": "/shaderPrograms/fullscreenProgramExecutions/composite7", "min": 1 },
+        { "pointer": "/shaderPrograms/programStages/final", "equals": "vertex,fragment" },
+        { "pointer": "/shaderPrograms/activePassCutoff", "equals": null }
+      ]
+    },
+    {
+      "name": "combined terrain is neither blank washed out nor stippled",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.sample",
+      "body": {
+        "region": { "x": 2200, "y": 650, "width": 256, "height": 256 }
+      },
+      "assert": [
+        { "pointer": "/width", "equals": 3456 },
+        { "pointer": "/height", "equals": 1910 },
+        { "pointer": "/region/averageLuminance", "min": 0.10 },
+        { "pointer": "/region/averageLuminance", "max": 0.18 },
+        { "pointer": "/region/minimumLuminance", "min": 0.05 },
+        { "pointer": "/region/nearBlackPixelCount", "equals": 0 },
+        { "pointer": "/region/minimumAlpha", "equals": 255 },
+        { "pointer": "/region/maximumAlpha", "equals": 255 }
+      ]
+    },
+    {
+      "name": "disable Iris after combined presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.presentation",
+      "deadlineMs": 30000,
+      "body": { "enabled": false },
+      "assert": [
+        { "pointer": "/enabled", "equals": false },
+        { "pointer": "/installed", "equals": false }
+      ]
+    },
+    {
+      "name": "restore configured distant presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.presentation",
+      "body": { "restore": true },
+      "assert": [
+        { "pointer": "/override", "equals": null },
+        { "pointer": "/configuredEnabled", "equals": true },
+        { "pointer": "/enabled", "equals": true }
+      ]
+    },
+    {
+      "name": "restore ordinary transient presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "restoreTime": true,
+        "restoreWeather": true,
+        "hideHud": false,
+        "hideHitboxes": true,
+        "hideClouds": false,
+        "hideWorldBorder": false,
+        "hideEntities": false,
+        "hideParticles": false
+      },
+      "assert": [
+        { "pointer": "/hudEnabled", "equals": true },
+        { "pointer": "/timePrepared", "equals": false },
+        { "pointer": "/weatherPrepared", "equals": false }
+      ]
+    }
+  ]
+}

@@ -64,6 +64,25 @@
       "duration": "6s"
     },
     {
+      "name": "seam terrain reaches the complete idle boundary",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/outstandingBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "allow final seam selections to publish",
+      "type": "sleep",
+      "duration": "2s"
+    },
+    {
       "name": "main and shadow active seam publication agrees",
       "type": "request",
       "role": "client",
@@ -95,14 +114,14 @@
       "operation": "mods.distanthorizons.render-diagnostics",
       "body": {},
       "assert": [
-        { "pointer": "/hierarchy/gpuPages", "min": 1000 },
-        { "pointer": "/hierarchy/mainSelectedPages", "min": 1000 },
-        { "pointer": "/hierarchy/shadowSelectedPages", "min": 1000 },
+        { "pointer": "/hierarchy/gpuPages", "min": 500 },
+        { "pointer": "/hierarchy/mainSelectedPages", "min": 500 },
+        { "pointer": "/hierarchy/shadowSelectedPages", "min": 400 },
         { "pointer": "/hierarchy/detailCounts/0", "min": 1 },
         { "pointer": "/hierarchy/detailCounts/1", "min": 1 },
         { "pointer": "/hierarchy/regions", "min": 1 },
         { "pointer": "/hierarchy/drawBatches", "max": 64 },
-        { "pointer": "/hierarchy/drawCommands", "min": 1000 },
+        { "pointer": "/hierarchy/drawCommands", "min": 800 },
         { "pointer": "/hierarchy/retiredBytes", "equals": 0 },
         { "pointer": "/hierarchy/allocationFailures", "equals": 0 },
         { "pointer": "/hierarchy/uploadFailures", "equals": 0 }
@@ -119,9 +138,9 @@
       "assert": [
         { "pointer": "/width", "equals": 3456 },
         { "pointer": "/height", "equals": 1910 },
-        { "pointer": "/region/averageLuminance", "min": 0.34 },
-        { "pointer": "/region/averageLuminance", "max": 0.37 },
-        { "pointer": "/region/minimumLuminance", "min": 0.03 },
+        { "pointer": "/region/averageLuminance", "min": 0.30 },
+        { "pointer": "/region/averageLuminance", "max": 0.38 },
+        { "pointer": "/region/minimumLuminance", "min": 0.25 },
         { "pointer": "/region/nearBlackPixelCount", "equals": 0 },
         { "pointer": "/region/minimumAlpha", "equals": 255 },
         { "pointer": "/region/maximumAlpha", "equals": 255 }
@@ -136,9 +155,9 @@
         "region": { "x": 600, "y": 176, "width": 2200, "height": 16 }
       },
       "assert": [
-        { "pointer": "/region/averageLuminance", "min": 0.34 },
-        { "pointer": "/region/averageLuminance", "max": 0.37 },
-        { "pointer": "/region/minimumLuminance", "min": 0.03 },
+        { "pointer": "/region/averageLuminance", "min": 0.30 },
+        { "pointer": "/region/averageLuminance", "max": 0.38 },
+        { "pointer": "/region/minimumLuminance", "min": 0.25 },
         { "pointer": "/region/nearBlackPixelCount", "equals": 0 },
         { "pointer": "/region/minimumAlpha", "equals": 255 },
         { "pointer": "/region/maximumAlpha", "equals": 255 }

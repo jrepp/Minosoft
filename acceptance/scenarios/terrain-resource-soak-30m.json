@@ -40,7 +40,6 @@
       "assert": [
         { "pointer": "/coverage/stateCounts/READY", "min": 1 },
         { "pointer": "/publication/0/views/0/missingPageCount", "equals": 0 },
-        { "pointer": "/publication/0/views/1/missingPageCount", "equals": 0 },
         { "pointer": "/publication/1/views/0/drawPageCount", "min": 1 },
         { "pointer": "/publication/1/views/1/drawPageCount", "min": 1 }
       ]

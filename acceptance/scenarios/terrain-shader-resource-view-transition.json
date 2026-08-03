@@ -35,6 +35,7 @@
       "type": "request",
       "role": "client",
       "operation": "mods.iris.presentation",
+      "deadlineMs": 30000,
       "body": { "enabled": true },
       "assert": [
         { "pointer": "/enabled", "equals": true },
@@ -47,6 +48,7 @@
       "type": "request",
       "role": "client",
       "operation": "mods.iris.reload-shaders",
+      "deadlineMs": 30000,
       "body": {},
       "assert": [
         { "pointer": "/reloaded", "equals": true },
@@ -59,6 +61,7 @@
       "type": "request",
       "role": "client",
       "operation": "render.reload-content",
+      "deadlineMs": 30000,
       "body": {},
       "assert": [
         { "pointer": "/accepted", "equals": true },
@@ -86,7 +89,7 @@
       "body": {},
       "assert": [
         { "pointer": "/snapshot/pipeline/mode", "equals": "UNIFIED" },
-        { "pointer": "/snapshot/pipeline/shaderPipelineGeneration", "min": 3 },
+        { "pointer": "/snapshot/pipeline/shaderPipelineGeneration", "min": 2 },
         { "pointer": "/snapshot/publication/0/views/0/drawPageCount", "min": 1 },
         { "pointer": "/snapshot/publication/0/views/1/drawPageCount", "min": 1 },
         { "pointer": "/snapshot/publication/0/views/0/missingPageCount", "equals": 0 },

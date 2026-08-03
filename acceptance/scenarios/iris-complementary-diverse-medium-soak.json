@@ -1,0 +1,101 @@
+{
+  "name": "iris-complementary-diverse-medium-soak",
+  "duration": "5m",
+  "steps": [
+    {
+      "name": "both endpoints remain ready",
+      "type": "wait",
+      "predicate": "both.ready",
+      "timeout": "15s"
+    },
+    {
+      "name": "Iris enable remains idempotent",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.presentation",
+      "deadlineMs": 30000,
+      "body": { "enabled": true },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/installed", "equals": true },
+        { "pointer": "/shaderPack", "equals": "ComplementaryUnbound_r5.8.1.zip" },
+        { "pointer": "/fingerprint", "equals": "385d3c1777dc297dde25dc7e5fec55234f593f824a896fd21eca3cde3e6c38a8" }
+      ]
+    },
+    {
+      "name": "client metrics remain responsive",
+      "type": "request",
+      "role": "client",
+      "operation": "metrics.snapshot",
+      "body": {},
+      "assert": [
+        { "pointer": "/schema", "equals": 1 },
+        { "pointer": "/operations", "exists": true }
+      ]
+    },
+    {
+      "name": "allow the idempotent pipeline to present settled frames",
+      "type": "sleep",
+      "duration": "5s"
+    },
+    {
+      "name": "prepare bounded static sampling",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "timeOfDay": 6000,
+        "clearWeather": true,
+        "hideHud": true,
+        "hideHitboxes": true,
+        "hideClouds": true,
+        "hideWorldBorder": true,
+        "hideEntities": true,
+        "hideParticles": true
+      }
+    },
+    {
+      "name": "static terrain remains visibly rendered",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.sample",
+      "body": {
+        "region": { "x": 2200, "y": 650, "width": 256, "height": 256 }
+      },
+      "assert": [
+        { "pointer": "/region/averageLuminance", "min": 0.10 },
+        { "pointer": "/region/averageLuminance", "max": 0.18 },
+        { "pointer": "/region/minimumLuminance", "min": 0.05 },
+        { "pointer": "/region/nearBlackPixelCount", "equals": 0 },
+        { "pointer": "/region/minimumAlpha", "equals": 255 },
+        { "pointer": "/region/maximumAlpha", "equals": 255 }
+      ]
+    },
+    {
+      "name": "restore transient presentation before the soak interval",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "restoreTime": true,
+        "restoreWeather": true,
+        "hideHud": false,
+        "hideHitboxes": true,
+        "hideClouds": false,
+        "hideWorldBorder": false,
+        "hideEntities": false,
+        "hideParticles": false
+      },
+      "assert": [
+        { "pointer": "/timePrepared", "equals": false },
+        { "pointer": "/weatherPrepared", "equals": false },
+        { "pointer": "/hudEnabled", "equals": true }
+      ]
+    },
+    {
+      "name": "bounded soak interval",
+      "type": "sleep",
+      "duration": "5s"
+    }
+  ]
+}

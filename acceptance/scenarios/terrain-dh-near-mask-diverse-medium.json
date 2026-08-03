@@ -1,0 +1,283 @@
+{
+  "name": "terrain-dh-near-mask-diverse-medium",
+  "steps": [
+    {
+      "name": "managed client and server are ready",
+      "type": "wait",
+      "predicate": "both.ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "Iris is persistently disabled",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.presentation",
+      "body": {},
+      "assert": [
+        { "pointer": "/enabled", "equals": false },
+        { "pointer": "/installed", "equals": false }
+      ]
+    },
+    {
+      "name": "authoritative diverse medium pose is unchanged",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.player" },
+      "assert": [
+        { "pointer": "/worldState/dimension", "equals": "minecraft:overworld" },
+        { "pointer": "/player/x", "equals": 32.6740054977249 },
+        { "pointer": "/player/y", "equals": 78.0 },
+        { "pointer": "/player/z", "equals": -608.6999999880791 },
+        { "pointer": "/player/yaw", "equals": 115.75401 },
+        { "pointer": "/player/pitch", "equals": 4.5429916 },
+        { "pointer": "/player/gamemode", "equals": "creative" }
+      ]
+    },
+    {
+      "name": "authoritative local blocks are loaded",
+      "type": "request",
+      "role": "client",
+      "operation": "world.blocks.sample",
+      "body": {
+        "min": { "x": 30, "y": 75, "z": -612 },
+        "max": { "x": 35, "y": 81, "z": -606 }
+      },
+      "assert": [
+        { "pointer": "/volume", "equals": 294 },
+        { "pointer": "/notLoaded", "equals": 0 },
+        { "pointer": "/palette/0", "equals": "minecraft:stone" },
+        { "pointer": "/palette/2", "equals": "minecraft:grass_block[snowy=false]" }
+      ]
+    },
+    {
+      "name": "clear transient presentation for DH enabled capture",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "timeOfDay": 6000,
+        "clearWeather": true,
+        "hideHud": true,
+        "hideHitboxes": true,
+        "hideClouds": true,
+        "hideWorldBorder": true,
+        "hideEntities": true,
+        "hideParticles": true
+      },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": false }
+      ]
+    },
+    {
+      "name": "enable only distant terrain presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.presentation",
+      "body": { "enabled": true },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/nonPersistent", "equals": true }
+      ]
+    },
+    {
+      "name": "allow the restored distant hierarchy to republish its full resident window",
+      "type": "sleep",
+      "duration": "15s"
+    },
+    {
+      "name": "DH enabled terrain reaches the complete idle boundary",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/outstandingBuilds", "equals": 0 },
+        { "pointer": "/idleState/activeBuilds", "equals": 0 },
+        { "pointer": "/idleState/completionDepth", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/pendingSubmissions", "equals": 0 },
+        { "pointer": "/idleState/pendingFences", "equals": 0 },
+        { "pointer": "/idleState/retiredPages", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "near coverage and distant publication are complete",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.coverage",
+      "body": {},
+      "assert": [
+        { "pointer": "/coverage/generation", "min": 1 },
+        { "pointer": "/coverage/stateCounts/READY", "min": 1 },
+        { "pointer": "/publication/1/domain", "equals": "DISTANT" },
+        { "pointer": "/publication/1/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/publication/1/views/0/missingPageCount", "equals": 0 },
+        { "pointer": "/publication/1/views/1/missingPageCount", "equals": 0 }
+      ]
+    },
+    {
+      "name": "allow the final selected DH pages to publish",
+      "type": "sleep",
+      "duration": "2s"
+    },
+    {
+      "name": "DH draws distant pages without resource failures",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.render-diagnostics",
+      "body": {},
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/renderReadyNativeChunks", "min": 1 },
+        { "pointer": "/hierarchy/mainSelectedPages", "min": 1 },
+        { "pointer": "/hierarchy/mainMaskedPages", "min": 1 },
+        { "pointer": "/hierarchy/queuedPages", "equals": 0 },
+        { "pointer": "/hierarchy/pendingPages", "equals": 0 },
+        { "pointer": "/hierarchy/pendingUploadPages", "equals": 0 },
+        { "pointer": "/hierarchy/allocationFailures", "equals": 0 },
+        { "pointer": "/hierarchy/uploadFailures", "equals": 0 },
+        { "pointer": "/hierarchy/failedSubmissionCount", "equals": 0 }
+      ]
+    },
+    {
+      "name": "DH enabled foreground",
+      "type": "screenshot",
+      "baseline": "../baselines/terrain-dh-near-mask-diverse-medium/dh-enabled-foreground-macos-retina-3456x1910.png",
+      "sourceWidth": 3456,
+      "sourceHeight": 1910,
+      "region": [700, 300, 2756, 1400],
+      "pixelThreshold": 12,
+      "maxChangedRatio": 0.05,
+      "maxMeanError": 3.0
+    },
+    {
+      "name": "clear transient presentation for DH enabled distant crop",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "timeOfDay": 6000,
+        "hideHud": true,
+        "hideHitboxes": true,
+        "hideClouds": true,
+        "hideWorldBorder": true,
+        "hideEntities": true,
+        "hideParticles": true
+      }
+    },
+    {
+      "name": "DH enabled distant terrain",
+      "type": "screenshot",
+      "baseline": "../baselines/terrain-dh-near-mask-diverse-medium/dh-enabled-distant-macos-retina-3456x1910.png",
+      "sourceWidth": 3456,
+      "sourceHeight": 1910,
+      "region": [0, 400, 700, 700],
+      "pixelThreshold": 12,
+      "maxChangedRatio": 0.05,
+      "maxMeanError": 3.0
+    },
+    {
+      "name": "disable only distant terrain presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.presentation",
+      "body": { "enabled": false },
+      "assert": [
+        { "pointer": "/enabled", "equals": false },
+        { "pointer": "/nonPersistent", "equals": true }
+      ]
+    },
+    {
+      "name": "clear transient presentation for DH disabled capture",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "timeOfDay": 6000,
+        "hideHud": true,
+        "hideHitboxes": true,
+        "hideClouds": true,
+        "hideWorldBorder": true,
+        "hideEntities": true,
+        "hideParticles": true
+      }
+    },
+    {
+      "name": "DH disabled foreground",
+      "type": "screenshot",
+      "baseline": "../baselines/terrain-dh-near-mask-diverse-medium/dh-disabled-foreground-macos-retina-3456x1910.png",
+      "sourceWidth": 3456,
+      "sourceHeight": 1910,
+      "region": [700, 300, 2756, 1400],
+      "pixelThreshold": 12,
+      "maxChangedRatio": 0.05,
+      "maxMeanError": 3.0
+    },
+    {
+      "name": "clear transient presentation for DH disabled distant crop",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "timeOfDay": 6000,
+        "hideHud": true,
+        "hideHitboxes": true,
+        "hideClouds": true,
+        "hideWorldBorder": true,
+        "hideEntities": true,
+        "hideParticles": true
+      }
+    },
+    {
+      "name": "DH disabled distant terrain",
+      "type": "screenshot",
+      "baseline": "../baselines/terrain-dh-near-mask-diverse-medium/dh-disabled-distant-macos-retina-3456x1910.png",
+      "sourceWidth": 3456,
+      "sourceHeight": 1910,
+      "region": [0, 400, 700, 700],
+      "pixelThreshold": 12,
+      "maxChangedRatio": 0.05,
+      "maxMeanError": 3.0
+    },
+    {
+      "name": "restore configured distant presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.presentation",
+      "body": { "restore": true },
+      "assert": [
+        { "pointer": "/override", "equals": null },
+        { "pointer": "/configuredEnabled", "equals": true },
+        { "pointer": "/enabled", "equals": true }
+      ]
+    },
+    {
+      "name": "restore ordinary reference presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "restoreTime": true,
+        "restoreWeather": true,
+        "hideHud": false,
+        "hideHitboxes": true,
+        "hideClouds": false,
+        "hideWorldBorder": false,
+        "hideEntities": false,
+        "hideParticles": false
+      },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": true },
+        { "pointer": "/cloudsSuppressed", "equals": false },
+        { "pointer": "/timePrepared", "equals": false },
+        { "pointer": "/weatherPrepared", "equals": false }
+      ]
+    }
+  ]
+}

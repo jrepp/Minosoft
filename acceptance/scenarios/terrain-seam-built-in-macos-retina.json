@@ -63,6 +63,25 @@
       "duration": "6s"
     },
     {
+      "name": "seam terrain reaches the complete idle boundary",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/outstandingBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "allow final seam selections to publish",
+      "type": "sleep",
+      "duration": "2s"
+    },
+    {
       "name": "near and distant seam publication is complete",
       "type": "request",
       "role": "client",
@@ -100,10 +119,10 @@
       "assert": [
         { "pointer": "/width", "equals": 3456 },
         { "pointer": "/height", "equals": 1910 },
-        { "pointer": "/region/sha256", "equals": "4c4c28615159776beabc8af2f76a7caef6429c913eb36b5f3b774e42f81e495b" },
-        { "pointer": "/region/averageLuminance", "min": 0.35 },
-        { "pointer": "/region/averageLuminance", "max": 0.36 },
-        { "pointer": "/region/minimumLuminance", "min": 0.03 },
+        { "pointer": "/region/sha256", "equals": "d3d43fa9b92874ccea972b9183435e423b5aafba006edb866f577d8a81c00503" },
+        { "pointer": "/region/averageLuminance", "min": 0.37 },
+        { "pointer": "/region/averageLuminance", "max": 0.38 },
+        { "pointer": "/region/minimumLuminance", "min": 0.35 },
         { "pointer": "/region/nearBlackPixelCount", "equals": 0 },
         { "pointer": "/region/minimumAlpha", "equals": 255 },
         { "pointer": "/region/maximumAlpha", "equals": 255 },
