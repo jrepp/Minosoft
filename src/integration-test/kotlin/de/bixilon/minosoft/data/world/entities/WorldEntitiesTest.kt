@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2024 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -24,6 +25,9 @@ import de.bixilon.minosoft.test.ITUtil.allocate
 import org.testng.Assert.*
 import org.testng.annotations.Test
 import java.util.*
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 
 @Test(groups = ["world"])
@@ -67,6 +71,32 @@ class WorldEntitiesTest {
         assertEquals(entities.getUUID(entity), UUID(1, 1))
         entities.remove(entity)
         assertEquals(entities.getUUID(entity), null)
+    }
+
+    fun `tick snapshot releases entity index lock before asynchronous join`() {
+        val entities = create()
+        val first = entity()
+        val second = entity()
+        entities.add(1, UUID(1, 1), first)
+        val executor = Executors.newSingleThreadExecutor { task ->
+            Thread(task, "world-entities-tick-lock-test").apply { isDaemon = true }
+        }
+        val tickSnapshot = WorldEntities::class.java.declaredMethods.single {
+            it.name.startsWith("tickSnapshot")
+        }.apply { isAccessible = true }
+        try {
+            CompletableFuture.runAsync({
+                tickSnapshot.invoke(entities, { snapshot: List<Entity> ->
+                    assertEquals(snapshot.size, 1)
+                    assertSame(snapshot.single(), first)
+                    entities.add(2, UUID(2, 2), second)
+                    assertEquals(entities.getUUID(first), UUID(1, 1))
+                })
+            }, executor).get(1, TimeUnit.SECONDS)
+        } finally {
+            executor.shutdownNow()
+        }
+        assertEquals(entities.entities, setOf(first, second))
     }
 
     fun `forbid removing local player`() {
