@@ -39,7 +39,9 @@ data class GeckoLibAnimationState(
         variables = buildMap {
             putAll(data)
             put("query.anim_time", ageSeconds.toDouble())
+            put("q.anim_time", ageSeconds.toDouble())
             put("query.is_moving", if (moving) 1.0 else 0.0)
+            put("q.is_moving", if (moving) 1.0 else 0.0)
         },
         random = random,
     )

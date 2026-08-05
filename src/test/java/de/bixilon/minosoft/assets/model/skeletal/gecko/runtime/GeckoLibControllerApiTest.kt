@@ -269,7 +269,7 @@ class GeckoLibControllerApiTest {
         val controllers = GeckoLibControllerSet(
             clips = mapOf(
                 "idle" to expressionClip("idle", "Math.cos(query.anim_time * 360)"),
-                "move" to expressionClip("move", "Math.sin(query.anim_time * 360)"),
+                "move" to expressionClip("move", "Math.sin(q.anim_time * 360)"),
             ),
             definitions = listOf(
                 GeckoLibControllerDefinition(
