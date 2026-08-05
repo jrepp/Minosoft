@@ -17,6 +17,22 @@ import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.depth.DepthAttachment
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.stencil.StencilAttachment
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.texture.TextureAttachment
+import kotlin.math.roundToInt
+
+fun scaledFramebufferSize(size: Vec2i, scale: Float): Vec2i {
+    require(size.x > 0 && size.y > 0) { "Framebuffer dimensions must be positive: $size" }
+    require(scale.isFinite() && scale > 0.0f) { "Framebuffer scale must be finite and positive: $scale" }
+    if (scale == 1.0f) return size
+
+    fun scaled(dimension: Int): Int {
+        val value = dimension.toDouble() * scale.toDouble()
+        require(value.isFinite() && value <= Int.MAX_VALUE.toDouble()) {
+            "Scaled framebuffer dimension exceeds the supported range: $dimension * $scale"
+        }
+        return value.roundToInt().coerceAtLeast(1)
+    }
+    return Vec2i(scaled(size.x), scaled(size.y))
+}
 
 interface Framebuffer {
     val state: FramebufferState

@@ -34,6 +34,15 @@ import de.bixilon.minosoft.gui.rendering.system.base.PolygonModes
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.Framebuffer
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.depth.DepthModes
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.texture.TextureModes
+import kotlin.math.max
+import kotlin.math.min
+
+internal fun effectiveWorldScale(configured: Float, retinaLimit: Float, systemScale: Float): Float {
+    require(configured.isFinite() && configured > 0.0f) { "Configured world scale must be finite and positive" }
+    require(retinaLimit.isFinite() && retinaLimit > 0.0f) { "Retina world scale must be finite and positive" }
+    require(systemScale.isFinite() && systemScale > 0.0f) { "Window system scale must be finite and positive" }
+    return if (systemScale > 1.25f) min(configured, retinaLimit) else configured
+}
 
 class MainWorldTarget(
     override val context: RenderContext,
@@ -60,12 +69,27 @@ class MainWorldTarget(
 
     override var size = Vec2i(1, 1)
     override var scale = 1.0f
+    private var configuredScale = 1.0f
+    private var retinaLimit = 0.75f
+
+    private fun updateScale() {
+        val systemScale = max(context.window.systemScale.x, context.window.systemScale.y)
+        scale = effectiveWorldScale(configuredScale, retinaLimit, systemScale)
+    }
 
     override fun init() {
         super.init() // TODO: init defaultShader
 
         overlay.init()
-        context.session.profiles.rendering.quality.resolution::worldScale.observe(this, instant = true) { this.scale = it }
+        context.session.profiles.rendering.quality.resolution::worldScale.observe(this, instant = true) {
+            configuredScale = it
+            updateScale()
+        }
+        context.session.profiles.rendering.quality.resolution::retinaWorldScale.observe(this, instant = true) {
+            retinaLimit = it
+            updateScale()
+        }
+        context.window::systemScale.observe(this, instant = true) { updateScale() }
     }
 
     override fun create() = context.system.createFramebuffer(this.size, this.scale, texture = TextureModes.NEAREST, depth = DepthModes.DEPTH24)

@@ -39,6 +39,7 @@ import de.bixilon.minosoft.data.world.positions.BlockPositionUtil.center
 import de.bixilon.minosoft.data.world.time.WorldTime
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.graph.resource.RenderTargetSize
+import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.scaledFramebufferSize
 import de.bixilon.minosoft.gui.rendering.camera.CameraUtil
 import de.bixilon.minosoft.gui.rendering.camera.view.person.FirstPersonView
 import de.bixilon.minosoft.gui.rendering.chunk.outline.BlockOutlineRenderer
@@ -1192,7 +1193,8 @@ internal class IrisFrameStateClock {
         val skyColor = context.renderer[SkyRenderer]?.box?.color?.calculateWorldColor()?.toVec3f() ?: Vec3f.EMPTY
         val hideGui = context.renderer[GUIRenderer]?.hud?.enabled?.not() ?: false
         val shadow = plan?.shadowDirectives ?: IrisShadowDirectives()
-        val size = context.window.size
+        val worldTarget = context.framebuffer.main
+        val size = scaledFramebufferSize(worldTarget.size, worldTarget.scale)
         val sunAngle = time.time / WorldTime.TICKS_PER_DAYf
         val shadowAngle = if (sunAngle <= 0.5f) sunAngle else sunAngle - 0.5f
         val renderOrigin = context.camera.offset.offset

@@ -21,6 +21,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.BlendingFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.IntegratedBufferTypes
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.Framebuffer
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.FramebufferState
+import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.scaledFramebufferSize
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.texture.TextureModes
 import de.bixilon.minosoft.gui.rendering.util.mesh.MeshStates
 
@@ -147,10 +148,7 @@ class EntityOutlineRenderer(
 
     private fun ensureFramebuffer() {
         val main = context.framebuffer.main
-        val size = Vec2i(
-            (main.size.x * main.scale).toInt().coerceAtLeast(1),
-            (main.size.y * main.scale).toInt().coerceAtLeast(1),
-        )
+        val size = scaledFramebufferSize(main.size, main.scale)
         val current = framebuffer
         if (current?.size == size) return
 

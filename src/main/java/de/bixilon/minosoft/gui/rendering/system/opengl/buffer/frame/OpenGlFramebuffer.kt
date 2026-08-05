@@ -17,6 +17,7 @@ package de.bixilon.minosoft.gui.rendering.system.opengl.buffer.frame
 import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.Framebuffer
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.FramebufferState
+import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.scaledFramebufferSize
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.AttachmentStates
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.depth.DepthModes
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.stencil.StencilModes
@@ -39,15 +40,15 @@ class OpenGlFramebuffer(
     depth: DepthModes? = null,
     stencil: StencilModes? = null,
 ) : Framebuffer {
-    private var scaled = size
+    private val scaled = scaledFramebufferSize(size, scale)
     override var state: FramebufferState = FramebufferState.PREPARING
         private set
 
     private var id = -1
 
-    override val texture = texture?.let { OpenGlTextureAttachment(system, size, it) }
-    override val depth = depth?.let { OpenGlDepthAttachment(system, size, it) }
-    override val stencil = stencil?.let { OpenGlStencilAttachment(system, size, it) }
+    override val texture = texture?.let { OpenGlTextureAttachment(system, scaled, it) }
+    override val depth = depth?.let { OpenGlDepthAttachment(system, scaled, it) }
+    override val stencil = stencil?.let { OpenGlStencilAttachment(system, scaled, it) }
 
 
     init {
@@ -63,8 +64,6 @@ class OpenGlFramebuffer(
         system.resources.created(OpenGlResourceType.FRAMEBUFFER, id)
         try {
             unsafeBind()
-
-            this.scaled = if (scale == 1.0f) size else Vec2i((size.x * scale).toInt(), (size.y * scale).toInt())
 
             if (texture != null) {
                 texture.init()

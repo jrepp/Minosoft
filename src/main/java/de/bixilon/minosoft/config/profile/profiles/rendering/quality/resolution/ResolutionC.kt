@@ -31,4 +31,7 @@ class ResolutionC(profile: RenderingProfile) {
      * Otherwise do not change this, this will not reduce cpu load or gpu load of other stages.
      */
     var worldScale by FloatDelegate(profile, 1.0f, ranges = arrayOf(0.0001f..4.0f))
+
+    /** Upper world-buffer scale used on high-density displays; GUI rendering remains native. */
+    var retinaWorldScale by FloatDelegate(profile, 0.75f, ranges = arrayOf(0.25f..1.0f))
 }
