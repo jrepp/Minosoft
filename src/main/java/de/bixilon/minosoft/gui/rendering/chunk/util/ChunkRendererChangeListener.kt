@@ -77,23 +77,23 @@ object ChunkRendererChangeListener {
         val neighbours = update.chunk.neighbours
         val sectionHeight = update.position.sectionHeight
 
-        invalidate(update.chunk, sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
+        queueInvalidation(update.chunk, sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
         val inPosition = update.position.inSectionPosition
 
         if (inPosition.y == 0) {
-            invalidate(update.chunk, sectionHeight - 1, TerrainBuildCause.BLOCK_CHANGE)
+            queueInvalidation(update.chunk, sectionHeight - 1, TerrainBuildCause.BLOCK_CHANGE)
         } else if (inPosition.y == ChunkSize.SECTION_MAX_Y) {
-            invalidate(update.chunk, sectionHeight + 1, TerrainBuildCause.BLOCK_CHANGE)
+            queueInvalidation(update.chunk, sectionHeight + 1, TerrainBuildCause.BLOCK_CHANGE)
         }
         if (inPosition.z == 0) {
-            invalidate(neighbours[Directions.NORTH], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
+            queueInvalidation(neighbours[Directions.NORTH], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
         } else if (inPosition.z == ChunkSize.SECTION_MAX_Z) {
-            invalidate(neighbours[Directions.SOUTH], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
+            queueInvalidation(neighbours[Directions.SOUTH], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
         }
         if (inPosition.x == 0) {
-            invalidate(neighbours[Directions.WEST], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
+            queueInvalidation(neighbours[Directions.WEST], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
         } else if (inPosition.x == ChunkSize.SECTION_MAX_X) {
-            invalidate(neighbours[Directions.EAST], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
+            queueInvalidation(neighbours[Directions.EAST], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
         }
     }
 
@@ -131,37 +131,37 @@ object ChunkRendererChangeListener {
 
         val neighbours = update.chunk.neighbours
         for ((sectionHeight, neighbourUpdates) in sectionHeights) {
-            invalidate(update.chunk, sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
+            queueInvalidation(update.chunk, sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
 
             if (neighbourUpdates[0]) {
-                invalidate(update.chunk, sectionHeight - 1, TerrainBuildCause.BLOCK_CHANGE)
+                queueInvalidation(update.chunk, sectionHeight - 1, TerrainBuildCause.BLOCK_CHANGE)
             }
             if (neighbourUpdates[1]) {
-                invalidate(update.chunk, sectionHeight + 1, TerrainBuildCause.BLOCK_CHANGE)
+                queueInvalidation(update.chunk, sectionHeight + 1, TerrainBuildCause.BLOCK_CHANGE)
             }
             if (neighbourUpdates[2]) {
-                invalidate(neighbours[Directions.NORTH], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
+                queueInvalidation(neighbours[Directions.NORTH], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
             }
             if (neighbourUpdates[3]) {
-                invalidate(neighbours[Directions.SOUTH], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
+                queueInvalidation(neighbours[Directions.SOUTH], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
             }
             if (neighbourUpdates[4]) {
-                invalidate(neighbours[Directions.WEST], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
+                queueInvalidation(neighbours[Directions.WEST], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
             }
             if (neighbourUpdates[5]) {
-                invalidate(neighbours[Directions.EAST], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
+                queueInvalidation(neighbours[Directions.EAST], sectionHeight, TerrainBuildCause.BLOCK_CHANGE)
             }
         }
     }
 
     private fun ChunkRenderer.handle(update: BlockEntityDataUpdate) {
-        invalidate(update.chunk, update.position.sectionHeight, TerrainBuildCause.BLOCK_ENTITY_CHANGE)
+        queueInvalidation(update.chunk, update.position.sectionHeight, TerrainBuildCause.BLOCK_ENTITY_CHANGE)
     }
 
     private fun ChunkRenderer.handle(update: ChunkLightUpdate) {
         if (update.cause == ChunkLightUpdate.Causes.BLOCK_CHANGE) return // change is already covered
         // TODO: Enqueue neighbour sections (light level from cullface)
-        invalidate(update.section, TerrainBuildCause.LIGHT_CHANGE)
+        queueInvalidation(update.section, TerrainBuildCause.LIGHT_CHANGE)
     }
 
 
@@ -175,7 +175,7 @@ object ChunkRendererChangeListener {
 
     private fun ChunkRenderer.handle(update: ChunkDataUpdate) {
         for (section in update.sections) {
-            invalidate(section, TerrainBuildCause.CHUNK_DATA)
+            queueInvalidation(section, TerrainBuildCause.CHUNK_DATA)
         }
     }
 

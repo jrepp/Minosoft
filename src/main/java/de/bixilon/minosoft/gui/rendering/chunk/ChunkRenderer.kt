@@ -104,6 +104,8 @@ class ChunkRenderer(
     }
 
     private val terrainFramePlans = HashMap<RenderViewId, TerrainFramePlan>()
+    private val pendingInvalidations = HashMap<SectionPosition, Pair<ChunkSection, TerrainBuildCause>>()
+    private val pendingInvalidationsLock = Any()
     private var cachedMainVisibleMeshes: de.bixilon.minosoft.gui.rendering.chunk.visible.VisibleMeshes? = null
     private var cachedMainVisibleRevision = -1L
     private var cachedMainTerrainFramePlan: TerrainFramePlan? = null
@@ -209,6 +211,7 @@ class ChunkRenderer(
     }
 
     fun unload(world: World) {
+        synchronized(pendingInvalidationsLock) { pendingInvalidations.clear() }
         culledQueue.clear()
         meshingQueue.clear()
         loadingQueue.clear()
@@ -221,6 +224,9 @@ class ChunkRenderer(
     }
 
     fun unload(chunk: Chunk) {
+        synchronized(pendingInvalidationsLock) {
+            pendingInvalidations.keys.removeIf { it.chunkPosition == chunk.position }
+        }
         culledQueue -= chunk
         meshingQueue -= chunk.position
         meshingQueue.tasks.interrupt(chunk.position)
@@ -232,6 +238,7 @@ class ChunkRenderer(
 
     fun unload(section: ChunkSection) {
         val position = SectionPosition.of(section.chunk.position, section.height)
+        synchronized(pendingInvalidationsLock) { pendingInvalidations.remove(position) }
         culledQueue -= section
         meshingQueue -= position
         meshingQueue.tasks.interrupt(position)
@@ -265,6 +272,31 @@ class ChunkRenderer(
 
     fun invalidate(section: ChunkSection) = invalidate(section, TerrainBuildCause.UNKNOWN, true)
 
+    /** Coalesces event-thread invalidations to one revision/cancellation per section and render frame. */
+    fun queueInvalidation(section: ChunkSection, cause: TerrainBuildCause) {
+        val position = SectionPosition.of(section)
+        synchronized(pendingInvalidationsLock) {
+            pendingInvalidations[position] = section to cause
+        }
+    }
+
+    fun queueInvalidation(chunk: Chunk?, height: SectionHeight, cause: TerrainBuildCause) {
+        chunk?.get(height)?.let { queueInvalidation(it, cause) }
+    }
+
+    private fun flushPendingInvalidations() {
+        val pending = synchronized(pendingInvalidationsLock) {
+            if (pendingInvalidations.isEmpty()) return
+            pendingInvalidations.toList().also { pendingInvalidations.clear() }
+        }
+        pending.forEach { (position, queued) ->
+            val (section, cause) = queued
+            if (world.chunks[position.chunkPosition]?.get(position.y) === section) {
+                invalidate(section, cause)
+            }
+        }
+    }
+
     fun invalidate(section: ChunkSection, cause: TerrainBuildCause, advanceRevision: Boolean = true) {
         if (advanceRevision) section.terrainRevision.updateAndGet(Math::incrementExact)
         val position = SectionPosition.of(section)
@@ -297,6 +329,7 @@ class ChunkRenderer(
     }
 
     internal fun prepareTerrainCore() {
+        flushPendingInvalidations()
         regionTerrain?.prepareFrame()
         terrainFramePlans.clear()
         visibility.update()
