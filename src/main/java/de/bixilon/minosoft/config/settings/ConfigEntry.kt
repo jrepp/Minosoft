@@ -138,6 +138,7 @@ class SettingsSchema(
     val title: String,
     entries: List<ConfigEntry<*>>,
     categories: List<SettingsCategory> = listOf(SettingsCategory.GENERAL),
+    val searchAcrossCategories: Boolean = false,
     val persist: () -> Unit = {},
 ) {
     val entries: List<ConfigEntry<*>> = entries.toList()

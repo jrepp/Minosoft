@@ -40,6 +40,7 @@ import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
 import java.util.IdentityHashMap
+import java.util.Locale
 import java.nio.file.Path
 import java.nio.file.Files
 import java.util.concurrent.CompletableFuture
@@ -150,9 +151,42 @@ private class IrisPresentationController : AutoCloseable {
         )
         val packs = availablePacks()
         val shaderSettings = selectedPath()?.let { path ->
-            runCatching { IrisShaderPackPlanner.settings(path) }.getOrNull()
+            val language = context.session.profiles.session.language
+                ?: context.session.profiles.eros.general.language
+            try {
+                IrisShaderPackPlanner.settings(path, language)
+            } catch (error: Exception) {
+                Log.log(
+                    LogMessageType.MOD_LOADING,
+                    LogLevels.WARN,
+                    IllegalArgumentException("Could not load shader settings from $path", error),
+                )
+                null
+            }
         }
-        val shaderOptions = shaderSettings?.options.orEmpty()
+        val optionGroups = shaderSettings?.optionGroups().orEmpty()
+        val optionCategories = linkedMapOf<String, String>()
+        val authoredCategories = optionGroups.mapIndexedNotNull { index, group ->
+            if (group.screenId == null) {
+                group.optionNames.forEach { optionCategories[it] = SettingsCategory.GENERAL_ID }
+                return@mapIndexedNotNull null
+            }
+            val id = "shader_group_$index"
+            group.optionNames.forEach { optionCategories[it] = id }
+            val label = when (group.screenId) {
+                ShaderPackSettings.OTHER_GROUP_ID -> "Other shader options"
+                else -> shaderSettings?.language?.screen(group.screenId)
+                    ?: shaderSettingLabel(group.screenId)
+            }
+            SettingsCategory(
+                id = id,
+                label = label,
+                description = when (group.screenId) {
+                    ShaderPackSettings.OTHER_GROUP_ID -> "Options not assigned to the pack's main settings screen."
+                    else -> "Settings grouped under ${stripFormatting(label)} by the shader pack."
+                },
+            )
+        }
         val entries = mutableListOf<ConfigEntry<*>>(
             enabledEntry,
             ConfigEntry(
@@ -175,7 +209,7 @@ private class IrisPresentationController : AutoCloseable {
                 description = "Applies the shader pack's authored profile values and program selection.",
                 defaultValue = CUSTOM_PROFILE,
                 control = CycleConfigControl(listOf(CUSTOM_PROFILE) + shaderSettings.profiles.map { it.name }) {
-                    if (it == CUSTOM_PROFILE) "Custom" else it
+                    if (it == CUSTOM_PROFILE) "Custom" else shaderSettings.language.profile(it) ?: shaderSettingLabel(it)
                 },
                 read = { shaderSettings.selectedProfile(optionValues())?.name ?: CUSTOM_PROFILE },
                 write = { name ->
@@ -187,35 +221,26 @@ private class IrisPresentationController : AutoCloseable {
                 enabledWhen = { it[enabledEntry] },
             )
         }
-        val optionCategories = optionCategories(shaderSettings)
         orderedOptions(shaderSettings).forEachIndexed { index, option ->
+            val valueLabel = { value: String ->
+                shaderSettings?.language?.value(option.name, value) ?: shaderSettingValueLabel(value)
+            }
             entries += ConfigEntry(
                 id = "shader_option_$index",
-                label = option.name.replace('_', ' ').lowercase(),
-                description = "Shader-pack define ${option.name}.",
+                label = shaderSettings?.language?.option(option.name) ?: shaderSettingLabel(option.name),
+                description = shaderSettings?.language?.optionComment(option.name)
+                    ?: "Shader-pack option ${option.name}. Default: ${stripFormatting(valueLabel(option.defaultValue))}.",
                 defaultValue = option.defaultValue,
                 control = if (option.name in shaderSettings.orEmptySliders()) {
-                    SteppedConfigControl(option.values)
+                    SteppedConfigControl(option.values, valueLabel)
                 } else {
-                    CycleConfigControl(option.values)
+                    CycleConfigControl(option.values, valueLabel)
                 },
                 read = { optionValues()[option.name] ?: option.defaultValue },
                 write = { setOption(option.name, it) },
                 enabledWhen = { it[enabledEntry] },
-                category = optionCategories[option.name] ?: "shader_options",
+                category = optionCategories[option.name] ?: SettingsCategory.GENERAL_ID,
             )
-        }
-        val authoredCategories = shaderSettings?.subScreens.orEmpty().mapIndexedNotNull { index, screen ->
-            val id = "shader_screen_$index"
-            if (optionCategories.values.none { it == id }) return@mapIndexedNotNull null
-            SettingsCategory(
-                id,
-                screen.id.orEmpty().replace('_', ' ').replaceFirstChar(Char::uppercase),
-                screen.columns?.let { "Authored shader-pack screen (${it} columns)." },
-            )
-        }
-        val usesFallbackCategory = shaderOptions.any {
-            (optionCategories[it.name] ?: "shader_options") == "shader_options"
         }
         return SettingsSchema(
             title = "Iris shader settings",
@@ -223,8 +248,8 @@ private class IrisPresentationController : AutoCloseable {
             categories = buildList {
                 add(SettingsCategory.GENERAL)
                 addAll(authoredCategories)
-                if (usesFallbackCategory) add(SettingsCategory("shader_options", "Shader options"))
             },
+            searchAcrossCategories = true,
             persist = {
                 if (isInstalled(context)) reload(context)
                 options.persist()
@@ -467,28 +492,6 @@ private class IrisPresentationController : AutoCloseable {
         options.set("shader_options", values.toSortedMap().entries.joinToString(";") { "${it.key}=${it.value}" })
     }
 
-    private fun optionCategories(settings: ShaderPackSettings?): Map<String, String> {
-        if (settings == null) return emptyMap()
-        val categories = linkedMapOf<String, String>()
-        settings.subScreens.forEachIndexed { index, screen ->
-            val category = "shader_screen_$index"
-            screen.entries.forEach { entry ->
-                if (entry in settings.options.map(ShaderPackOption::name)) {
-                    categories.putIfAbsent(entry, category)
-                }
-            }
-            if ("*" in screen.entries) {
-                settings.options.forEach { categories.putIfAbsent(it.name, category) }
-            }
-        }
-        settings.mainScreen?.entries.orEmpty().forEach { entry ->
-            if (entry in settings.options.map(ShaderPackOption::name)) {
-                categories[entry] = SettingsCategory.GENERAL_ID
-            }
-        }
-        return categories
-    }
-
     private fun orderedOptions(settings: ShaderPackSettings?): List<ShaderPackOption> {
         if (settings == null) return emptyList()
         val byName = settings.options.associateBy(ShaderPackOption::name)
@@ -574,6 +577,36 @@ internal fun irisMinecraftVersion(name: String): Int {
     require(components.all { it in 0..99 }) { "Minecraft version '$name' cannot be represented as MC_VERSION" }
     return components[0] * 10_000 + components[1] * 100 + components[2]
 }
+
+private val SHADER_SETTING_CAMEL_BOUNDARY = Regex("(?<=[a-z0-9])(?=[A-Z])")
+private val SHADER_SETTING_SEPARATORS = Regex("[_-]+")
+private val SHADER_SETTING_FORMATTING = Regex("§.")
+
+internal fun shaderSettingLabel(identifier: String): String {
+    return identifier
+        .replace(SHADER_SETTING_CAMEL_BOUNDARY, " ")
+        .replace(SHADER_SETTING_SEPARATORS, " ")
+        .trim()
+        .split(Regex("\\s+"))
+        .filter(String::isNotBlank)
+        .joinToString(" ") { token ->
+            val letters = token.count(Char::isLetter)
+            if (letters in 1..4 && token.all { !it.isLetter() || it.isUpperCase() }) {
+                token
+            } else {
+                token.lowercase(Locale.ROOT).replaceFirstChar { it.uppercase() }
+            }
+        }
+        .ifBlank { identifier }
+}
+
+internal fun shaderSettingValueLabel(value: String): String = when (value) {
+    "true" -> "Enabled"
+    "false" -> "Disabled"
+    else -> value
+}
+
+private fun stripFormatting(value: String): String = value.replace(SHADER_SETTING_FORMATTING, "")
 
 private class IrisRendererHookBuilder(
     private val controller: IrisPresentationController,

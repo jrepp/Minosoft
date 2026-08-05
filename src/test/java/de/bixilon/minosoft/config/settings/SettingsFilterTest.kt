@@ -45,6 +45,25 @@ class SettingsFilterTest {
     }
 
     @Test
+    fun `global-search schemas find entries outside the selected category`() {
+        val source = schema()
+        val filter = SettingsFilter(
+            SettingsSchema(
+                title = source.title,
+                entries = source.entries,
+                categories = source.categories,
+                searchAcrossCategories = true,
+            ),
+        )
+
+        filter.query = "driver workaround"
+
+        assertEquals(listOf("driver"), filter.visibleEntries.map { it.id })
+        filter.query = ""
+        assertEquals(listOf("shadows"), filter.visibleEntries.map { it.id })
+    }
+
+    @Test
     fun `schema rejects entries with missing categories`() {
         kotlin.test.assertFailsWith<IllegalArgumentException> {
             SettingsSchema(

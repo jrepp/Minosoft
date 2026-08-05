@@ -31,7 +31,8 @@ class SettingsFilter(
         get() {
             val terms = query.trim().lowercase(Locale.ROOT).split(WHITESPACE).filter(String::isNotEmpty)
             return schema.entries.filter { entry ->
-                entry.category == category && (terms.isEmpty() || searchableText(entry).let { text -> terms.all(text::contains) })
+                val categoryMatches = entry.category == category || schema.searchAcrossCategories && terms.isNotEmpty()
+                categoryMatches && (terms.isEmpty() || searchableText(entry).let { text -> terms.all(text::contains) })
             }
         }
 

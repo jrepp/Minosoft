@@ -22,6 +22,7 @@ import de.bixilon.minosoft.gui.rendering.font.renderer.element.TextRenderPropert
 import de.bixilon.minosoft.gui.rendering.gui.GUIRenderer
 import de.bixilon.minosoft.gui.rendering.gui.elements.HorizontalAlignments
 import de.bixilon.minosoft.gui.rendering.gui.elements.input.button.ButtonElement
+import de.bixilon.minosoft.gui.rendering.gui.elements.input.cycle.CycleSelectorElement
 import de.bixilon.minosoft.gui.rendering.gui.elements.scroll.ClippedScrollPanelElement
 import de.bixilon.minosoft.gui.rendering.gui.elements.tab.TabBarElement
 import de.bixilon.minosoft.gui.rendering.gui.elements.text.TextElement
@@ -43,13 +44,32 @@ class SettingsFormMenu(
     private val rows = schema.entries.map { ConfigEntryElements.create(guiRenderer, session, it, ::refresh) }
     private val rowsByEntry = schema.entries.zip(rows).toMap()
     private val panel = ClippedScrollPanelElement(guiRenderer, Vec2f(FORM_WIDTH, VIEWPORT_HEIGHT))
-    private val tabs = TabBarElement(
-        guiRenderer = guiRenderer,
-        tabs = schema.categories,
-        label = { it.label },
-    ) {
-        filter.category = it.id
-        updateVisibleRows()
+    private val tabs = if (schema.categories.size in 2..MAX_TAB_CATEGORIES) {
+        TabBarElement(
+            guiRenderer = guiRenderer,
+            tabs = schema.categories,
+            label = { it.label },
+        ) {
+            filter.category = it.id
+            updateVisibleRows()
+        }
+    } else {
+        null
+    }
+    private val categorySelector = if (schema.categories.size > MAX_TAB_CATEGORIES) {
+        CycleSelectorElement(
+            guiRenderer = guiRenderer,
+            options = schema.categories,
+            initialValue = schema.categories.first(),
+            label = { "Category: ${it.label}" },
+        ) {
+            filter.category = it.id
+            updateVisibleRows()
+        }.apply {
+            size = Vec2f(FORM_WIDTH, CATEGORY_SELECTOR_HEIGHT)
+        }
+    } else {
+        null
     }
     private val search = TextInputElement(guiRenderer, maxLength = SEARCH_MAX_LENGTH).apply {
         prefMaxSize = Vec2f(FORM_WIDTH, SEARCH_HEIGHT)
@@ -69,11 +89,16 @@ class SettingsFormMenu(
             properties = TextRenderProperties(HorizontalAlignments.CENTER, scale = 2.0f),
         )
         this += status
-        if (schema.categories.size > 1) this += tabs
-        this += TextElement(guiRenderer, "Search settings", background = null)
+        tabs?.let { this += it }
+        categorySelector?.let { this += it }
+        this += TextElement(
+            guiRenderer,
+            if (schema.searchAcrossCategories) "Search all settings" else "Search settings",
+            background = null,
+        )
         this += search
         this += panel
-        this += ButtonElement(guiRenderer, "Reset") {
+        this += ButtonElement(guiRenderer, "Reset all") {
             session.reset()
             lastStatus = null
             refresh()
@@ -102,12 +127,19 @@ class SettingsFormMenu(
     private fun applyChanges() {
         lastStatus = when (val result = session.apply()) {
             is SettingsApplyResult.Applied -> {
-                if (result.changed.isEmpty()) {
+                val message = if (result.changed.isEmpty()) {
                     "No changes to apply."
                 } else if (result.restartRequired.isNotEmpty()) {
                     "Applied ${result.changed.size} change(s). Restart required."
                 } else {
                     "Applied ${result.changed.size} change(s)."
+                }
+                try {
+                    session.reload()
+                    message
+                } catch (error: Exception) {
+                    val detail = error.message?.take(MAX_STATUS_LENGTH) ?: error::class.java.simpleName
+                    "§c$message Could not refresh settings: $detail"
                 }
             }
             is SettingsApplyResult.Invalid -> "§c${result.errors.values.first()}"
@@ -125,8 +157,8 @@ class SettingsFormMenu(
         applyButton.disabled = !session.canApply
         status.text = lastStatus ?: when {
             errors.isNotEmpty() -> "§c${errors.values.first()}"
-            session.restartRequired -> "Unsaved changes. Restart required after apply."
-            session.dirty -> "Unsaved changes."
+            session.restartRequired -> "${session.dirtyEntries.size} unsaved change(s). Restart required after apply."
+            session.dirty -> "${session.dirtyEntries.size} unsaved change(s)."
             else -> ""
         }
     }
@@ -142,5 +174,7 @@ class SettingsFormMenu(
         const val MAX_STATUS_LENGTH = 160
         const val SEARCH_MAX_LENGTH = 128
         const val SEARCH_HEIGHT = 14.0f
+        const val CATEGORY_SELECTOR_HEIGHT = 20.0f
+        const val MAX_TAB_CATEGORIES = 4
     }
 }
