@@ -85,6 +85,7 @@ internal class DistantTerrainRenderer(
     }
     @Volatile private var closed = false
     @Volatile private var effectiveRenderDistanceBlocks = Math.multiplyExact(config.renderDistanceChunks, 16)
+    @Volatile private var frontierDrawable = false
 
     internal val renderDistanceBlocks: Int
         get() = effectiveRenderDistanceBlocks
@@ -100,9 +101,9 @@ internal class DistantTerrainRenderer(
             views = setOf(RenderViewId.MAIN, IrisShaderPackPlanner.SHADOW_VIEW),
             enabled = { view ->
                 if (view == IrisShaderPackPlanner.SHADOW_VIEW) {
-                    hierarchy?.hasShadow() == true
+                    frontierDrawable && hierarchy?.hasShadow() == true
                 } else {
-                    hierarchy?.hasSolid() == true
+                    frontierDrawable && hierarchy?.hasSolid() == true
                 }
             },
         )
@@ -113,7 +114,7 @@ internal class DistantTerrainRenderer(
             semantic = PipelineSemantic.DISTANT_WATER,
             owner = { OWNER },
             passId = RenderPassId("minosoft:distant-terrain/water"),
-            skip = { hierarchy?.hasWater()?.not() ?: true },
+            skip = { !frontierDrawable || (hierarchy?.hasWater()?.not() ?: true) },
         )
     }
 
@@ -156,21 +157,31 @@ internal class DistantTerrainRenderer(
         val distantFogEnabled = context.camera.fog.state.enabled && fogColor != null
         solidShader.distantFogEnabled = distantFogEnabled
         waterShader.distantFogEnabled = distantFogEnabled
+        val seamDistance = seamDistanceChunks * 16.0f
+        val effectiveDistance = effectiveRenderDistanceBlocks.toFloat()
+        frontierDrawable = distantFrontierDrawable(seamDistance, effectiveDistance)
+        val fogRange = distantFogRange(
+            environmentOverride = context.camera.fog.overridesSkyColor,
+            cameraFogStart = context.camera.fog.state.start,
+            cameraFogEnd = context.camera.fog.state.end,
+            seamDistance = seamDistance,
+            effectiveDistance = effectiveDistance,
+        )
+        solidShader.environmentFog = fogRange.environment
+        waterShader.environmentFog = fogRange.environment
         fogColor?.let {
             solidShader.distantFogColor = it
             waterShader.distantFogColor = it
         }
-        val seamDistance = seamDistanceChunks * 16.0f
-        val effectiveDistance = effectiveRenderDistanceBlocks.toFloat()
         val waterFadeSpan = min(WATER_NEAR_FADE_BLOCKS, max(1.0f, effectiveDistance - seamDistance))
         solidShader.nearFadeStart = seamDistance
         waterShader.nearFadeStart = seamDistance
         solidShader.nearFadeEnd = seamDistance + waterFadeSpan
         waterShader.nearFadeEnd = seamDistance + waterFadeSpan
-        solidShader.farFogStart = max(seamDistance, effectiveDistance * FAR_FOG_START_RATIO)
-        waterShader.farFogStart = max(seamDistance, effectiveDistance * FAR_FOG_START_RATIO)
-        solidShader.farFogEnd = effectiveDistance
-        waterShader.farFogEnd = effectiveDistance
+        solidShader.farFogStart = fogRange.start
+        waterShader.farFogStart = fogRange.start
+        solidShader.farFogEnd = fogRange.end
+        waterShader.farFogEnd = fogRange.end
     }
 
     override fun postDraw() {
@@ -198,7 +209,6 @@ internal class DistantTerrainRenderer(
 
     companion object {
         val OWNER = RenderOwnerId("minosoft:distant-terrain")
-        private const val FAR_FOG_START_RATIO = 0.85f
         private const val WATER_NEAR_FADE_BLOCKS = 32.0f
         private val NEXT_PROVIDER_GENERATION = AtomicLong(1L)
     }
@@ -232,12 +242,56 @@ internal class DistantTerrainShader(
     override var viewProjectionMatrix: Mat4f by viewProjectionMatrix()
     var pageOffset: Vec3f by uniform("uPageOffset", Vec3f())
     var distantFogEnabled: Boolean by uniform("uDistantFogEnabled", false)
+    var environmentFog: Boolean by uniform("uDistantEnvironmentFog", false)
     var distantWater: Boolean by uniform("uDistantWater", family == SceneProgramFamily.DISTANT_WATER)
     var distantFogColor: RGBAColor by uniform("uDistantFogColor", RGBAColor(0, 0, 0))
     var nearFadeStart: Float by uniform("uDistantNearFadeStart", 0.0f)
     var nearFadeEnd: Float by uniform("uDistantNearFadeEnd", 1.0f)
     var farFogStart: Float by uniform("uDistantFarFogStart", Float.MAX_VALUE)
     var farFogEnd: Float by uniform("uDistantFarFogEnd", Float.MAX_VALUE)
+}
+
+internal data class DistantFogRange(
+    val start: Float,
+    val end: Float,
+    val environment: Boolean,
+)
+
+internal fun distantFrontierDrawable(seamDistance: Float, effectiveDistance: Float): Boolean {
+    require(seamDistance.isFinite() && seamDistance >= 0.0f)
+    require(effectiveDistance.isFinite() && effectiveDistance > 0.0f)
+    return effectiveDistance - seamDistance >= MINIMUM_FRONTIER_SPAN_BLOCKS
+}
+
+/**
+ * Retains the extended DH horizon in ordinary air, but honors short-range camera media such as
+ * water, lava, blindness, and void fog. Those media override the sky color and must also bound
+ * distant geometry; borrowing only their color leaves terrain visible far beyond the native fog.
+ */
+internal fun distantFogRange(
+    environmentOverride: Boolean,
+    cameraFogStart: Float,
+    cameraFogEnd: Float,
+    seamDistance: Float,
+    effectiveDistance: Float,
+): DistantFogRange {
+    require(cameraFogStart.isFinite() && cameraFogEnd.isFinite())
+    require(seamDistance.isFinite() && seamDistance >= 0.0f)
+    require(effectiveDistance.isFinite() && effectiveDistance > 0.0f)
+    if (environmentOverride) {
+        val start = cameraFogStart.coerceAtLeast(0.0f)
+        return DistantFogRange(
+            start = start,
+            end = max(cameraFogEnd, start + MINIMUM_FOG_SPAN),
+            environment = true,
+        )
+    }
+    val start = max(seamDistance, effectiveDistance * DISTANT_FAR_FOG_START_RATIO)
+    return DistantFogRange(
+        start = min(start, effectiveDistance - MINIMUM_FOG_SPAN).coerceAtLeast(0.0f),
+        end = effectiveDistance,
+        environment = false,
+    )
 }
 
 internal fun distantViewProjection(
@@ -323,3 +377,6 @@ internal fun distantCoverageRenderDistanceChunks(
 private const val MAXIMUM_COVERAGE_DETAIL_LEVEL = 30
 private const val COVERAGE_SECTORS = 64
 private const val COVERAGE_FRONTIER_PERCENTILE = 0.1
+private const val DISTANT_FAR_FOG_START_RATIO = 0.85f
+private const val MINIMUM_FOG_SPAN = 0.001f
+private const val MINIMUM_FRONTIER_SPAN_BLOCKS = 32.0f

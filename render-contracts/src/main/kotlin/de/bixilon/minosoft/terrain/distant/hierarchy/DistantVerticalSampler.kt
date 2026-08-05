@@ -99,8 +99,22 @@ object DistantVerticalSampler {
 
         val firstOccupied = intervals.indexOfFirst { it.sample.occupied }
         val lastOccupied = intervals.indexOfLast { it.sample.occupied }
-        if (firstOccupied < 0) return DistantVerticalColumn(emptyList())
-        val runs = ArrayList<DistantColumnRun>(lastOccupied - firstOccupied + 1)
+        if (firstOccupied < 0) {
+            return DistantVerticalColumn(
+                listOf(
+                    exteriorLightRun(
+                        minimumY,
+                        Math.subtractExact(maximumYExclusive, minimumY),
+                        intervals,
+                    ),
+                ),
+            )
+        }
+        val exteriorAbove = intervals.getOrNull(firstOccupied - 1)
+        val runs = ArrayList<DistantColumnRun>(
+            lastOccupied - firstOccupied + 1 + if (exteriorAbove == null) 0 else 1,
+        )
+        exteriorAbove?.let { runs += it.toExteriorLightRun() }
         for (index in firstOccupied..lastOccupied) {
             val interval = intervals[index]
             runs += interval.toRun(enclosedEmpty = !interval.sample.occupied)
@@ -108,11 +122,33 @@ object DistantVerticalSampler {
         return DistantColumnReducer.reduce(runs, DistantVerticalColumn.MAXIMUM_RUNS)
     }
 
+    private fun exteriorLightRun(
+        minimumY: Int,
+        height: Int,
+        intervals: Collection<SampleInterval>,
+    ) = DistantColumnRun(
+        minimumY = minimumY,
+        height = height,
+        material = null,
+        fluid = null,
+        blockLight = intervals.maxOf { it.sample.blockLight },
+        skyLight = intervals.maxOf { it.sample.skyLight },
+        tint = null,
+        flags = setOf(DistantRunFlag.VOID),
+        confidence = intervals.maxOf { it.sample.confidence },
+    )
+
     private data class SampleInterval(
         val minimumY: Int,
         val maximumYExclusive: Int,
         val sample: DistantVoxelSample,
     ) {
+        fun toExteriorLightRun(): DistantColumnRun = exteriorLightRun(
+            minimumY,
+            Math.subtractExact(maximumYExclusive, minimumY),
+            listOf(this),
+        )
+
         fun toRun(enclosedEmpty: Boolean): DistantColumnRun = DistantColumnRun(
             minimumY = minimumY,
             height = Math.subtractExact(maximumYExclusive, minimumY),

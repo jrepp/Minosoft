@@ -176,6 +176,8 @@ object DistantWorldVerticalSampler {
         completeness: DistantSourceCompleteness,
         sample: (x: Int, y: Int, z: Int) -> DistantVoxelSample,
     ): DistantVerticalPage = DistantVerticalSampler.capture(
+        // The dependency-clean sampler retains one non-renderable exterior-light run above
+        // occupied terrain so distant top, cliff, and elevated relief faces use adjacent light.
         key = TerrainPageKey(TerrainDomain.DISTANT, 0, position.x.toLong(), 0L, position.z.toLong(), worldEpoch),
         width = PAGE_WIDTH,
         minimumY = minimumY,

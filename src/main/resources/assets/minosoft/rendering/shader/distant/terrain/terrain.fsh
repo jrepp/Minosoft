@@ -12,10 +12,12 @@
 
 in vec4 finColor;
 in float finHorizontalDistance;
+in float finDistance;
 flat in uint finSurfaceFlags;
 out vec4 foutColor;
 
 uniform bool uDistantFogEnabled;
+uniform bool uDistantEnvironmentFog;
 uniform bool uDistantWater;
 uniform vec4 uDistantFogColor;
 uniform float uDistantNearFadeStart;
@@ -36,7 +38,8 @@ void main() {
     }
     if (!uDistantFogEnabled) return;
 
-    float farFog = smoothstep(uDistantFarFogStart, uDistantFarFogEnd, finHorizontalDistance);
+    float fogDistance = uDistantEnvironmentFog ? finDistance : finHorizontalDistance;
+    float farFog = smoothstep(uDistantFarFogStart, uDistantFarFogEnd, fogDistance);
     foutColor.rgb = mix(foutColor.rgb, uDistantFogColor.rgb, farFog);
     foutColor.a = mix(foutColor.a, 1.0, farFog);
 }

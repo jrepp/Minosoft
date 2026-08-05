@@ -55,6 +55,7 @@ import de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageSelectionRequest
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageSelector
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantSelectionCamera
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantRenderPublication
+import de.bixilon.minosoft.terrain.distant.hierarchy.DistantRunFlag
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantSourceBatchMutation
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantSourceMutationStatus
 import de.bixilon.minosoft.terrain.distant.hierarchy.DistantSourcePageUpdate
@@ -126,6 +127,32 @@ internal fun distantCoverageDrawSelection(
     )
 }
 
+/**
+ * Returns old rebuildable hierarchy pages that may be released. Base pages remain backed by the
+ * source cache, required pages remain strongly resident, and only the newest unselected derived
+ * pages form a bounded movement/reselection warm set.
+ */
+internal fun distantDerivedCpuEvictions(
+    pagesInInsertionOrder: Collection<TerrainPageKey>,
+    required: Set<TerrainPageKey>,
+    maximumWarmPages: Int,
+): List<TerrainPageKey> {
+    require(maximumWarmPages >= 0) { "Distant derived CPU warm-page limit must not be negative" }
+    val candidates = pagesInInsertionOrder.filter { it.detailLevel > 0 && it !in required }
+    return candidates.take((candidates.size - maximumWarmPages).coerceAtLeast(0))
+}
+
+/**
+ * Keeps artifacts for the complete requested transition, even while atomic publication retains
+ * the previous drawable selection. Dropping that unavailable subset makes the transition
+ * impossible to complete and rebuilds the same pages every frame.
+ */
+internal fun distantCpuArtifactEvictions(
+    artifactsInInsertionOrder: Collection<TerrainPageKey>,
+    retained: Set<TerrainPageKey>,
+    demanded: Set<TerrainPageKey>,
+): List<TerrainPageKey> = artifactsInInsertionOrder.filter { it !in retained && it !in demanded }
+
 /** Production bridge for the distant page hierarchy and semantic mesher. */
 internal class DistantHierarchicalTerrainRuntime(
     private val context: RenderContext,
@@ -140,6 +167,7 @@ internal class DistantHierarchicalTerrainRuntime(
         val identity: TerrainBuildIdentity,
         val cancellation: TerrainCancellationToken,
         val purpose: BuildPurpose,
+        val input: BuildInput,
     )
 
     private enum class BuildPurpose {
@@ -274,6 +302,7 @@ internal class DistantHierarchicalTerrainRuntime(
     private var nativeOwnership = NativeTerrainOwnershipSnapshot(0L, emptySet())
     private var mainSelection: List<TerrainPageKey> = emptyList()
     private var shadowSelection: List<TerrainPageKey> = emptyList()
+    private var demandedArtifacts: Set<TerrainPageKey> = emptySet()
     private var mainDrawSelection: List<TerrainPageKey> = emptyList()
     private var shadowDrawSelection: List<TerrainPageKey> = emptyList()
     private var mainMaskedPages = 0
@@ -440,6 +469,7 @@ internal class DistantHierarchicalTerrainRuntime(
 
     private fun removePage(key: TerrainPageKey) {
         val cpuPageCount = cpuPages.size
+        val meshingDependents = DistantPageHierarchy.meshingDependents(key, cpuPages.keys)
         sourceTiles.remove(key)
         sourceVerticalPages.remove(key)
         tileSourceRevisions.remove(key)
@@ -472,6 +502,7 @@ internal class DistantHierarchicalTerrainRuntime(
 
             DistantSourceRemoval.Absent -> Unit
         }
+        invalidateMeshingDependents(meshingDependents)
         if (cpuPages.size != cpuPageCount) invalidateSelectionData()
     }
 
@@ -507,6 +538,7 @@ internal class DistantHierarchicalTerrainRuntime(
             pages += page
         }
         if (pages.isEmpty()) return
+        val changedPages = pages.filter { page -> cpuPages[page.key]?.semanticDigest != page.semanticDigest }
         val updates = pages.map { page ->
             DistantSourcePageUpdate(
                 page = page.key,
@@ -526,6 +558,7 @@ internal class DistantHierarchicalTerrainRuntime(
                     cpuPages[page.key] = page
                     cpuSelectionMetadata[page.key] = selectionMetadata(page)
                 }
+                changedPages.forEach { page -> invalidateMeshingDependents(page.key) }
                 invalidateSelectionData()
             }
 
@@ -534,6 +567,7 @@ internal class DistantHierarchicalTerrainRuntime(
                     cpuPages[page.key] = page
                     cpuSelectionMetadata[page.key] = selectionMetadata(page)
                 }
+                changedPages.forEach { page -> invalidateMeshingDependents(page.key) }
                 invalidateSelectionData()
             }
 
@@ -632,7 +666,7 @@ internal class DistantHierarchicalTerrainRuntime(
                 cancellation = cancellation,
             ) { _, token -> build(request, token) }
             if (accepted == null) break
-            pending[key] = Pending(identity, cancellation, purpose)
+            pending[key] = Pending(identity, cancellation, purpose, input)
             iterator.remove()
             admitted++
             purposePending++
@@ -643,7 +677,8 @@ internal class DistantHierarchicalTerrainRuntime(
     private fun buildInput(key: TerrainPageKey, purpose: BuildPurpose): BuildInput? {
         if (purpose == BuildPurpose.ARTIFACT) {
             val page = cpuPages[key] ?: return null
-            val neighbours = DistantPageHierarchy.cardinalNeighbours(key).mapNotNull(cpuPages::get)
+            val neighbours = DistantPageHierarchy.resolveMeshingNeighbours(key, cpuPages.keys)
+                .map(cpuPages::getValue)
             return MeshInput(page, neighbours)
         }
         if (key.detailLevel == 0) {
@@ -810,8 +845,9 @@ internal class DistantHierarchicalTerrainRuntime(
                 DistantSourceMutationStatus.UNCHANGED -> Unit
             }
         }
-        cpuPages[key] = result.page
+        val previous = cpuPages.put(key, result.page)
         cpuSelectionMetadata[key] = result.selectionMetadata
+        if (previous?.semanticDigest != result.page.semanticDigest) invalidateMeshingDependents(key)
         invalidateSelectionData()
         failures.clear(key)
         failurePurposes.remove(key)
@@ -823,7 +859,6 @@ internal class DistantHierarchicalTerrainRuntime(
         val hierarchyPage = index[key] ?: return
         val publication = index.publishRender(key, hierarchyPage.sourceRevision, hierarchyPage.dirtyRevision)
         if (publication !is DistantRenderPublication.Published) return
-        val previousArtifact = cpuArtifacts[key]
         cpuArtifacts[key] = CpuPage(
             source = result.page,
             artifact = artifact,
@@ -831,9 +866,6 @@ internal class DistantHierarchicalTerrainRuntime(
             publicationVersion = publication.page.renderRevision,
         )
         invalidateSelectionData()
-        if (result.page.key.detailLevel > 0 && previousArtifact?.source?.semanticDigest != result.page.semanticDigest) {
-            index.invalidateRenderPages(DistantPageHierarchy.cardinalNeighbours(key))
-        }
         failures.clear(key)
         failurePurposes.remove(key)
     }
@@ -857,10 +889,26 @@ internal class DistantHierarchicalTerrainRuntime(
 
             DistantSourceMutationStatus.UNCHANGED -> Unit
         }
-        cpuPages[key] = page
+        val previous = cpuPages.put(key, page)
         cpuSelectionMetadata[key] = selectionMetadata(page)
+        if (previous?.semanticDigest != page.semanticDigest) invalidateMeshingDependents(key)
         if (invalidateSelection) invalidateSelectionData()
         return true
+    }
+
+    private fun invalidateMeshingDependents(key: TerrainPageKey) {
+        invalidateMeshingDependents(DistantPageHierarchy.meshingDependents(key, cpuPages.keys))
+    }
+
+    private fun invalidateMeshingDependents(dependents: Collection<TerrainPageKey>) {
+        val dirtied = index.invalidateRenderPages(dependents)
+        for (dependent in dirtied) {
+            pending[dependent]?.takeIf { it.purpose == BuildPurpose.ARTIFACT }?.let { build ->
+                pending.remove(dependent)
+                build.cancellation.cancel()
+            }
+            if (dependent in cpuPages) needsArtifactBuild += dependent
+        }
     }
 
     private fun recordFailure(key: TerrainPageKey, error: Throwable, purpose: BuildPurpose) {
@@ -1070,23 +1118,29 @@ internal class DistantHierarchicalTerrainRuntime(
                 maximumSelectionChanges = changeBudget,
                 requireCompleteChildren = false,
             )
-            val mainBudget = max(MAX_MAIN_SELECTION_PAGES, roots.size)
-            val shadowBudget = max(MAX_SHADOW_SELECTION_PAGES, roots.size)
+            val mainRequest = request(quality = 1.0)
+            val shadowRequest = request(quality = SHADOW_QUALITY)
+            val minimumBalancedBudget = mainSelector.minimumBalancedPageBudget(view, mainRequest)
+            // The bounded selector spends its earliest refinements on partial near coverage,
+            // preventing a coarse distant page from surviving across an otherwise native seam.
+            val mainBudget = max(MAX_MAIN_SELECTION_PAGES, minimumBalancedBudget)
+            val shadowBudget = max(MAX_SHADOW_SELECTION_PAGES, minimumBalancedBudget)
             mainSelector.select(
                 view,
                 cpuSelectionMetadata,
-                request(quality = 1.0),
+                mainRequest,
                 maximumPages = mainBudget,
                 nearCoverage = nearCoverage,
             ).pages to shadowSelector.select(
                 view,
                 cpuSelectionMetadata,
-                request(quality = SHADOW_QUALITY),
+                shadowRequest,
                 maximumPages = shadowBudget,
                 nearCoverage = nearCoverage,
             ).pages
         }
         if (selected == null) {
+            demandedArtifacts = emptySet()
             selectionPublication.desire(MAIN_VIEW, emptyList())
             selectionPublication.desire(SHADOW_VIEW, emptyList())
             lastSelectionInput = input
@@ -1100,7 +1154,7 @@ internal class DistantHierarchicalTerrainRuntime(
             camera,
             minOf(config.renderDistanceChunks, SHADOW_DISTANCE_CHUNKS),
         )
-        val demandedArtifacts = (desiredMain.asSequence() + desiredShadow.asSequence()).toSet()
+        demandedArtifacts = (desiredMain.asSequence() + desiredShadow.asSequence()).toSet()
         needsArtifactBuild.retainAll(demandedArtifacts)
         val demandedSources = linkedSetOf<TerrainPageKey>()
         demandedArtifacts.forEach { collectSourceDependencies(it, demandedSources) }
@@ -1230,6 +1284,36 @@ internal class DistantHierarchicalTerrainRuntime(
             gpuRevision = Math.addExact(gpuRevision, 1L)
             changed = true
         }
+        val evictedArtifacts = distantCpuArtifactEvictions(cpuArtifacts.keys, retained, demandedArtifacts)
+        if (evictedArtifacts.isNotEmpty()) {
+            evictedArtifacts.forEach(cpuArtifacts::remove)
+            // A CPU artifact is rebuildable from its immutable, run-canonicalized vertical page.
+            // Mark the discarded publication dirty so a later selection rebuilds it instead of
+            // mistaking the old render revision for resident geometry.
+            index.invalidateRenderPages(evictedArtifacts)
+            needsArtifactBuild.removeAll(evictedArtifacts)
+            invalidateSelectionData()
+        }
+        val requiredCpuPages = retained.toMutableSet().also { it += demandedArtifacts }
+        for ((key, build) in pending) {
+            requiredCpuPages += key
+            when (val input = build.input) {
+                is BaseInput -> Unit
+                is DerivedInput -> {
+                    input.children.mapTo(requiredCpuPages, DistantVerticalPage::key)
+                    input.neighbours.mapTo(requiredCpuPages, DistantVerticalPage::key)
+                }
+                is MeshInput -> {
+                    requiredCpuPages += input.page.key
+                    input.neighbours.mapTo(requiredCpuPages, DistantVerticalPage::key)
+                }
+            }
+        }
+        distantDerivedCpuEvictions(
+            cpuPages.keys,
+            requiredCpuPages,
+            MAX_WARM_DERIVED_CPU_PAGES,
+        ).forEach { cpuPages.remove(it) }
         if (changed) frameSubmission.clearCache()
     }
 
@@ -1278,6 +1362,7 @@ internal class DistantHierarchicalTerrainRuntime(
         var maximumY = Int.MIN_VALUE
         for (column in page.columns) {
             for (run in column.runs) {
+                if (run.material == null || DistantRunFlag.VOID in run.flags) continue
                 minimumY = minOf(minimumY, run.minimumY)
                 maximumY = maxOf(maximumY, run.maximumYExclusive)
             }
@@ -1372,6 +1457,7 @@ internal class DistantHierarchicalTerrainRuntime(
         pendingSourceIngest.clear()
         needsSourceBuild.clear()
         needsArtifactBuild.clear()
+        demandedArtifacts = emptySet()
         sourceTiles.clear()
         sourceVerticalPages.clear()
         sourceKinds.clear()
@@ -1400,6 +1486,7 @@ internal class DistantHierarchicalTerrainRuntime(
         pendingSourceIngest.clear()
         needsSourceBuild.clear()
         needsArtifactBuild.clear()
+        demandedArtifacts = emptySet()
         sourceTiles.clear()
         sourceVerticalPages.clear()
         sourceKinds.clear()
@@ -1653,6 +1740,7 @@ internal class DistantHierarchicalTerrainRuntime(
         pendingSourceIngest.clear()
         needsSourceBuild.clear()
         needsArtifactBuild.clear()
+        demandedArtifacts = emptySet()
         var failure: Throwable? = null
         try {
             lease.close()
@@ -1714,6 +1802,7 @@ internal class DistantHierarchicalTerrainRuntime(
         selectionPublication.clear()
         mainSelection = emptyList()
         shadowSelection = emptyList()
+        demandedArtifacts = emptySet()
         mainDrawSelection = emptyList()
         shadowDrawSelection = emptyList()
         mainDrawPlan = DrawPlan.EMPTY
@@ -1791,6 +1880,7 @@ internal class DistantHierarchicalTerrainRuntime(
         // desired set cannot become active atomically.
         private const val MAX_MAIN_SELECTION_PAGES = 512
         private const val MAX_SHADOW_SELECTION_PAGES = 256
+        private const val MAX_WARM_DERIVED_CPU_PAGES = 256
         private const val DATA_RESELECTION_INTERVAL_FRAMES = 4L
         private const val REFINE_ERROR_PIXELS = 48.0
         private const val COARSEN_ERROR_PIXELS = 36.0

@@ -40,29 +40,53 @@ class DistantVerticalSamplerTest {
         samples.clear()
 
         val runs = page[0, 0].runs
-        assertEquals(listOf(12, 11, 9, 8, 7, 4, 3), runs.map(DistantColumnRun::minimumY))
+        assertEquals(listOf(13, 12, 11, 9, 8, 7, 4, 3), runs.map(DistantColumnRun::minimumY))
+        assertTrue(DistantRunFlag.VOID in runs.first().flags)
+        assertEquals(3, runs.first().height)
+        assertEquals(4, runs.first().skyLight)
         assertTrue(DistantRunFlag.CAVE in runs.single { it.minimumY == 9 }.flags)
         assertTrue(DistantRunFlag.CAVE in runs.single { it.minimumY == 4 }.flags)
         assertEquals(3, runs.single { it.minimumY == 8 }.fluid?.level)
         assertEquals(9, runs.single { it.minimumY == 7 }.blockLight)
-        assertEquals(0x55AA33, runs.first().tint?.resolvedRgb)
-        assertEquals("minecraft:grass", runs.first().material?.value)
+        assertEquals(0x55AA33, runs.single { it.minimumY == 12 }.tint?.resolvedRgb)
+        assertEquals("minecraft:grass", runs.single { it.minimumY == 12 }.material?.value)
     }
 
     @Test
-    fun `sampler drops unbounded void and deterministically limits pathological columns`() {
+    fun `sampler bounds exterior light and deterministically limits pathological columns`() {
         val column = DistantVerticalSampler.captureColumn(0, 0, 0, 160) { _, y, _ ->
-            if (y < 10 || y >= 150) DistantVoxelSample(null)
+            if (y < 10 || y >= 150) DistantVoxelSample(null, skyLight = 12)
             else voxel(if (y % 2 == 0) "stone" else "dirt", opaque = true)
         }
 
         assertEquals(DistantVerticalColumn.MAXIMUM_RUNS, column.runs.size)
-        assertEquals(149, column.runs.first().minimumY)
+        assertEquals(150, column.runs.first().minimumY)
+        assertEquals(10, column.runs.first().height)
+        assertEquals(12, column.runs.first().skyLight)
+        assertTrue(DistantRunFlag.VOID in column.runs.first().flags)
         assertEquals(10, column.runs.last().minimumY)
         assertEquals(column.digest, DistantVerticalSampler.captureColumn(0, 0, 0, 160) { _, y, _ ->
-            if (y < 10 || y >= 150) DistantVoxelSample(null)
+            if (y < 10 || y >= 150) DistantVoxelSample(null, skyLight = 12)
             else voxel(if (y % 2 == 0) "stone" else "dirt", opaque = true)
         }.digest)
+    }
+
+    @Test
+    fun `sampler retains bounded light without rendering an empty column`() {
+        val column = DistantVerticalSampler.captureColumn(0, 0, -64, 320) { _, y, _ ->
+            DistantVoxelSample(
+                material = null,
+                blockLight = if (y == 72) 9 else 0,
+                skyLight = 15,
+            )
+        }
+
+        val exterior = column.runs.single()
+        assertEquals(-64, exterior.minimumY)
+        assertEquals(384, exterior.height)
+        assertEquals(9, exterior.blockLight)
+        assertEquals(15, exterior.skyLight)
+        assertTrue(DistantRunFlag.VOID in exterior.flags)
     }
 
     @Test

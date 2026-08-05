@@ -21,6 +21,7 @@ uniform vec3 uPageOffset;
 
 out vec4 finColor;
 out float finHorizontalDistance;
+out float finDistance;
 flat out uint finSurfaceFlags;
 
 #include "minosoft:color"
@@ -34,6 +35,7 @@ void main() {
     finColor = getRGBAColor(floatBitsToUint(vinTintColor)) * getLight(light & 0xFFu) * vec4(vec3(faceShade), 1.0);
     vec3 pagePosition = vinPosition + uPageOffset;
     finHorizontalDistance = length((pagePosition - uCameraPosition).xz);
+    finDistance = length(pagePosition - uCameraPosition);
     finSurfaceFlags = normalMaterial >> 11u;
     gl_Position = uViewProjectionMatrix * vec4(pagePosition, 1.0);
 }

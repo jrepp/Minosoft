@@ -172,6 +172,31 @@ class DistantPageSelector(private val worldEpoch: Long) {
         changeBudgetExhausted = false,
     )
 
+    /**
+     * Returns the smallest page budget that can retain every requested root while preserving the
+     * adjacent-detail invariant. Mixed-detail roots can require refinement before screen-space
+     * selection begins, so their raw count is not a sufficient admission bound.
+     */
+    fun minimumBalancedPageBudget(
+        index: DistantPageIndexView,
+        request: DistantPageSelectionRequest,
+    ): Int {
+        require(index.worldEpoch == worldEpoch) { "Distant hierarchy belongs to another selector world" }
+        require(request.roots.all { it.worldEpoch == worldEpoch && it in index.pages }) {
+            "Every distant selection root must be indexed in the selector world"
+        }
+        val balanced = balance(
+            request.roots.toSet(),
+            index,
+            request.requireCompleteChildren,
+            request.availablePages,
+        )
+        require(!balanced.exhausted) {
+            "Distant selection roots cannot be balanced with the available hierarchy"
+        }
+        return balanced.pages.size
+    }
+
     @Synchronized
     fun select(
         index: DistantPageIndexView,
@@ -191,7 +216,11 @@ class DistantPageSelector(private val worldEpoch: Long) {
         return selectBudgeted(index, metadata, request, maximumPages, coverage)
     }
 
-    private data class RefinementCandidate(val page: TerrainPageKey, val error: Double)
+    private data class RefinementCandidate(
+        val page: TerrainPageKey,
+        val error: Double,
+        val coverageCritical: Boolean,
+    )
 
     /** Best-first refinement visits the hierarchy once and stops at the page budget. */
     private fun selectBudgeted(
@@ -222,7 +251,8 @@ class DistantPageSelector(private val worldEpoch: Long) {
             }
         }
         val queue = PriorityQueue(
-            compareByDescending<RefinementCandidate>(RefinementCandidate::error)
+            compareByDescending<RefinementCandidate>(RefinementCandidate::coverageCritical)
+                .thenByDescending(RefinementCandidate::error)
                 .thenBy { it.page.detailLevel }
                 .thenBy { it.page.z }
                 .thenBy { it.page.x },
@@ -241,7 +271,12 @@ class DistantPageSelector(private val worldEpoch: Long) {
                 "${initialBalance.pages.size} pages"
         }
         val proposal = initialBalance.pages.toMutableSet()
-        proposal.forEach { queue += RefinementCandidate(it, projectedError(it, metadata[it], request)) }
+        fun candidate(page: TerrainPageKey) = RefinementCandidate(
+            page,
+            projectedError(page, metadata[page], request),
+            coverage.relationship(page) == TerrainCoverageRelationship.PARTIAL,
+        )
+        proposal.forEach { queue += candidate(it) }
         var visits = 0
         var balanceExhausted = initialBalance.exhausted
 
@@ -258,7 +293,7 @@ class DistantPageSelector(private val worldEpoch: Long) {
                 }
             ) continue
 
-            val refineForCoverage = coverage.relationship(page) == TerrainCoverageRelationship.PARTIAL
+            val refineForCoverage = candidate.coverageCritical
             val refine = refineForCoverage || if (page in previouslyRefinedPages) {
                 candidate.error >= request.coarsenErrorPixels
             } else {
@@ -281,7 +316,7 @@ class DistantPageSelector(private val worldEpoch: Long) {
                 continue
             }
             for (refined in balanced.addedPages) {
-                queue += RefinementCandidate(refined, projectedError(refined, metadata[refined], request))
+                queue += candidate(refined)
             }
         }
 

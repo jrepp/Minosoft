@@ -24,6 +24,58 @@ import kotlin.test.assertTrue
 
 class DistantPageHierarchyTest {
     @Test
+    fun `meshing neighbours prefer same detail coverage`() {
+        val subject = key(0, 0, detail = 2)
+        val sameDetail = key(1, 0, detail = 2)
+        val finer = listOf(key(2, 0, detail = 1), key(2, 1, detail = 1))
+
+        val resolved = DistantPageHierarchy.resolveMeshingNeighbours(
+            subject,
+            (finer + sameDetail).toSet(),
+        )
+
+        assertEquals(listOf(sameDetail), resolved)
+    }
+
+    @Test
+    fun `meshing neighbours use finer pages along a missing coarse boundary`() {
+        val subject = key(0, 0, detail = 2)
+        val finer = listOf(key(2, 0, detail = 1), key(2, 1, detail = 1))
+
+        assertEquals(
+            finer,
+            DistantPageHierarchy.resolveMeshingNeighbours(subject, finer.toSet()),
+        )
+        assertTrue(subject in DistantPageHierarchy.meshingDependents(finer.first(), (finer + subject).toSet()))
+    }
+
+    @Test
+    fun `meshing neighbours fall back to an adjacent parent without overlap`() {
+        val subject = key(1, 0, detail = 1)
+        val coarser = key(1, 0, detail = 2)
+
+        assertEquals(
+            listOf(coarser),
+            DistantPageHierarchy.resolveMeshingNeighbours(subject, setOf(coarser)),
+        )
+        assertEquals(
+            listOf(subject),
+            DistantPageHierarchy.meshingDependents(coarser, setOf(subject, coarser)),
+        )
+    }
+
+    @Test
+    fun `negative-coordinate mixed detail boundary uses floor-aligned children`() {
+        val subject = key(-1, -1, detail = 2)
+        val finer = listOf(key(0, -2, detail = 1), key(0, -1, detail = 1))
+
+        assertEquals(
+            finer,
+            DistantPageHierarchy.resolveMeshingNeighbours(subject, finer.toSet()),
+        )
+    }
+
+    @Test
     fun `lineage rejects an unrepresentable detail level before allocating`() {
         assertThrows<IllegalArgumentException> {
             DistantPageHierarchy.lineage(key(0, 0), DistantPageHierarchy.MAXIMUM_DETAIL_LEVEL + 1)

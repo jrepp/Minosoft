@@ -10,10 +10,14 @@
 
 package de.bixilon.minosoft.terrain.distant.hierarchy
 
+import de.bixilon.minosoft.terrain.distant.DistantSourceCompleteness
+import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
+import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -55,6 +59,78 @@ class DistantVerticalDataTest {
         assertTrue(reduced.runs.any { DistantRunFlag.EMISSIVE in it.flags })
         assertEquals(reduced.digest, DistantColumnReducer.reduce(column, 5).digest)
         assertSame(column, DistantColumnReducer.reduce(column, runs.size))
+    }
+
+    @Test
+    fun `page canonicalizes repeated immutable vertical semantics without changing digests`() {
+        val firstMaterial = String("minecraft:stone".toCharArray())
+        val secondMaterial = String("minecraft:stone".toCharArray())
+        val firstBiome = String("minecraft:plains".toCharArray())
+        val secondBiome = String("minecraft:plains".toCharArray())
+        assertNotSame(firstMaterial, secondMaterial)
+        assertNotSame(firstBiome, secondBiome)
+
+        fun column(material: String, biome: String) = DistantVerticalColumn(
+            listOf(
+                DistantColumnRun(
+                    minimumY = 0,
+                    height = 64,
+                    material = TerrainSemanticMaterialId(material),
+                    fluid = null,
+                    blockLight = 0,
+                    skyLight = 15,
+                    tint = DistantTintSample(null, biome, 0L),
+                    flags = setOf(DistantRunFlag.OPAQUE),
+                    confidence = 100,
+                ),
+            ),
+        )
+
+        val first = column(firstMaterial, firstBiome)
+        val second = column(secondMaterial, secondBiome)
+        assertEquals(first.digest, second.digest)
+        assertSame(first.runs.single().flags, second.runs.single().flags)
+
+        val page = DistantVerticalPage(
+            key = TerrainPageKey(TerrainDomain.DISTANT, 0, 0L, 0L, 0L, 1L),
+            width = 2,
+            originY = 0,
+            sourceRevision = 1L,
+            completeness = DistantSourceCompleteness.COMPLETE,
+            columns = listOf(first, second, first, second),
+        )
+
+        assertSame(page.columns[0], page.columns[1])
+        assertSame(page.columns[0], page.columns[2])
+        assertSame(page.columns[0], page.columns[3])
+        assertSame(page.columns[0].runs.single(), page.columns[1].runs.single())
+        assertSame(
+            page.columns[0].runs.single().material?.value,
+            page.columns[1].runs.single().material?.value,
+        )
+        assertSame(
+            page.columns[0].runs.single().tint,
+            page.columns[1].runs.single().tint,
+        )
+        assertEquals(first.digest, page.columns[0].digest)
+    }
+
+    @Test
+    fun `page canonicalization shares equivalent runs without owning their lifetime`() {
+        fun page(x: Long) = DistantVerticalPage(
+            key = TerrainPageKey(TerrainDomain.DISTANT, 0, x, 0L, 0L, 1L),
+            width = 1,
+            originY = 0,
+            sourceRevision = 1L,
+            completeness = DistantSourceCompleteness.COMPLETE,
+            columns = listOf(DistantVerticalColumn(listOf(run(0, 64, "stone", opaque = true)))),
+        )
+
+        val first = page(0L)
+        val second = page(1L)
+
+        assertNotSame(first.columns.single(), second.columns.single())
+        assertSame(first.columns.single().runs.single(), second.columns.single().runs.single())
     }
 
     private fun run(

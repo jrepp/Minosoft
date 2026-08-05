@@ -71,6 +71,56 @@ object DistantPageHierarchy {
         )
     }
 
+    /**
+     * Resolves the available pages that can stitch every cardinal edge of [page].
+     * Same-detail coverage wins; otherwise the boundary children or one adjacent
+     * parent are used so a temporarily incomplete balanced frontier stays closed.
+     */
+    fun resolveMeshingNeighbours(
+        page: TerrainPageKey,
+        availablePages: Set<TerrainPageKey>,
+    ): List<TerrainPageKey> {
+        requireDistant(page)
+        val resolved = linkedSetOf<TerrainPageKey>()
+        for (sameDetail in cardinalNeighbours(page)) {
+            if (sameDetail in availablePages) {
+                resolved += sameDetail
+                continue
+            }
+            val finer = if (sameDetail.detailLevel > 0) {
+                children(sameDetail).filter { it in availablePages && cardinallyAdjacent(page, it) }
+            } else {
+                emptyList()
+            }
+            if (finer.isNotEmpty()) {
+                resolved += finer
+                continue
+            }
+            if (sameDetail.detailLevel < MAXIMUM_DETAIL_LEVEL) {
+                val coarser = parent(sameDetail)
+                if (coarser in availablePages && cardinallyAdjacent(page, coarser)) resolved += coarser
+            }
+        }
+        return resolved.sortedWith(order)
+    }
+
+    /** Existing pages whose mixed-detail mesh boundary can consume [page]. */
+    fun meshingDependents(
+        page: TerrainPageKey,
+        availablePages: Set<TerrainPageKey>,
+    ): List<TerrainPageKey> {
+        requireDistant(page)
+        val candidates = linkedSetOf<TerrainPageKey>()
+        candidates += cardinalNeighbours(page)
+        if (page.detailLevel < MAXIMUM_DETAIL_LEVEL) candidates += cardinalNeighbours(parent(page))
+        if (page.detailLevel > 0) cardinalNeighbours(page).flatMapTo(candidates, ::children)
+        return candidates.asSequence()
+            .filter(availablePages::contains)
+            .filter { page in resolveMeshingNeighbours(it, availablePages) }
+            .sortedWith(order)
+            .toList()
+    }
+
     fun lineage(page: TerrainPageKey, maximumDetailLevel: Int): List<TerrainPageKey> {
         requireDistant(page)
         require(maximumDetailLevel in page.detailLevel..MAXIMUM_DETAIL_LEVEL) {
@@ -91,6 +141,39 @@ object DistantPageHierarchy {
         require(page.y == 0L) { "Distant hierarchy pages cover full-height columns and require y=0" }
         require(page.detailLevel <= MAXIMUM_DETAIL_LEVEL) { "Distant page detail level is too large" }
     }
+
+    private fun cardinallyAdjacent(first: TerrainPageKey, second: TerrainPageKey): Boolean {
+        if (first.worldEpoch != second.worldEpoch) return false
+        val firstRectangle = rectangle(first)
+        val secondRectangle = rectangle(second)
+        val overlapsX = firstRectangle.minimumX < secondRectangle.maximumXExclusive &&
+            secondRectangle.minimumX < firstRectangle.maximumXExclusive
+        val overlapsZ = firstRectangle.minimumZ < secondRectangle.maximumZExclusive &&
+            secondRectangle.minimumZ < firstRectangle.maximumZExclusive
+        return (overlapsX && (firstRectangle.minimumZ == secondRectangle.maximumZExclusive ||
+            firstRectangle.maximumZExclusive == secondRectangle.minimumZ)) ||
+            (overlapsZ && (firstRectangle.minimumX == secondRectangle.maximumXExclusive ||
+                firstRectangle.maximumXExclusive == secondRectangle.minimumX))
+    }
+
+    private fun rectangle(page: TerrainPageKey): PageRectangle {
+        val size = 1L shl page.detailLevel
+        val minimumX = Math.multiplyExact(page.x, size)
+        val minimumZ = Math.multiplyExact(page.z, size)
+        return PageRectangle(
+            minimumX,
+            Math.addExact(minimumX, size),
+            minimumZ,
+            Math.addExact(minimumZ, size),
+        )
+    }
+
+    private data class PageRectangle(
+        val minimumX: Long,
+        val maximumXExclusive: Long,
+        val minimumZ: Long,
+        val maximumZExclusive: Long,
+    )
 }
 
 enum class DistantPageBuildState {

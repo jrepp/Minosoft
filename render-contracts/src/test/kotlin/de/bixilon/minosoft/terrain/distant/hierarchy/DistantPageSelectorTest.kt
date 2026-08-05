@@ -256,14 +256,29 @@ class DistantPageSelectorTest {
         val coarse = key(0, 0, detail = 3)
         val fine = key(8, 0, detail = 0)
 
+        val selector = DistantPageSelector(WORLD_EPOCH)
+        val request = request(listOf(coarse, fine), cameraX = 10_000.0)
+        val minimumBudget = selector.minimumBalancedPageBudget(index.snapshot(), request)
+
+        assertTrue(minimumBudget > request.roots.size)
+
         assertFailsWith<IllegalArgumentException> {
-            DistantPageSelector(WORLD_EPOCH).select(
+            selector.select(
                 index.snapshot(),
                 emptyMap(),
-                request(listOf(coarse, fine), cameraX = 10_000.0),
-                maximumPages = 2,
+                request,
+                maximumPages = minimumBudget - 1,
             )
         }
+
+        val admitted = selector.select(
+            index.snapshot(),
+            emptyMap(),
+            request,
+            maximumPages = minimumBudget,
+        )
+        assertEquals(minimumBudget, admitted.pages.size)
+        assertTrue(admitted.maximumAdjacentDetailDelta <= 1)
     }
 
     @Test
@@ -315,6 +330,37 @@ class DistantPageSelectorTest {
         assertTrue((0L until 16L).all { z ->
             (0L until 16L).all { x -> bounded.pages.any { it.coversBasePage(x, z) } }
         })
+    }
+
+    @Test
+    fun `budgeted selection prioritizes partial near coverage over distant quality`() {
+        val index = completeIndex(width = 8, height = 4, maximumDetail = 2)
+        val nearRoot = key(0, 0, detail = 2)
+        val farRoot = key(1, 0, detail = 2)
+        val metadata = index.snapshot().pages.keys.associateWith { page ->
+            DistantPageSelectionMetadata(
+                geometricErrorBlocks = if (page.x * (1L shl page.detailLevel) >= 4L) 1_000_000_000.0 else 0.0,
+                minimumY = 0,
+                maximumYExclusive = 256,
+            )
+        }
+        val partial = coverage(
+            revision = 4L,
+            covered = (0L..1L).flatMap { z -> (0L..1L).map { x -> x to z } },
+        )
+
+        val selection = DistantPageSelector(WORLD_EPOCH).select(
+            index.snapshot(),
+            metadata,
+            request(listOf(nearRoot, farRoot), cameraX = 10_000.0),
+            maximumPages = 5,
+            nearCoverage = partial,
+        )
+
+        assertEquals(5, selection.pages.size)
+        assertTrue(nearRoot !in selection.pages)
+        assertTrue(farRoot in selection.pages)
+        assertTrue(selection.unresolvedPartialCoveragePages.isEmpty())
     }
 
     @Test

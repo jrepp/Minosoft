@@ -18,8 +18,10 @@
 package de.bixilon.minosoft.terrain.distant.hierarchy
 
 import de.bixilon.minosoft.terrain.model.material.TerrainSemanticMaterialId
+import java.lang.ref.WeakReference
 import java.security.MessageDigest
 import java.util.HexFormat
+import java.util.WeakHashMap
 
 enum class DistantRunFlag {
     OPAQUE,
@@ -69,7 +71,8 @@ class DistantColumnRun(
     flags: Set<DistantRunFlag>,
     val confidence: Int,
 ) {
-    val flags: Set<DistantRunFlag> = java.util.Set.copyOf(flags)
+    internal val flagBits: Int = flags.fold(0) { bits, flag -> bits or (1 shl flag.ordinal) }
+    val flags: Set<DistantRunFlag> = CANONICAL_FLAG_SETS[flagBits]
     val maximumYExclusive: Int = Math.addExact(minimumY, height)
 
     init {
@@ -83,11 +86,44 @@ class DistantColumnRun(
             "Distant run cannot be both cave and void"
         }
     }
+
+    override fun equals(other: Any?): Boolean = this === other || other is DistantColumnRun &&
+        minimumY == other.minimumY &&
+        height == other.height &&
+        material == other.material &&
+        fluid == other.fluid &&
+        blockLight == other.blockLight &&
+        skyLight == other.skyLight &&
+        tint == other.tint &&
+        flagBits == other.flagBits &&
+        confidence == other.confidence
+
+    override fun hashCode(): Int {
+        var result = minimumY
+        result = 31 * result + height
+        result = 31 * result + (material?.hashCode() ?: 0)
+        result = 31 * result + (fluid?.hashCode() ?: 0)
+        result = 31 * result + blockLight
+        result = 31 * result + skyLight
+        result = 31 * result + (tint?.hashCode() ?: 0)
+        result = 31 * result + flagBits
+        result = 31 * result + confidence
+        return result
+    }
+
+    private companion object {
+        val CANONICAL_FLAG_SETS: Array<Set<DistantRunFlag>> =
+            Array(1 shl DistantRunFlag.entries.size) { bits ->
+                java.util.Set.copyOf(DistantRunFlag.entries.filter { bits and (1 shl it.ordinal) != 0 })
+            }
+    }
 }
 
 class DistantVerticalColumn(runs: Collection<DistantColumnRun>) {
     val runs: List<DistantColumnRun> = java.util.List.copyOf(runs)
-    val digest: String = digest(this.runs)
+    @Volatile private var cachedDigest: String? = null
+    val digest: String
+        get() = cachedDigest ?: digest(this.runs).also { cachedDigest = it }
 
     init {
         require(this.runs.size <= MAXIMUM_RUNS) { "Distant column exceeds $MAXIMUM_RUNS runs" }
@@ -102,6 +138,8 @@ class DistantVerticalColumn(runs: Collection<DistantColumnRun>) {
 
     companion object {
         const val MAXIMUM_RUNS = 64
+
+        internal fun semanticDigest(runs: List<DistantColumnRun>): String = digest(runs)
 
         private fun digest(runs: List<DistantColumnRun>): String {
             val digest = MessageDigest.getInstance("SHA-256")
@@ -126,6 +164,34 @@ class DistantVerticalColumn(runs: Collection<DistantColumnRun>) {
         }
 
         private const val DIGEST_SCHEMA = 1
+    }
+}
+
+/**
+ * Shares immutable vertical values across pages without making the canonical table an owner.
+ * Both keys and values are weak: once pages release a value, ordinary GC can discard it and the
+ * next access drains the stale weak-map entry. Stripes keep parallel hierarchy builds independent.
+ */
+internal class DistantWeakCanonicalizer<T : Any>(stripeCount: Int = 32) {
+    private class Stripe<T : Any> {
+        val values = WeakHashMap<T, WeakReference<T>>()
+    }
+
+    private val stripes = Array(stripeCount) { Stripe<T>() }
+
+    init {
+        require(stripeCount > 0 && stripeCount.countOneBits() == 1) {
+            "Distant canonicalizer stripe count must be a positive power of two"
+        }
+    }
+
+    fun canonicalize(value: T): T {
+        val stripe = stripes[value.hashCode() and (stripes.size - 1)]
+        synchronized(stripe) {
+            stripe.values[value]?.get()?.let { return it }
+            stripe.values[value] = WeakReference(value)
+            return value
+        }
     }
 }
 

@@ -189,7 +189,28 @@ internal class DistantHorizonsLodController(
             runnable = task,
         )
     },
+    private val nativeRefreshDispatcher: ((() -> Unit) -> Unit) = { task ->
+        DefaultIOPool += ThreadPoolRunnable(
+            forcePool = true,
+            priority = ThreadPool.Priorities.LOW,
+            runnable = task,
+        )
+    },
 ) : AutoCloseable {
+    /** Retains the Java-callable four-argument construction seam used by integration fixtures. */
+    internal constructor(
+        options: DistantHorizonsOptions,
+        persistenceRoot: Path?,
+        persistenceHydrationDispatcher: ((() -> Unit) -> Unit),
+        networkPayloadDispatcher: ((() -> Unit) -> Unit),
+    ) : this(
+        options,
+        persistenceRoot,
+        persistenceHydrationDispatcher,
+        networkPayloadDispatcher,
+        nativeRefreshDispatcher = { task -> task() },
+    )
+
     private sealed interface NegotiatedHello {
         data class V1(val message: DistantLodMessage.Hello) : NegotiatedHello
         data class V2(val message: DistantTerrainMessageV2.Hello) : NegotiatedHello
@@ -199,6 +220,30 @@ internal class DistantHorizonsLodController(
         val session: PlaySession,
         val payload: ByteArray,
     )
+
+    private class PendingNativeRefresh(
+        var chunk: Chunk,
+        var full: Boolean,
+    ) {
+        val columns = BooleanArray(DistantLodTile.COLUMN_COUNT)
+
+        fun include(columns: Set<Int>?) {
+            if (columns == null) {
+                full = true
+                return
+            }
+            columns.forEach { column ->
+                require(column in this.columns.indices) {
+                    "Distant native refresh column must be within ${this.columns.indices}"
+                }
+                this.columns[column] = true
+            }
+        }
+
+        fun selectedColumns(): Set<Int> = buildSet {
+            columns.forEachIndexed { index, selected -> if (selected) add(index) }
+        }
+    }
 
     private inner class SessionState(
         val session: PlaySession,
@@ -225,6 +270,9 @@ internal class DistantHorizonsLodController(
         @Volatile private var pageStore: DistantDirectoryTerrainStore? = null
         @Volatile private var pageWriter: DistantTerrainStoreWriter? = null
         private val pendingPersistencePages = linkedMapOf<ChunkPosition, DistantVerticalPage>()
+        private val pendingNativeRefreshes = linkedMapOf<ChunkPosition, PendingNativeRefresh>()
+        private var nativeRefreshScheduled = false
+        private var droppedNativeRefreshes = 0L
         private val residentPersistence = Runnable(::refreshResidentPersistenceIfMoved)
         private val generator = DistantUnexploredGenerator(
             session = session,
@@ -581,6 +629,72 @@ internal class DistantHorizonsLodController(
             store[position] to verticalPages[position]
 
         @Synchronized
+        fun enqueueNativeRefresh(chunk: Chunk, columns: Set<Int>?): Boolean {
+            if (closed) return false
+            if (chunk.position !in pendingNativeRefreshes && pendingNativeRefreshes.size >= residentPageLimit) {
+                val iterator = pendingNativeRefreshes.entries.iterator()
+                if (iterator.hasNext()) {
+                    iterator.next()
+                    iterator.remove()
+                    droppedNativeRefreshes = Math.incrementExact(droppedNativeRefreshes)
+                    if (droppedNativeRefreshes == 1L || droppedNativeRefreshes % 128L == 0L) {
+                        Log.log(LogMessageType.MOD_LOADING, LogLevels.WARN) {
+                            "Distant native refresh queue is saturated; dropped=$droppedNativeRefreshes"
+                        }
+                    }
+                }
+            }
+            val pending = pendingNativeRefreshes.getOrPut(chunk.position) {
+                PendingNativeRefresh(chunk, full = columns == null)
+            }
+            pending.chunk = chunk
+            pending.include(columns)
+            if (nativeRefreshScheduled) return false
+            nativeRefreshScheduled = true
+            return true
+        }
+
+        @Synchronized
+        fun nativeRefreshDispatchFailed() {
+            pendingNativeRefreshes.clear()
+            nativeRefreshScheduled = false
+        }
+
+        /**
+         * Serializes and coalesces native page capture away from chunk and block-event threads.
+         * A mutation that arrives during a capture remains queued and is applied to the freshly
+         * published page on the next iteration, so no column update is lost.
+         */
+        fun drainNativeRefreshes() {
+            while (true) {
+                val pending = synchronized(this) {
+                    if (closed) {
+                        pendingNativeRefreshes.clear()
+                        nativeRefreshScheduled = false
+                        return
+                    }
+                    val iterator = pendingNativeRefreshes.entries.iterator()
+                    if (!iterator.hasNext()) {
+                        nativeRefreshScheduled = false
+                        return
+                    }
+                    iterator.next().also { iterator.remove() }.value
+                }
+                try {
+                    val (previous, previousPage) = mutationSource(pending.chunk.position)
+                    val (tile, page) = if (pending.full || previous == null) {
+                        captureNative(pending.chunk)
+                    } else {
+                        updateNative(pending.chunk, previous, previousPage, pending.selectedColumns())
+                    }
+                    publish(tile, DistantLodTileSource.NATIVE, page)
+                } catch (error: Throwable) {
+                    Log.log(LogMessageType.MOD_LOADING, LogLevels.WARN, error)
+                }
+            }
+        }
+
+        @Synchronized
         fun publish(
             tile: DistantLodTile,
             source: DistantLodTileSource,
@@ -712,6 +826,8 @@ internal class DistantHorizonsLodController(
                 requestedResidentCenter = null
                 residentRefreshScheduled = false
                 pendingPersistencePages.clear()
+                pendingNativeRefreshes.clear()
+                nativeRefreshScheduled = false
                 changeJournal.clear()
             }
             failure?.let { throw it }
@@ -807,8 +923,7 @@ internal class DistantHorizonsLodController(
             FabricChunkEventPhase.CREATED,
             FabricChunkEventPhase.UPDATED,
             -> context.chunk?.let { chunk ->
-                val (tile, page) = captureNative(chunk)
-                state(context.session).publish(tile, DistantLodTileSource.NATIVE, page)
+                scheduleNativeRefresh(state(context.session), chunk, columns = null)
             }
 
             // Retaining an immutable explored tile after native chunk unload is
@@ -821,18 +936,20 @@ internal class DistantHorizonsLodController(
 
     fun onBlockMutation(context: FabricBlockMutationContext) {
         if (closed || context.changes.isEmpty()) return
-        val state = state(context.session)
-        val (previous, previousPage) = state.mutationSource(context.chunk.position)
-        if (previous == null) {
-            val (tile, page) = captureNative(context.chunk)
-            state.publish(tile, DistantLodTileSource.NATIVE, page)
-            return
-        }
         val columns = context.changes.mapTo(linkedSetOf()) {
             DistantLodTile.index(it.position.x and 0x0F, it.position.z and 0x0F)
         }
-        val (tile, page) = updateNative(context.chunk, previous, previousPage, columns)
-        state.publish(tile, DistantLodTileSource.NATIVE, page)
+        scheduleNativeRefresh(state(context.session), context.chunk, columns)
+    }
+
+    private fun scheduleNativeRefresh(state: SessionState, chunk: Chunk, columns: Set<Int>?) {
+        if (!state.enqueueNativeRefresh(chunk, columns)) return
+        try {
+            nativeRefreshDispatcher(state::drainNativeRefreshes)
+        } catch (error: Throwable) {
+            state.nativeRefreshDispatchFailed()
+            Log.log(LogMessageType.MOD_LOADING, LogLevels.WARN, error)
+        }
     }
 
     fun onNetworkPayload(context: FabricClientPayloadContext) {

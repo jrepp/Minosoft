@@ -40,7 +40,7 @@ class DistantVerticalPage(
     val originZ: Long = Math.multiplyExact(key.z, pageSizeBlocks.toLong())
     val maximumXExclusive: Long = Math.addExact(originX, pageSizeBlocks.toLong())
     val maximumZExclusive: Long = Math.addExact(originZ, pageSizeBlocks.toLong())
-    val columns: List<DistantVerticalColumn> = java.util.List.copyOf(columns)
+    val columns: List<DistantVerticalColumn> = canonicalize(columns)
     val semanticDigest: String = digest(this.columns)
 
     init {
@@ -87,9 +87,121 @@ class DistantVerticalPage(
             val digest = MessageDigest.getInstance("SHA-256")
             digest.update(DIGEST_SCHEMA.toByte())
             digest.putInt(columns.size)
-            columns.forEach { digest.putText(it.digest) }
+            columns.forEach { digest.putText(DistantVerticalColumn.semanticDigest(it.runs)) }
             return HexFormat.of().formatHex(digest.digest())
         }
+
+        /**
+         * Full-height pages contain many repeated immutable values. Canonicalize them within the
+         * page so explored terrain residency scales with distinct semantics instead of sampled
+         * voxel transitions. The page digest remains the authority; identity is not observable.
+         */
+        fun canonicalize(columns: Collection<DistantVerticalColumn>): List<DistantVerticalColumn> {
+            val strings = HashMap<String, String>()
+            val materials = HashMap<String, TerrainSemanticMaterialId>()
+            val fluids = HashMap<FluidKey, DistantFluidSample>()
+            val tints = HashMap<TintKey, DistantTintSample>()
+            val runs = HashMap<RunKey, DistantColumnRun>()
+            val canonicalColumns = HashMap<List<DistantColumnRun>, DistantVerticalColumn>()
+
+            fun canonicalString(value: String): String = strings.getOrPut(value) { value }
+            fun canonicalMaterial(value: TerrainSemanticMaterialId?): TerrainSemanticMaterialId? {
+                value ?: return null
+                return materials.getOrPut(value.value) {
+                    TerrainSemanticMaterialId(canonicalString(value.value))
+                }
+            }
+            fun canonicalFluid(value: DistantFluidSample?): DistantFluidSample? {
+                value ?: return null
+                val material = checkNotNull(canonicalMaterial(value.material))
+                val classification = canonicalString(value.classification)
+                val key = FluidKey(material, value.level, classification)
+                return fluids.getOrPut(key) {
+                    if (value.material.value === material.value && value.classification === classification) value
+                    else DistantFluidSample(material, value.level, classification)
+                }
+            }
+            fun canonicalTint(value: DistantTintSample?): DistantTintSample? {
+                value ?: return null
+                val biomeInput = value.biomeInput?.let(::canonicalString)
+                val key = TintKey(value.resolvedRgb, biomeInput, value.generation)
+                return tints.getOrPut(key) {
+                    if (value.biomeInput === biomeInput) value
+                    else DistantTintSample(value.resolvedRgb, biomeInput, value.generation)
+                }
+            }
+
+            val result = ArrayList<DistantVerticalColumn>(columns.size)
+            for (column in columns) {
+                val canonicalRuns = ArrayList<DistantColumnRun>(column.runs.size)
+                var unchanged = true
+                for (run in column.runs) {
+                    val material = canonicalMaterial(run.material)
+                    val fluid = canonicalFluid(run.fluid)
+                    val tint = canonicalTint(run.tint)
+                    val key = RunKey(
+                        run.minimumY,
+                        run.height,
+                        material,
+                        fluid,
+                        run.blockLight,
+                        run.skyLight,
+                        tint,
+                        run.flagBits,
+                        run.confidence,
+                    )
+                    val pageCanonical = runs.getOrPut(key) {
+                        if (run.material?.value === material?.value && run.fluid === fluid && run.tint === tint) run
+                        else DistantColumnRun(
+                            run.minimumY,
+                            run.height,
+                            material,
+                            fluid,
+                            run.blockLight,
+                            run.skyLight,
+                            tint,
+                            run.flags,
+                            run.confidence,
+                        )
+                    }
+                    val canonical = SHARED_RUNS.canonicalize(pageCanonical)
+                    canonicalRuns += canonical
+                    unchanged = unchanged && canonical === run
+                }
+                val key = java.util.List.copyOf(canonicalRuns)
+                val pageCanonical = canonicalColumns.getOrPut(key) {
+                    if (unchanged) column else DistantVerticalColumn(key)
+                }
+                result += pageCanonical
+            }
+            return java.util.List.copyOf(result)
+        }
+
+        private val SHARED_RUNS = DistantWeakCanonicalizer<DistantColumnRun>()
+
+        private data class FluidKey(
+            val material: TerrainSemanticMaterialId,
+            val level: Int,
+            val classification: String,
+        )
+
+        private data class TintKey(
+            val resolvedRgb: Int?,
+            val biomeInput: String?,
+            val generation: Long,
+        )
+
+        private data class RunKey(
+            val minimumY: Int,
+            val height: Int,
+            val material: TerrainSemanticMaterialId?,
+            val fluid: DistantFluidSample?,
+            val blockLight: Int,
+            val skyLight: Int,
+            val tint: DistantTintSample?,
+            val flagBits: Int,
+            val confidence: Int,
+        )
     }
 }
 
@@ -690,10 +802,18 @@ object DistantPageMesher {
     }
 
     private fun occludes(current: DistantColumnRun, neighbour: DistantColumnRun): Boolean {
+        // Enclosed air is not part of the distant exterior envelope. Treat it as closed here so
+        // cave floors, ceilings, and walls cannot leak through translucent water or a clipped LOD
+        // frontier; exterior VOID remains non-occluding and preserves real surface relief.
+        if (DistantRunFlag.CAVE in neighbour.flags) return true
         if (neighbour.material == null || DistantRunFlag.VOID in neighbour.flags) return false
         if (DistantRunFlag.OPAQUE in neighbour.flags) return true
         if (current.fluid != null) return current.fluid == neighbour.fluid
-        return current.material == neighbour.material && current.fluid == neighbour.fluid
+        // The compact distant material palette renders non-fluid materials as closed, opaque
+        // volumes. Treat their shared boundary the same way here. Otherwise an opaque trunk beside
+        // simplified non-opaque foliage emits its dark internal face while the foliage correctly
+        // suppresses the opposite face, producing black branch silhouettes at the LOD seam.
+        return neighbour.fluid == null
     }
 
     private fun subtract(
@@ -784,10 +904,14 @@ object DistantPageMesher {
     private const val LEGACY_SURFACE_ONLY_CONFIDENCE = 25
 
     private fun greedyMerge(input: List<DistantMeshQuad>): List<DistantMeshQuad> {
-        val groups = input.groupBy(::mergeKey)
-        val result = ArrayList<DistantMeshQuad>()
-        for (key in groups.keys.sortedWith(MERGE_KEY_ORDER)) {
-            var current = groups.getValue(key)
+        if (input.size < 2) return input
+        val ordered = input.sortedWith(MERGE_QUAD_ORDER)
+        val result = ArrayList<DistantMeshQuad>(input.size)
+        var start = 0
+        while (start < ordered.size) {
+            var end = start + 1
+            while (end < ordered.size && sameMergeKey(ordered[start], ordered[end])) end++
+            var current: List<DistantMeshQuad> = ordered.subList(start, end)
             while (true) {
                 val alongU = mergeAlongU(current)
                 val alongV = mergeAlongV(alongU)
@@ -798,87 +922,90 @@ object DistantPageMesher {
                 current = alongV
             }
             result += current
+            start = end
         }
         return result
     }
 
-    private fun mergeAlongU(quads: List<DistantMeshQuad>): List<DistantMeshQuad> = quads
-        .groupBy { it.minimumV to it.maximumVExclusive }
-        .toSortedMap(compareBy<Pair<Int, Int>>({ it.first }, { it.second }))
-        .values
-        .flatMap { row ->
-            val sorted = row.sortedBy(DistantMeshQuad::minimumU)
-            val merged = ArrayList<DistantMeshQuad>()
-            for (quad in sorted) {
-                val previous = merged.lastOrNull()
-                if (previous != null && previous.maximumUExclusive == quad.minimumU) {
-                    merged[merged.lastIndex] = previous.copy(maximumUExclusive = quad.maximumUExclusive)
-                } else {
-                    merged += quad
-                }
+    private fun mergeAlongU(quads: List<DistantMeshQuad>): List<DistantMeshQuad> {
+        if (quads.size < 2) return quads
+        val sorted = quads.sortedWith(QUAD_U_ORDER)
+        val merged = ArrayList<DistantMeshQuad>(quads.size)
+        for (quad in sorted) {
+            val previous = merged.lastOrNull()
+            if (
+                previous != null &&
+                previous.minimumV == quad.minimumV &&
+                previous.maximumVExclusive == quad.maximumVExclusive &&
+                previous.maximumUExclusive == quad.minimumU
+            ) {
+                merged[merged.lastIndex] = previous.copy(maximumUExclusive = quad.maximumUExclusive)
+            } else {
+                merged += quad
             }
-            merged
         }
+        return merged
+    }
 
-    private fun mergeAlongV(quads: List<DistantMeshQuad>): List<DistantMeshQuad> = quads
-        .groupBy { it.minimumU to it.maximumUExclusive }
-        .toSortedMap(compareBy<Pair<Int, Int>>({ it.first }, { it.second }))
-        .values
-        .flatMap { column ->
-            val sorted = column.sortedBy(DistantMeshQuad::minimumV)
-            val merged = ArrayList<DistantMeshQuad>()
-            for (quad in sorted) {
-                val previous = merged.lastOrNull()
-                if (previous != null && previous.maximumVExclusive == quad.minimumV) {
-                    merged[merged.lastIndex] = previous.copy(maximumVExclusive = quad.maximumVExclusive)
-                } else {
-                    merged += quad
-                }
+    private fun mergeAlongV(quads: List<DistantMeshQuad>): List<DistantMeshQuad> {
+        if (quads.size < 2) return quads
+        val sorted = quads.sortedWith(QUAD_V_ORDER)
+        val merged = ArrayList<DistantMeshQuad>(quads.size)
+        for (quad in sorted) {
+            val previous = merged.lastOrNull()
+            if (
+                previous != null &&
+                previous.minimumU == quad.minimumU &&
+                previous.maximumUExclusive == quad.maximumUExclusive &&
+                previous.maximumVExclusive == quad.minimumV
+            ) {
+                merged[merged.lastIndex] = previous.copy(maximumVExclusive = quad.maximumVExclusive)
+            } else {
+                merged += quad
             }
-            merged
         }
+        return merged
+    }
 
-    private fun mergeKey(quad: DistantMeshQuad) = MergeKey(
-        quad.direction,
-        quad.plane,
-        quad.material,
-        quad.fluid,
-        quad.blockLight,
-        quad.skyLight,
-        quad.tint,
-        quad.flags,
-        quad.confidence,
-        quad.fallback,
-    )
+    private fun sameMergeKey(first: DistantMeshQuad, second: DistantMeshQuad): Boolean =
+        first.direction == second.direction &&
+            first.plane == second.plane &&
+            first.material == second.material &&
+            first.fluid == second.fluid &&
+            first.blockLight == second.blockLight &&
+            first.skyLight == second.skyLight &&
+            first.tint == second.tint &&
+            first.flags == second.flags &&
+            first.confidence == second.confidence &&
+            first.fallback == second.fallback
 
-    private data class MergeKey(
-        val direction: DistantFaceDirection,
-        val plane: Int,
-        val material: TerrainSemanticMaterialId,
-        val fluid: DistantFluidSample?,
-        val blockLight: Int,
-        val skyLight: Int,
-        val tint: DistantTintSample?,
-        val flags: Set<DistantRunFlag>,
-        val confidence: Int,
-        val fallback: Boolean,
-    )
-
-    private val MERGE_KEY_ORDER = compareBy<MergeKey>(
+    private val MERGE_QUAD_ORDER = compareBy<DistantMeshQuad>(
         { it.direction.ordinal },
-        MergeKey::plane,
+        DistantMeshQuad::plane,
         { it.material.value },
         { it.fluid?.material?.value.orEmpty() },
         { it.fluid?.level ?: -1 },
         { it.fluid?.classification.orEmpty() },
-        MergeKey::blockLight,
-        MergeKey::skyLight,
+        DistantMeshQuad::blockLight,
+        DistantMeshQuad::skyLight,
         { it.tint?.resolvedRgb ?: -1 },
         { it.tint?.biomeInput.orEmpty() },
         { it.tint?.generation ?: -1L },
         { it.flags.fold(0) { bits, flag -> bits or (1 shl flag.ordinal) } },
-        MergeKey::confidence,
-        MergeKey::fallback,
+        DistantMeshQuad::confidence,
+        DistantMeshQuad::fallback,
+    )
+
+    private val QUAD_U_ORDER = compareBy<DistantMeshQuad>(
+        DistantMeshQuad::minimumV,
+        DistantMeshQuad::maximumVExclusive,
+        DistantMeshQuad::minimumU,
+    )
+
+    private val QUAD_V_ORDER = compareBy<DistantMeshQuad>(
+        DistantMeshQuad::minimumU,
+        DistantMeshQuad::maximumUExclusive,
+        DistantMeshQuad::minimumV,
     )
 
 }

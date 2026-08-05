@@ -56,6 +56,106 @@ class DistantPageMeshingTest {
     }
 
     @Test
+    fun `cliff side inherits retained exterior skylight above a lower neighbour`() {
+        val page = DistantVerticalSampler.capture(
+            key = key(0, 0),
+            width = 2,
+            minimumY = 0,
+            maximumYExclusive = 16,
+            sourceRevision = 4,
+            completeness = DistantSourceCompleteness.COMPLETE,
+        ) { x, y, _ ->
+            val surface = if (x == 0) 10 else 5
+            if (y < surface) {
+                DistantVoxelSample(STONE, skyLight = 0, opaque = true)
+            } else {
+                DistantVoxelSample(null, skyLight = 15)
+            }
+        }
+
+        val artifact = DistantPageMesher.mesh(page)
+        val cliff = artifact.quads.single {
+            it.direction == DistantFaceDirection.EAST && it.plane == 1 &&
+                it.minimumV == 5 && it.maximumVExclusive == 10
+        }
+
+        assertEquals(15, cliff.skyLight)
+        assertFalse(cliff.fallback)
+    }
+
+    @Test
+    fun `relief beside an empty column inherits its sampled exterior skylight`() {
+        val page = DistantVerticalSampler.capture(
+            key = key(0, 0),
+            width = 2,
+            minimumY = 0,
+            maximumYExclusive = 16,
+            sourceRevision = 4,
+            completeness = DistantSourceCompleteness.COMPLETE,
+        ) { x, y, _ ->
+            if (x == 0 && y < 10) {
+                DistantVoxelSample(STONE, skyLight = 0, opaque = true)
+            } else {
+                DistantVoxelSample(null, skyLight = 15)
+            }
+        }
+
+        val artifact = DistantPageMesher.mesh(page)
+        val exposed = artifact.quads.single {
+            it.direction == DistantFaceDirection.EAST && it.plane == 1 &&
+                it.minimumV == 0 && it.maximumVExclusive == 10
+        }
+
+        assertEquals(15, exposed.skyLight)
+        assertFalse(exposed.fallback)
+    }
+
+    @Test
+    fun `simplified foliage hides the internal face of an adjacent solid`() {
+        val leaves = TerrainSemanticMaterialId("minecraft:spruce_leaves")
+        val trunk = column(run(0, 8, TerrainSemanticMaterialId("minecraft:spruce_log"), opaque = true))
+        val foliage = column(run(0, 8, leaves, blockLight = 0, skyLight = 0))
+        val page = page(key(0, 0), width = 2, columns = listOf(trunk, foliage, trunk, foliage))
+
+        val artifact = DistantPageMesher.mesh(page)
+
+        assertFalse(artifact.quads.any {
+            it.direction == DistantFaceDirection.EAST && it.plane == 1
+        })
+        assertTrue(artifact.quads.any { it.direction == DistantFaceDirection.UP && it.material == leaves })
+    }
+
+    @Test
+    fun `elevated relief beside lower terrain inherits exterior skylight at its own height`() {
+        val page = DistantVerticalSampler.capture(
+            key = key(0, 0),
+            width = 2,
+            minimumY = 0,
+            maximumYExclusive = 16,
+            sourceRevision = 5,
+            completeness = DistantSourceCompleteness.COMPLETE,
+        ) { x, y, _ ->
+            when {
+                y < 4 -> DistantVoxelSample(STONE, skyLight = 0, opaque = true)
+                x == 0 && y == 12 -> DistantVoxelSample(
+                    TerrainSemanticMaterialId("minecraft:spruce_log"),
+                    skyLight = 0,
+                    opaque = true,
+                )
+                else -> DistantVoxelSample(null, skyLight = 15)
+            }
+        }
+
+        val artifact = DistantPageMesher.mesh(page)
+        val branch = artifact.quads.single {
+            it.direction == DistantFaceDirection.EAST && it.plane == 1 &&
+                it.minimumV == 12 && it.maximumVExclusive == 13
+        }
+
+        assertEquals(15, branch.skyLight)
+    }
+
+    @Test
     fun `legacy surface-only relief closes to the adjacent sampled height without floating plates`() {
         val surfaceFlags = setOf(DistantRunFlag.GENERATED)
         val high = column(run(99, 1, STONE, opaque = true, flags = surfaceFlags, confidence = 25))
@@ -122,6 +222,29 @@ class DistantPageMeshingTest {
         })
         assertTrue(artifact.quads.any {
             it.direction == DistantFaceDirection.NORTH && it.minimumV == 0 && it.maximumVExclusive == 2
+        })
+    }
+
+    @Test
+    fun `enclosed cave air does not expose distant interior faces`() {
+        val subject = page(
+            key(0, 0),
+            width = 1,
+            columns = listOf(
+                column(
+                    run(8, 2, STONE, opaque = true),
+                    run(2, 6, material = null, flags = setOf(DistantRunFlag.CAVE)),
+                    run(0, 2, STONE, opaque = true),
+                ),
+            ),
+        )
+
+        val artifact = DistantPageMesher.mesh(subject)
+
+        assertTrue(artifact.quads.any { it.direction == DistantFaceDirection.UP && it.plane == 10 })
+        assertFalse(artifact.quads.any {
+            (it.direction == DistantFaceDirection.DOWN && it.plane == 8) ||
+                (it.direction == DistantFaceDirection.UP && it.plane == 2)
         })
     }
 
@@ -361,7 +484,7 @@ class DistantPageMeshingTest {
     private fun run(
         minimumY: Int,
         height: Int,
-        material: TerrainSemanticMaterialId,
+        material: TerrainSemanticMaterialId?,
         opaque: Boolean = false,
         fluid: DistantFluidSample? = null,
         blockLight: Int = 0,

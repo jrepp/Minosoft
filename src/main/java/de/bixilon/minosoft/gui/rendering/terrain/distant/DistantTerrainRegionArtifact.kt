@@ -36,7 +36,10 @@ import de.bixilon.minosoft.gui.rendering.util.mesh.struct.MeshStruct
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/** Compact material mapping retained by the consolidated distant-page encoder. */
+/**
+ * Compact material mapping retained by the consolidated distant-page encoder.
+ * Non-fluid entries are closed opaque volumes; shared faces are removed by the distant mesher.
+ */
 internal enum class DistantLodMaterial(
     val dhId: Int,
     val color: RGBAColor,

@@ -20,6 +20,8 @@ import de.bixilon.minosoft.gui.rendering.graph.RenderPhase
 import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRenderer
 import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRendererBuilder
 import de.bixilon.minosoft.gui.rendering.terrain.distant.distantCoverageRenderDistanceChunks
+import de.bixilon.minosoft.gui.rendering.terrain.distant.distantFogRange
+import de.bixilon.minosoft.gui.rendering.terrain.distant.distantFrontierDrawable
 import de.bixilon.minosoft.gui.rendering.terrain.distant.distantViewProjection
 import de.bixilon.minosoft.terrain.distant.DistantLodColumn
 import de.bixilon.minosoft.terrain.distant.DistantSourceCompleteness
@@ -100,6 +102,45 @@ class DistantHorizonsCompatibilityAdapterTest {
             page.x >= 10 && page.z in -10L..10L
         }
         assertEquals(11, distantCoverageRenderDistanceChunks(withMissingWedge, camera, 4.0f, 128))
+    }
+
+    @Test
+    fun `camera environment fog bounds distant terrain while air retains the lod horizon`() {
+        val underwater = distantFogRange(
+            environmentOverride = true,
+            cameraFogStart = 5.0f,
+            cameraFogEnd = 10.0f,
+            seamDistance = 192.0f,
+            effectiveDistance = 2048.0f,
+        )
+        val air = distantFogRange(
+            environmentOverride = false,
+            cameraFogStart = 154.0f,
+            cameraFogEnd = 176.0f,
+            seamDistance = 192.0f,
+            effectiveDistance = 2048.0f,
+        )
+        val frontier = distantFogRange(
+            environmentOverride = false,
+            cameraFogStart = 154.0f,
+            cameraFogEnd = 176.0f,
+            seamDistance = 192.0f,
+            effectiveDistance = 192.0f,
+        )
+
+        assertEquals(5.0f, underwater.start)
+        assertEquals(10.0f, underwater.end)
+        assertTrue(underwater.environment)
+        assertEquals(1740.8f, air.start)
+        assertEquals(2048.0f, air.end)
+        assertFalse(air.environment)
+        assertTrue(frontier.start < frontier.end)
+    }
+
+    @Test
+    fun `distant frontier waits for one complete transition span beyond the native seam`() {
+        assertFalse(distantFrontierDrawable(seamDistance = 176.0f, effectiveDistance = 192.0f))
+        assertTrue(distantFrontierDrawable(seamDistance = 176.0f, effectiveDistance = 208.0f))
     }
 
     @Test
