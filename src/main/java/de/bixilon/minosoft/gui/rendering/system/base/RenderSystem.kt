@@ -24,6 +24,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.buffer.vertex.PrimitiveType
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.vertex.VertexBuffer
 import de.bixilon.minosoft.gui.rendering.system.base.query.QueryTypes
 import de.bixilon.minosoft.gui.rendering.system.base.query.RenderQuery
+import de.bixilon.minosoft.gui.rendering.system.base.query.GpuTimingDiagnostics
 import de.bixilon.minosoft.gui.rendering.system.base.settings.RenderSettings
 import de.bixilon.minosoft.gui.rendering.system.base.shader.ShaderManagement
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
@@ -118,6 +119,9 @@ interface RenderSystem {
     fun createFramebuffer(size: Vec2i, scale: Float, texture: TextureModes? = null, depth: DepthModes? = null, stencil: StencilModes? = null): Framebuffer
 
     fun createQuery(type: QueryTypes): RenderQuery
+
+    fun <T> measureGpuPass(name: String, action: () -> T): T = action()
+    fun gpuTimingDiagnostics(): GpuTimingDiagnostics = GpuTimingDiagnostics()
 
     fun createTextureManager(): TextureManager
 

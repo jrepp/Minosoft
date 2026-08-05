@@ -327,7 +327,14 @@ class RendererPipeline(private val renderer: RendererManager) : Drawable {
         execution.worldEventOpen = true
         try {
             terrainPipelines.withFrame(prepare) {
-                graph.execute(execution)
+                graph.execute(execution) { pass, frame ->
+                    // Iris fullscreen programs own finer-grained timers inside the aggregate graph pass.
+                    if (pass.id.value.startsWith("iris:shaderpack/")) {
+                        pass.draw(frame)
+                    } else {
+                        system.measureGpuPass("graph:${pass.id.value}") { pass.draw(frame) }
+                    }
+                }
                 complete()
             }
         } catch (failure: Throwable) {

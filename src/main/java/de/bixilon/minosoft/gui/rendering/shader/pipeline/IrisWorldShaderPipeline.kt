@@ -727,6 +727,8 @@ class IrisWorldShaderPipeline private constructor(
         frameState = frameState?.frameCounter?.toLong(),
         frameInputValues = frameState?.let {
             mapOf(
+                "viewWidth" to it.viewWidth,
+                "viewHeight" to it.viewHeight,
                 "playerMood" to it.playerMood,
                 "constantMood" to it.constantMood,
                 "playerLookVector.x" to it.playerLookVector.x,
@@ -868,21 +870,23 @@ class IrisWorldShaderPipeline private constructor(
                     executeCompute(program, dispatchSize)
                 }
                 graphicsByName[name]?.let { program ->
-                    customResources.memoryBarrier(program.source.resourceUsage.renderTargetImages.isNotEmpty())
-                    targets.bindProgram(view, program.source)
-                    program.shader.activate()
-                    uploadFrameState(program.shader, IrisRenderStage.NONE)
-                    targets.bindSamplers(
-                        program.source,
-                        program.shader.native,
-                        customTextures,
-                        customResources,
-                        textureArrayLayouts[program.shader]?.physicalSlots?.toSet(),
-                    )
-                    uploadDrawState(program.shader, IrisDrawState.EMPTY)
-                    drawFullscreen()
-                    targets.finish(program.source)
-                    customResources.memoryBarrier(program.source.resourceUsage.renderTargetImages.isNotEmpty())
+                    context.system.measureGpuPass("iris:program/${program.source.name}") {
+                        customResources.memoryBarrier(program.source.resourceUsage.renderTargetImages.isNotEmpty())
+                        targets.bindProgram(view, program.source)
+                        program.shader.activate()
+                        uploadFrameState(program.shader, IrisRenderStage.NONE)
+                        targets.bindSamplers(
+                            program.source,
+                            program.shader.native,
+                            customTextures,
+                            customResources,
+                            textureArrayLayouts[program.shader]?.physicalSlots?.toSet(),
+                        )
+                        uploadDrawState(program.shader, IrisDrawState.EMPTY)
+                        drawFullscreen()
+                        targets.finish(program.source)
+                        customResources.memoryBarrier(program.source.resourceUsage.renderTargetImages.isNotEmpty())
+                    }
                     fullscreenProgramExecutions[program.source.name] =
                         (fullscreenProgramExecutions[program.source.name] ?: 0L) + 1L
                 }
@@ -929,6 +933,12 @@ class IrisWorldShaderPipeline private constructor(
     }
 
     private fun executeCompute(program: IrisComputeProgram, dispatchSize: Vec2i) {
+        context.system.measureGpuPass("iris:compute/${program.source.name}") {
+            executeComputeTimed(program, dispatchSize)
+        }
+    }
+
+    private fun executeComputeTimed(program: IrisComputeProgram, dispatchSize: Vec2i) {
         val renderTargetImages = program.source.resourceUsage.renderTargetImages.isNotEmpty()
         customResources.memoryBarrier(renderTargetImages)
         program.shader.activate()

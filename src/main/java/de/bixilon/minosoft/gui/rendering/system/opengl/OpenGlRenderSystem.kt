@@ -41,6 +41,7 @@ import de.bixilon.minosoft.gui.rendering.system.opengl.buffer.vertex.OpenGlVerte
 import de.bixilon.minosoft.gui.rendering.system.opengl.error.OpenGlError
 import de.bixilon.minosoft.gui.rendering.system.opengl.error.OpenGlException
 import de.bixilon.minosoft.gui.rendering.system.opengl.query.OpenGlQuery
+import de.bixilon.minosoft.gui.rendering.system.opengl.query.OpenGlGpuTimer
 import de.bixilon.minosoft.gui.rendering.system.opengl.resource.OpenGlResourceTracker
 import de.bixilon.minosoft.gui.rendering.system.opengl.shader.OpenGlShaderManagement
 import de.bixilon.minosoft.gui.rendering.system.opengl.texture.OpenGlTextureManager
@@ -67,6 +68,7 @@ class OpenGlRenderSystem(
     override val shader = OpenGlShaderManagement(this)
     val resources = OpenGlResourceTracker()
     val work = OpenGlWorkCounters()
+    private val gpuTimer = OpenGlGpuTimer(this)
     private var thread: Thread? = null
     private val capabilities: MutableSet<RenderingCapabilities> = RenderingCapabilities.set()
     override lateinit var vendor: OpenGlVendor
@@ -140,6 +142,7 @@ class OpenGlRenderSystem(
     }
 
     override fun destroy() {
+        gpuTimer.close()
         val snapshot = resources.snapshot()
         if (snapshot.live > 0) {
             val live = snapshot.types
@@ -410,6 +413,10 @@ class OpenGlRenderSystem(
     }
 
     override fun createQuery(type: QueryTypes) = OpenGlQuery(this, type)
+
+    override fun <T> measureGpuPass(name: String, action: () -> T): T = gpuTimer.measure(name, action)
+
+    override fun gpuTimingDiagnostics() = gpuTimer.diagnostics()
 
     override fun createTextureManager() = OpenGlTextureManager(this)
 

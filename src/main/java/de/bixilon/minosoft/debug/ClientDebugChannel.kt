@@ -3681,11 +3681,34 @@ object ClientDebugChannel : AutoCloseable {
             result.putOpenGlWork("openGlWork", work)
             if (previousWork != null) result.putOpenGlWork("openGlWorkDelta", work, previousWork)
             val capabilities = OpenGlCapabilityDiagnostics.capture()
+            val gpuTimings = system.gpuTimingDiagnostics()
             result.putObject("gpuResources").apply {
                 put("backend", "opengl")
                 put("created", snapshot.created)
                 put("deleted", snapshot.deleted)
                 put("live", snapshot.live)
+                putObject("passTimings").apply {
+                    put("sampleRate", gpuTimings.sampleRate)
+                    put("pendingQueries", gpuTimings.pendingQueries)
+                    put("droppedSamples", gpuTimings.droppedSamples)
+                    putObject("passes").apply {
+                        gpuTimings.passes.toSortedMap().forEach { (name, timing) ->
+                            putObject(name).apply {
+                                put("samples", timing.samples)
+                                put("lastNanos", timing.lastNanos)
+                                put("totalNanos", timing.totalNanos)
+                                put("minimumNanos", timing.minimumNanos)
+                                put("maximumNanos", timing.maximumNanos)
+                                put("medianUpperBoundNanos", timing.medianUpperBoundNanos)
+                                put("p95UpperBoundNanos", timing.p95UpperBoundNanos)
+                                putArray("bucketUpperBoundsNanos").also { bounds ->
+                                    timing.bucketUpperBoundsNanos.forEach(bounds::add)
+                                }
+                                putArray("buckets").also { buckets -> timing.buckets.forEach(buckets::add) }
+                            }
+                        }
+                    }
+                }
                 putObject("capabilities").apply {
                     put("version", capabilities.version)
                     put("vendor", capabilities.vendor)
