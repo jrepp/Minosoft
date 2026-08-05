@@ -12,7 +12,7 @@ hash = "45fd39ce7b5993d0854f44849d7ad130dccb9a46c3b6ae2d8c5138a79a8b5ae6"
 
 [[files]]
 file = "ladder.tsv"
-hash = "e653bd72036a9df7db915f481461692f15276939ed0ca644b0bf4b9fcd1c700f"
+hash = "3b6ce003270305044790600fa02c447ab3f7a59705abc5565f5a8448e6b2d378"
 
 [[files]]
 file = "mods/distant-horizons.pw.toml"
@@ -80,6 +80,6 @@ hash = "d09faf04ca1b235636fc758c4b5438b29d930ed2f7742816d1afa9530bcd6424"
 metafile = true
 
 [[files]]
-file = "shaderpacks/complementary-unbound.pw.toml"
-hash = "4d1972397e8faa0c9ba1958c0968e54a1360d5d22a463fc32843191b8b30f82e"
+file = "shaderpacks/bliss.pw.toml"
+hash = "4f3578f87201c56ec2b55d14670898b20eac32fba79f62fe6cd4f7ec7634cfca"
 metafile = true
