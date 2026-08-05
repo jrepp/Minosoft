@@ -179,7 +179,7 @@ The currently executable adapter subset is deliberately narrow:
 | Dynamic render stage | `renderStage` is uploaded after every selected terrain/scene/shadow/fullscreen activation from explicit pinned numeric values. Material classes distinguish solid, mipmapped cutout, and translucent terrain; graph semantics distinguish entities, block entities, particles, weather, hand, and overlays; scene families distinguish clouds, custom sky, sun, moon, solid/translucent hand, destroy, outline, and world border. Fullscreen programs receive `NONE`. Sun and moon use distinct provider-neutral families even though both retain the same planet vertex/state ABI and Iris sky-textured fallback root. Diagnostics count only real uploads to linked programs that retain `renderStage`; a declared but optimized-out uniform is not an error or a counted bind |
 | Dimension program sets | The planner selects only direct program roots from the active directory. Root programs remain the default; `dimension.properties` supports exact dimension IDs, omitted `minecraft:` namespaces, wildcard fallback, and base fallback; legacy `world0`, `world-1`, and `world1` select Overworld/modded, Nether, and End without mixing base programs. Shared includes and pack options remain pack-wide |
 | Conditional programs | Bounded `program.<path>.enabled` boolean expressions are evaluated against validated boolean shader options before stage pairing and compilation. Dimension-qualified paths remain isolated; unknown/non-boolean operands and malformed expressions reject the candidate |
-| Pack profiles and option screens | Continuation-aware `profile.*` definitions support sequential inheritance, boolean enable/disable tokens, enumerated `=`/`:` assignments, and `!program.*` suppression. The most-constrained matching profile wins, with authored order breaking ties, and disabled roots are removed before pairing and compilation. `sliders`, `screen`, `screen.columns`, `screen.<id>`, and `screen.<id>.columns` are retained as bounded metadata. The native settings form exposes profile application, stepped slider controls, authored option order, and subscreen categories; its retained list UI does not claim Iris's exact column-grid or localized-label presentation |
+| Pack profiles and option screens | Continuation-aware `profile.*` definitions support sequential inheritance, boolean enable/disable tokens, enumerated `=`/`:` assignments, and `!program.*` suppression. The most-constrained matching profile wins, with authored order breaking ties, and disabled roots are removed before pairing and compilation. `sliders`, `screen`, `screen.columns`, `screen.<id>`, and `screen.<id>.columns` are retained as bounded metadata. The native settings form exposes profile application, stepped slider controls, authored option order, and bounded top-level groups derived from nested screens. Bounded `shaders/lang` parsing merges `en_us` fallback with the requested locale for option comments and option/profile/screen/value labels. Shader forms search across groups, large category sets use a readable selector, and successful apply reloads cross-entry values before continuing. The retained list UI does not claim Iris's exact column-grid or spacer/subscreen navigation |
 | Particle ordering | Current `particles.ordering=before|after|mixed`, legacy `particles.before.deferred`, and Iris's deferred-sensitive defaults select explicit graph phases. Mixed mode places only opaque particle producers before deferred and retains translucent producers after it |
 | Separate entity draws | `separateEntityDraws` is a typed, default-off property. Opaque and translucent entity/block-entity producers have distinct semantics and graph phases; when enabled, the translucent producers execute after deferred through `gbuffers_entities_translucent` and `gbuffers_block_translucent`, retaining the standard entity/block fallback roots. Composite skeletal features are prepared once and submit only their blended Gecko/emissive layers in the second pass. Gecko block entities similarly retain one animated base draw and expose only blended render layers to the translucent pass |
 | Path-tracing geometry suppression | `skipAllRendering` is a typed, default-off property matching Iris 1.7.2's producer boundary: main-view chunk terrain, entities, and block entities are disabled, while sky, particles, weather, hand, overlays, shadows, and fullscreen programs continue. The graph predicate does not mutate producer state or disable the auxiliary shadow callbacks |
@@ -4469,6 +4469,56 @@ and pinned shadow caster subset reaches an Iris-owned program on the final
 source. Remaining checked-pixel, cross-driver, compute-capable-driver, and
 terrain-performance work measures fidelity, portability, or optimization; it
 does not represent a host-shader escape path.
+
+## Bliss as the Fabric-stack default
+
+The combined `fabric-stack` now uses the same exact Bliss 2.1.0 Modrinth
+archive, URL, and SHA-512 identity as the focused `distant-horizons-bliss`
+pack. Complementary Unbound remains an external compatibility reference but is
+no longer the combined pack's managed default. `play.sh modpack prepare` and
+`modpack inspect` resolved one Bliss shader pack in the immutable view, and the
+dedicated exact-archive DH planner contract plus `PlayUtilityTest` passed.
+
+The supervised client hot-reloaded to the new default and reported Bliss shader
+generation 2 with 72 compiled main-view and seven compiled shadow scene
+programs. Both fixed-pose water checkpoints selected `gbuffers_water` on every
+checked frame with its authored four outputs, active program/per-buffer blend
+state, and empty rejected/fallback bind maps. This verifies default selection
+and executable routing, not finished pixels.
+
+At the same source-water slab and fixed presentation time, the surface gained
+clear authored ripples but both the above-water and submerged captures showed a
+large red/green mottled pattern. The shader-off control was nearly black, which
+isolates the mottling to the Bliss pipeline while retaining a separate base
+water/lighting visibility defect. The translucent-terrain GPU histogram had a
+33 ms median upper bound and 66 ms p95 upper bound; captured cadence remained
+single-digit FPS. Water fidelity and performance therefore remain open before
+Bliss can be treated as a visual-quality baseline despite being the selected
+default.
+
+## Bliss custom-texture bootstrap fix
+
+The red/green field was not authored water or volumetric fog. A fullscreen
+cutoff sweep first localized its appearance to the bloom/tonemap tail, and
+direct `colortex5`/`colortex3` diagnostic presenters exposed corrupted bloom
+input rather than corrupt scene lighting. Bliss declares
+`texture.composite.colortex6=texture/blueNoise.png`, then writes and flips
+`colortex6` as its bloom ping-pong target. Minosoft had treated the stage custom
+texture as a permanent sampler override, so later bloom blur passes continued
+reading blue noise instead of their produced render target.
+
+The planner now processes fullscreen programs in numeric execution order and
+deactivates a stage custom render-target alias after that target's first flip,
+matching Iris's `flippedAtLeastOnce` behavior. A synthetic first-flip regression
+and the untouched Bliss 2.1.2 external archive gate pass. On hot-reloaded Apple
+OpenGL, `render.substrate` reported the custom `colortex6` bootstrap for the
+early composites and `colortex6=colortex6` for `composite9` and `composite10`.
+Matched surface and underwater captures removed the former red/green field.
+
+This fix does not close the rest of the Bliss submission. The surface remains
+too dark, the submerged view remains nearly featureless fog, and measured
+cadence remains single digit. Those are independent fidelity/performance
+defects and must retain separate matched-workload diagnosis.
 
 ## External references
 
