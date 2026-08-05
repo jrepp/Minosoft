@@ -31,15 +31,29 @@ import de.bixilon.minosoft.modding.loader.fabric.FabricEntityEvents
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet
 import java.util.*
+
+internal fun shouldCompactEntityIndexes(
+    currentSize: Int,
+    peakSize: Int,
+    removalsSinceCompaction: Int,
+    force: Boolean,
+): Boolean = force || (
+    peakSize >= 512 &&
+        removalsSinceCompaction >= 256 &&
+        currentSize <= peakSize / 4
+    )
 
 class WorldEntities : Iterable<Entity> {
     private val idEntityMap: Int2ObjectOpenHashMap<Entity> = Int2ObjectOpenHashMap()
     private val entityIdMap: Object2IntOpenHashMap<Entity> = Object2IntOpenHashMap()
-    private val entityUUIDMap: MutableMap<Entity, UUID> = mutableMapOf()
-    private val uuidEntityMap: MutableMap<UUID, Entity> = mutableMapOf()
-    val entities: MutableSet<Entity> by observedSet(mutableSetOf())
+    private var entityUUIDMap: MutableMap<Entity, UUID> = HashMap()
+    private var uuidEntityMap: MutableMap<UUID, Entity> = HashMap()
+    val entities: MutableSet<Entity> by observedSet(ObjectOpenHashSet())
     private val ticker = EntityTicker(this)
+    private var peakIndexedEntities = 0
+    private var removalsSinceCompaction = 0
 
     val lock = RWLock.rwlock()
 
@@ -60,6 +74,7 @@ class WorldEntities : Iterable<Entity> {
                 entityUUIDMap[entity] = entityUUID
             }
             added = entities.add(entity)
+            if (added) peakIndexedEntities = maxOf(peakIndexedEntities, entities.size)
         } finally {
             lock.unlock()
         }
@@ -120,6 +135,7 @@ class WorldEntities : Iterable<Entity> {
                 entityUUIDMap.remove(entity)
                 uuidEntityMap.remove(entityUUID)
             }
+            compactIndexesAfterRemoval()
             change = FabricEntityChange(entity, entityId, entityUUID)
         } finally {
             lock.unlock()
@@ -146,6 +162,7 @@ class WorldEntities : Iterable<Entity> {
                 entityUUIDMap.remove(entity)
                 uuidEntityMap.remove(entityUUID)
             }
+            compactIndexesAfterRemoval()
             change = FabricEntityChange(entity, entityId, entityUUID)
         } finally {
             lock.unlock()
@@ -225,9 +242,9 @@ class WorldEntities : Iterable<Entity> {
                 val entityId = if (entityIdMap.containsKey(entity)) entityIdMap.getInt(entity) else null
                 val entityUUID = entityUUIDMap[entity]
                 if (entity !== session.player) changes += FabricEntityChange(entity, entityId, entityUUID)
+                if (!local && entity is LocalPlayerEntity) continue
                 entity._id = null
                 entity._uuid = null
-                if (!local && entity is LocalPlayerEntity) continue
                 if (entityId != null) {
                     entityIdMap.removeInt(entity)
                     idEntityMap.remove(entityId)
@@ -240,10 +257,28 @@ class WorldEntities : Iterable<Entity> {
             val remove = this.entities.toMutableSet()
             remove -= session.player
             this.entities.removeAll(remove)
+            compactIndexes(force = true)
         } finally {
             this.lock.unlock()
         }
         FabricEntityEvents.dispatch(FabricEntityEventContext(session, FabricEntityEventPhase.CLEARED, changes))
+    }
+
+    private fun compactIndexesAfterRemoval() {
+        removalsSinceCompaction = (removalsSinceCompaction + 1).coerceAtMost(Int.MAX_VALUE)
+        compactIndexes(force = false)
+    }
+
+    /** Drops peak-sized hash tables after mass despawn/dimension-clear boundaries. */
+    private fun compactIndexes(force: Boolean) {
+        if (!shouldCompactEntityIndexes(entities.size, peakIndexedEntities, removalsSinceCompaction, force)) return
+        idEntityMap.trim()
+        entityIdMap.trim()
+        (entities as? ObjectOpenHashSet<Entity>)?.trim()
+        entityUUIDMap = HashMap(entityUUIDMap)
+        uuidEntityMap = HashMap(uuidEntityMap)
+        peakIndexedEntities = entities.size
+        removalsSinceCompaction = 0
     }
 
     companion object {

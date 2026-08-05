@@ -43,6 +43,39 @@ private val IRIS_ENTITY_SHADOW = minecraft("entity_shadow")
 private val IRIS_NAME_TAG = minecraft("name_tag")
 private val IRIS_ENTITY_FLAME = minecraft("entity_flame")
 
+/** Releases peak-sized frame-list backing arrays only after sustained low use. */
+internal class SustainedLowUseListTrimmer(
+    private val minimumPeak: Int = 512,
+    private val lowUseFrames: Int = 120,
+    private val minimumRetainedCapacity: Int = 0,
+) {
+    internal var estimatedCapacity = minimumRetainedCapacity
+        private set
+    private var consecutiveLowUseFrames = 0
+
+    init {
+        require(minimumPeak > 0 && lowUseFrames > 0 && minimumRetainedCapacity >= 0)
+    }
+
+    fun clear(list: ArrayList<*>) {
+        val used = list.size
+        if (used > estimatedCapacity) estimatedCapacity = used
+        consecutiveLowUseFrames = if (
+            estimatedCapacity >= minimumPeak && used <= estimatedCapacity / 4
+        ) {
+            consecutiveLowUseFrames + 1
+        } else {
+            0
+        }
+        list.clear()
+        if (consecutiveLowUseFrames < lowUseFrames) return
+        list.trimToSize()
+        if (minimumRetainedCapacity > 0) list.ensureCapacity(minimumRetainedCapacity)
+        estimatedCapacity = minimumRetainedCapacity
+        consecutiveLowUseFrames = 0
+    }
+}
+
 class EntityDrawer(
     val renderer: EntitiesRenderer,
 ) {
@@ -50,16 +83,25 @@ class EntityDrawer(
         val layers = Array(EntityLayer.LAYERS.size) { ArrayList<FeatureDrawable>() }
         val shadowLayers = Array(EntityLayer.LAYERS.size) { ArrayList<FeatureDrawable>() }
         val outlines = ArrayList<EntityOutlineRenderer.Command>()
+        private val layerTrimmers = Array(EntityLayer.LAYERS.size) { SustainedLowUseListTrimmer() }
+        private val shadowLayerTrimmers = Array(EntityLayer.LAYERS.size) { SustainedLowUseListTrimmer() }
+        private val outlineTrimmer = SustainedLowUseListTrimmer()
 
         fun clear() {
-            layers.forEach(ArrayList<FeatureDrawable>::clear)
-            shadowLayers.forEach(ArrayList<FeatureDrawable>::clear)
-            outlines.clear()
+            layers.forEachIndexed { index, list -> layerTrimmers[index].clear(list) }
+            shadowLayers.forEachIndexed { index, list -> shadowLayerTrimmers[index].clear(list) }
+            outlineTrimmer.clear(outlines)
         }
     }
 
     private val layers = Array(EntityLayer.LAYERS.size) { ArrayList<FeatureDrawable>(100) }
     private val shadowLayers = Array(EntityLayer.LAYERS.size) { ArrayList<FeatureDrawable>(100) }
+    private val layerTrimmers = Array(EntityLayer.LAYERS.size) {
+        SustainedLowUseListTrimmer(minimumRetainedCapacity = 100)
+    }
+    private val shadowLayerTrimmers = Array(EntityLayer.LAYERS.size) {
+        SustainedLowUseListTrimmer(minimumRetainedCapacity = 100)
+    }
     private val collectionBatches = ConcurrentLinkedQueue<CollectionBatch>()
     private val localBatch = ThreadLocal.withInitial {
         CollectionBatch().also(collectionBatches::add)
@@ -152,8 +194,8 @@ class EntityDrawer(
 
 
     fun clear() {
-        layers.forEach(ArrayList<FeatureDrawable>::clear)
-        shadowLayers.forEach(ArrayList<FeatureDrawable>::clear)
+        layers.forEachIndexed { index, list -> layerTrimmers[index].clear(list) }
+        shadowLayers.forEachIndexed { index, list -> shadowLayerTrimmers[index].clear(list) }
         collectionBatches.forEach(CollectionBatch::clear)
         outline.clear()
     }
