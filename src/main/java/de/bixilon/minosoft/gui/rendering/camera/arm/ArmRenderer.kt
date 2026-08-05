@@ -216,7 +216,11 @@ class ArmRenderer(override val context: RenderContext) : WorldRenderer {
         val renderer = entity.renderer?.nullCast<PlayerRenderer<*>>()
         val arm = entity.mainArm
 
-        context.system.reset(faceCulling = true, depthTest = true, blending = true, depthMask = true)
+        // The arm and the ordinary held-item mesh are opaque/cutout geometry.
+        // HeldItemRenderer enables blending explicitly for its separately
+        // classified translucent mesh; starting the whole hand pass blended
+        // makes even opaque first-person geometry inherit source alpha.
+        context.system.reset(faceCulling = true, depthTest = true, blending = false, depthMask = true)
 
         val mainHand = entity.equipment[EquipmentSlots.MAIN_HAND]
         val skin = renderer?.model?.type
