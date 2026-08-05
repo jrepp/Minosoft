@@ -119,7 +119,7 @@ class WorldEntities : Iterable<Entity> {
     }
 
     fun remove(entity: Entity) {
-        var change: FabricEntityChange? = null
+        val change: FabricEntityChange
         lock.lock()
         try {
             if (entity !is LocalPlayerEntity && !entities.remove(entity)) return
@@ -140,12 +140,11 @@ class WorldEntities : Iterable<Entity> {
         } finally {
             lock.unlock()
         }
-        val removed = change ?: return
-        FabricEntityEvents.dispatch(FabricEntityEventContext(entity.session, FabricEntityEventPhase.REMOVED, listOf(removed)))
+        FabricEntityEvents.dispatch(FabricEntityEventContext(entity.session, FabricEntityEventPhase.REMOVED, listOf(change)))
     }
 
     fun remove(entityId: Int) {
-        var change: FabricEntityChange? = null
+        val change: FabricEntityChange
         lock.lock()
         try {
             val entity = idEntityMap.remove(entityId) ?: return
@@ -167,8 +166,7 @@ class WorldEntities : Iterable<Entity> {
         } finally {
             lock.unlock()
         }
-        val removed = change ?: return
-        FabricEntityEvents.dispatch(FabricEntityEventContext(removed.entity.session, FabricEntityEventPhase.REMOVED, listOf(removed)))
+        FabricEntityEvents.dispatch(FabricEntityEventContext(change.entity.session, FabricEntityEventPhase.REMOVED, listOf(change)))
     }
 
     override fun iterator(): Iterator<Entity> {
