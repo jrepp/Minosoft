@@ -618,6 +618,25 @@ class IrisLegacyShaderTransformerTest {
     }
 
     @Test
+    fun `legacy weather mirrors a smooth pack light coordinate contract`() {
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "gbuffers_weather",
+            ShaderProgramPhase.WEATHER,
+            "#version 120\nvoid main() { gl_Position = ftransform(); }",
+            """
+                #version 120
+                varying vec2 lmCoord;
+                varying vec2 texCoord;
+                void main() { gl_FragData[0] = vec4(lmCoord, texCoord.x, 1.0); }
+            """.trimIndent(),
+        )
+
+        assertContains(transformed.vertex, "out vec2 lmCoord;")
+        assertFalse("flat out vec2 lmCoord;" in transformed.vertex)
+        assertContains(transformed.fragment, "in vec2 lmCoord;")
+    }
+
+    @Test
     fun `modern beacon programs expose the retained textured face basis`() {
         val transformed = IrisLegacyShaderTransformer.transform(
             "gbuffers_beaconbeam",
@@ -714,6 +733,34 @@ class IrisLegacyShaderTransformerTest {
             transformed.vertex,
             "minosoftPrepareBlockPbr(scene_pos, normal, vec4(minosoftTangent, vinTangent.w))",
         )
+    }
+
+    @Test
+    fun `legacy entity bridge mirrors a smooth vec4 pack tangent contract`() {
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "gbuffers_entities",
+            ShaderProgramPhase.ENTITY,
+            "#version 120\nvoid main() { gl_Position = ftransform(); }",
+            """
+                #version 120
+                varying vec3 normal;
+                varying vec4 tangent;
+                void main() {
+                    vec3 bitangent = cross(normal, tangent.xyz) * tangent.w;
+                    gl_FragData[0] = vec4(bitangent, 1.0);
+                }
+            """.trimIndent(),
+        )
+
+        assertContains(transformed.vertex, "out vec4 tangent;")
+        assertFalse("flat out vec4 tangent;" in transformed.vertex)
+        assertContains(
+            transformed.vertex,
+            "tangent = vec4(normalize(surfaceTangent.xyz), surfaceTangent.w);",
+        )
+        assertContains(transformed.vertex, "cross(surfaceNormal, tangent.xyz)")
+        assertContains(transformed.vertex, "mat3(tangent.xyz, binormal, surfaceNormal)")
+        assertContains(transformed.fragment, "in vec4 tangent;")
     }
 
     @Test
@@ -946,6 +993,84 @@ class IrisLegacyShaderTransformerTest {
         assertFalse("minosoftMcEntity.x.x" in transformed.vertex)
         assertFalse("ftransform" in transformed.vertex)
         assertContains(transformed.vertex, "float blockId = minosoftMcEntity.x;")
+    }
+
+    @Test
+    fun `legacy terrain reconstructs pack player position from the host translated view`() {
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "gbuffers_water",
+            ShaderProgramPhase.TERRAIN,
+            """
+                #version 120
+                uniform mat4 gbufferModelView;
+                uniform mat4 gbufferModelViewInverse;
+                void main() {
+                    vec4 position = gbufferModelViewInverse * gl_ModelViewMatrix * gl_Vertex;
+                    gl_Position = gl_ProjectionMatrix * gbufferModelView * position;
+                }
+            """.trimIndent(),
+            """
+                #version 120
+                void main() { gl_FragData[0] = vec4(1.0); }
+            """.trimIndent(),
+        )
+
+        assertContains(transformed.vertex, "uniform mat4 gbufferModelView;")
+        assertContains(transformed.vertex, "uniform mat4 minosoftPlayerModelView;")
+        assertContains(transformed.vertex, "uniform mat4 minosoftPlayerModelViewInverse;")
+        assertContains(
+            transformed.vertex,
+            "vec4 position = minosoftPlayerModelViewInverse * gbufferModelView * vec4(vinPosition, 1.0);",
+        )
+        assertContains(
+            transformed.vertex,
+            "gl_Position = gbufferProjection * minosoftPlayerModelView * position;",
+        )
+    }
+
+    @Test
+    fun `modern terrain reconstructs pack player position from the host translated view`() {
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "gbuffers_water",
+            ShaderProgramPhase.TERRAIN,
+            """
+                #version 330 core
+                uniform mat4 gbufferModelView;
+                uniform mat4 gbufferModelViewInverse;
+                in vec3 vaPosition;
+                void main() {
+                    vec4 position = gbufferModelViewInverse * gl_ModelViewMatrix * gl_Vertex;
+                    gl_Position = gl_ProjectionMatrix * gbufferModelView * position;
+                }
+            """.trimIndent(),
+            """
+                #version 330 core
+                uniform sampler2D gtexture;
+                uniform mat4 gbufferModelViewInverse;
+                layout(location = 0) out vec4 color;
+                void main() {
+                    color = vec4(mat3(gbufferModelViewInverse) * vec3(0.0, 1.0, 0.0), 1.0);
+                    color += texture(gtexture, vec2(0.0));
+                }
+            """.trimIndent(),
+        )
+
+        assertContains(transformed.vertex, "uniform mat4 gbufferModelView;")
+        assertContains(transformed.vertex, "uniform mat4 minosoftPlayerModelView;")
+        assertContains(transformed.vertex, "uniform mat4 minosoftPlayerModelViewInverse;")
+        assertContains(
+            transformed.vertex,
+            "vec4 position = minosoftPlayerModelViewInverse * gbufferModelView * vec4(vinPosition, 1.0);",
+        )
+        assertContains(
+            transformed.vertex,
+            "gl_Position = gbufferProjection * minosoftPlayerModelView * position;",
+        )
+        assertContains(transformed.fragment, "uniform mat4 minosoftPlayerModelViewInverse;")
+        assertContains(
+            transformed.fragment,
+            "color = vec4(mat3(minosoftPlayerModelViewInverse) * vec3(0.0, 1.0, 0.0), 1.0);",
+        )
     }
 
     @Test

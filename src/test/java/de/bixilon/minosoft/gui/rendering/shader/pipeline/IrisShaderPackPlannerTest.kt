@@ -78,6 +78,9 @@ class IrisShaderPackPlannerTest {
 
         assertTrue(plan.programs.isNotEmpty())
         assertTrue(settings.options.isNotEmpty())
+        val groupedOptions = settings.optionGroups().flatMap(ShaderPackOptionGroup::optionNames)
+        assertEquals(settings.options.map(ShaderPackOption::name).toSet(), groupedOptions.toSet())
+        assertEquals(groupedOptions.size, groupedOptions.distinct().size)
         IrisWorldShaderPipeline.validateProgramContract(plan)
         val mainSceneStates = plan.programs.asSequence()
             .filter { it.phase != ShaderProgramPhase.SHADOW }
@@ -168,6 +171,11 @@ class IrisShaderPackPlannerTest {
         assertEquals("world0", plan.programDirectory)
         assertTrue(plan.programs.isNotEmpty())
         assertTrue(settings.options.isNotEmpty())
+        val groupedOptions = settings.optionGroups().flatMap(ShaderPackOptionGroup::optionNames)
+        assertEquals(settings.options.map(ShaderPackOption::name).toSet(), groupedOptions.toSet())
+        assertEquals(groupedOptions.size, groupedOptions.distinct().size)
+        assertEquals("Shadow Distance", settings.language.option("shadowDistance"))
+        assertTrue(settings.optionGroups().size < settings.subScreens.size)
         IrisWorldShaderPipeline.validateProgramContract(plan)
         assertContains(plan.programs.map(ShaderProgramSource::name), "dh_terrain")
         assertContains(plan.programs.map(ShaderProgramSource::name), "dh_water")
@@ -200,6 +208,12 @@ class IrisShaderPackPlannerTest {
             "// minosoft:scene_bridge CLOUD CLOUD",
         )
         assertContains(suppressedClouds.fragment, "discard;")
+        val bloomBlur = plan.programs.single { it.name == "composite9" }
+        assertEquals(
+            ShaderBufferId(ShaderBufferKind.COLORTEX, 6),
+            bloomBlur.resourceUsage.sampledBuffers["colortex6"],
+        )
+        assertFalse("colortex6" in bloomBlur.resourceUsage.sampledCustomTextures)
         val composite = plan.programs.single { it.name == "composite1" }.fragment
         assertContains(composite, "#ifdef Ambient_SSS")
         assertEquals(2, Regex("""#ifdef\s+Ambient_SSS""").findAll(composite).count())
@@ -794,6 +808,67 @@ class IrisShaderPackPlannerTest {
             mapOf("scattering" to raw.id),
             plan.programs.single { it.phase == ShaderProgramPhase.FINAL }.resourceUsage.sampledCustomTextures,
         )
+    }
+
+    @Test
+    fun `stage custom render target override ends after its first composite flip`() {
+        val shaders = temporary.resolve("custom-texture-first-flip/shaders").createDirectories()
+        write(shaders, "gbuffers_terrain.vsh", SIMPLE_VERTEX)
+        write(shaders, "gbuffers_terrain.fsh", SIMPLE_FRAGMENT)
+        listOf("composite", "composite1", "final").forEach { name ->
+            write(shaders, "$name.vsh", SIMPLE_VERTEX)
+        }
+        write(
+            shaders,
+            "composite.fsh",
+            """
+                #version 330 core
+                uniform sampler2D colortex6;
+                /* DRAWBUFFERS:6 */
+                out vec4 color;
+                void main() { color = texture(colortex6, vec2(0.0)); }
+            """.trimIndent(),
+        )
+        write(
+            shaders,
+            "composite1.fsh",
+            """
+                #version 330 core
+                uniform sampler2D colortex6;
+                /* DRAWBUFFERS:3 */
+                out vec4 color;
+                void main() { color = texture(colortex6, vec2(0.0)); }
+            """.trimIndent(),
+        )
+        write(
+            shaders,
+            "final.fsh",
+            """
+                #version 330 core
+                uniform sampler2D colortex6;
+                out vec4 color;
+                void main() { color = texture(colortex6, vec2(0.0)); }
+            """.trimIndent(),
+        )
+        write(
+            shaders,
+            "shaders.properties",
+            "texture.composite.colortex6=textures/blue-noise.png",
+        )
+        writeBytes(shaders, "textures/blue-noise.png", ONE_PIXEL_PNG)
+
+        val plan = IrisShaderPackPlanner.plan(temporary.resolve("custom-texture-first-flip"))
+        val first = plan.programs.single { it.name == "composite" }.resourceUsage
+        val second = plan.programs.single { it.name == "composite1" }.resourceUsage
+        val final = plan.programs.single { it.name == "final" }.resourceUsage
+        val color6 = ShaderBufferId(ShaderBufferKind.COLORTEX, 6)
+
+        assertEquals(setOf("colortex6"), first.sampledCustomTextures.keys)
+        assertTrue(first.sampledBuffers.isEmpty())
+        assertEquals(mapOf("colortex6" to color6), second.sampledBuffers)
+        assertTrue(second.sampledCustomTextures.isEmpty())
+        assertEquals(mapOf("colortex6" to color6), final.sampledBuffers)
+        assertTrue(final.sampledCustomTextures.isEmpty())
     }
 
     @Test
@@ -1521,6 +1596,64 @@ class IrisShaderPackPlannerTest {
         )
         assertEquals("low", settings.selectedProfile(emptyMap())?.name)
         assertEquals("high", settings.selectedProfile(mapOf("BLOOM" to "true", "QUALITY" to "3"))?.name)
+    }
+
+    @Test
+    fun `shader settings localize authored labels and collapse nested screens into main groups`() {
+        val shaders = temporary.resolve("localized-settings/shaders").createDirectories()
+        write(
+            shaders,
+            "gbuffers_terrain.vsh",
+            """
+                #version 330 core
+                //#define FEATURE
+                #define QUALITY 1 // [1 2]
+                #define AMBIENT 0 // [0 1]
+                #define HIDDEN 5 // [5 6]
+                void main() { gl_Position = vec4(float(QUALITY)); }
+            """.trimIndent(),
+        )
+        write(shaders, "gbuffers_terrain.fsh", SIMPLE_FRAGMENT)
+        write(shaders, "final.vsh", SIMPLE_VERTEX)
+        write(shaders, "final.fsh", SIMPLE_FRAGMENT)
+        write(
+            shaders,
+            "shaders.properties",
+            """
+                profile.high=FEATURE QUALITY=2
+                screen=[lighting] *
+                screen.lighting=[shadows] AMBIENT
+                screen.shadows=QUALITY FEATURE
+            """.trimIndent(),
+        )
+        write(
+            shaders,
+            "lang/en_us.lang",
+            """
+                profile.high=High fidelity
+                screen.lighting=Lighting
+                option.QUALITY=Shadow quality
+                option.QUALITY.comment=Controls the shadow sample budget.
+                value.QUALITY.2=High
+                option.AMBIENT=Ambient light
+            """.trimIndent(),
+        )
+        write(shaders, "lang/pt_BR.LANG", "option.QUALITY=Qualidade das sombras")
+
+        val settings = IrisShaderPackPlanner.settings(temporary.resolve("localized-settings"), "pt-BR")
+
+        assertEquals("Qualidade das sombras", settings.language.option("QUALITY"))
+        assertEquals("Controls the shadow sample budget.", settings.language.optionComment("QUALITY"))
+        assertEquals("High", settings.language.value("QUALITY", "2"))
+        assertEquals("High fidelity", settings.language.profile("high"))
+        assertEquals("Lighting", settings.language.screen("lighting"))
+        assertEquals(
+            listOf(
+                ShaderPackOptionGroup(null, listOf("HIDDEN")),
+                ShaderPackOptionGroup("lighting", listOf("QUALITY", "FEATURE", "AMBIENT")),
+            ),
+            settings.optionGroups(),
+        )
     }
 
     @Test

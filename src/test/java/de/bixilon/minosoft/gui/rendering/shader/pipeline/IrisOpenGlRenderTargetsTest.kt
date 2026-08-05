@@ -227,6 +227,36 @@ class IrisOpenGlRenderTargetsTest {
     }
 
     @Test
+    fun `scene feedback snapshots only buffers sampled while attached`() {
+        val color2 = ShaderBufferId(ShaderBufferKind.COLORTEX, 2)
+        val color7 = ShaderBufferId(ShaderBufferKind.COLORTEX, 7)
+        val color11 = ShaderBufferId(ShaderBufferKind.COLORTEX, 11)
+
+        assertEquals(
+            setOf(color7),
+            IrisOpenGlRenderTargets.feedbackSnapshotBuffers(
+                ShaderProgramPhase.TERRAIN,
+                writes = listOf(color2, color7, color11),
+                samples = listOf(color7),
+            ),
+        )
+        assertTrue(
+            IrisOpenGlRenderTargets.feedbackSnapshotBuffers(
+                ShaderProgramPhase.TERRAIN,
+                writes = listOf(color2, color11),
+                samples = listOf(color7),
+            ).isEmpty(),
+        )
+        assertTrue(
+            IrisOpenGlRenderTargets.feedbackSnapshotBuffers(
+                ShaderProgramPhase.COMPOSITE,
+                writes = listOf(color7),
+                samples = listOf(color7),
+            ).isEmpty(),
+        )
+    }
+
+    @Test
     fun `per-buffer blend state inherits the program override without leaking to explicit outputs`() {
         val inherited = BlendFunctionState(
             BlendingFunctions.SOURCE_ALPHA,

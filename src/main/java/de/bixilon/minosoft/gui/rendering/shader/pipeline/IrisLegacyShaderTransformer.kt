@@ -403,9 +403,11 @@ internal object IrisLegacyShaderTransformer {
                 )
             }
             if (name == "gbuffers_weather") {
-                return Stages(
-                    replaceAfterVersion(vertex, MODERN_WEATHER_VERTEX_BODY),
-                    transformModernSceneFragment(fragment, MODERN_WEATHER_FRAGMENT_HEADER),
+                return transformGeneratedScene(
+                    vertex,
+                    fragment,
+                    MODERN_WEATHER_VERTEX_BODY,
+                    MODERN_WEATHER_FRAGMENT_HEADER,
                 )
             }
             if (name == "gbuffers_skytextured") {
@@ -441,15 +443,19 @@ internal object IrisLegacyShaderTransformer {
                 name == "gbuffers_entities_glowing" ||
                 name == "gbuffers_spidereyes"
             ) {
-                return Stages(
-                    replaceAfterVersion(vertex, MODERN_ENTITY_VERTEX_BODY),
-                    transformModernSceneFragment(fragment, MODERN_ENTITY_FRAGMENT_HEADER),
+                return transformGeneratedScene(
+                    vertex,
+                    fragment,
+                    MODERN_ENTITY_VERTEX_BODY,
+                    MODERN_ENTITY_FRAGMENT_HEADER,
                 )
             }
             if (name == "gbuffers_block" || name == "gbuffers_block_translucent") {
-                return Stages(
-                    replaceAfterVersion(vertex, MODERN_BLOCK_VERTEX_BODY),
-                    transformModernSceneFragment(fragment, MODERN_ENTITY_FRAGMENT_HEADER),
+                return transformGeneratedScene(
+                    vertex,
+                    fragment,
+                    MODERN_BLOCK_VERTEX_BODY,
+                    MODERN_ENTITY_FRAGMENT_HEADER,
                 )
             }
             if (name == "gbuffers_beaconbeam") {
@@ -459,9 +465,11 @@ internal object IrisLegacyShaderTransformer {
                 )
             }
             if (name == "gbuffers_hand" || name == "gbuffers_hand_water") {
-                return Stages(
-                    replaceAfterVersion(vertex, MODERN_HAND_VERTEX_BODY),
-                    transformModernSceneFragment(fragment, MODERN_ENTITY_FRAGMENT_HEADER),
+                return transformGeneratedScene(
+                    vertex,
+                    fragment,
+                    MODERN_HAND_VERTEX_BODY,
+                    MODERN_ENTITY_FRAGMENT_HEADER,
                 )
             }
             if (name == "gbuffers_armor_glint") {
@@ -535,9 +543,11 @@ internal object IrisLegacyShaderTransformer {
                 transformModernSkyBasicVertex(vertex),
                 transformModernSkyBasicFragment(fragment),
             )
-            name == "gbuffers_weather" -> Stages(
-                replaceAfterVersion(vertex, MODERN_WEATHER_VERTEX_BODY),
-                transformModernSceneFragment(fragment, MODERN_WEATHER_FRAGMENT_HEADER),
+            name == "gbuffers_weather" -> transformGeneratedScene(
+                vertex,
+                fragment,
+                MODERN_WEATHER_VERTEX_BODY,
+                MODERN_WEATHER_FRAGMENT_HEADER,
             )
             name == "gbuffers_skytextured" -> Stages(
                 transformSkyTextureVertex(vertex),
@@ -563,21 +573,27 @@ internal object IrisLegacyShaderTransformer {
             name == "gbuffers_entities" ||
                 name == "gbuffers_entities_translucent" ||
                 name == "gbuffers_entities_glowing" ||
-                name == "gbuffers_spidereyes" -> Stages(
-                replaceAfterVersion(vertex, MODERN_ENTITY_VERTEX_BODY),
-                transformModernSceneFragment(fragment, MODERN_ENTITY_FRAGMENT_HEADER),
+                name == "gbuffers_spidereyes" -> transformGeneratedScene(
+                vertex,
+                fragment,
+                MODERN_ENTITY_VERTEX_BODY,
+                MODERN_ENTITY_FRAGMENT_HEADER,
             )
-            name == "gbuffers_block" || name == "gbuffers_block_translucent" -> Stages(
-                replaceAfterVersion(vertex, MODERN_BLOCK_VERTEX_BODY),
-                transformModernSceneFragment(fragment, MODERN_ENTITY_FRAGMENT_HEADER),
+            name == "gbuffers_block" || name == "gbuffers_block_translucent" -> transformGeneratedScene(
+                vertex,
+                fragment,
+                MODERN_BLOCK_VERTEX_BODY,
+                MODERN_ENTITY_FRAGMENT_HEADER,
             )
             name == "gbuffers_beaconbeam" -> Stages(
                 replaceAfterVersion(vertex, MODERN_BEACON_VERTEX_BODY),
                 transformModernSceneFragment(fragment, MODERN_ENTITY_FRAGMENT_HEADER),
             )
-            name == "gbuffers_hand" || name == "gbuffers_hand_water" -> Stages(
-                replaceAfterVersion(vertex, MODERN_HAND_VERTEX_BODY),
-                transformModernSceneFragment(fragment, MODERN_ENTITY_FRAGMENT_HEADER),
+            name == "gbuffers_hand" || name == "gbuffers_hand_water" -> transformGeneratedScene(
+                vertex,
+                fragment,
+                MODERN_HAND_VERTEX_BODY,
+                MODERN_ENTITY_FRAGMENT_HEADER,
             )
             name == "gbuffers_armor_glint" -> Stages(
                 replaceAfterVersion(vertex, MODERN_GLINT_VERTEX_BODY),
@@ -1089,7 +1105,7 @@ internal object IrisLegacyShaderTransformer {
     }
 
     private fun transformModernTerrainVertex(source: String, shadow: Boolean): String {
-        var transformed = core(source)
+        var transformed = terrainPlayerModelView(core(source))
             .replace(Regex("""\bvarying\b"""), "out")
             .replace(Regex("""\battribute\b"""), "in")
             .replace(MODERN_TERRAIN_ATTRIBUTE, "")
@@ -1140,7 +1156,7 @@ internal object IrisLegacyShaderTransformer {
     }
 
     private fun transformModernTerrainFragment(source: String): String {
-        var transformed = core(source)
+        var transformed = terrainPlayerModelView(core(source))
             .replace(Regex("""\bvarying\b"""), "in")
             .replace(MODERN_DIFFUSE_SAMPLER, "")
             .replace(Regex("""\buniform\s+sampler2D\s+(?:gtexture|tex|texture)\s*;"""), "")
@@ -1213,6 +1229,73 @@ internal object IrisLegacyShaderTransformer {
                 minosoftPackMain();
             }
         """.trimIndent().prependIndent("\n")
+    }
+
+    private fun transformGeneratedScene(
+        vertex: String,
+        fragment: String,
+        vertexBody: String,
+        fragmentHeader: String,
+    ): Stages {
+        val transformedFragment = transformModernSceneFragment(fragment, fragmentHeader)
+        return Stages(
+            replaceAfterVersion(vertex, adaptGeneratedVertexInterface(vertexBody, transformedFragment)),
+            transformedFragment,
+        )
+    }
+
+    /**
+     * Generated scene vertices replace the pack vertex stage, but their outputs
+     * still have to mirror the pack fragment's linked varying interface. Packs
+     * differ here: Complementary uses flat vec3 tangent frames while Bliss uses
+     * smooth vec4 tangents and smooth weather light coordinates.
+     */
+    private fun adaptGeneratedVertexInterface(vertexBody: String, fragment: String): String {
+        var adapted = vertexBody
+        val tangentInput = Regex(
+            """(?m)^\s*(flat\s+)?in\s+vec([34])\s+[^;]*\btangent\b[^;]*;\s*$""",
+        ).find(fragment)
+        if (tangentInput != null) {
+            val flat = tangentInput.groupValues[1].isNotEmpty()
+            val dimensions = tangentInput.groupValues[2]
+            adapted = Regex("""(?m)^(\s*)flat\s+out\s+vec3\s+tangent;\s*$""").replace(adapted) { match ->
+                "${match.groupValues[1]}${if (flat) "flat " else ""}out vec$dimensions tangent;"
+            }
+            if (dimensions == "4") {
+                adapted = adapted
+                    .replace(
+                        "tangent = normalize(surfaceTangent.xyz);",
+                        "tangent = vec4(normalize(surfaceTangent.xyz), surfaceTangent.w);",
+                    )
+                    .replace(
+                        "tangent = normalize((uMatrix * vec4(vinTangent.xyz, 0.0)).xyz);",
+                        "tangent = vec4(normalize((uMatrix * vec4(vinTangent.xyz, 0.0)).xyz), vinTangent.w);",
+                    )
+                    .replace("cross(surfaceNormal, tangent)", "cross(surfaceNormal, tangent.xyz)")
+                    .replace("cross(normal, tangent)", "cross(normal, tangent.xyz)")
+                    .replace("mat3(tangent, binormal, surfaceNormal)", "mat3(tangent.xyz, binormal, surfaceNormal)")
+                    .replace("mat3(tangent, binormal, normal)", "mat3(tangent.xyz, binormal, normal)")
+            }
+        }
+
+        val binormalInput = Regex(
+            """(?m)^\s*(flat\s+)?in\s+vec3\s+[^;]*\bbinormal\b[^;]*;\s*$""",
+        ).find(fragment)
+        if (binormalInput != null) {
+            val flat = binormalInput.groupValues[1].isNotEmpty()
+            adapted = Regex("""(?m)^(\s*)flat\s+out\s+vec3\s+binormal;\s*$""").replace(adapted) { match ->
+                "${match.groupValues[1]}${if (flat) "flat " else ""}out vec3 binormal;"
+            }
+        }
+
+        val lightInput = Regex("""(?m)^\s*(flat\s+)?in\s+vec2\s+lmCoord\s*;\s*$""").find(fragment)
+        if (lightInput != null) {
+            val flat = lightInput.groupValues[1].isNotEmpty()
+            adapted = Regex("""(?m)^(\s*)flat\s+out\s+vec2\s+lmCoord;\s*$""").replace(adapted) { match ->
+                "${match.groupValues[1]}${if (flat) "flat " else ""}out vec2 lmCoord;"
+            }
+        }
+        return adapted
     }
 
     private fun transformModernSceneFragment(
@@ -1891,7 +1974,7 @@ internal object IrisLegacyShaderTransformer {
     }
 
     private fun transformTerrainVertex(source: String): String {
-        var transformed = core(source)
+        var transformed = terrainPlayerModelView(core(source))
             .replace(MC_ENTITY, "")
             .replace(Regex("""\bvarying\b"""), "out")
             .replace(Regex("""\battribute\b"""), "in")
@@ -1928,8 +2011,19 @@ internal object IrisLegacyShaderTransformer {
         return wrapAfterVersion(terrain, LEGACY_TEXTURED_SCENE_CONDITION, TEXTURED_SCENE_VERTEX_BODY)
     }
 
+    /**
+     * Pack terrain matrices are rotation-only, while retained vertices and the
+     * host model-view share one rebased world origin. Keep the host matrix for
+     * legacy gl_ModelViewMatrix aliases, but expose the rotation-only pair to
+     * authored gbufferModelView expressions so reconstructed playerPos values
+     * remain camera-relative at non-zero world coordinates.
+     */
+    private fun terrainPlayerModelView(source: String): String = source
+        .replace(Regex("""\bgbufferModelViewInverse\b"""), "minosoftPlayerModelViewInverse")
+        .replace(Regex("""\bgbufferModelView\b"""), "minosoftPlayerModelView")
+
     private fun transformTerrainFragment(source: String): String {
-        var transformed = core(source)
+        var transformed = terrainPlayerModelView(core(source))
             .replace(DIFFUSE_SAMPLER, "")
             .replace(MODERN_DIFFUSE_SAMPLER, "")
             .replace(LIGHTMAP_SAMPLER, "")
@@ -3811,6 +3905,8 @@ internal object IrisLegacyShaderTransformer {
         flat out uint minosoftTextureArray;
         out float minosoftTextureLayer;
 
+        uniform mat4 gbufferModelView;
+
         vec2 minosoftTerrainUv() {
             uint packed = floatBitsToUint(vinAmbientUV);
             vec2 physical =
@@ -4311,6 +4407,7 @@ internal object IrisLegacyShaderTransformer {
         flat out uint minosoftLightIndex;
         out float minosoftFogFragCoord;
 
+        uniform mat4 gbufferModelView;
         uniform mat4 gbufferProjection;
 
         vec2 minosoftLegacyUv() {

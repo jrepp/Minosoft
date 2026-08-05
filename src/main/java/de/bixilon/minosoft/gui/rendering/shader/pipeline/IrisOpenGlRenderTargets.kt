@@ -30,6 +30,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.DepthFunctions
 import de.bixilon.minosoft.gui.rendering.system.base.PolygonModes
 import de.bixilon.minosoft.gui.rendering.system.base.RenderingCapabilities
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.FramebufferState
+import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.scaledFramebufferSize
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.depth.DepthAttachment
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.stencil.StencilAttachment
 import de.bixilon.minosoft.gui.rendering.system.base.buffer.frame.attachment.texture.TextureAttachment
@@ -91,6 +92,7 @@ internal class IrisOpenGlRenderTargets(
     private val imagePlans = IdentityHashMap<NativeShader, ImageBindingPlan>()
     private val comparisonModes = mutableMapOf<Int, Int>()
     private val minificationFilters = mutableMapOf<Int, Int>()
+    private var feedbackSamplerTextures = emptyMap<ShaderBufferId, Int>()
 
     val logicalBufferCount: Int get() = buffers.size
     val physicalTextureCount: Int get() = buffers.values.sumOf { if (it.alternate < 0) 1 else 2 }
@@ -133,10 +135,7 @@ internal class IrisOpenGlRenderTargets(
 
     private fun hostSize(): Vec2i {
         val host = context.framebuffer.main
-        return Vec2i(
-            (host.size.x * host.scale).roundToInt().coerceAtLeast(1),
-            (host.size.y * host.scale).roundToInt().coerceAtLeast(1),
-        )
+        return scaledFramebufferSize(host.size, host.scale)
     }
 
     fun bindView(view: RenderViewId) {
@@ -149,6 +148,7 @@ internal class IrisOpenGlRenderTargets(
             else -> defaultOutputs(ShaderBufferKind.COLORTEX)
         }
         bindOutputs(view, outputs)
+        feedbackSamplerTextures = emptyMap()
         restoreHostBlend()
     }
 
@@ -186,6 +186,19 @@ internal class IrisOpenGlRenderTargets(
             "Program outputs $outputs do not belong to view $view"
         }
         val alternateWrites = program.phase in FULLSCREEN_BUFFER_PHASES
+        feedbackSamplerTextures = feedbackSnapshotBuffers(
+            program.phase,
+            outputs,
+            program.resourceUsage.sampledBuffers.values,
+        ).associateWith { id ->
+            val buffer = requireNotNull(buffers[id]) { "${program.name} snapshots undeclared Iris buffer $id" }
+            val snapshot = buffer.writeTexture(alternateWrite = true)
+            require(snapshot != buffer.readTexture()) {
+                "${program.name} requires a feedback snapshot for single-buffered Iris buffer $id"
+            }
+            copyColor(buffer, snapshot)
+            snapshot
+        }
         validatePassTextureAccess(
             program.name,
             attachedTextures = outputs.map { id ->
@@ -193,8 +206,9 @@ internal class IrisOpenGlRenderTargets(
                     .writeTexture(alternateWrites)
             },
             sampledTextures = program.resourceUsage.sampledBuffers.mapValues { (_, id) ->
-                requireNotNull(buffers[id]) { "${program.name} samples undeclared Iris buffer $id" }
-                    .readTexture()
+                feedbackSamplerTextures[id]
+                    ?: requireNotNull(buffers[id]) { "${program.name} samples undeclared Iris buffer $id" }
+                        .readTexture()
             },
         )
         bindOutputs(
@@ -326,7 +340,11 @@ internal class IrisOpenGlRenderTargets(
             val buffer = requireNotNull(buffers[id]) {
                 "${program.name} generates mipmaps for undeclared Iris buffer $id"
             }
-            system.bindTexture(system.framebufferTextureIndex, GL_TEXTURE_2D, buffer.readTexture())
+            system.bindTexture(
+                system.framebufferTextureIndex,
+                GL_TEXTURE_2D,
+                feedbackSamplerTextures[id] ?: buffer.readTexture(),
+            )
             gl { glGenerateMipmap(GL_TEXTURE_2D) }
         }
         bindImages(program, native, customResources)
@@ -339,7 +357,7 @@ internal class IrisOpenGlRenderTargets(
         }
         for (entry in binding.buffers) {
             val buffer = requireNotNull(buffers[entry.id]) { "${program.name} samples undeclared Iris buffer ${entry.id}" }
-            val texture = buffer.readTexture()
+            val texture = feedbackSamplerTextures[entry.id] ?: buffer.readTexture()
             system.bindTexture(entry.unit, GL_TEXTURE_2D, texture)
             // Iris's MipmapEnabled declaration applies to this program's
             // sampling boundary. A later writer replaces level zero without
@@ -578,6 +596,16 @@ internal class IrisOpenGlRenderTargets(
             mipmaps -> GL_LINEAR_MIPMAP_LINEAR
             filter == ShaderBufferFilter.NEAREST -> GL_NEAREST
             else -> GL_LINEAR
+        }
+
+        internal fun feedbackSnapshotBuffers(
+            phase: ShaderProgramPhase,
+            writes: Collection<ShaderBufferId>,
+            samples: Collection<ShaderBufferId>,
+        ): Set<ShaderBufferId> = if (phase in FULLSCREEN_BUFFER_PHASES) {
+            emptySet()
+        } else {
+            writes.toSet().intersect(samples.toSet())
         }
 
         internal fun validatePassTextureAccess(
@@ -826,6 +854,67 @@ internal class IrisOpenGlRenderTargets(
         }
     }
 
+    private fun copyColor(source: Buffer, targetTexture: Int) {
+        val previousFramebuffer = system.framebuffer
+        try {
+            system.bindFramebuffer(GL_READ_FRAMEBUFFER, copyReadFramebuffer)
+            system.work.framebufferAttachmentChange()
+            gl {
+                glFramebufferTexture2D(
+                    GL_READ_FRAMEBUFFER,
+                    GL_COLOR_ATTACHMENT0,
+                    GL_TEXTURE_2D,
+                    source.readTexture(),
+                    0,
+                )
+            }
+            system.work.readBufferChange()
+            gl { glReadBuffer(GL_COLOR_ATTACHMENT0) }
+            system.bindFramebuffer(GL_DRAW_FRAMEBUFFER, copyDrawFramebuffer)
+            system.work.framebufferAttachmentChange()
+            gl {
+                glFramebufferTexture2D(
+                    GL_DRAW_FRAMEBUFFER,
+                    GL_COLOR_ATTACHMENT0,
+                    GL_TEXTURE_2D,
+                    targetTexture,
+                    0,
+                )
+            }
+            system.work.drawBufferChange()
+            gl { glDrawBuffer(GL_COLOR_ATTACHMENT0) }
+            system.work.framebufferCompletenessCheck()
+            require(gl { glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) } == GL_FRAMEBUFFER_COMPLETE) {
+                "Iris feedback snapshot read framebuffer is incomplete"
+            }
+            system.work.framebufferCompletenessCheck()
+            require(gl { glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) } == GL_FRAMEBUFFER_COMPLETE) {
+                "Iris feedback snapshot draw framebuffer is incomplete"
+            }
+            gl {
+                glBlitFramebuffer(
+                    0,
+                    0,
+                    source.size.x,
+                    source.size.y,
+                    0,
+                    0,
+                    source.size.x,
+                    source.size.y,
+                    GL_COLOR_BUFFER_BIT,
+                    GL_NEAREST,
+                )
+            }
+        } finally {
+            // Copy framebuffer binds bypass the cached logical framebuffer.
+            if (previousFramebuffer == null) {
+                system.bindFramebuffer(GL_FRAMEBUFFER, 0)
+            } else {
+                previousFramebuffer.bind()
+            }
+        }
+    }
+
     private fun createFramebufferName(): Int {
         val framebuffer = gl { glGenFramebuffers() }
         system.resources.created(OpenGlResourceType.FRAMEBUFFER, framebuffer)
@@ -863,6 +952,7 @@ internal class IrisOpenGlRenderTargets(
             }
         }
         buffers.clear()
+        feedbackSamplerTextures = emptyMap()
         initialized = false
         failure?.let { throw it }
     }

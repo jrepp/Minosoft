@@ -38,10 +38,13 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureManager
 import de.bixilon.minosoft.gui.rendering.terrain.TerrainMaterialClass
 import de.bixilon.minosoft.gui.rendering.terrain.NEAR_TERRAIN_MATERIALS
 import de.bixilon.minosoft.util.json.Jackson
+import java.io.StringReader
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.Locale
+import java.util.Properties
 import java.util.zip.ZipFile
 import kotlin.io.path.isDirectory
 
@@ -490,16 +493,34 @@ object IrisShaderPackPlanner {
             customResources = customResources,
             waterShadow = waterShadow,
         )
-        val programs = rawPrograms.map { program ->
+        val deactivatedStageOverrides = mutableMapOf<IrisTextureStage, MutableSet<ShaderBufferId>>()
+        val programUsages = linkedMapOf<String, ShaderProgramResourceUsage>()
+        // Stage custom textures bootstrap render-target aliases only until the
+        // first pass flips that target; later passes must sample its produced side.
+        rawPrograms.sortedWith(
+            compareBy<ShaderProgramSource>(
+                { it.phase.ordinal },
+                { fullscreenProgramIndex(it.name) },
+                ShaderProgramSource::name,
+            ),
+        ).forEach { program ->
+            val stage = textureStage(program.phase)
             val usage = resourceUsage(
                 program,
                 properties,
                 waterShadow,
                 texturePlan,
                 customResources,
+                stage?.let(deactivatedStageOverrides::get).orEmpty(),
             )
+            programUsages[program.name] = usage
+            if (program.phase in FULLSCREEN_BUFFER_PHASES && stage != null) {
+                deactivatedStageOverrides.getOrPut(stage, ::linkedSetOf).addAll(usage.flipsAfter)
+            }
+        }
+        val programs = rawPrograms.map { program ->
             program.copy(
-                resourceUsage = usage,
+                resourceUsage = programUsages.getValue(program.name),
                 blendOverride = blendOverride(program, properties),
             )
         }
@@ -551,7 +572,7 @@ object IrisShaderPackPlanner {
         return options(files, selectProgramDirectory(files, null))
     }
 
-    fun settings(path: Path): ShaderPackSettings {
+    fun settings(path: Path, language: String = DEFAULT_LANGUAGE): ShaderPackSettings {
         val files = readPack(path).text
         val options = options(files, selectProgramDirectory(files, null))
         val byName = options.associateBy(ShaderPackOption::name)
@@ -583,7 +604,45 @@ object IrisShaderPackPlanner {
             "shaders.properties declares too many option screens"
         }
         validateScreens(main, subScreens, byName)
-        return ShaderPackSettings(options, profiles, sliders, main, subScreens)
+        return ShaderPackSettings(options, profiles, sliders, main, subScreens, language(files, language))
+    }
+
+    private fun language(files: Map<String, String>, requested: String): ShaderPackLanguage {
+        val normalized = requested.replace('-', '_').lowercase(Locale.ROOT)
+        require(LANGUAGE_ID.matches(normalized)) { "Invalid shader-pack language: $requested" }
+        val languageFiles = linkedMapOf<String, String>()
+        files.forEach { (path, source) ->
+            if (!path.startsWith("lang/", ignoreCase = true) || !path.endsWith(LANGUAGE_EXTENSION, ignoreCase = true)) {
+                return@forEach
+            }
+            val fileName = path.substringAfterLast('/')
+            val id = fileName.dropLast(LANGUAGE_EXTENSION.length).lowercase(Locale.ROOT)
+            require(LANGUAGE_ID.matches(id)) { "Invalid shader-pack language file: $path" }
+            require(languageFiles.putIfAbsent(id, source) == null) {
+                "Shader pack contains duplicate language file for $id"
+            }
+        }
+        val entries = linkedMapOf<String, String>()
+        listOf(DEFAULT_LANGUAGE, normalized).distinct().forEach { id ->
+            val source = languageFiles[id] ?: return@forEach
+            val properties = Properties()
+            properties.load(StringReader(source))
+            require(properties.size <= MAX_LANGUAGE_ENTRIES) {
+                "Shader-pack language $id exceeds $MAX_LANGUAGE_ENTRIES entries"
+            }
+            properties.forEach { (rawKey, rawValue) ->
+                val key = rawKey.toString().trim()
+                val value = rawValue.toString().trim()
+                require(key.isNotBlank() && key.length <= MAX_LANGUAGE_KEY_LENGTH) {
+                    "Shader-pack language $id contains an invalid key"
+                }
+                require(value.length <= MAX_LANGUAGE_VALUE_LENGTH) {
+                    "Shader-pack language value for $key exceeds $MAX_LANGUAGE_VALUE_LENGTH characters"
+                }
+                entries[key] = value
+            }
+        }
+        return ShaderPackLanguage(entries)
     }
 
     private fun options(
@@ -1956,6 +2015,7 @@ object IrisShaderPackPlanner {
         waterShadow: Boolean,
         textures: IrisTexturePlan,
         customResources: IrisCustomResourcePlan,
+        deactivatedStageOverrides: Set<ShaderBufferId>,
     ): ShaderProgramResourceUsage {
         val writes = when (program.phase) {
             ShaderProgramPhase.FINAL -> emptyList()
@@ -1974,7 +2034,7 @@ object IrisShaderPackPlanner {
                 ShaderBufferKind.COLORTEX,
             )
         }
-        val custom = customTextures(program, textures)
+        val custom = customTextures(program, textures, waterShadow, deactivatedStageOverrides)
         val imageSamplers = customResources.images.mapNotNull { image ->
             image.sampler?.takeIf { it in program.samplers }?.let { it to image.name }
         }.toMap(linkedMapOf())
@@ -2635,6 +2695,8 @@ object IrisShaderPackPlanner {
     private fun customTextures(
         program: ShaderProgramSource,
         plan: IrisTexturePlan,
+        waterShadow: Boolean = false,
+        deactivatedStageOverrides: Set<ShaderBufferId> = emptySet(),
     ): Map<String, IrisTextureId> {
         val stage = textureStage(program.phase)
         return buildMap {
@@ -2643,6 +2705,7 @@ object IrisShaderPackPlanner {
                     .filter {
                         it.stage == stage &&
                             it.sampler in program.samplers &&
+                            samplerBuffer(it.sampler, program.phase, waterShadow) !in deactivatedStageOverrides &&
                             customTextureMatchesSampler(program, it)
                     }
                     .forEach { put(it.sampler, it.texture.id) }
@@ -2684,6 +2747,9 @@ object IrisShaderPackPlanner {
             -> IrisTextureStage.GBUFFERS_AND_SHADOW
             else -> null
         }
+
+    private fun fullscreenProgramIndex(name: String): Int =
+        name.takeLastWhile(Char::isDigit).toIntOrNull() ?: 0
 
     /**
      * Iris rewrites raw custom-texture aliases only when the declared GLSL
@@ -3503,6 +3569,12 @@ object IrisShaderPackPlanner {
     private val BLACK_CLEAR = listOf(0.0f, 0.0f, 0.0f, 0.0f)
     private val WHITE_CLEAR = listOf(1.0f, 1.0f, 1.0f, 1.0f)
     private val INTEGER = Regex("""[0-9]+""")
+    private val LANGUAGE_ID = Regex("[a-z0-9_]{2,32}")
+    private const val LANGUAGE_EXTENSION = ".lang"
+    private const val DEFAULT_LANGUAGE = "en_us"
+    private const val MAX_LANGUAGE_ENTRIES = 16_384
+    private const val MAX_LANGUAGE_KEY_LENGTH = 512
+    private const val MAX_LANGUAGE_VALUE_LENGTH = 4_096
     private const val DEFAULT_SHADOW_RESOLUTION = 1024
     private const val DEFAULT_NOISE_TEXTURE_RESOLUTION = 256
     private const val MAX_CUSTOM_TEXTURE_SIZE = 4096
@@ -3548,12 +3620,29 @@ data class ShaderPackScreen(
     val columns: Int?,
 )
 
+data class ShaderPackLanguage(
+    val entries: Map<String, String> = emptyMap(),
+) {
+    fun option(name: String): String? = entries["option.$name"]
+    fun optionComment(name: String): String? = entries["option.$name.comment"]
+    fun profile(name: String): String? = entries["profile.$name"]
+    fun screen(name: String): String? = entries["screen.$name"]
+    fun value(option: String, value: String): String? =
+        entries["value.$option.$value"] ?: entries["value.$value"]
+}
+
+data class ShaderPackOptionGroup(
+    val screenId: String?,
+    val optionNames: List<String>,
+)
+
 data class ShaderPackSettings(
     val options: List<ShaderPackOption>,
     val profiles: List<ShaderPackProfile>,
     val sliders: List<String>,
     val mainScreen: ShaderPackScreen?,
     val subScreens: List<ShaderPackScreen>,
+    val language: ShaderPackLanguage = ShaderPackLanguage(),
 ) {
     fun selectedProfile(overrides: Map<String, String>): ShaderPackProfile? {
         val values = options.associate { it.name to (overrides[it.name] ?: it.defaultValue) }
@@ -3568,5 +3657,57 @@ data class ShaderPackSettings(
                 ),
             )
             ?.value
+    }
+
+    fun optionGroups(): List<ShaderPackOptionGroup> {
+        val optionNames = options.map(ShaderPackOption::name)
+        val knownOptions = optionNames.toSet()
+        val screens = subScreens.associateBy { requireNotNull(it.id) }
+        val assigned = linkedSetOf<String>()
+
+        fun collect(screen: ShaderPackScreen, visiting: MutableSet<String> = linkedSetOf()): List<String> {
+            screen.id?.let { require(visiting.add(it)) { "Shader option screen cycle at $it" } }
+            val collected = linkedSetOf<String>()
+            screen.entries.forEach { entry ->
+                when {
+                    entry == "*" -> collected += optionNames
+                    entry in knownOptions -> collected += entry
+                    entry.startsWith('[') && entry.endsWith(']') -> {
+                        screens[entry.substring(1, entry.lastIndex)]?.let { collected += collect(it, visiting) }
+                    }
+                }
+            }
+            screen.id?.let(visiting::remove)
+            return collected.toList()
+        }
+
+        val groups = mutableListOf<ShaderPackOptionGroup>()
+        val general = mainScreen?.entries.orEmpty().filterTo(linkedSetOf()) { it in knownOptions }
+        assigned += general
+
+        mainScreen?.entries.orEmpty().forEach { entry ->
+            if (!entry.startsWith('[') || !entry.endsWith(']')) return@forEach
+            val id = entry.substring(1, entry.lastIndex)
+            val screen = screens[id] ?: return@forEach
+            val names = collect(screen).filterNot(assigned::contains)
+            if (names.isEmpty()) return@forEach
+            assigned += names
+            groups += ShaderPackOptionGroup(id, names)
+        }
+
+        if (mainScreen == null || mainScreen.entries.contains("*")) {
+            val wildcard = optionNames.filterNot(assigned::contains)
+            general += wildcard
+            assigned += wildcard
+        }
+        groups.add(0, ShaderPackOptionGroup(null, general.toList()))
+
+        val remaining = optionNames.filterNot(assigned::contains)
+        if (remaining.isNotEmpty()) groups += ShaderPackOptionGroup(OTHER_GROUP_ID, remaining)
+        return groups
+    }
+
+    companion object {
+        const val OTHER_GROUP_ID = "minosoft_other"
     }
 }
