@@ -1,0 +1,444 @@
+{
+  "name": "terrain-distant-cardinal-views",
+  "steps": [
+    {
+      "name": "isolated local client has rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "establish the local generated origin",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 }
+      },
+      "assert": [
+        { "pointer": "/camera/x", "equals": 0.5 },
+        { "pointer": "/camera/y", "equals": 20.0 },
+        { "pointer": "/camera/z", "equals": 0.5 }
+      ]
+    },
+    {
+      "name": "local reference player remains at the generated origin",
+      "type": "request",
+      "role": "client",
+      "operation": "state.sample",
+      "body": { "view": "client.player" },
+      "assert": [
+        { "pointer": "/player/x", "equals": 0.5 },
+        { "pointer": "/player/y", "equals": 20.0 },
+        { "pointer": "/player/z", "equals": 0.5 },
+        { "pointer": "/player/gamemode", "equals": "creative" },
+        { "pointer": "/worldState/loadedChunks", "min": 1 }
+      ]
+    },
+    {
+      "name": "select deterministic built in presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.presentation",
+      "deadlineMs": 30000,
+      "body": { "enabled": false },
+      "assert": [
+        { "pointer": "/enabled", "equals": false },
+        { "pointer": "/installed", "equals": false }
+      ]
+    },
+    {
+      "name": "enable distant terrain without changing its profile",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.presentation",
+      "body": { "enabled": true },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/nonPersistent", "equals": true }
+      ]
+    },
+    {
+      "name": "prepare fixed daylight without transient presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "timeOfDay": 6000,
+        "clearWeather": true,
+        "hideHud": true,
+        "hideHitboxes": true,
+        "hideClouds": true,
+        "hideWorldBorder": true,
+        "hideEntities": true,
+        "hideParticles": true
+      },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": false },
+        { "pointer": "/time", "equals": 6000 },
+        { "pointer": "/rain", "equals": 0.0 }
+      ]
+    },
+    {
+      "name": "look north from the cardinal reference camera",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 80.5, "y": 60.0, "z": 80.5, "yaw": 0.0, "pitch": 30.0 }
+      },
+      "assert": [
+        { "pointer": "/camera/x", "equals": 80.5 },
+        { "pointer": "/camera/y", "equals": 60.0 },
+        { "pointer": "/camera/z", "equals": 80.5 },
+        { "pointer": "/camera/yaw", "equals": 0.0 },
+        { "pointer": "/camera/pitch", "equals": 30.0 }
+      ]
+    },
+    {
+      "name": "allow cardinal reference source and visibility state to settle",
+      "type": "sleep",
+      "duration": "45s"
+    },
+    {
+      "name": "north-facing terrain reaches the complete idle boundary",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/outstandingBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/pendingSubmissions", "equals": 0 },
+        { "pointer": "/idleState/pendingFences", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "north-facing distant main and shadow views are complete",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.coverage",
+      "body": {},
+      "assert": [
+        { "pointer": "/publication/1/domain", "equals": "DISTANT" },
+        { "pointer": "/publication/1/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/publication/1/views/0/missingPageCount", "equals": 0 },
+        { "pointer": "/publication/1/views/1/drawPageCount", "min": 1 },
+        { "pointer": "/publication/1/views/1/missingPageCount", "equals": 0 }
+      ]
+    },
+    {
+      "name": "clear focus-loss state before north capture",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true, "hideWorldBorder": true, "hideEntities": true, "hideParticles": true },
+      "assert": [
+        { "pointer": "/overlaysCleared", "equals": true },
+        { "pointer": "/hudEnabled", "equals": false }
+      ]
+    },
+    {
+      "name": "north-facing distant terrain",
+      "type": "screenshot",
+      "baseline": "../baselines/terrain-distant-cardinal-views/north-built-in-macos-1800x1000.png",
+      "sourceWidth": 1800,
+      "sourceHeight": 1000,
+      "region": [100, 350, 1150, 550],
+      "pixelThreshold": 4,
+      "maxChangedRatio": 0.02,
+      "maxMeanError": 1.0
+    },
+    {
+      "name": "look east from the identical camera position",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 80.5, "y": 60.0, "z": 80.5, "yaw": -90.0, "pitch": 30.0 }
+      },
+      "assert": [
+        { "pointer": "/camera/x", "equals": 80.5 },
+        { "pointer": "/camera/z", "equals": 80.5 },
+        { "pointer": "/camera/yaw", "equals": -90.0 }
+      ]
+    },
+    {
+      "name": "allow east-facing visibility to settle",
+      "type": "sleep",
+      "duration": "5s"
+    },
+    {
+      "name": "east-facing terrain reaches the complete idle boundary",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/outstandingBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/pendingSubmissions", "equals": 0 },
+        { "pointer": "/idleState/pendingFences", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "east-facing distant main and shadow views are complete",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.coverage",
+      "body": {},
+      "assert": [
+        { "pointer": "/publication/1/domain", "equals": "DISTANT" },
+        { "pointer": "/publication/1/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/publication/1/views/0/missingPageCount", "equals": 0 },
+        { "pointer": "/publication/1/views/1/drawPageCount", "min": 1 },
+        { "pointer": "/publication/1/views/1/missingPageCount", "equals": 0 }
+      ]
+    },
+    {
+      "name": "clear focus-loss state before east capture",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true, "hideWorldBorder": true, "hideEntities": true, "hideParticles": true }
+    },
+    {
+      "name": "east-facing distant terrain",
+      "type": "screenshot",
+      "baseline": "../baselines/terrain-distant-cardinal-views/east-built-in-macos-1800x1000.png",
+      "sourceWidth": 1800,
+      "sourceHeight": 1000,
+      "region": [100, 350, 1150, 550],
+      "pixelThreshold": 4,
+      "maxChangedRatio": 0.02,
+      "maxMeanError": 1.0
+    },
+    {
+      "name": "look south from the identical camera position",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 80.5, "y": 60.0, "z": 80.5, "yaw": 180.0, "pitch": 30.0 }
+      },
+      "assert": [
+        { "pointer": "/camera/x", "equals": 80.5 },
+        { "pointer": "/camera/z", "equals": 80.5 },
+        { "pointer": "/camera/yaw", "equals": 180.0 }
+      ]
+    },
+    {
+      "name": "allow south-facing visibility to settle",
+      "type": "sleep",
+      "duration": "5s"
+    },
+    {
+      "name": "south-facing terrain reaches the complete idle boundary",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/outstandingBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/pendingSubmissions", "equals": 0 },
+        { "pointer": "/idleState/pendingFences", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "south-facing distant main and shadow views are complete",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.coverage",
+      "body": {},
+      "assert": [
+        { "pointer": "/publication/1/domain", "equals": "DISTANT" },
+        { "pointer": "/publication/1/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/publication/1/views/0/missingPageCount", "equals": 0 },
+        { "pointer": "/publication/1/views/1/drawPageCount", "min": 1 },
+        { "pointer": "/publication/1/views/1/missingPageCount", "equals": 0 }
+      ]
+    },
+    {
+      "name": "clear focus-loss state before south capture",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true, "hideWorldBorder": true, "hideEntities": true, "hideParticles": true }
+    },
+    {
+      "name": "south-facing distant terrain",
+      "type": "screenshot",
+      "baseline": "../baselines/terrain-distant-cardinal-views/south-built-in-macos-1800x1000.png",
+      "sourceWidth": 1800,
+      "sourceHeight": 1000,
+      "region": [100, 350, 1150, 550],
+      "pixelThreshold": 4,
+      "maxChangedRatio": 0.02,
+      "maxMeanError": 1.0
+    },
+    {
+      "name": "look west from the identical camera position",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 80.5, "y": 60.0, "z": 80.5, "yaw": 90.0, "pitch": 30.0 }
+      },
+      "assert": [
+        { "pointer": "/camera/x", "equals": 80.5 },
+        { "pointer": "/camera/z", "equals": 80.5 },
+        { "pointer": "/camera/yaw", "equals": 90.0 }
+      ]
+    },
+    {
+      "name": "allow west-facing visibility to settle",
+      "type": "sleep",
+      "duration": "5s"
+    },
+    {
+      "name": "west-facing terrain reaches the complete idle boundary",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": { "condition": "ALL", "timeoutMs": 29000 },
+      "assert": [
+        { "pointer": "/idleState/queuedBuilds", "equals": 0 },
+        { "pointer": "/idleState/outstandingBuilds", "equals": 0 },
+        { "pointer": "/idleState/pendingUploads", "equals": 0 },
+        { "pointer": "/idleState/pendingSubmissions", "equals": 0 },
+        { "pointer": "/idleState/pendingFences", "equals": 0 },
+        { "pointer": "/idleState/retiredBytes", "equals": 0 }
+      ]
+    },
+    {
+      "name": "west-facing distant main and shadow views are complete",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.coverage",
+      "body": {},
+      "assert": [
+        { "pointer": "/publication/1/domain", "equals": "DISTANT" },
+        { "pointer": "/publication/1/views/0/drawPageCount", "min": 1 },
+        { "pointer": "/publication/1/views/0/missingPageCount", "equals": 0 },
+        { "pointer": "/publication/1/views/1/drawPageCount", "min": 1 },
+        { "pointer": "/publication/1/views/1/missingPageCount", "equals": 0 }
+      ]
+    },
+    {
+      "name": "clear focus-loss state before west capture",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "hideHud": true, "hideHitboxes": true, "hideClouds": true, "hideWorldBorder": true, "hideEntities": true, "hideParticles": true }
+    },
+    {
+      "name": "west-facing distant terrain",
+      "type": "screenshot",
+      "baseline": "../baselines/terrain-distant-cardinal-views/west-built-in-macos-1800x1000.png",
+      "sourceWidth": 1800,
+      "sourceHeight": 1000,
+      "region": [100, 350, 1150, 550],
+      "pixelThreshold": 4,
+      "maxChangedRatio": 0.02,
+      "maxMeanError": 1.0
+    },
+    {
+      "name": "view rotation leaves terrain and GPU accounting healthy",
+      "type": "request",
+      "role": "client",
+      "operation": "render.substrate",
+      "body": {},
+      "assert": [
+        { "pointer": "/terrain/productionRuntime/failedBuilds", "equals": 0 },
+        { "pointer": "/terrain/productionRuntime/failedUploads", "equals": 0 },
+        { "pointer": "/terrain/regionStorage/failedSubmissionCount", "equals": 0 },
+        { "pointer": "/terrain/regionStorage/retiredBytes", "equals": 0 },
+        { "pointer": "/gpuResources/backend", "equals": "opengl" }
+      ]
+    },
+    {
+      "name": "restore ordinary reference camera",
+      "type": "request",
+      "role": "client",
+      "operation": "content.execute-local",
+      "body": {
+        "function": "minosoft:terrain_reference_pose",
+        "arguments": {},
+        "origin": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": 0.5, "y": 20.0, "z": 0.5, "yaw": 0.0, "pitch": 0.0 }
+      }
+    },
+    {
+      "name": "restore configured distant presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.distanthorizons.presentation",
+      "body": { "restore": true },
+      "assert": [
+        { "pointer": "/override", "equals": null },
+        { "pointer": "/configuredEnabled", "equals": true },
+        { "pointer": "/enabled", "equals": true }
+      ]
+    },
+    {
+      "name": "restore configured Bliss presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.presentation",
+      "deadlineMs": 30000,
+      "body": { "enabled": true },
+      "assert": [
+        { "pointer": "/enabled", "equals": true },
+        { "pointer": "/installed", "equals": true }
+      ]
+    },
+    {
+      "name": "restore ordinary visual presentation",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": {
+        "restoreTime": true,
+        "restoreWeather": true,
+        "hideHud": false,
+        "hideHitboxes": true,
+        "hideClouds": false,
+        "hideWorldBorder": false,
+        "hideEntities": false,
+        "hideParticles": false
+      },
+      "assert": [
+        { "pointer": "/hudEnabled", "equals": true },
+        { "pointer": "/timePrepared", "equals": false },
+        { "pointer": "/weatherPrepared", "equals": false }
+      ]
+    }
+  ]
+}

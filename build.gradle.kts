@@ -370,6 +370,51 @@ testing {
     }
 }
 
+val standardUnitTest = tasks.named<Test>("test")
+val standardIntegrationTest = tasks.named<Test>("integrationTest")
+
+val localTerrainUnitTest = tasks.register<Test>("localTerrainUnitTest") {
+    group = "verification"
+    description = "Runs deterministic unit tests for water, lighting, and distant terrain."
+    dependsOn(tasks.named("testClasses"))
+    testClassesDirs = standardUnitTest.get().testClassesDirs
+    classpath = standardUnitTest.get().classpath
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching("de.bixilon.minosoft.gui.rendering.chunk.mesher.fluid.FluidTextureCoordinateTest")
+        includeTestsMatching("de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisComplementaryWaterTransformerTest")
+        includeTestsMatching("de.bixilon.minosoft.gui.rendering.light.PlayerLightFalloffTest")
+        includeTestsMatching("de.bixilon.minosoft.gui.rendering.sky.NightLightingTest")
+        includeTestsMatching("de.bixilon.minosoft.gui.rendering.terrain.distant.DistantCoverageDrawSelectionTest")
+        includeTestsMatching("de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRegionArtifactBaselineTest")
+        includeTestsMatching("de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRegionArtifactTest")
+        isFailOnNoMatchingTests = true
+    }
+}
+
+val localTerrainIntegrationTest = tasks.register<Test>("localTerrainIntegrationTest") {
+    group = "verification"
+    description = "Runs deterministic meshing and generated-light integration tests for terrain."
+    dependsOn(tasks.named("integrationTestClasses"))
+    testClassesDirs = standardIntegrationTest.get().testClassesDirs
+    classpath = standardIntegrationTest.get().classpath
+    useTestNG {
+        preserveOrder = true
+    }
+    filter {
+        includeTestsMatching("de.bixilon.minosoft.gui.rendering.light.terrain.SmoothTerrainLightingTest")
+        includeTestsMatching("de.bixilon.minosoft.terrain.distant.DistantGeneratedLightingIntegrationTest")
+        includeTestsMatching("de.bixilon.minosoft.gui.rendering.chunk.mesher.NearTerrainSemanticParityTest")
+        isFailOnNoMatchingTests = true
+    }
+}
+
+tasks.register("localTerrainTest") {
+    group = "verification"
+    description = "Runs the focused headless water, lighting, and far-terrain regression gate."
+    dependsOn(localTerrainUnitTest, localTerrainIntegrationTest, ":render-contracts:localTerrainTest")
+}
+
 fun DependencyHandler.javafx(name: String) {
     if (javafxNatives == "") {
         logger.error("JavaFX does not have natives for windows. You must use a JRE that bundles these or disable eros.")
