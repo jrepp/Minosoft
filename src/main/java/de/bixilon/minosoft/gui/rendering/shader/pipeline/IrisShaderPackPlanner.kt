@@ -349,12 +349,17 @@ object IrisShaderPackPlanner {
                     tessellationEvaluation = resolvedTessellationEvaluation,
                 ),
             )
+            val blissStable = IrisBlissWaterTransformer.transform(
+                name,
+                programPhase,
+                temporallyStable,
+            )
             val presentationStable = IrisComplementaryWaterTransformer.transform(
                 name,
                 programPhase,
                 // Keep source-native presentation corrections ahead of the
                 // retained producer ABI bridge.
-                temporallyStable,
+                blissStable,
             )
             val bridged = if (
                 (name == "gbuffers_clouds" && vanillaCloudsDisabled) ||
