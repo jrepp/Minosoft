@@ -214,6 +214,14 @@ class IrisShaderPackPlannerTest {
             bloomBlur.resourceUsage.sampledBuffers["colortex6"],
         )
         assertFalse("colortex6" in bloomBlur.resourceUsage.sampledCustomTextures)
+        assertContains(
+            plan.programs.single { it.name == "gbuffers_water" }.fragment,
+            "float minosoftWaterSurfaceScale",
+        )
+        assertContains(
+            plan.programs.single { it.name == "composite4" }.fragment,
+            "color.rgb * mix(vec3(1.0), thresholdAbsorbedColor, 0.65)",
+        )
         val composite = plan.programs.single { it.name == "composite1" }.fragment
         assertContains(composite, "#ifdef Ambient_SSS")
         assertEquals(2, Regex("""#ifdef\s+Ambient_SSS""").findAll(composite).count())
