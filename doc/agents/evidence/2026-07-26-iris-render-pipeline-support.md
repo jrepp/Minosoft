@@ -4515,10 +4515,61 @@ OpenGL, `render.substrate` reported the custom `colortex6` bootstrap for the
 early composites and `colortex6=colortex6` for `composite9` and `composite10`.
 Matched surface and underwater captures removed the former red/green field.
 
-This fix does not close the rest of the Bliss submission. The surface remains
-too dark, the submerged view remains nearly featureless fog, and measured
-cadence remains single digit. Those are independent fidelity/performance
-defects and must retain separate matched-workload diagnosis.
+This fix did not by itself close the rest of the Bliss submission. The surface
+remained too dark, the submerged view remained nearly featureless fog, and
+measured cadence remained single digit. Those were independent
+fidelity/performance defects requiring separate matched-workload diagnosis.
+
+### Bliss water presentation follow-up
+
+On 2026-08-08, trajectory `diverse-medium-biomes-2026-08-01` reproduced the
+remaining water defects with the exact default Bliss fingerprint
+`0d08296d...262da`. Reference preparation removed the pause menu and pinned
+presentation time/weather. Block samples first rejected the original Y=0 pose
+as a deep submerged deepslate/water view, then established an open-water column
+at `(70.5, 60.0, -569.5)` and a known non-embedded land pose. Disabling Distant
+Horizons did not change the submerged failure, while disabling Iris removed the
+Bliss presentation entirely. Composite cutoffs localized the strong final
+attenuation to the Bliss composite tail. Authored water-option A/B changes were
+restored to their exact defaults before implementation.
+
+`IrisBlissWaterTransformer` applies two exact-source rewrites before the legacy
+producer bridge. `gbuffers_water` increases the encoded reflective output only
+for above-water water fragments and takes the maximum with a bounded
+biome-tinted floor; program `composite4`'s resolved `dimensions/composite3.fsh`
+source retains a bounded 35 percent neutral share while applying the pack's
+existing underwater absorption. It does not replace the pack's water color,
+fog target, reflection model, or options, and unrelated source is unchanged.
+Focused transformer tests and the exact Bliss 2.1.0 archive planner gate pass.
+
+A follow-up synchronized pass on the same trajectory rejected a black/white
+underwater frame after client/server block samples proved that the client still
+held air where the server held water. At the restored deep-ocean pose, the same
+216-cell client/server block volume matched exactly and Bliss retained readable
+kelp, particles, and distance falloff. A second above-water ocean pose exposed a
+near-field black plateau. Iris-off A/B retained the submitted water geometry,
+and a synchronized pass-cutoff sweep localized the lost dark range to geometry
+rather than the composite tail. Raising only the reflection multiplier from
+0.30 to 0.60 changed the near-field median from 0.253 to 0.258, so the final
+correction returned to 0.30 and added the biome-tinted floor instead of relying
+on an increasingly destructive multiplier.
+
+Fresh watched client generation 3 published the same source/options fingerprint,
+empty rejected/fallback bind maps, and no active pass cutoff. Synchronized
+surface/submerged captures at both the deep-ocean column and the earlier
+`(70.5, 60.0, -569.5)` shoreline retained reflection structure, water depth,
+kelp/seagrass silhouettes, and distance gradients without the prior red/green
+bloom field or a Distant Horizons seam.
+
+A 2026-08-09 line-by-line audit found that those captures cannot qualify the
+new presentation transform: its initial guards required an include directive
+that had already been resolved, and the underwater rewrite named `composite3`
+instead of the executable `composite4` program. The audit corrected both routes,
+changed the neutral absorption factor from 12.25 percent to the intended 35
+percent, required exactly one authored source block, and added exact-archive
+planner assertions for both injected markers. The earlier captures remain
+diagnostic history, but post-audit multi-pose real-OpenGL pixel qualification is
+open. The independent Bliss performance workload also remains open.
 
 ## External references
 
