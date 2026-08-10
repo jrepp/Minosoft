@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2022 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -26,7 +27,8 @@ uniform uint uTexture;
 uniform vec4 uTintColor;
 uniform uint uSkinParts;
 
-uniform mat4 uTransform;
+uniform mat4 uViewProjectionMatrix;
+uniform mat4 uMatrix;
 
 flat out uint finAllowTransparency;
 
@@ -38,13 +40,11 @@ flat out uint finAllowTransparency;
 
 
 void run_skeletal(uint inTransformNormal, vec3 inPosition) {
-    vec4 position = uTransform * vec4(inPosition, 1.0f);
-    gl_Position = position;
+    vec4 position = uMatrix * vec4(inPosition, 1.0f);
+    gl_Position = uViewProjectionMatrix * position;
 
-    // uTransform includes the first-person projection. Treating it as a
-    // normal matrix can invert every visible arm face and shade the complete
-    // hand black. First-person skin color is presentation-stable here; world
-    // and item lighting remain on their respective retained routes.
+    // First-person skin color is presentation-stable here; world and item
+    // lighting remain on their respective retained routes.
     finTintColor = vec4(1.0f);
     finFragmentPosition = position.xyz;
 }

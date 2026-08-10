@@ -3182,7 +3182,7 @@ internal object IrisLegacyShaderTransformer {
 
     private val MODERN_HAND_VERTEX_BODY = """
         // minosoft:scene_bridge HELD_ITEM HELD_ITEM uTextures,uViewProjectionMatrix,uMatrix,uTintColor
-        // minosoft:scene_bridge ARM_SKELETAL ARM uTextures,uTexture,uTintColor,uSkinParts,uTransform
+        // minosoft:scene_bridge ARM_SKELETAL ARM uTextures,uTexture,uTintColor,uSkinParts,uViewProjectionMatrix,uMatrix
         out vec2 uv;
         out vec2 uv_local;
         out vec2 texCoord;
@@ -3274,16 +3274,22 @@ internal object IrisLegacyShaderTransformer {
         layout (location = 4) in vec4 vinTangent;
         uniform uint uTexture;
         uniform uint uSkinParts;
-        uniform mat4 uTransform;
+        uniform mat4 uViewProjectionMatrix;
+        uniform mat4 uMatrix;
         void main() {
             minosoftSceneTextureArray = uTexture >> 28u;
             minosoftSceneTextureLayer = float((uTexture >> 12u) & 0xFFFFu);
             minosoftPrepareHandUv(vinUV, vinMidUV);
             lmCoord = vec2(1.0);
-            scene_pos = vinPosition;
-            position_view = vinPosition;
-            position_scene = vinPosition;
-            normal = normalize(minosoftDecodeNormal(floatBitsToUint(vinPartTransformNormal) & 0xFFFu));
+            vec4 position = uMatrix * vec4(vinPosition, 1.0);
+            scene_pos = position.xyz;
+            position_view = position.xyz;
+            position_scene = position.xyz;
+            normal = normalize((uMatrix * vec4(
+                minosoftDecodeNormal(floatBitsToUint(vinPartTransformNormal) & 0xFFFu),
+                0.0
+            )).xyz);
+            vec3 minosoftTangent = normalize((uMatrix * vec4(vinTangent.xyz, 0.0)).xyz);
             tint = uTintColor;
             glColor = tint;
             material_mask = uint(max(currentRenderedItemId - 10000, 0));
@@ -3293,8 +3299,8 @@ internal object IrisLegacyShaderTransformer {
             northVec = normalize(gbufferModelView[2].xyz);
             eastVec = normalize(gbufferModelView[0].xyz);
             light_levels = vec2(1.0);
-            minosoftPrepareHandPbr(scene_pos, normal, vinTangent);
-            gl_Position = uTransform * vec4(vinPosition, 1.0);
+            minosoftPrepareHandPbr(scene_pos, normal, vec4(minosoftTangent, vinTangent.w));
+            gl_Position = uViewProjectionMatrix * position;
         }
         #else
         layout (location = 0) in vec3 vinPosition;
@@ -4716,7 +4722,7 @@ internal object IrisLegacyShaderTransformer {
         // minosoft:scene_bridge WORLD_BORDER WORLD_BORDER uTextures,uViewProjectionMatrix,uCameraPosition,fog,uTintColor,uTexture,uTextureOffset
         // minosoft:scene_bridge SKELETAL SKELETAL_TINTED uTextures,uViewProjectionMatrix,uCameraPosition,fog,uSkeletalBuffer,uTintColor,uOutlineColor
         // minosoft:scene_bridge SKELETAL SKELETAL_LIGHTMAP uTextures,uViewProjectionMatrix,uCameraPosition,fog,uSkeletalBuffer,uLight,uLightMapBuffer,uPlayerLightPosition,uPlayerLightIntensity,uPlayerLightRadius
-        // minosoft:scene_bridge ARM_SKELETAL ARM uTextures,uTexture,uTintColor,uSkinParts,uTransform
+        // minosoft:scene_bridge ARM_SKELETAL ARM uTextures,uTexture,uTintColor,uSkinParts,uViewProjectionMatrix,uMatrix
         out vec4 color;
         out vec2 coord0;
         out vec2 coord1;
@@ -4852,7 +4858,8 @@ internal object IrisLegacyShaderTransformer {
         uniform uint uTexture;
         uniform vec4 uTintColor;
         uniform uint uSkinParts;
-        uniform mat4 uTransform;
+        uniform mat4 uViewProjectionMatrix;
+        uniform mat4 uMatrix;
         #include "minosoft:skeletal/shade"
         void main() {
             uint part = floatBitsToUint(vinPartTransformNormal);
@@ -4862,12 +4869,12 @@ internal object IrisLegacyShaderTransformer {
                 color = vec4(0.0);
                 return;
             }
-            vec4 position = uTransform * vec4(vinPosition, 1.0);
-            vec3 normal = transformNormal(decodeNormal(part & 0xFFFu), uTransform);
+            vec4 position = uMatrix * vec4(vinPosition, 1.0);
+            vec3 normal = transformNormal(decodeNormal(part & 0xFFFu), uMatrix);
             minosoftTextureArray = uTexture >> 28u;
             minosoftTextureLayer = float((uTexture >> 12u) & 0xFFFFu);
             minosoftLightIndex = 255u;
-            gl_Position = position;
+            gl_Position = uViewProjectionMatrix * position;
             color = vec4(vec3(getShade(normal)), 1.0) * uTintColor;
             coord0 = minosoftMaterialLogicalUv(vinUV, minosoftTextureArray);
             coord1 = vec2(1.0);

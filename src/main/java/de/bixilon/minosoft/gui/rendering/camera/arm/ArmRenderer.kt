@@ -271,7 +271,8 @@ class ArmRenderer(override val context: RenderContext) : WorldRenderer {
                 translateAssign(-pivot)
             }
 
-            shader.transform = perspective * matrix
+            shader.viewProjection = perspective
+            shader.matrix = matrix.unsafe
 
             model.mesh.draw()
             armDraws++

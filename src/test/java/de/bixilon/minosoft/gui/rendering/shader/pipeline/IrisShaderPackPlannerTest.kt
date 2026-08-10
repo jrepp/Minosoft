@@ -1953,7 +1953,7 @@ class IrisShaderPackPlannerTest {
         )
 
         assertEquals("iris-reference", plan.packName)
-        assertEquals("cb9601b6ace1e1c6ce02a8d4eb66f4f2f8ce04d2d022ddc973bb5b5c59198759", plan.fingerprint)
+        assertEquals("77ea5a23b0b29e149ff78ffdca11b3f236293124cc8e7c6ce32ecbc0ee124eef", plan.fingerprint)
         assertEquals("default", plan.selectedProfile)
         assertEquals(18.0f, plan.sunPathRotation)
         assertEquals(IrisSmoothingDirectives(40.0f, 12.0f, 4.0f), plan.smoothingDirectives)
