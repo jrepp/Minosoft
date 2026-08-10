@@ -71,6 +71,22 @@ Do not submit code, assets, or generated output that you cannot redistribute
 under the applicable terms. Identify copied or adapted material and preserve
 its required attribution and license information.
 
+## Binary and generated artifacts
+
+Only track a binary or generated artifact when it is a durable input or
+reviewed reference consumed by a repository workflow. Do not commit one-off
+captures, build output, downloaded dependencies, runtime logs, or diagnostic
+state.
+
+Every tracked third-party or generated artifact must have nearby documentation
+that identifies its purpose and consumer, provenance and applicable license,
+an exact version or source commit, a cryptographic hash, and the intentional
+update or reproduction procedure. Platform-qualified visual references must
+also record the capture environment, crop, tolerance, and recapture rules.
+Keep dependency archives in the configured out-of-source store. For Gradle
+wrapper updates, pin the distribution checksum and verify the wrapper JAR
+against the upstream release.
+
 ## Before changing code
 
 1. Read [`AGENTS.md`](AGENTS.md) and select every relevant evidence map from
