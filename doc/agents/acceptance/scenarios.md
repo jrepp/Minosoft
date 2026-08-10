@@ -35,7 +35,11 @@ A scenario is JSON with `name` and `steps`. Supported step types are:
 
 - `wait`: `predicate` plus optional `timeout` (`500ms`, `30s`, `2m`, or `1h`);
 - `request`: `role`, `operation`, optional `body`/`deadlineMs`, and optional
-  JSON-Pointer assertions using `exists`, `equals`, `contains`, `min`, or `max`;
+  JSON-Pointer assertions using `exists`, `equals`, `contains`, `min`, or `max`.
+  To accept a deliberate structured rejection, add
+  `expectError: {"code":"invalid_request"}` and optionally
+  `messageContains`; the step fails if the request succeeds or returns a
+  different code, and its report records the received `code` and `message`;
 - `screenshot`: captures through `visual.capture`, optionally requires exact
   `sourceWidth`/`sourceHeight`, optionally crops a top-left
   `region: [x,y,width,height]`, compares a checked baseline, and enforces

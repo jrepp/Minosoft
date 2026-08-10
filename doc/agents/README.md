@@ -83,6 +83,10 @@ instructions that differ from the root contract.
 - [Medium diverse-biomes visual remediation](evidence/2026-08-03-medium-diverse-visual-remediation.md)
   closes the independent distant-lighting, seam, remote-persistence, and
   Complementary motion-transient diagnoses with focused and live evidence.
+- [Distant-terrain meshing and cardinal-view baselines](evidence/2026-08-09-distant-terrain-meshing-view-baselines.md)
+  records the independent 2,048-case heightfield oracle plus structured and
+  multi-run shelf/overhang coverage, exact region-encoder packing baselines,
+  and four-direction real-OpenGL selection and pixel gate.
 - [Render-performance and OpenGL submission audit](evidence/2026-08-01-render-performance-opengl-audit.md)
   grounds the current region multi-draw, Iris binding, particle/entity churn,
   OpenGL state-cache, measurement gaps, and ranked optimization trajectory in
@@ -200,6 +204,17 @@ instructions that differ from the root contract.
 - [Generated block-item rendering evidence](evidence/2026-07-23-generated-block-item-rendering.md)
   records the dedicated item-model precedence rule, flat ladder versus 3D block
   regression coverage, and live crafting-result validation after hot reload.
+- [Asset primitive decomposition evidence](evidence/2026-08-08-asset-primitive-decomposition.md)
+  is a generation contract for the remaining 454 audited missing texture
+  targets: it specifies the shared primitive/shape/material vocabulary, exact
+  palette and tone tables, the path-keyed family classifier, and per-family
+  raster recipes with the FNV-1a/Java-Random determinism rule so another
+  generation process can reproduce the assets byte-identically for intake into
+  the standalone content pipeline.
+- [Asset preview continuation evidence](evidence/2026-08-08-asset-preview-continuation.md)
+  closes local block placement, lighting, and structured-rejection acceptance;
+  isolates the transient GL error stage, records clean-reference rules, and
+  identifies the remaining external content-forge model-contract boundary.
 - [Content-fidelity foundation evidence](evidence/2026-07-24-content-fidelity-foundation.md)
   records the OptiFine native-adapter decision, explicit model-culling and AO
   contracts, tiled animation support, and the ordered gates for EMF, ETF,
