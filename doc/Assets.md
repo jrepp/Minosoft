@@ -86,12 +86,22 @@ not a content-pack extension.
 lowest priority:
 
 1. integrated emergency/version overrides;
-2. resource packs in the resources profile, with later profile entries winning;
-3. integrated pack-format compatibility layers, newest applicable format first;
-4. local Minecraft index assets, when enabled;
-5. local client-JAR assets, when enabled;
-6. generation-owned external asset providers, including adapted mod JARs;
-7. integrated defaults.
+2. explicit caller-supplied priority assets, when present;
+3. resource packs in the resources profile, with later profile entries winning;
+4. integrated pack-format compatibility layers, newest applicable format first;
+5. local Minecraft index assets, when enabled;
+6. local client-JAR assets, when enabled;
+7. generation-owned external asset providers, including adapted mod JARs;
+8. integrated defaults.
+
+The ordinary client does not supply priority assets. Integration tests use this
+seam to mount a small Minosoft-authored stand-in while disabling both local
+Minecraft managers, so renderer and credits checks do not depend on a Mojang
+asset index or client JAR. Set `MINOSOFT_CONTENT_FORGE_ROOT` to an absolute
+content-forge output directory to mount those out-of-source assets below the
+exact stand-in fixtures and enable their provenance, JSON, PNG, and Blockbench
+producer gate. Without that setting, the external gate skips and the tests stay
+hermetic.
 
 The play parent materializes verified Packwiz resource-pack artifacts into the
 selected trajectory immediately before launch. Managed packs have deterministic

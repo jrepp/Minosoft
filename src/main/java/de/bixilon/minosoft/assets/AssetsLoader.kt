@@ -56,12 +56,21 @@ object AssetsLoader {
         return manager
     }
 
-    fun create(profile: ResourcesProfile, version: Version, property: AssetsVersionProperty = AssetsVersionProperties[version] ?: throw IllegalAccessException("$version has no assets!")): SessionAssetsManager {
+    fun create(
+        profile: ResourcesProfile,
+        version: Version,
+        property: AssetsVersionProperty = AssetsVersionProperties[version] ?: throw IllegalAccessException("$version has no assets!"),
+        priorityAssets: List<AssetsManager> = emptyList(),
+    ): SessionAssetsManager {
         val properties = profile.createPackProperties(version)
 
         val manager = SessionAssetsManager(properties)
 
         manager += IntegratedAssets.OVERRIDE
+
+        for (assets in priorityAssets) {
+            manager += assets
+        }
 
         manager.addResourcePacks(profile)
 

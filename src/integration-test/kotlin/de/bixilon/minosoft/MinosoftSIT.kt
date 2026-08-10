@@ -27,6 +27,7 @@ import de.bixilon.minosoft.gui.rendering.system.window.WindowFactory
 import de.bixilon.minosoft.gui.rendering.system.window.dummy.DummyWindow
 import de.bixilon.minosoft.main.BootTasks
 import de.bixilon.minosoft.main.MinosoftBoot
+import de.bixilon.minosoft.properties.MinosoftPropertiesLoader
 import de.bixilon.minosoft.terminal.RunConfiguration
 import de.bixilon.minosoft.util.KUtil
 import de.bixilon.minosoft.util.collections.MemoryOptions
@@ -72,7 +73,6 @@ internal object MinosoftSIT {
         MinosoftBoot.LATCH.await()
     }
 
-
     @BeforeSuite
     fun setup() {
         if (loaded) return
@@ -84,10 +84,9 @@ internal object MinosoftSIT {
 
         IntegratedAssets.DEFAULT.load()
         KUtil.init()
+        MinosoftPropertiesLoader.load()
 
         boot()
-
-
 
         Log.log(LogMessageType.OTHER, LogLevels.INFO) { "Integration tests setup successfully!" }
         loaded = true

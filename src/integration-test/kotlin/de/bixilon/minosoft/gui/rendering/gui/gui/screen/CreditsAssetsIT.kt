@@ -15,7 +15,7 @@ package de.bixilon.minosoft.gui.rendering.gui.gui.screen
 
 import de.bixilon.kutil.latch.SimpleLatch
 import de.bixilon.kutil.reflection.ReflectionUtil.forceSet
-import de.bixilon.minosoft.assets.AssetsLoader
+import de.bixilon.minosoft.assets.OfflineTestAssets
 import de.bixilon.minosoft.assets.minecraft.MinecraftAssetsManager
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil.createSession
 import org.testng.Assert.assertFalse
@@ -28,7 +28,7 @@ class CreditsAssetsIT {
     fun `credits come from Minosoft or locally installed extension assets`() {
         val session = createSession(5)
         val latch = SimpleLatch(1)
-        session::assets.forceSet(AssetsLoader.create(session.profiles.resources, session.version))
+        session::assets.forceSet(OfflineTestAssets.create(session))
         session.assets.load(latch)
         latch.dec()
         latch.await()

@@ -17,7 +17,7 @@ import de.bixilon.kutil.latch.SimpleLatch
 import de.bixilon.kutil.observer.DataObserver
 import de.bixilon.kutil.reflection.ReflectionUtil.forceSet
 import de.bixilon.kutil.time.TimeUtil.sleep
-import de.bixilon.minosoft.assets.AssetsLoader
+import de.bixilon.minosoft.assets.OfflineTestAssets
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.gui.rendering.models.item.FlatItemRender
 import de.bixilon.minosoft.gui.rendering.models.raw.display.DisplayPositions
@@ -35,7 +35,7 @@ class RenderTestLoader {
     fun init() {
         val session = createSession(5)
         val latch = SimpleLatch(1)
-        session::assets.forceSet(AssetsLoader.create(session.profiles.resources, session.version))
+        session::assets.forceSet(OfflineTestAssets.create(session))
         session.assets.load(latch)
         session::error.forceSet(DataObserver(null))
         RenderTestUtil.rendering = Rendering(session)

@@ -215,6 +215,10 @@ instructions that differ from the root contract.
   closes local block placement, lighting, and structured-rejection acceptance;
   isolates the transient GL error stage, records clean-reference rules, and
   identifies the remaining external content-forge model-contract boundary.
+- [Offline integration asset evidence](evidence/2026-08-10-offline-integration-assets.md)
+  records the Mojang-index-independent renderer/credits stand-in, the optional
+  out-of-source content-forge/Blockbench validation lane, and the currently
+  stale external provenance boundary.
 - [Content-fidelity foundation evidence](evidence/2026-07-24-content-fidelity-foundation.md)
   records the OptiFine native-adapter decision, explicit model-culling and AO
   contracts, tiled animation support, and the ordered gates for EMF, ETF,
