@@ -39,7 +39,6 @@ abstract class EntityRenderFeature(val renderer: EntityRenderer<*>) {
 
     open fun enqueueUnload() = Unit
 
-    @Deprecated("What, why and how?")
     open fun invalidate() = Unit
     open fun update(delta: Duration) = Unit
     open fun unload() = Unit

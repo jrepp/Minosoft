@@ -11,6 +11,8 @@
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
 
+@file:Suppress("DEPRECATION") // BlockProperties remains the multi-version fallback for note blocks.
+
 package de.bixilon.minosoft.data.entities.block
 
 import de.bixilon.kmath.vec.vec3.d.Vec3d

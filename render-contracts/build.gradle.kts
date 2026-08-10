@@ -20,6 +20,9 @@ plugins {
     `java-library`
 }
 
+group = "de.bixilon.minosoft"
+version = "0.1.0"
+
 repositories {
     mavenCentral()
 }

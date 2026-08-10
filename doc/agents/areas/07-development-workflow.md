@@ -15,6 +15,7 @@ map.
 | --- | --- | --- |
 | Verified | Gradle provides compile, unit, integration, run, assemble, and fat-jar workflows. | `build.gradle.kts` and both CI definitions. |
 | Verified | CI runs Java 25 across Linux, Windows, and macOS; every output targets JVM 25. | CI setup, Gradle Java/Kotlin targets, and the [Java 25 baseline](../evidence/2026-07-30-java-25-baseline.md). |
+| Verified | Kotlin and Java compiler warnings fail the build in every JVM project. The accepted source-set baseline is a forced Java 25.0.4 rebuild of application, unit, integration, render-contract, debug-core, play-util, and Fabric bridge code with no compiler diagnostics. | Root Gradle JVM conventions and the [Java 25 baseline](../evidence/2026-07-30-java-25-baseline.md). |
 | Observed | Main/test Kotlin paths are unconventional. | Main is under `src/main/java`; unit tests are under `src/test/java`; integration tests use both `src/integration-test/kotlin` and the explicitly configured conventional `src/integration-test/java`. |
 | Observed | Standard JVM redefinition preserves existing instances/static values and does not rerun initializers. | Java Instrumentation API contract. |
 | Target | JetBrains Runtime 25 enhanced class redefinition is the preferred open-source structural hot-swap runtime for the first spike. | JBR 25 documents DCEVM-based redefinition enabled by `-XX:+AllowEnhancedClassRedefinition`. |

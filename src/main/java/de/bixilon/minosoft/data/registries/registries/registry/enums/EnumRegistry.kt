@@ -38,7 +38,8 @@ class EnumRegistry<T : Enum<*>>(
     }
 
     fun getId(value: T): Int {
-        return valueIdMap[value] ?: parent?.getId(value)!!
+        if (valueIdMap.containsKey(value)) return valueIdMap.getInt(value)
+        return parent?.getId(value)!!
     }
 
     private fun getEnum(data: Any) = when (data) {

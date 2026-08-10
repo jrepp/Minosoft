@@ -1,6 +1,6 @@
 /*
  * Minosoft
- * Copyright (C) 2020-2023 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -11,22 +11,21 @@
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
 
-package de.bixilon.minosoft.data.registries.item.factory
+package de.bixilon.minosoft.assets
 
-import de.bixilon.minosoft.data.registries.factory.clazz.DefaultClassFactory
-import de.bixilon.minosoft.data.registries.item.items.block.legacy.*
-import de.bixilon.minosoft.data.registries.item.items.pixlyzer.DyeItem
-import de.bixilon.minosoft.data.registries.item.items.pixlyzer.MusicDiscItem
-import de.bixilon.minosoft.data.registries.item.items.pixlyzer.SpawnEggItem
+import de.bixilon.minosoft.config.profile.profiles.resources.ResourcesProfile
 
-object PixLyzerItemFactories : DefaultClassFactory<PixLyzerItemFactory<*>>(
-    PixLyzerBlockItem,
-    TallBlockItem,
-    WallStandingBlockItem,
-    LilyPadItem,
-    CommandBlockItem,
+data class LocalMinecraftAssets(
+    val index: Boolean,
+    val clientJar: Boolean,
+) {
+    companion object {
+        val ALL = LocalMinecraftAssets(index = true, clientJar = true)
+        val NONE = LocalMinecraftAssets(index = false, clientJar = false)
 
-    SpawnEggItem,
-    DyeItem,
-    MusicDiscItem,
-)
+        fun from(profile: ResourcesProfile) = LocalMinecraftAssets(
+            index = !profile.assets.disableIndexAssets,
+            clientJar = !profile.assets.disableJarAssets,
+        )
+    }
+}

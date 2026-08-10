@@ -51,8 +51,8 @@ value class MMat4f(val _0: UnsafeMat4f) : _Mat4f {
 
     val unsafe get() = Mat4f(_0)
 
-    override inline operator fun get(row: Int) = Vec4f(this[row, 0], this[row, 1], this[row, 2], this[row, 3])
-    override inline operator fun get(row: Int, column: Int) = _0[row, column]
+    override operator fun get(row: Int) = Vec4f(this[row, 0], this[row, 1], this[row, 2], this[row, 3])
+    override operator fun get(row: Int, column: Int) = _0[row, column]
 
     inline operator fun set(row: Int, vec4: Vec4f) {
         this[row, 0] = vec4.x

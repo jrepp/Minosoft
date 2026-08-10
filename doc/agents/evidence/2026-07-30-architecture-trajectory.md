@@ -49,15 +49,18 @@ suite wiring follow-up: `4c3c32c6b`.
 ### 4. Java 25 runtime and Gradle 10 readiness
 
 Generated Minosoft launchers and all JVM test tasks receive
-`--enable-native-access=ALL-UNNAMED`, covering LWJGL native calls on Java 25.
+`--enable-native-access=ALL-UNNAMED`, covering LWJGL native calls on Java 25,
+and explicitly allow the legacy `sun.misc.Unsafe` access still required by the
+pinned external `de.bixilon:kutil:1.31` dependency. Test runtime classpaths use
+SLF4J's no-op provider because the suites do not consume an SLF4J backend.
 All repository-owned Gradle multi-string dependency declarations were converted
 to Gradle 10-compatible notation, and the execution-time `Task.project` access
 was removed. `./gradlew startScripts --warning-mode all` completes without a
 deprecation warning. Commit: `6e42b35eb`.
 
-The full JVM test run still reports a terminal `sun.misc.Unsafe` warning from
-the external `de.bixilon:kutil:1.31` jar. That is an upstream dependency issue,
-not an unqualified LWJGL native-access call or repository Gradle deprecation.
+The explicit Unsafe compatibility option is a pinned-dependency boundary, not
+approval for new repository-owned Unsafe access. Remove it when kutil no longer
+requires the unsupported API.
 
 ### 5. OpenGL 4.3 is preferred, not universal
 

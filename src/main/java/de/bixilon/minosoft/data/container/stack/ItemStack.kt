@@ -42,6 +42,7 @@ data class ItemStack(
         }
     }
 
+    @Suppress("DEPRECATION") // Item rarity remains the source until it moves to a dedicated interface.
     val rarity: Rarities
         get() {
             val rarity = item.rarity

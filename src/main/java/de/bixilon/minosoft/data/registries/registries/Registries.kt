@@ -99,7 +99,6 @@ class Registries(
     val biome: Registry<Biome> = register("biome", Registry(codec = Biome))
     val dimension: Registry<Dimension> = register("dimension", Registry(codec = Dimension))
 
-    @Deprecated("pixlyzer only")
     val material: Registry<Material> = register("material", Registry(codec = Material))
     val fluid: FluidRegistry = register("fluid", FluidRegistry())
     val soundEvent: ResourceLocationRegistry = register("sound_event", ResourceLocationRegistry())

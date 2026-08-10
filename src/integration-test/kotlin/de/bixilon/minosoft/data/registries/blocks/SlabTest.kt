@@ -38,5 +38,4 @@ class SlabTest : BlockTest<Block>() {
     }
 }
 
-@Deprecated("")
 var SlabTest0: SlabTest = unsafeNull()

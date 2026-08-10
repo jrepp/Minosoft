@@ -58,7 +58,6 @@ object PacketTestUtil {
         test().assertNoPacket()
     }
 
-    @Deprecated("use assertPacket and assertNoPacket")
     fun PlaySession.assertOnlyPacket(packet: C2SPacket) {
         assertPacket(packet)
         assertNoPacket()

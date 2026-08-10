@@ -19,6 +19,7 @@ import de.bixilon.minosoft.data.container.stack.ItemStack
 import de.bixilon.minosoft.data.registries.blocks.MinecraftBlocks
 import de.bixilon.minosoft.data.registries.item.items.armor.WearableItem
 
+@Suppress("DEPRECATION") // This identifier remains a compatibility key until the carved-pumpkin item is wearable.
 object HeadSlotType : EquipmentSlotType {
 
     override fun canPut(container: Container, slot: Int, stack: ItemStack): Boolean {

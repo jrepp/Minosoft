@@ -14,7 +14,7 @@
 package de.bixilon.minosoft.data.registries.item
 
 import de.bixilon.kutil.cast.CastUtil.unsafeCast
-import de.bixilon.minosoft.data.registries.blocks.types.air.AirBlock
+import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.data.registries.item.factory.ItemFactories
 import de.bixilon.minosoft.data.registries.item.factory.ItemFactory
 import de.bixilon.minosoft.data.registries.item.items.Item
@@ -38,7 +38,7 @@ class ItemRegistry(
 
         val item = super.getOrNull(id) ?: super.getOrNull(itemId shl 16) // ignore meta
 
-        if (item?.identifier == AirBlock.Air.identifier) return null // TODO: use AirItem
+        if (item?.identifier == AIR) return null // TODO: use AirItem
 
         return item
     }
@@ -46,5 +46,9 @@ class ItemRegistry(
     operator fun <T : Item> get(factory: ItemFactory<T>): T? {
         val item = this[factory.identifier] ?: return null
         return item.unsafeCast()
+    }
+
+    private companion object {
+        val AIR = minecraft("air")
     }
 }

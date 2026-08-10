@@ -26,6 +26,7 @@ import org.testng.annotations.Test
 class Latest : PixLyzerLoadingTest("tba") {
 
     @Test(priority = -20)
+    @Suppress("UNCHECKED_CAST")
     override fun loadVersion() {
         val id = Versions::class.java.getFieldOrNull("id")!!.apply { setUnsafeAccessible() }.get(Versions) as Int2ObjectOpenHashMap<Version>
         var highest = 0

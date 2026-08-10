@@ -88,7 +88,7 @@ value class Vec4f(
 
         @Deprecated("final", level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("other"))
         inline operator fun invoke(other: Vec4f) = other
-        inline operator fun invoke(other: _Vec4f) = Vec4f(other.x.f, other.y.f, other.z.f, other.w.f)
+        inline operator fun invoke(other: _Vec4f) = Vec4f(other.x, other.y, other.z, other.w)
 
         operator fun invoke() = EMPTY
     }

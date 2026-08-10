@@ -23,16 +23,17 @@ object OfflineTestAssets {
     const val CONTENT_FORGE_ROOT_ENV = "MINOSOFT_CONTENT_FORGE_ROOT"
 
     fun create(session: PlaySession): SessionAssetsManager {
-        val assets = session.profiles.resources.assets
-        assets.disableIndexAssets = true
-        assets.disableJarAssets = true
-
         val priorityAssets = buildList {
             add(DirectoryAssetsManager(standInRoot()))
             contentForgeRoot()?.let { add(DirectoryAssetsManager(it)) }
             add(OfflineFallbackAssetsManager())
         }
-        return AssetsLoader.create(session.profiles.resources, session.version, priorityAssets = priorityAssets)
+        return AssetsLoader.create(
+            profile = session.profiles.resources,
+            version = session.version,
+            priorityAssets = priorityAssets,
+            localMinecraftAssets = LocalMinecraftAssets.NONE,
+        )
     }
 
     fun contentForgeRoot(): Path? {

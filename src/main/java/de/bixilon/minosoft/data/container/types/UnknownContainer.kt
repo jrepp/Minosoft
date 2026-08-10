@@ -20,7 +20,7 @@ import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.data.text.ChatComponent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
-@Deprecated("Its unknown")
+@Suppress("DEPRECATION")
 class UnknownContainer(
     session: PlaySession,
     type: ContainerType,

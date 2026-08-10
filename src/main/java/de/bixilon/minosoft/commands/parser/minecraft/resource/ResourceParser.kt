@@ -21,7 +21,6 @@ import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayInByteBuffer
 
-@Deprecated("TODO")
 class ResourceParser(
     val type: ResourceLocation,
 ) : ArgumentParser<Any> {

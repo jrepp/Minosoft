@@ -69,7 +69,6 @@ class OpenGlTextureArray(
         }
     }
 
-    @Deprecated("use safe uniforms")
     override fun use(shader: TextureShader, name: String) {
         if (state != TextureArrayStates.UPLOADED) throw IllegalStateException("Texture array is not uploaded yet! Are you trying to load a shader in the init phase?")
         system.log { "Binding static textures to $shader" }

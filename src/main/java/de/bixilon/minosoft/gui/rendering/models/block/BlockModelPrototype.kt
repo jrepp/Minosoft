@@ -33,7 +33,6 @@ import de.bixilon.minosoft.gui.rendering.models.block.state.render.WorldRenderPr
 import de.bixilon.minosoft.gui.rendering.models.loader.legacy.ModelChooser
 import java.util.*
 
-@Deprecated("That is the most goofy hack ever")
 open class BlockModelPrototype(val model: DirectBlockModel) : BlockRender {
     override fun render(props: WorldRenderProps, position: BlockPosition, state: BlockState, entity: BlockEntity?, tints: RGBArray?) = prototype()
     override fun render(consumer: BlockVertexConsumer, state: BlockState, tints: RGBArray?, offset: Vec3f?, light: ByteArray?) = prototype()

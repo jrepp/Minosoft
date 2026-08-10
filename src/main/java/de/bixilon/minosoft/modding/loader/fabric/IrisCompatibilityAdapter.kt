@@ -753,7 +753,7 @@ private class IrisDebugProvider(
                 )
             }
             val updates = linkedMapOf<String, String>()
-            options.fields().forEach { (name, value) ->
+            options.properties().forEach { (name, value) ->
                 if (!value.isTextual || name.length !in 1..128 || value.textValue().length > 128) {
                     throw DebugOperationException(
                         "invalid_request",

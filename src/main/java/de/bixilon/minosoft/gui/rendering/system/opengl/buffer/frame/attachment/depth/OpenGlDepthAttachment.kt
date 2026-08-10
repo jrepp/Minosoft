@@ -37,7 +37,6 @@ class OpenGlDepthAttachment(
                     DepthModes.DEPTH8 -> GL_DEPTH_COMPONENT16
                     DepthModes.DEPTH24 -> GL_DEPTH_COMPONENT24
                     DepthModes.DEPTH32 -> GL_DEPTH_COMPONENT32
-                    else -> throw IllegalArgumentException("OpenGL does not support depth mode: $this")
                 }
     }
 }

@@ -53,7 +53,6 @@ class InteractionManager(val camera: SessionCamera) : Tickable {
         spectate.init()
     }
 
-    @Deprecated("align with ticks and instant shots")
     fun draw() {
         tryTick()
 

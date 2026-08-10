@@ -91,7 +91,6 @@ class TagsS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
         return readTagList(session.registries.biome)
     }
 
-    @Deprecated("TODO: Game events")
     private fun PlayInByteBuffer.readGameEventTags(): TagList<*> {
         return readTagList(Registry())
     }

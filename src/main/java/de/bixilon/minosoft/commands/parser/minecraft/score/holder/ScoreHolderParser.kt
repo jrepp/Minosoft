@@ -20,6 +20,7 @@ import de.bixilon.minosoft.commands.util.CommandReader
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayInByteBuffer
 
+@Suppress("DEPRECATION")
 @Deprecated("TODO")
 class ScoreHolderParser(
     val allowMultiple: Boolean = false,

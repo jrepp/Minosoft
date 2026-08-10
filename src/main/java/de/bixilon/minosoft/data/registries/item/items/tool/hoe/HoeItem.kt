@@ -28,7 +28,6 @@ import de.bixilon.minosoft.input.interaction.InteractionResults
 abstract class HoeItem(identifier: ResourceLocation, registries: Registries, data: JsonObject) : InteractingToolItem(identifier) {
     override val tag: ResourceLocation get() = TAG
 
-    @Deprecated("TillableBlock")
     protected val tillable = data["tillables_block_states"]?.toAnyMap()?.states(registries)
 
 

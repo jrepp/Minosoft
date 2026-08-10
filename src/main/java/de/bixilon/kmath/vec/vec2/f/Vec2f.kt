@@ -97,7 +97,7 @@ value class Vec2f(
 
         @Deprecated("final", level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("other"))
         inline operator fun invoke(other: Vec2f) = other
-        inline operator fun invoke(other: _Vec2f) = Vec2f(other.x.f, other.y.f)
+        inline operator fun invoke(other: _Vec2f) = Vec2f(other.x, other.y)
         inline operator fun invoke(other: _Vec2i) = Vec2f(other.x.f, other.y.f)
         inline operator fun invoke(other: _Vec2d) = Vec2f(other.x.f, other.y.f)
 

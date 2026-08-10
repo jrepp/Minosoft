@@ -103,7 +103,6 @@ interface JavaFXTextRenderer<C> {
     }
 
     companion object : JavaFXTextRenderer<ChatComponent> {
-        @Deprecated("The width of all chars should be constant")
         val OBFUSCATED_CHARS = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~".toCharArray()
 
         fun render(text: ChatComponent): MutableList<Node> {

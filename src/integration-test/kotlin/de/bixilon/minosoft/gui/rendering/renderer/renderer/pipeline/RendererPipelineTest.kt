@@ -524,7 +524,7 @@ class RendererPipelineTest {
         producer.passes.add(
             OpaqueLayer,
             shader = null,
-            renderer = { fallback.withProgramFamily(SceneProgramFamily.ENTITY_EYES) { Unit } },
+            renderer = { fallback.withProgramFamily(SceneProgramFamily.ENTITY_EYES) {} },
             semantic = PipelineSemantic.ENTITIES,
             passId = RenderPassId("minosoft:test/specialized-scene-routing"),
         )

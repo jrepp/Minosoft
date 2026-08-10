@@ -131,7 +131,8 @@ abstract class Shader(override val native: NativeShader) : AbstractShader {
     internal fun finishUniformUpload(target: NativeShader?, revision: Long) {
         check(uniformUploadInProgress && revision == uniformRevision) { "Mismatched shader uniform revision" }
         uniformUploadInProgress = false
-        if (target != null) native.context.shaderPipeline?.recordUniformUpload(this, target, revision)
+        val pipeline: ShaderPipelineRegistry? = native.context.shaderPipeline
+        if (target != null) pipeline?.recordUniformUpload(this, target, revision)
     }
 
     fun reload() {

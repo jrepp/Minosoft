@@ -20,6 +20,7 @@ import de.bixilon.minosoft.data.registries.entities.EntityType
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
+@Suppress("DEPRECATION")
 @Deprecated("TODO")
 class WindCharge(session: PlaySession, entityType: EntityType, data: EntityData, position: Vec3d, rotation: EntityRotation) : Entity(session, entityType, data, position, rotation) {
 

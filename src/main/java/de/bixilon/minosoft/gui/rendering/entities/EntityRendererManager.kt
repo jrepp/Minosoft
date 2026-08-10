@@ -75,7 +75,6 @@ class EntityRendererManager(val renderer: EntitiesRenderer) : Iterable<EntityRen
         this.renderers.unsafe.put(entity, renderer)?.let { onReplace(it) }
     }
 
-    @Deprecated("That should never ever happen!")
     private fun onReplace(renderer: EntityRenderer<*>) {
         Log.log(LogMessageType.RENDERING, LogLevels.WARN) { "Entity renderer of ${renderer.entity} just got replaced???" }
         unload(renderer)

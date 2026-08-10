@@ -49,7 +49,7 @@ object EntityEvents : DefaultFactory<EntityEvent<*>>(
         var clazz: Class<*>? = null
         while (true) {
             clazz = if (clazz == null) entity::class.java else clazz.superclass
-            if (clazz == Object::class.java) break
+            if (clazz == Any::class.java) break
 
             val map = EVENTS[clazz] ?: continue
             return map[id] ?: continue

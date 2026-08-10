@@ -23,7 +23,6 @@ import de.bixilon.minosoft.data.text.formatting.color.RGBColor
 import de.bixilon.minosoft.gui.rendering.tint.TintManager
 import java.util.*
 
-@Deprecated("pixlyzer only")
 data class Material(
     override val identifier: ResourceLocation,
     val color: RGBColor?,

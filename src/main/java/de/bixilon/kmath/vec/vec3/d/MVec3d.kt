@@ -190,6 +190,6 @@ value class MVec3d(
 
         inline operator fun invoke(other: _Vec3i) = MVec3d(other.x.d, other.y.d, other.z.d)
         inline operator fun invoke(other: _Vec3f) = MVec3d(other.x.d, other.y.d, other.z.d)
-        inline operator fun invoke(other: _Vec3d) = MVec3d(other.x.d, other.y.d, other.z.d)
+        inline operator fun invoke(other: _Vec3d) = MVec3d(other.x, other.y, other.z)
     }
 }

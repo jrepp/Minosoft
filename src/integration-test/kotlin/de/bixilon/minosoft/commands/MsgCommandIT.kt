@@ -54,9 +54,10 @@ class MsgCommandIT {
         val node = createNode { stack = it.fork() }
 
         node.execute("msg Bixilon hi there!")
-        assertEquals(stack!!["msg"], "msg")
-        assertEquals(stack!!["targets"], NameEntityTarget("Bixilon"))
-        assertEquals(stack!!["message"], "hi there!")
+        val result = checkNotNull(stack)
+        assertEquals(result["msg"], "msg")
+        assertEquals(result["targets"], NameEntityTarget("Bixilon"))
+        assertEquals(result["message"], "hi there!")
     }
 
     fun redirectExecution() {
@@ -74,9 +75,9 @@ class MsgCommandIT {
 
         node.execute("redirect Bixilon hi there!")
 
-
-        assertEquals(stack!!["msg"], "redirect")
-        assertEquals(stack!!["targets"], NameEntityTarget("Bixilon"))
-        assertEquals(stack!!["message"], "hi there!")
+        val result = checkNotNull(stack)
+        assertEquals(result["msg"], "redirect")
+        assertEquals(result["targets"], NameEntityTarget("Bixilon"))
+        assertEquals(result["message"], "hi there!")
     }
 }

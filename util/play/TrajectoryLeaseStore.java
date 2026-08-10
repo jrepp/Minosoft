@@ -237,7 +237,10 @@ final class TrajectoryLeaseStore {
     private <T> T locked(IoSupplier<T> work) throws IOException {
         Files.createDirectories(directory);
         try (FileChannel channel = FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-             FileLock ignored = channel.lock()) {
+             FileLock lock = channel.lock()) {
+            if (!lock.isValid()) {
+                throw new IOException("Could not acquire trajectory lease lock " + lockFile);
+            }
             return work.get();
         }
     }

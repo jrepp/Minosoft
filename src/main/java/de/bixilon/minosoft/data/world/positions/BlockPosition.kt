@@ -35,9 +35,9 @@ value class BlockPosition(
 
     constructor(position: InChunkPosition) : this(position.x, position.y, position.z)
 
-    override inline val x: Int get() = (((raw ushr SHIFT_X).toInt() and MASK_X) shl (Int.SIZE_BITS - BITS_X)) shr (Int.SIZE_BITS - BITS_X)
-    override inline val y: Int get() = (((raw ushr SHIFT_Y).toInt() and MASK_Y) shl (Int.SIZE_BITS - BITS_Y)) shr (Int.SIZE_BITS - BITS_Y)
-    override inline val z: Int get() = (((raw ushr SHIFT_Z).toInt() and MASK_Z) shl (Int.SIZE_BITS - BITS_Z)) shr (Int.SIZE_BITS - BITS_Z)
+    override val x: Int get() = (((raw ushr SHIFT_X).toInt() and MASK_X) shl (Int.SIZE_BITS - BITS_X)) shr (Int.SIZE_BITS - BITS_X)
+    override val y: Int get() = (((raw ushr SHIFT_Y).toInt() and MASK_Y) shl (Int.SIZE_BITS - BITS_Y)) shr (Int.SIZE_BITS - BITS_Y)
+    override val z: Int get() = (((raw ushr SHIFT_Z).toInt() and MASK_Z) shl (Int.SIZE_BITS - BITS_Z)) shr (Int.SIZE_BITS - BITS_Z)
 
     inline fun modify(other: Long, component: Long, add: Long): BlockPosition {
         val bc = raw and other
@@ -138,9 +138,9 @@ value class BlockPosition(
     inline val inChunkPosition get() = InChunkPosition(x and 0x0F, y, this.z and 0x0F)
     inline val inSectionPosition get() = InSectionPosition(x and 0x0F, y.inSectionHeight, z and 0x0F)
 
-    override inline operator fun component1() = x
-    override inline operator fun component2() = y
-    override inline operator fun component3() = z
+    override operator fun component1() = x
+    override operator fun component2() = y
+    override operator fun component3() = z
 
     inline fun length2() = x * x + y * y + z * z
 

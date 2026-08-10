@@ -13,7 +13,6 @@
 
 package de.bixilon.minosoft.gui.rendering.gui.hud
 
-@Deprecated("shit")
 interface Skippable {
     val skip: Boolean get() = false
 }

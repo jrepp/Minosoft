@@ -18,7 +18,6 @@ import de.bixilon.minosoft.modding.event.events.session.play.PlaySessionEvent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import java.util.*
 
-@Deprecated("Observables")
 abstract class BossbarEvent(
     session: PlaySession,
     val uuid: UUID,

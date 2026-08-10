@@ -51,13 +51,10 @@ object IT {
     var FALLBACK_TAGS = FallbackTags.map(REGISTRIES)
 
 
-    @Deprecated("TestBlockStates.OPAQUE1")
     val BLOCK_1 = REGISTRIES.block[StoneBlock.Block]!!.states.default
 
-    @Deprecated("TestBlockStates.OPAQUE2")
     val BLOCK_2 = REGISTRIES.block[Cobblestone.Block]!!.states.default
 
-    @Deprecated("TestBlockStates.OPAQUE3")
     val BLOCK_3 = REGISTRIES.block[Andesite.Block]!!.states.default
 
 

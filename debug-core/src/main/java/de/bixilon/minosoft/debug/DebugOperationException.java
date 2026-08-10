@@ -8,6 +8,8 @@
 package de.bixilon.minosoft.debug;
 
 public class DebugOperationException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     private final String code;
 
     public DebugOperationException(String code, String message) {

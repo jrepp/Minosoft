@@ -32,9 +32,9 @@ value class InChunkPosition(
         assertPosition(z, 0, ChunkSize.SECTION_MAX_Z)
     }
 
-    override inline val x: Int get() = (raw ushr SHIFT_X) and MASK_X
-    override inline val y: Int get() = (((raw ushr SHIFT_Y) and MASK_Y) shl (Int.SIZE_BITS - BITS_Y)) shr (Int.SIZE_BITS - BITS_Y)
-    override inline val z: Int get() = (raw ushr SHIFT_Z) and MASK_Z
+    override val x: Int get() = (raw ushr SHIFT_X) and MASK_X
+    override val y: Int get() = (((raw ushr SHIFT_Y) and MASK_Y) shl (Int.SIZE_BITS - BITS_Y)) shr (Int.SIZE_BITS - BITS_Y)
+    override val z: Int get() = (raw ushr SHIFT_Z) and MASK_Z
     inline val xz: Int get() = raw and ((MASK_X shl SHIFT_X) or (MASK_Z shl SHIFT_Z))
 
     inline fun modify(other: Int, component: Int, add: Int): InChunkPosition {
@@ -100,9 +100,9 @@ value class InChunkPosition(
     inline operator fun plus(other: _Vec3i) = InChunkPosition(this.x + other.x, this.y + other.y, this.z + other.z)
     inline operator fun minus(other: _Vec3i) = InChunkPosition(this.x - other.x, this.y - other.y, this.z - other.z)
 
-    override inline operator fun component1() = x
-    override inline operator fun component2() = y
-    override inline operator fun component3() = z
+    override operator fun component1() = x
+    override operator fun component2() = y
+    override operator fun component3() = z
 
     override fun toString() = "c($x $y $z)"
 

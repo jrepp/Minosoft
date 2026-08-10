@@ -93,7 +93,6 @@ enum class Directions(
 
         private const val MIN_ERROR = 0.0001f
 
-        @Deprecated("outsource")
         fun byDirection(direction: Vec3f): Directions {
             var minDirection = VALUES[0]
             var minError = 2.0f * 2.0f

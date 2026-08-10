@@ -17,7 +17,6 @@ import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.network.session.play.tick.Ticks
 import de.bixilon.minosoft.protocol.packets.s2c.play.title.TitleTimesS2CP
 
-@Deprecated("Observables")
 class TitleTimesSetEvent(
     session: PlaySession,
     val fadeIn: Ticks,

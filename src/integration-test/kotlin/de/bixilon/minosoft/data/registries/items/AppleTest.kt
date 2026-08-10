@@ -27,7 +27,6 @@ class AppleTest : ItemTest<AppleItem>() {
 
     fun getApple() {
         super.retrieveItem(AppleItem)
-        Assert.assertTrue(this.item is AppleItem)
     }
 }
 

@@ -44,6 +44,7 @@ abstract class RegistryItem : Identified {
 
     }
 
+    @Suppress("UNCHECKED_CAST")
     fun inject(registries: Registries) {
         if (!injectable || injects.isEmpty()) return
 

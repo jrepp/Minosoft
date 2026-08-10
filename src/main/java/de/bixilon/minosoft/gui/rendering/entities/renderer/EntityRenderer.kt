@@ -134,7 +134,6 @@ abstract class EntityRenderer<E : Entity>(
         features.unload()
     }
 
-    @Deprecated("What, why and how?")
     open fun invalidate() {
         features.invalidate()
     }

@@ -2697,7 +2697,7 @@ public final class Play {
         }
         if (node.isObject()) {
             ObjectNode result = DebugJson.MAPPER.createObjectNode();
-            node.fields().forEachRemaining(entry -> result.set(entry.getKey(), substitute(entry.getValue(), variables)));
+            node.properties().forEach(entry -> result.set(entry.getKey(), substitute(entry.getValue(), variables)));
             return result;
         }
         return node.deepCopy();
@@ -5225,6 +5225,8 @@ public final class Play {
     }
 
     private static final class PlayFailure extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
         private PlayFailure(String message) {
             super(message);
         }

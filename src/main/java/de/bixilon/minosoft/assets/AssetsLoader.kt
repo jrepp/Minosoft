@@ -61,6 +61,7 @@ object AssetsLoader {
         version: Version,
         property: AssetsVersionProperty = AssetsVersionProperties[version] ?: throw IllegalAccessException("$version has no assets!"),
         priorityAssets: List<AssetsManager> = emptyList(),
+        localMinecraftAssets: LocalMinecraftAssets = LocalMinecraftAssets.from(profile),
     ): SessionAssetsManager {
         val properties = profile.createPackProperties(version)
 
@@ -78,10 +79,10 @@ object AssetsLoader {
             manager += IntegratedAssets.VERSIONED.getOrNull(format - 1) ?: continue
         }
 
-        if (!profile.assets.disableIndexAssets) {
+        if (localMinecraftAssets.index) {
             manager += IndexAssetsManager(profile, property.indexHash, profile.assets.indexAssetsTypes.toSet(), version.packFormat)
         }
-        if (!profile.assets.disableJarAssets) {
+        if (localMinecraftAssets.clientJar) {
             manager += JarAssetsManager(property.jarAssetsHash, property.clientJarHash, profile, version, property.jarAssetsTarBytes ?: JarAssetsManager.DEFAULT_TAR_BYTES)
         }
         for (provider in ExternalAssetProviders.snapshot()) {

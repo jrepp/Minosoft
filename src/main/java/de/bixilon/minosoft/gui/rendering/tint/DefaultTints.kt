@@ -25,7 +25,6 @@ import de.bixilon.minosoft.gui.rendering.tint.tints.plants.StemTintCalculator
 import de.bixilon.minosoft.gui.rendering.tint.tints.plants.SugarCaneTintCalculator
 import de.bixilon.minosoft.gui.rendering.tint.tints.redstone.RedstoneWireTintCalculator
 
-@Deprecated("directly in integrated registries")
 object DefaultTints {
 
     fun init(manager: TintManager) {

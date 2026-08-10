@@ -22,6 +22,7 @@ import de.bixilon.minosoft.data.entities.block.redstone.piston.StickyPistonBlock
 import de.bixilon.minosoft.data.entities.block.sign.SignBlockEntity
 import de.bixilon.minosoft.data.registries.factory.DefaultFactory
 
+@Suppress("DEPRECATION") // The 1.12 bed entity remains registered for protocol compatibility.
 object DefaultBlockDataFactory : DefaultFactory<BlockEntityFactory<out BlockEntity>>(
     BedBlockEntity,
     SignBlockEntity,

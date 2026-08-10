@@ -94,14 +94,22 @@ lowest priority:
 7. generation-owned external asset providers, including adapted mod JARs;
 8. integrated defaults.
 
-The ordinary client does not supply priority assets. Integration tests use this
-seam to mount a small Minosoft-authored stand-in while disabling both local
-Minecraft managers, so renderer and credits checks do not depend on a Mojang
-asset index or client JAR. Set `MINOSOFT_CONTENT_FORGE_ROOT` to an absolute
-content-forge output directory to mount those out-of-source assets below the
-exact stand-in fixtures and enable their provenance, JSON, PNG, and Blockbench
-producer gate. Without that setting, the external gate skips and the tests stay
-hermetic.
+The ordinary client does not supply priority assets. Its
+`LocalMinecraftAssets` selection defaults from the resources profile, retaining
+independent support for the locally imported Mojang index and client JAR.
+Callers may override that selection without mutating the profile. Integration
+tests use this seam to select `LocalMinecraftAssets.NONE` and mount a small
+Minosoft-authored stand-in, so renderer and credits checks do not depend on a
+Mojang asset index or client JAR.
+
+The checked-in exact fixtures and generic fallback are a deterministic
+bootstrap, not the completeness boundary. The target is a complete
+Minosoft-authored stand-in whose normal renderer bootstrap does not reach the
+generic fallback; local Mojang sources remain a supported compatibility lane.
+Set `MINOSOFT_CONTENT_FORGE_ROOT` to an absolute content-forge output directory
+to mount those out-of-source assets below the exact stand-in fixtures and
+enable their provenance, JSON, PNG, and Blockbench producer gate. Without that
+setting, the external gate skips and the tests stay hermetic.
 
 The play parent materializes verified Packwiz resource-pack artifacts into the
 selected trajectory immediately before launch. Managed packs have deterministic

@@ -33,10 +33,10 @@ value class SVec4i(val raw: Int) : _Vec4i {
     }
 
 
-    override inline val x: Int get() = (((raw ushr SHIFT_X) and MASK_X) shl (Int.SIZE_BITS - BITS_X)) shr (Int.SIZE_BITS - BITS_X)
-    override inline val y: Int get() = (((raw ushr SHIFT_Y) and MASK_Y) shl (Int.SIZE_BITS - BITS_Y)) shr (Int.SIZE_BITS - BITS_Y)
-    override inline val z: Int get() = (((raw ushr SHIFT_Z) and MASK_Z) shl (Int.SIZE_BITS - BITS_Z)) shr (Int.SIZE_BITS - BITS_Z)
-    override inline val w: Int get() = (((raw ushr SHIFT_W) and MASK_W) shl (Int.SIZE_BITS - BITS_W)) shr (Int.SIZE_BITS - BITS_W)
+    override val x: Int get() = (((raw ushr SHIFT_X) and MASK_X) shl (Int.SIZE_BITS - BITS_X)) shr (Int.SIZE_BITS - BITS_X)
+    override val y: Int get() = (((raw ushr SHIFT_Y) and MASK_Y) shl (Int.SIZE_BITS - BITS_Y)) shr (Int.SIZE_BITS - BITS_Y)
+    override val z: Int get() = (((raw ushr SHIFT_Z) and MASK_Z) shl (Int.SIZE_BITS - BITS_Z)) shr (Int.SIZE_BITS - BITS_Z)
+    override val w: Int get() = (((raw ushr SHIFT_W) and MASK_W) shl (Int.SIZE_BITS - BITS_W)) shr (Int.SIZE_BITS - BITS_W)
 
 
     inline fun plusX(): SVec4i {

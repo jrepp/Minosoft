@@ -138,7 +138,7 @@ object JavaFXUtil {
 
         val controller = fxmlLoader.getController<T>()
 
-        controller::root.field[controller] = pane
+        EmbeddedJavaFXController<Pane>::root.field[controller] = pane
         controller.postInit()
 
         return controller

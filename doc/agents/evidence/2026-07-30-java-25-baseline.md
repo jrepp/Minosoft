@@ -32,7 +32,7 @@ earlier runs; it is not evidence for the current baseline.
 
 | Component | Accepted version |
 | --- | --- |
-| Local JDK | Oracle JDK 25.0.1 LTS, macOS aarch64 |
+| Local JDK | OpenJDK 25.0.4, macOS aarch64 |
 | Gradle wrapper | 9.5.0 |
 | Kotlin Gradle plugin/language | 2.4.0 |
 | Fabric Loom | 1.17.17 |
@@ -54,6 +54,26 @@ The four JVM entry points compiled successfully:
   :play-util:compileJava \
   :debug-server-fabric:compileJava
 ```
+
+On 2026-08-10 the repository established a compiler-diagnostic ratchet for
+this baseline. Kotlin uses `allWarningsAsErrors`; Java uses `-Xlint:all` and
+`-Werror` in every JVM project. The following forced rebuild completed without
+compiler warnings or errors on OpenJDK 25.0.4:
+
+```sh
+./gradlew classes testClasses integrationTestClasses \
+  :render-contracts:testClasses \
+  :debug-core:testClasses \
+  :play-util:testClasses \
+  :debug-server-fabric:classes \
+  -Pkotlin.incremental=false --rerun-tasks --warning-mode all
+```
+
+Generated application launchers and all JVM test tasks explicitly allow the
+legacy `sun.misc.Unsafe` access required by pinned `kutil:1.31`; this prevents
+Java 25's terminal transition warning without extending that compatibility
+boundary to new repository code. Test suites install SLF4J's no-op provider
+because they do not consume an SLF4J logging backend.
 
 `javap -verbose` reported class-file major version 69 for:
 
@@ -116,6 +136,6 @@ performance protocol; the focused rerun and complete gate then passed.
 - The managed Fabric 1.20.4 lane is verified with Loader 0.19.3. Other external
   server loaders and versions require their own Java 25 compatibility evidence.
 - This build gate does not replace a live OpenGL or hot-reload trajectory.
-- Gradle reports existing Gradle 10 deprecations, and Java 25 warns when LWJGL
-  calls restricted native loading without an explicit native-access option.
-  Neither warning failed this baseline, but both remain maintenance work.
+- The compiler ratchet covers source compilation. Runtime diagnostics from an
+  exercised dependency, renderer, driver, or external server remain behavioral
+  evidence and must be handled by the owning acceptance lane.

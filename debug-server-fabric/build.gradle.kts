@@ -17,6 +17,7 @@ plugins {
 
 group = "de.bixilon.minosoft"
 version = "0.1.0"
+val fabricModVersion = version.toString()
 
 base {
     archivesName.set("minosoft-debug-bridge-fabric-1.20.4")
@@ -25,6 +26,17 @@ base {
 repositories {
     mavenCentral()
     maven("https://maven.fabricmc.net/")
+}
+
+dependencies.components {
+    withModule("com.fasterxml.jackson.core:jackson-annotations") {
+        allVariants {
+            withCapabilities {
+                removeCapability("com.fasterxml.jackson.core", "jackson-annotations")
+                addCapability("com.fasterxml.jackson.core", "jackson-annotations", "2.22.0")
+            }
+        }
+    }
 }
 
 dependencies {
@@ -45,14 +57,15 @@ dependencies {
     include(implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.0")!!)
     include(implementation("net.java.dev.jna:jna-jpms:5.18.1")!!)
     include(implementation("net.java.dev.jna:jna-platform-jpms:5.18.1")!!)
+    compileOnly("com.google.errorprone:error_prone_annotations:2.28.0")
     testImplementation(platform("org.junit:junit-bom:5.14.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 tasks.processResources {
-    inputs.property("version", project.version)
-    filesMatching("fabric.mod.json") { expand("version" to project.version) }
+    inputs.property("version", fabricModVersion)
+    filesMatching("fabric.mod.json") { expand("version" to fabricModVersion) }
 }
 
 tasks.test {

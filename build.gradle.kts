@@ -70,14 +70,17 @@ allprojects {
         tasks.withType<JavaCompile>().configureEach {
             options.encoding = StandardCharsets.UTF_8.name()
             options.release.set(minosoftJavaVersion.asInt())
+            options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
         }
         tasks.withType<Test>().configureEach {
             jvmArgs("--enable-native-access=ALL-UNNAMED")
+            jvmArgs("--sun-misc-unsafe-memory-access=allow")
         }
     }
     pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
         extensions.configure<KotlinJvmProjectExtension> {
             compilerOptions.jvmTarget.set(JvmTarget.JVM_25)
+            compilerOptions.allWarningsAsErrors.set(true)
         }
     }
 }
@@ -212,6 +215,7 @@ testing {
                 implementation("de.bixilon:kutil:$kutilVersion")
                 implementation("org.jetbrains.kotlin:kotlin-test:2.4.0")
                 implementation("com.github.ajalt.clikt:clikt:5.1.0")
+                runtimeOnly("org.slf4j:slf4j-nop:2.0.18")
             }
 
             targets {
@@ -271,6 +275,7 @@ testing {
                 runtimeOnly("org.lwjgl:lwjgl:$lwjglVersion:natives-$lwjglNatives")
                 runtimeOnly("org.lwjgl:lwjgl-glfw:$lwjglVersion:natives-$lwjglNatives")
                 runtimeOnly("org.lwjgl:lwjgl-opengl:$lwjglVersion:natives-$lwjglNatives")
+                runtimeOnly("org.slf4j:slf4j-nop:2.0.18")
 
                 implementation("de.bixilon:mbf-kotlin:1.0.3") { exclude("com.github.luben", "zstd-jni") }
 
@@ -665,7 +670,10 @@ kotlin {
 
 application {
     mainClass.set("de.bixilon.minosoft.Minosoft")
-    applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
+    applicationDefaultJvmArgs = listOf(
+        "--enable-native-access=ALL-UNNAMED",
+        "--sun-misc-unsafe-memory-access=allow",
+    )
 }
 
 // The play supervisor stages hot-reload candidates away from the active

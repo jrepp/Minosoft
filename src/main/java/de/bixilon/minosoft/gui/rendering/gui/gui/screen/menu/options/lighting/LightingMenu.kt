@@ -47,8 +47,8 @@ class LightingMenu(guiRenderer: GUIRenderer) : Menu(guiRenderer, preferredElemen
         initialStep = LightingControls.playerLightStep(light.playerLightIntensity),
         label = ::playerLightText,
     ) { light.playerLightIntensity = LightingControls.playerLightForStep(it) }
-    private lateinit var fullbright: ButtonElement
-    private lateinit var ambientOcclusion: ButtonElement
+    private val fullbright: ButtonElement
+    private val ambientOcclusion: ButtonElement
 
     init {
         fullbright = ButtonElement(guiRenderer, toggleText("menu.lighting.fullbright", light.fullbright)) {

@@ -127,7 +127,6 @@ interface RenderSystem {
 
     fun clear(vararg buffers: IntegratedBufferTypes)
 
-    @Deprecated("There should not be any errors, or they should directly crash the render system")
     fun getErrors(): List<RenderSystemError>
 
 

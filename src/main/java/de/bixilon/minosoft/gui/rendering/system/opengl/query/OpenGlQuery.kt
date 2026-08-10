@@ -93,7 +93,6 @@ class OpenGlQuery(
             get() = when (this) {
                 QueryTypes.FRAGMENTS -> GL_SAMPLES_PASSED
                 QueryTypes.TIME -> GL_TIME_ELAPSED
-                else -> throw IllegalArgumentException("Query type $this not supported in opengl")
             }
     }
 }

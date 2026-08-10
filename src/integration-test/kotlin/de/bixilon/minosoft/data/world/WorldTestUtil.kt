@@ -93,6 +93,7 @@ object WorldTestUtil {
                     val position = BlockPosition(x, y, z)
                     val section = chunk.getOrPut(y.sectionHeight) ?: continue
                     if (superUnsafe) {
+                        @Suppress("UNCHECKED_CAST")
                         var data = DATA[section.blocks] as Array<BlockState?>?
                         if (data == null) {
                             data = arrayOfNulls<BlockState?>(ChunkSize.BLOCKS_PER_SECTION)

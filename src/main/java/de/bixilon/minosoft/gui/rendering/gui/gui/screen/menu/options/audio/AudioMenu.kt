@@ -39,7 +39,7 @@ class AudioMenu(guiRenderer: GUIRenderer) : Menu(guiRenderer, preferredElementWi
         initialStep = AudioControls.volumeStep(audio.volume.master),
         label = ::volumeText,
     ) { audio.volume.master = AudioControls.volumeForStep(it) }
-    private lateinit var enabled: ButtonElement
+    private val enabled: ButtonElement
 
     init {
         enabled = ButtonElement(guiRenderer, toggleText("menu.audio.enabled", audio.enabled)) {

@@ -49,7 +49,6 @@ class LocalPlayerPhysics(entity: LocalPlayerEntity) : PlayerPhysics<LocalPlayerE
     override val inWater: Boolean get() = super.submersion.waterSubmersionState
 
 
-    @Deprecated("don't like it")
     var previousStartElytra = false
 
     override fun canClimb() = entity.gamemode != Gamemodes.SPECTATOR

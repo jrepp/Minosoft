@@ -16,8 +16,8 @@ package de.bixilon.minosoft.data.entities.data.types
 import de.bixilon.kutil.json.JsonObject
 import de.bixilon.kutil.json.JsonUtil.toJsonObject
 import de.bixilon.minosoft.data.entities.GlobalPosition
-import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3iUtil.blockPosition
 import de.bixilon.minosoft.gui.rendering.util.vec.vec3.Vec3iUtil.toVec3i
+import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.protocol.ProtocolVersions
 import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayInByteBuffer
@@ -36,7 +36,8 @@ object GlobalPositionEntityDataType : EntityDataType<GlobalPosition> {
 
     fun JsonObject.toGlobalPosition(session: PlaySession): GlobalPosition {
         val dimension = session.registries.dimension[this["dimension"]]
-        val position = this["pos"].toVec3i().blockPosition
+        val vector = this["pos"].toVec3i()
+        val position = BlockPosition(vector.x, vector.y, vector.z)
         return GlobalPosition(dimension, position)
     }
 }

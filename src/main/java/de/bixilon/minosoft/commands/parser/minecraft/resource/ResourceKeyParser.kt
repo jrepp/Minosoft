@@ -20,6 +20,7 @@ import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 import de.bixilon.minosoft.data.registries.registries.registry.AbstractRegistry
 import de.bixilon.minosoft.protocol.protocol.buffers.play.PlayInByteBuffer
 
+@Suppress("DEPRECATION")
 @Deprecated("TODO")
 class ResourceKeyParser(
     val registry: AbstractRegistry<*>?,

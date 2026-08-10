@@ -5,17 +5,25 @@
 ## Decision
 
 `RenderTestLoader` and `CreditsAssetsIT` must not require a locally imported
-Mojang asset index or client JAR. `OfflineTestAssets` disables both managers and
-mounts a checked-in Minosoft-authored resource-pack stand-in through
-`AssetsLoader`'s explicit caller-priority seam. The exact fixture covers the
-font and item/block-model contracts asserted by the renderer test; a test-only
-fallback supplies inert generated item models and Minosoft's bundled white
-texture for unrelated renderer-bootstrap lookups. The fallback supplies a
-generated 256x256 white matrix for the two colormaps and cloud coverage because
-those consumers require exact dimensions.
+Mojang asset index or client JAR. `OfflineTestAssets` selects
+`LocalMinecraftAssets.NONE` for its loader instance and mounts a checked-in
+Minosoft-authored resource-pack stand-in through `AssetsLoader`'s explicit
+caller-priority seam. It does not mutate the resources profile. The default
+selection still maps the profile's independent index/JAR controls, retaining
+the local Mojang compatibility lane for the ordinary client.
 
-The ordinary client passes no caller-priority assets, so its asset order and
-local-only provenance contract are unchanged. The integration-suite bootstrap
+The exact fixture covers the font and item/block-model contracts asserted by
+the renderer test; a test-only fallback supplies inert generated item models
+and Minosoft's bundled white texture for unrelated renderer-bootstrap lookups.
+The fallback supplies a generated 256x256 white matrix for the two colormaps
+and cloud coverage because those consumers require exact dimensions. This is a
+deterministic bootstrap, not completeness evidence. The target is a complete
+Minosoft-authored stand-in that no longer reaches the generic fallback during
+normal renderer initialization.
+
+The ordinary client passes no caller-priority assets, so its asset order,
+profile-controlled local sources, and local-only provenance contract are
+unchanged. The integration-suite bootstrap
 also loads `MinosoftProperties` before boot tasks, matching the application
 pre-boot invariant required by render-time debug elements.
 
@@ -42,16 +50,16 @@ The current `/Users/jrepp/d/content-forge/out` tree contains 966 blockstates,
 current bytes completed Minosoft's dummy renderer bootstrap and both focused
 model assertions without the Mojang index or client JAR.
 
-The publication-integrity gate correctly remains red: all 3,871 declared
-targets exist, but 681 hashes differ from `provenance.json`. The manifest is
-dated 2026-08-08 while representative changed model output is dated 2026-08-10.
-The content-forge worktree already contains unrelated in-progress authoring and
-producer changes; it was inspected read-only. Republish that output and its
-provenance together before treating the external gate as accepted.
+`npm run publish` regenerated the ignored `out/provenance.json` from the
+current output and declared 5,609 targets. The publication-integrity gate then
+passed: every declared target exists and matches its SHA-256, and the existing
+966 blockstates, 2,171 models, and 2,472 textures pass the JSON/PNG and
+Blockbench-producer checks. The content-forge worktree's unrelated in-progress
+authoring and producer changes were not modified.
 
-The complete hermetic `integrationTest` suite passed on Java 25.0.4 with the
-external gate skipped, including all three renderer-loader checks and the
-credits asset check.
+The focused external publication gate, all three renderer-loader checks, and
+the credits asset check passed on Java 25.0.4 without the Mojang index or
+client JAR.
 
 ## Validation
 

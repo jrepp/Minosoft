@@ -18,7 +18,6 @@ import de.bixilon.minosoft.data.scoreboard.ScoreboardPositions
 import de.bixilon.minosoft.modding.event.events.session.play.PlaySessionEvent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
-@Deprecated("Observables")
 class ObjectivePositionSetEvent(
     session: PlaySession,
     val position: ScoreboardPositions,

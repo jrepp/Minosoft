@@ -29,14 +29,14 @@ value class RGBColor(override val rgb: Int) : Color, TextFormattable {
     constructor(red: Float, green: Float, blue: Float) : this(Color.fromFloat(red), Color.fromFloat(green), Color.fromFloat(blue))
     constructor(rgb: Vec3f) : this(rgb.x, rgb.y, rgb.z)
 
-    override inline val red: Int get() = (rgb ushr RED_SHIFT) and MASK
-    override inline val green: Int get() = (rgb ushr GREEN_SHIFT) and MASK
-    override inline val blue: Int get() = (rgb ushr BLUE_SHIFT) and MASK
+    override val red: Int get() = (rgb ushr RED_SHIFT) and MASK
+    override val green: Int get() = (rgb ushr GREEN_SHIFT) and MASK
+    override val blue: Int get() = (rgb ushr BLUE_SHIFT) and MASK
 
 
-    override inline val redf get() = Color.toFloat(red)
-    override inline val greenf get() = Color.toFloat(green)
-    override inline val bluef get() = Color.toFloat(blue)
+    override val redf get() = Color.toFloat(red)
+    override val greenf get() = Color.toFloat(green)
+    override val bluef get() = Color.toFloat(blue)
 
 
     inline operator fun plus(value: Int) = plus(RGBColor(value, value, value))
@@ -58,8 +58,8 @@ value class RGBColor(override val rgb: Int) : Color, TextFormattable {
     inline fun with(red: Float = this.redf, green: Float = this.greenf, blue: Float = this.bluef) = RGBColor(red, green, blue)
     inline fun with(red: Float = this.redf, green: Float = this.greenf, blue: Float = this.bluef, alpha: Float) = RGBAColor(red, green, blue, alpha)
 
-    override inline fun rgb() = this
-    override inline fun rgba() = RGBAColor(red, green, blue, MAX)
+    override fun rgb() = this
+    override fun rgba() = RGBAColor(red, green, blue, MAX)
 
 
     fun mix(other: RGBColor) = RGBColor((red + other.red) / 2, (green + other.green) / 2, (blue + other.blue) / 2)

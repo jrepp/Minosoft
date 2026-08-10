@@ -19,7 +19,6 @@ import de.bixilon.minosoft.physics.entities.EntityPhysics
 import de.bixilon.minosoft.physics.properties.SwimmingVehicle
 
 class BoatPhysics(entity: Boat) : EntityPhysics<Boat>(entity), SwimmingVehicle {
-    @Deprecated("TODO")
     val location = Boat.BoatLocations.WATER
 
     override val inWater: Boolean

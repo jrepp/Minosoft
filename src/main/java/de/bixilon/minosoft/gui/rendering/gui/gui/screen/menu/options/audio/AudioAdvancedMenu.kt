@@ -28,10 +28,10 @@ import de.bixilon.minosoft.gui.rendering.gui.gui.screen.menu.Menu
 class AudioAdvancedMenu(guiRenderer: GUIRenderer) : Menu(guiRenderer, preferredElementWidth = 250.0f) {
     private val audio: AudioProfile = guiRenderer.session.profiles.audio
     private val player = guiRenderer.context.rendering.audioPlayer
-    private lateinit var engineStartup: ButtonElement
-    private lateinit var packetSounds: ButtonElement
-    private lateinit var guiSounds: ButtonElement
-    private lateinit var buttonSounds: ButtonElement
+    private val engineStartup: ButtonElement
+    private val packetSounds: ButtonElement
+    private val guiSounds: ButtonElement
+    private val buttonSounds: ButtonElement
 
     init {
         packetSounds = ButtonElement(guiRenderer, toggleText("menu.audio.packet_sounds", audio.types.packet)) {

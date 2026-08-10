@@ -33,18 +33,18 @@ value class RGBAColor(val rgba: Int) : Color, TextFormattable {
 
     constructor(red: Float, green: Float, blue: Float, alpha: Float = 1.0f) : this(Color.fromFloat(red), Color.fromFloat(green), Color.fromFloat(blue), Color.fromFloat(alpha))
 
-    override inline val red: Int get() = (rgba ushr RED_SHIFT) and MASK
-    override inline val green: Int get() = (rgba ushr GREEN_SHIFT) and MASK
-    override inline val blue: Int get() = (rgba ushr BLUE_SHIFT) and MASK
+    override val red: Int get() = (rgba ushr RED_SHIFT) and MASK
+    override val green: Int get() = (rgba ushr GREEN_SHIFT) and MASK
+    override val blue: Int get() = (rgba ushr BLUE_SHIFT) and MASK
     inline val alpha: Int get() = (rgba ushr ALPHA_SHIFT) and MASK
 
 
-    override inline val redf get() = Color.toFloat(red)
-    override inline val greenf get() = Color.toFloat(green)
-    override inline val bluef get() = Color.toFloat(blue)
+    override val redf get() = Color.toFloat(red)
+    override val greenf get() = Color.toFloat(green)
+    override val bluef get() = Color.toFloat(blue)
     inline val alphaf get() = Color.toFloat(alpha)
 
-    override inline val rgb get() = rgba ushr BITS
+    override val rgb get() = rgba ushr BITS
     inline val argb get() = (rgba ushr BITS) or (rgba shl 3 * BITS)
 
 
@@ -64,8 +64,8 @@ value class RGBAColor(val rgba: Int) : Color, TextFormattable {
     inline fun with(red: Int = this.red, green: Int = this.green, blue: Int = this.blue, alpha: Int = this.alpha) = RGBAColor(red, green, blue, alpha)
     inline fun with(red: Float = this.redf, green: Float = this.greenf, blue: Float = this.bluef, alpha: Float = this.alphaf) = RGBAColor(red, green, blue, alpha)
 
-    override inline fun rgb() = RGBColor(red, green, blue)
-    override inline fun rgba() = this
+    override fun rgb() = RGBColor(red, green, blue)
+    override fun rgba() = this
 
     fun mix(other: RGBAColor) = RGBAColor((red + other.red) / 2, (green + other.green) / 2, (blue + other.blue) / 2, (alpha + other.alpha) / 2)
     fun mixRGB(other: RGBAColor) = RGBAColor((red + other.red) / 2, (green + other.green) / 2, (blue + other.blue) / 2, alpha * other.alpha)

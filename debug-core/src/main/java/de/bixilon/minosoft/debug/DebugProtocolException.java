@@ -10,6 +10,8 @@ package de.bixilon.minosoft.debug;
 import java.io.IOException;
 
 public class DebugProtocolException extends IOException {
+    private static final long serialVersionUID = 1L;
+
     public DebugProtocolException(String message) { super(message); }
     public DebugProtocolException(String message, Throwable cause) { super(message, cause); }
 }

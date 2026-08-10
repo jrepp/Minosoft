@@ -11,6 +11,8 @@
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
 
+@file:Suppress("DEPRECATION") // BlockProperties remains the multi-version fallback for chest type.
+
 package de.bixilon.minosoft.data.entities.block.container.storage
 
 import de.bixilon.minosoft.data.entities.block.BlockEntityFactory

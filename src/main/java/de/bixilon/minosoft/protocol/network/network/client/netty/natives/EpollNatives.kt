@@ -16,11 +16,12 @@ package de.bixilon.minosoft.protocol.network.network.client.netty.natives
 import de.bixilon.kutil.concurrent.thread.NamedThreadFactory
 import io.netty.channel.Channel
 import io.netty.channel.epoll.Epoll
-import io.netty.channel.epoll.EpollEventLoopGroup
+import io.netty.channel.MultiThreadIoEventLoopGroup
+import io.netty.channel.epoll.EpollIoHandler
 import io.netty.channel.epoll.EpollSocketChannel
 
 object EpollNatives : TransportNatives {
-    override val pool by lazy { EpollEventLoopGroup(NamedThreadFactory("Epoll#%d")) }
+    override val pool by lazy { MultiThreadIoEventLoopGroup(NamedThreadFactory("Epoll#%d"), EpollIoHandler.newFactory()) }
     override val channel: Class<out Channel> = EpollSocketChannel::class.java
 
     init {

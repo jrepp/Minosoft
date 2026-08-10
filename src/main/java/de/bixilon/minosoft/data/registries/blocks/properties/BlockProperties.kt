@@ -25,7 +25,6 @@ import de.bixilon.minosoft.data.registries.blocks.types.building.dirt.SnowyBlock
 import de.bixilon.minosoft.data.registries.blocks.types.building.snow.SnowLayerBlock
 import de.bixilon.minosoft.data.registries.blocks.types.fluid.FluidBlock
 
-@Deprecated("Fallback data")
 object BlockProperties {
     private val list: MutableList<BlockProperty<*>> = mutableListOf()
 
@@ -150,7 +149,6 @@ object BlockProperties {
     val TRIAL_SPAWNER_STATE = EnumProperty("trial_spawner_state", TrialSpawnerStates).register()
 
 
-    @Deprecated("should not exist")
     fun <T : BlockProperty<*>> T.register(): T {
         list += this
         return this
@@ -173,7 +171,6 @@ object BlockProperties {
         return Pair(property, property.parse(value)!!)
     }
 
-    @Deprecated("not block specific")
     fun parseFallbackProperty(group: String, value: Any): Pair<BlockProperty<*>, Any> {
         val properties = PROPERTIES[group] ?: throw FastException("Can not find group: $group, expected value $value")
 

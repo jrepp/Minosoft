@@ -43,10 +43,10 @@ object AmbientOcclusionUtil {
         if (x < -1 || x > 16 || y < -1 || y > 16 || z < -1 || z > 16) throw IllegalArgumentException("x=$x, y=$y, z=$z")
 
         if (x < 0) {
-            section = section?.neighbours?.get(O_WEST)
+            section = section.neighbours[O_WEST]
             x = ChunkSize.SECTION_MAX_X
         } else if (x > ChunkSize.SECTION_MAX_X) {
-            section = section?.neighbours?.get(O_EAST)
+            section = section.neighbours[O_EAST]
             x = 0
         }
 

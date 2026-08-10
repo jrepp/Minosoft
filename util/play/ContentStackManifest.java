@@ -131,9 +131,7 @@ final class ContentStackManifest {
 
         Map<String, Source> byLabel = new LinkedHashMap<>();
         for (Source source : sources) byLabel.put(source.label(), source);
-        var entries = overrides.fields();
-        while (entries.hasNext()) {
-            Map.Entry<String, JsonNode> entry = entries.next();
+        for (Map.Entry<String, JsonNode> entry : overrides.properties()) {
             String label = entry.getKey();
             Source base = byLabel.get(label);
             require(base != null, "Local content stack overlay references unknown source label '" + label + "' in " + overlay);

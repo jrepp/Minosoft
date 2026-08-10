@@ -159,8 +159,8 @@ object Minosoft {
 
     private fun initLog() {
         DefaultThreadPool += ThreadPoolRunnable(forcePool = true) { Log.init() }
-        DefaultThreadPool += ThreadPoolRunnable(forcePool = true) { FormattingCodes }
-        DefaultThreadPool += ThreadPoolRunnable(forcePool = true) { ChatColors }
+        DefaultThreadPool += ThreadPoolRunnable(forcePool = true) { FormattingCodes::class.java.forceInit() }
+        DefaultThreadPool += ThreadPoolRunnable(forcePool = true) { ChatColors::class.java.forceInit() }
     }
 
     private fun _main(args: Array<String>) {

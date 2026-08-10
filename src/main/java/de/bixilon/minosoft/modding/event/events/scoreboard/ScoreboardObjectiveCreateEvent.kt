@@ -17,7 +17,6 @@ import de.bixilon.minosoft.data.scoreboard.ScoreboardObjective
 import de.bixilon.minosoft.modding.event.events.session.play.PlaySessionEvent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
-@Deprecated("Observables")
 class ScoreboardObjectiveCreateEvent(
     session: PlaySession,
     val objective: ScoreboardObjective,

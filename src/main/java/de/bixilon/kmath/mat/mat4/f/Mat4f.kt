@@ -49,8 +49,8 @@ value class Mat4f(val _0: UnsafeMat4f) : _Mat4f {
 
     val unsafe get() = MMat4f(_0)
 
-    override inline operator fun get(row: Int) = Vec4f(this[row, 0], this[row, 1], this[row, 2], this[row, 3])
-    override inline operator fun get(row: Int, column: Int) = _0[row, column]
+    override operator fun get(row: Int) = Vec4f(this[row, 0], this[row, 1], this[row, 2], this[row, 3])
+    override operator fun get(row: Int, column: Int) = _0[row, column]
 
 
     inline operator fun plus(number: Number) = MMat4f().apply { Mat4Operations.plus(this@Mat4f, number.f, this) }.unsafe

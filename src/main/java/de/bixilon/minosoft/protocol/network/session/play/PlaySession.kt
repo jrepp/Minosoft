@@ -120,7 +120,6 @@ class PlaySession(
     lateinit var language: Translator
 
 
-    @Deprecated("will be removed once split into modules")
     var rendering: Rendering? = null
         private set
     val player: LocalPlayerEntity = unsafeNull()

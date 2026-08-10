@@ -27,15 +27,11 @@ object TranslatableComponents {
     val GENERAL_EXIT = minosoft("general.exit")
     val GENERAL_REFRESH = minosoft("general.refresh")
 
-    @Deprecated("yah")
     val EROS_DELETE_SERVER_CONFIRM_DESCRIPTION = { name: ChatComponent, address: String -> IntegratedLanguage.LANGUAGE.forceTranslate(minosoft("server_info.delete.dialog.description"), name, address) }
 
-    @Deprecated("yah")
     val ACCOUNT_CARD_CONNECTION_COUNT = { count: Int -> IntegratedLanguage.LANGUAGE.forceTranslate(minosoft("main.account.card.session_count"), count) }
 
-    @Deprecated("yah")
     val CONNECTION_KICK_DESCRIPTION = { server: AbstractServer, account: Account -> IntegratedLanguage.LANGUAGE.forceTranslate(minosoft("session.kick.description"), server.name, account.username) }
 
-    @Deprecated("yah")
     val CONNECTION_LOGIN_KICK_DESCRIPTION = { server: AbstractServer, account: Account -> IntegratedLanguage.LANGUAGE.forceTranslate(minosoft("session.login_kick.description"), server.name, account.username) }
 }

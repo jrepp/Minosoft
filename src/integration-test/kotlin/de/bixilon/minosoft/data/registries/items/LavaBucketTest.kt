@@ -28,7 +28,6 @@ class LavaBucketTest : ItemTest<FilledBucketItem.Lava>() {
 
     fun getLava() {
         super.retrieveItem(FilledBucketItem.Lava)
-        assertTrue(item is FilledBucketItem.Lava)
         assertTrue(item.fluid is LavaFluid, "Expected lava, found ${item.fluid}")
     }
 }

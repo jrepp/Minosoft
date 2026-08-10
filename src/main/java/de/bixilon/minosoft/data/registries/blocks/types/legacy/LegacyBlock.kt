@@ -10,6 +10,8 @@
  *
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
+@file:Suppress("DEPRECATION") // Pre-flattening identifiers still require the legacy compatibility fixer.
+
 package de.bixilon.minosoft.data.registries.blocks.types.legacy
 
 import de.bixilon.kutil.json.JsonObject

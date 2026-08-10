@@ -34,8 +34,8 @@ import de.bixilon.minosoft.gui.rendering.system.base.PolygonModes
 class DebugRenderingMenu(guiRenderer: GUIRenderer) : Menu(guiRenderer, preferredElementWidth = 180.0f) {
     private val worldFramebuffer = guiRenderer.context.framebuffer.main
     private val debugHud = guiRenderer.hud[DebugHUDElement]
-    private lateinit var wireframe: ButtonElement
-    private lateinit var debugHudToggle: ButtonElement
+    private val wireframe: ButtonElement
+    private val debugHudToggle: ButtonElement
 
     init {
         wireframe = ButtonElement(guiRenderer, toggleText("menu.debug.rendering.wireframe", isWireframe())) {

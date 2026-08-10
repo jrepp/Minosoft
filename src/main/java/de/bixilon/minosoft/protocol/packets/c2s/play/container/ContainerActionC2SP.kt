@@ -18,7 +18,6 @@ import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
 
-@Deprecated("Unknown purpose???")
 class ContainerActionC2SP(
     val containerId: Int,
     val actionId: Int,
