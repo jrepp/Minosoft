@@ -27,8 +27,11 @@ import de.bixilon.minosoft.data.entities.entities.InteractionEntity
 import de.bixilon.minosoft.data.entities.entities.player.local.Abilities
 import de.bixilon.minosoft.data.registries.dimension.DimensionProperties
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
+import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.text.BaseComponent
 import de.bixilon.minosoft.data.text.ChatComponent
+import de.bixilon.minosoft.data.world.positions.BlockPosition
+import de.bixilon.minosoft.data.world.positions.ChunkPosition
 import de.bixilon.minosoft.local.datapack.LocalDataPackEntityAccess
 import de.bixilon.minosoft.local.datapack.LocalDisplayEntityFactory
 import de.bixilon.minosoft.local.generator.ChunkGenerator
@@ -216,6 +219,28 @@ class LocalConnection(
         )
     }
 
+    /**
+     * Places a bounded set of blocks through the normal client-world mutation
+     * path. Any chunk the placements touch is generated and registered first, and
+     * each write fires the ordinary single-block update, so neighbours are re-lit
+     * and re-meshed exactly like a server-pushed block change.
+     */
+    @Synchronized
+    fun placeBlocks(placements: List<LocalBlockPlacement>): Int {
+        check(active && ::session.isInitialized) { "Local connection is not active." }
+        val world = session.world
+        val loadedChunks = hashSetOf<ChunkPosition>()
+        for (placement in placements) {
+            val position = placement.position
+            require(world.isValidPosition(position)) { "Block position $position is outside the world." }
+            if (loadedChunks.add(position.chunkPosition)) {
+                chunks.ensureLoaded(position.chunkPosition)
+            }
+            world[position] = placement.state
+        }
+        return placements.size
+    }
+
     private fun recordInteraction(entityId: Int, attack: Boolean) {
         val entity = session.world.entities[entityId] as? InteractionEntity ?: return
         if (displayFactory?.owns(entity) != true) return
@@ -238,6 +263,11 @@ class LocalConnection(
 
     private fun Vec3d.isFinite() = x.isFinite() && y.isFinite() && z.isFinite()
     private fun EntityRotation.isFinite() = yaw.isFinite() && pitch.isFinite()
+
+    data class LocalBlockPlacement(
+        val position: BlockPosition,
+        val state: BlockState,
+    )
 
     data class LocalDataPackExecution(
         val executed: Int,

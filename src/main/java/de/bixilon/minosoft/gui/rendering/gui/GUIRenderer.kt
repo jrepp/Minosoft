@@ -122,7 +122,9 @@ class GUIRenderer(
     }
 
     override fun prepareDrawAsync() {
-        hud.drawAsync()
+        if (hud.enabled) {
+            hud.drawAsync()
+        }
         gui.drawAsync()
         popper.drawAsync()
         dragged.drawAsync()
@@ -132,7 +134,9 @@ class GUIRenderer(
         FabricClientEvents.dispatch(FabricClientEventPhase.BEFORE_HUD_RENDER, context)
         var hudFailure: Throwable? = null
         try {
-            hud.draw()
+            if (hud.enabled) {
+                hud.draw()
+            }
         } catch (throwable: Throwable) {
             hudFailure = throwable
             throw throwable

@@ -19,6 +19,7 @@ import de.bixilon.kutil.collections.map.LockMap
 import de.bixilon.kutil.concurrent.pool.ThreadPool
 import de.bixilon.kutil.latch.AbstractLatch
 import de.bixilon.kutil.reflection.ReflectionUtil.forceSet
+import de.bixilon.minosoft.assets.audit.ContentAssetAudit
 import de.bixilon.minosoft.assets.minecraft.MinecraftPackFormat
 import de.bixilon.minosoft.assets.util.InputStreamUtil.readJsonObject
 import de.bixilon.minosoft.data.registries.blocks.types.Block
@@ -45,6 +46,7 @@ class BlockLoader(private val loader: ModelLoader) {
         cache[file]?.let { return it }
         val data = assets.getOrNull(file)?.readJsonObject()
         if (data == null) {
+            loader.context.contentAssetAudit.missing(ContentAssetAudit.Kind.MODEL, file, name)
             Log.log(LogMessageType.LOADING, LogLevels.WARN) { "Can not find block model $name" }
             return null
         }
@@ -58,7 +60,11 @@ class BlockLoader(private val loader: ModelLoader) {
     }
 
     fun loadState(block: Block, file: ResourceLocation): BlockModelPrototype? {
-        val data = assets.getOrNull(file)?.readJsonObject() ?: return null
+        val data = assets.getOrNull(file)?.readJsonObject()
+        if (data == null) {
+            loader.context.contentAssetAudit.missing(ContentAssetAudit.Kind.BLOCKSTATE, file, block.identifier)
+            return null
+        }
 
         val model = DirectBlockModel.deserialize(this, block, data)
         return model?.load(loader.context.textures)

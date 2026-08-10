@@ -18,6 +18,7 @@ import de.bixilon.kutil.concurrent.queue.Queue
 import de.bixilon.kutil.observer.DataObserver.Companion.observe
 import de.bixilon.kutil.observer.DataObserver.Companion.observed
 import de.bixilon.kutil.profiler.stack.StackedProfiler
+import de.bixilon.minosoft.assets.audit.ContentAssetAudit
 import de.bixilon.minosoft.gui.rendering.camera.Camera
 import de.bixilon.minosoft.gui.rendering.font.manager.FontManager
 import de.bixilon.minosoft.gui.rendering.framebuffer.FramebufferManager
@@ -51,6 +52,7 @@ class RenderContext(
 
     val input = InputManager(this)
     val screenshotTaker = ScreenshotTaker(this)
+    val contentAssetAudit = ContentAssetAudit()
     val tints = TintManager(session)
     val textures = system.createTextureManager()
 

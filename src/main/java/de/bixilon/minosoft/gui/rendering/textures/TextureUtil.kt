@@ -25,11 +25,13 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.Texture
 import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.TextureBufferFactory
 import de.matthiasmann.twl.utils.PNGDecoder
 import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
 import javax.imageio.ImageIO
 
 object TextureUtil {
+    private const val MAX_ENCODED_TEXTURE_BYTES = 64 * 1024 * 1024
     private val COMPONENTS_4 = intArrayOf(0, 1, 2, 3)
     private val COMPONENTS_3 = intArrayOf(0, 1, 2)
     private val COMPONENTS_1 = intArrayOf(0, 0, 0)
@@ -57,7 +59,7 @@ object TextureUtil {
     }
 
     private fun InputStream.readTexture2(factory: TextureBufferFactory<*>?): TextureBuffer {
-        val image: BufferedImage = ImageIO.read(this)
+        val image: BufferedImage = requireNotNull(ImageIO.read(this)) { "Texture is not a supported image" }
         val size = Vec2i(image.width, image.height)
         val buffer = factory?.create(size) ?: when {
             image.raster.numBands == 3 -> RGB8Buffer(size)
@@ -87,11 +89,19 @@ object TextureUtil {
     }
 
     fun InputStream.readTexture(factory: TextureBufferFactory<*>? = null) = use {
+        val encoded = readNBytes(MAX_ENCODED_TEXTURE_BYTES + 1)
+        require(encoded.size <= MAX_ENCODED_TEXTURE_BYTES) {
+            "Encoded texture exceeds the $MAX_ENCODED_TEXTURE_BYTES byte limit"
+        }
         try {
-            readTexture1(factory)
-        } catch (exception: Throwable) {
-            this.reset()
-            readTexture2(factory)
+            ByteArrayInputStream(encoded).readTexture1(factory)
+        } catch (exception: Exception) {
+            try {
+                ByteArrayInputStream(encoded).readTexture2(factory)
+            } catch (fallback: Exception) {
+                fallback.addSuppressed(exception)
+                throw fallback
+            }
         }
     }
 

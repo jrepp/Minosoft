@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "name": "standalone",
+  "standalone": true,
+  "managed_modpack": "distant-horizons-bliss",
+  "sources": [
+    {
+      "type": "generated",
+      "label": "generated-compatibility",
+      "environment": "MINOSOFT_CONTENT_AUDIT_STAGES",
+      "default": ".run/content-audits/terrain-local-dojo-stages",
+      "optional": true
+    },
+    {
+      "type": "voxelibre",
+      "label": "voxelibre-base",
+      "environment": "MINOSOFT_VOXELIBRE_ROOT",
+      "default": "../VoxeLibre"
+    },
+    {
+      "type": "managed_mods",
+      "label": "managed-mod-assets"
+    },
+    {
+      "type": "mods",
+      "label": "local-mod-assets",
+      "environment": "MINOSOFT_CONTENT_MODS",
+      "optional": true,
+      "multiple": true
+    },
+    {
+      "type": "directory",
+      "label": "loose-content",
+      "environment": "MINOSOFT_CONTENT_DIRECTORIES",
+      "optional": true,
+      "multiple": true
+    },
+    {
+      "type": "notice",
+      "label": "standalone-content-notices",
+      "default": "content-stacks/notices/standalone/NOTICE.md"
+    },
+    {
+      "type": "managed_resource_pack",
+      "label": "faithful-32x",
+      "artifact": "Faithful 32x - 1.20.4.zip"
+    },
+    {
+      "type": "managed_resource_pack",
+      "label": "vanilla-evolved",
+      "artifact": "VanillaEvolved_1.9.0.zip"
+    },
+    {
+      "type": "managed_resource_pack",
+      "label": "open-assets-lib",
+      "artifact": "Open Assets Lib.zip"
+    },
+    {
+      "type": "managed_resource_pack",
+      "label": "gui-revision",
+      "artifact": "GUIRevision_2.1.0.zip"
+    },
+    {
+      "type": "archive",
+      "label": "local-resource-packs",
+      "environment": "MINOSOFT_RESOURCE_PACKS",
+      "optional": true,
+      "multiple": true
+    },
+    {
+      "type": "archive",
+      "label": "faithful-overlays",
+      "environment": "MINOSOFT_FAITHFUL_PACKS",
+      "optional": true,
+      "multiple": true
+    }
+  ]
+}

@@ -1,0 +1,3152 @@
+{
+  "name": "content-place-blocks-rejections",
+  "steps": [
+    {
+      "name": "client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "empty block list rejected",
+      "type": "request",
+      "role": "client",
+      "operation": "content.place-blocks",
+      "expectError": {
+        "code": "invalid_request"
+      },
+      "body": {
+        "blocks": []
+      }
+    },
+    {
+      "name": "out-of-range coordinate rejected",
+      "type": "request",
+      "role": "client",
+      "operation": "content.place-blocks",
+      "expectError": {
+        "code": "invalid_request"
+      },
+      "body": {
+        "blocks": [
+          {
+            "x": 0,
+            "y": 9999,
+            "z": 0,
+            "state": "minecraft:stone"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown block rejected",
+      "type": "request",
+      "role": "client",
+      "operation": "content.place-blocks",
+      "expectError": {
+        "code": "invalid_request"
+      },
+      "body": {
+        "blocks": [
+          {
+            "x": 0,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:not_a_block"
+          }
+        ]
+      }
+    },
+    {
+      "name": "over-limit block list rejected",
+      "type": "request",
+      "role": "client",
+      "operation": "content.place-blocks",
+      "expectError": {
+        "code": "limit_exceeded"
+      },
+      "body": {
+        "blocks": [
+          {
+            "x": 0,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 0,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 1,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 2,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 3,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 4,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 5,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 6,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 7,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 8,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 9,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 10,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 11,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 12,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 13,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 14,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 1,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 2,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 3,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 4,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 5,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 6,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 7,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 8,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 9,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 10,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 11,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 12,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 13,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 14,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 15,
+            "y": 19,
+            "z": 15,
+            "state": "minecraft:stone"
+          },
+          {
+            "x": 0,
+            "y": 20,
+            "z": 0,
+            "state": "minecraft:stone"
+          }
+        ]
+      }
+    }
+  ]
+}

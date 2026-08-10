@@ -23,7 +23,6 @@ import de.bixilon.minosoft.data.entities.entities.display.ItemDisplayContext
 import de.bixilon.minosoft.data.entities.entities.display.ItemDisplayEntity
 import de.bixilon.minosoft.data.entities.entities.display.TextDisplayAlignment
 import de.bixilon.minosoft.data.entities.entities.display.TextDisplayEntity
-import de.bixilon.minosoft.data.registries.blocks.properties.BlockProperty
 import de.bixilon.minosoft.data.registries.blocks.state.BlockState
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.modding.loader.fabric.FabricRemoteRegistrySync
@@ -259,16 +258,7 @@ class LocalDisplayEntityFactory(private val session: PlaySession) {
         return ItemStack(item, count, nbt = NbtProperty(nbt))
     }
 
-    private fun blockState(raw: Any?): BlockState? {
-        val state = (raw as? Map<*, *>)?.stringMap() ?: return null
-        val block = state["Name"]?.toString()?.let { session.registries.block[ResourceLocation.of(it)] } ?: return null
-        val properties: Map<BlockProperty<*>, Any> = state["Properties"]?.stringMap()?.map { (name, value) ->
-            val property = block.properties[name]
-                ?: throw IllegalArgumentException("Unknown property $name for ${block.identifier}")
-            property to requireNotNull(property.parse(value))
-        }?.toMap() ?: emptyMap()
-        return if (properties.isEmpty()) block.states.default else block.states.withProperties(properties)
-    }
+    private fun blockState(raw: Any?): BlockState? = session.parseLocalBlockState(raw)
 
     private fun brightness(raw: Any?): Int? {
         if (raw is Number) return raw.toInt()

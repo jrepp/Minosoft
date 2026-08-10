@@ -33,12 +33,17 @@ import de.bixilon.minosoft.gui.rendering.gui.gui.screen.menu.debug.DebugMenu
 import de.bixilon.minosoft.gui.rendering.gui.gui.screen.menu.options.audio.AudioMenu
 import de.bixilon.minosoft.gui.rendering.gui.gui.screen.menu.options.lighting.LightingMenu
 import de.bixilon.minosoft.gui.rendering.gui.gui.screen.menu.options.mods.FabricModSettingsMenu
+import de.bixilon.minosoft.modding.loader.fabric.FabricPackLoader
 import de.bixilon.minosoft.terminal.RunConfiguration
 
 class PauseMenu(guiRenderer: GUIRenderer) : Menu(guiRenderer) {
 
     init {
-        this += TextElement(guiRenderer, RunConfiguration.APPLICATION_NAME, background = null, properties = TextRenderProperties(HorizontalAlignments.CENTER, scale = 3.0f))
+        val applicationTitle = RunConfiguration.APPLICATION_NAME.substringBefore(' ')
+        this += TextElement(guiRenderer, applicationTitle, background = null, properties = TextRenderProperties(HorizontalAlignments.CENTER, scale = 3.0f))
+        FabricPackLoader.current()?.report?.let { report ->
+            this += TextElement(guiRenderer, "Fabric · ${report.stackModCount} mods · ${report.stackFingerprint.take(12)}", background = null, properties = TextRenderProperties(HorizontalAlignments.CENTER))
+        }
         this += SpacerElement(guiRenderer, Vec2f(0, 20))
 
         this += ButtonElement(guiRenderer, "menu.pause.back_to_game".i18n()) { guiRenderer.gui.popOrPause() }

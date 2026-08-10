@@ -1,0 +1,28 @@
+{
+  "_readme": [
+    "Machine-local overlay for content-stacks/standalone.json. Copy this file to",
+    "'standalone.local.json' (git-ignored) and edit the paths. The loader applies it",
+    "automatically whenever it reads standalone.json.",
+    "",
+    "This is the producer/consumer rendezvous: Minosoft (consumer) points a source at",
+    "a local handoff directory that Blockbench + automation (producer) writes generated",
+    "content into. Only a source's resolvable fields may be retargeted here (default",
+    "path, environment key, optional flag), keyed by the source 'label' from",
+    "standalone.json. Source order, type, label, artifact, and multiple stay",
+    "source-controlled and cannot be overridden.",
+    "",
+    "Labels available in standalone.json: generated-compatibility, voxelibre-base,",
+    "managed-mod-assets, local-mod-assets, loose-content, standalone-content-notices,",
+    "faithful-32x, vanilla-evolved, open-assets-lib, gui-revision, local-resource-packs,",
+    "faithful-overlays."
+  ],
+  "schema": 1,
+  "overrides": {
+    "loose-content": {
+      "default": "/absolute/path/to/blockbench-producer/out/resourcepack"
+    },
+    "generated-compatibility": {
+      "default": "/absolute/path/to/local/content-audit-stages"
+    }
+  }
+}

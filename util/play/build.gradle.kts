@@ -30,6 +30,12 @@ sourceSets {
     main {
         java.setSrcDirs(listOf("."))
         java.include("Play.java")
+        java.include("ContentPackAdapter.java")
+        java.include("ContentPackComposer.java")
+        java.include("ContentStackManifest.java")
+        java.include("ContentSubmissionQueue.java")
+        java.include("GeneratedContentPack.java")
+        java.include("GeneratedTextureLibrary.java")
         java.include("MotionNoiseAnalyzer.java")
         java.include("TrajectoryDiagnostics.java")
         java.include("TrajectoryCheckpointStore.java")

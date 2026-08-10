@@ -19,6 +19,7 @@ import de.bixilon.minosoft.util.json.Jackson
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
 import kotlin.io.path.createDirectories
@@ -27,6 +28,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class FabricPackPreflightTest {
@@ -429,6 +431,44 @@ class FabricPackPreflightTest {
         }
         assertTrue(FabricRendererRegistry.registrations().isEmpty())
         assertTrue(FabricClientEvents.registrations(FabricClientEventPhase.BEFORE_WORLD_RENDER).isEmpty())
+    }
+
+    @Test
+    fun `stack count and fingerprint cover the full mod stack deterministically`() {
+        fun metadata(id: String, version: String, nested: List<String> = emptyList()) = FabricMetadata(
+            id = id,
+            version = version,
+            name = id,
+            environment = "*",
+            entrypoints = emptySet(),
+            dependencies = emptyMap(),
+            provides = emptySet(),
+            mixins = 0,
+            accessWidener = null,
+            nestedJarPaths = nested,
+            source = "test",
+        )
+        val probes = listOf(
+            FabricModProbe(metadata("sodium", "0.5.8"), emptySet(), null, nestedMods = listOf(metadata("fabric_api", "1.0.0"))),
+            FabricModProbe(metadata("iris", "1.7.2"), emptySet(), null),
+        )
+        val pack = metadata("test_pack", "1.0.0")
+        val report = FabricPackReport(Path.of("test"), pack, probes)
+        val reversed = FabricPackReport(Path.of("test"), pack, probes.reversed())
+        val versioned = FabricPackReport(
+            Path.of("test"),
+            pack,
+            listOf(
+                FabricModProbe(metadata("sodium", "0.5.8"), emptySet(), null),
+                FabricModProbe(metadata("iris", "1.7.3"), emptySet(), null),
+            ),
+        )
+
+        assertEquals(3, report.stackModCount)
+        assertTrue(report.stackFingerprint.matches(Regex("[0-9a-f]{64}")))
+        assertEquals(report.stackFingerprint, reversed.stackFingerprint)
+        assertEquals(report.stackFingerprint, FabricPackReport(Path.of("test"), pack, probes).stackFingerprint)
+        assertNotEquals(report.stackFingerprint, versioned.stackFingerprint)
     }
 
     private fun writeMod(path: java.nio.file.Path, json: String) {

@@ -21,10 +21,17 @@ server/
 # Runtime state and logs used by play.sh
 .run/
 
+# uv-managed local tooling virtualenv (util/tools)
+util/tools/.venv/
+
 # Modpack manifests are tracked; resolved third-party artifacts are not
 modpacks/**/*.jar
 modpacks/**/*.zip
 modpacks/**/*.mrpack
+
+# Content stack manifests are tracked; machine-local overlays (producer/consumer
+# rendezvous paths) are not. The tracked *.local.json.example templates stay.
+content-stacks/*.local.json
 
 it/
 

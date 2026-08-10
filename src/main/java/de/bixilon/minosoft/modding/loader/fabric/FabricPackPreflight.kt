@@ -16,9 +16,12 @@ package de.bixilon.minosoft.modding.loader.fabric
 import de.bixilon.minosoft.util.logging.Log
 import de.bixilon.minosoft.util.logging.LogLevels
 import de.bixilon.minosoft.util.logging.LogMessageType
+import java.io.ByteArrayInputStream
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
-import java.io.ByteArrayInputStream
+import java.security.MessageDigest
+import java.util.HexFormat
 import java.util.jar.JarInputStream
 import java.util.jar.JarFile
 import kotlin.io.path.extension
@@ -99,6 +102,27 @@ data class FabricPackReport(
         mods.any { it.activation == FabricActivationMode.ADAPTED } -> FabricActivationMode.ADAPTED
         else -> FabricActivationMode.DIRECT
     }
+
+    /** Every top-level mod and its nested mods; this is the full pack stack. */
+    val stackMetadata: List<FabricMetadata>
+        get() = mods.flatMap { listOf(it.metadata) + it.nestedMods }
+
+    /** Distinct mod ids across the full pack stack. */
+    val stackModCount: Int
+        get() = stackMetadata.map(FabricMetadata::id).distinct().count()
+
+    /** Deterministic SHA-256 over the sorted id/version pairs of the full pack stack. */
+    val stackFingerprint: String
+        get() {
+            val digest = MessageDigest.getInstance("SHA-256")
+            for (metadata in stackMetadata.sortedWith(compareBy(FabricMetadata::id, FabricMetadata::version))) {
+                digest.update(metadata.id.toByteArray(StandardCharsets.UTF_8))
+                digest.update(0)
+                digest.update(metadata.version.toByteArray(StandardCharsets.UTF_8))
+                digest.update(0)
+            }
+            return HexFormat.of().formatHex(digest.digest())
+        }
 
     fun log() {
         Log.log(LogMessageType.MOD_LOADING, LogLevels.INFO) {

@@ -17,6 +17,7 @@ import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.kutil.stream.InputStreamUtil.readAll
 import de.bixilon.kutil.unsafe.UnsafeUtil.setUnsafeAccessible
 import de.bixilon.minosoft.data.text.formatting.color.RGBAColor
+import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.readTexture
 import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.RGB8Buffer
 import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.RGBA8Buffer
 import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.TextureBuffer
@@ -24,6 +25,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.Texture
 import org.testng.Assert.assertEquals
 import org.testng.annotations.Test
 import java.io.ByteArrayInputStream
+import java.io.IOException
 import java.io.InputStream
 
 @Test(groups = ["texture", "assets"])
@@ -67,6 +69,15 @@ class TextureReadingTest {
     fun `read gray 2`() {
         val texture = READ_2.invoke(TextureUtil, ByteArrayInputStream(GRAY_GRAY), null) as TextureBuffer
         texture.assertGray()
+    }
+
+    fun `read gray through fallback without stream reset`() {
+        val unmarked = object : ByteArrayInputStream(GRAY_GRAY) {
+            override fun markSupported() = false
+            override fun reset() = throw IOException("reset must not be used")
+        }
+
+        unmarked.readTexture().assertGray()
     }
 
     private fun TextureBuffer.assertSand() {

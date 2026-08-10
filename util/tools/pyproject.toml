@@ -1,0 +1,11 @@
+[project]
+name = "minosoft-tools"
+version = "0.1.0"
+description = "Local Python tooling for Minosoft agent work (image analysis)."
+requires-python = ">=3.11"
+dependencies = [
+    "pillow==11.3.0",
+]
+
+[tool.uv]
+package = false
