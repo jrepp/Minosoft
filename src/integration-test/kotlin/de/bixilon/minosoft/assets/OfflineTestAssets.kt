@@ -36,6 +36,19 @@ object OfflineTestAssets {
         )
     }
 
+    fun createContentForge(session: PlaySession, root: Path): SessionAssetsManager {
+        return AssetsLoader.create(
+            profile = session.profiles.resources,
+            version = session.version,
+            priorityAssets = listOf(
+                DirectoryAssetsManager(requireContentRoot(root)),
+                DirectoryAssetsManager(standInRoot()),
+                OfflineFallbackAssetsManager(),
+            ),
+            localMinecraftAssets = LocalMinecraftAssets.NONE,
+        )
+    }
+
     fun contentForgeRoot(): Path? {
         val configured = System.getenv(CONTENT_FORGE_ROOT_ENV)?.trim().orEmpty()
         if (configured.isEmpty()) return null
