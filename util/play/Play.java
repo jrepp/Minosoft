@@ -98,6 +98,12 @@ public final class Play {
     private static final long MAX_SCREENSHOT_PIXELS = 16_777_216L;
     private static final long MAX_SCREENSHOT_FILE_BYTES = 64L * 1024 * 1024;
     private static final long MAX_MODPACK_ARTIFACT_BYTES = 1024L * 1024 * 1024;
+    private static final long DEFAULT_PREVIEW_SETTLE_MILLIS = 10_000L;
+    private static final long MAX_PREVIEW_SETTLE_MILLIS = DebugChannelServer.MAX_DEADLINE_MS;
+    private static final long DEFAULT_PREVIEW_SETTLE_FRAMES = 24L;
+    private static final long MAX_PREVIEW_SETTLE_FRAMES = 600L;
+    private static final int DEFAULT_PREVIEW_STATES_PER_PAGE = 16;
+    private static final int MAX_PREVIEW_STATES_PER_PAGE = 64;
     private static final int[] ARGB_CHANNEL_SHIFTS = {24, 16, 8, 0};
 
     private final Map<String, String> environment = System.getenv();
@@ -144,6 +150,8 @@ public final class Play {
     private boolean canaryEnabled;
     private boolean localWorld;
     private boolean debugGpuMemoryLeaks;
+    private boolean suppressManagedShaderPack;
+    private String activeContentFingerprint = "";
     private boolean jsonOutput;
     private long worldSeed;
     private String worldGenerator;
@@ -441,21 +449,28 @@ public final class Play {
 
     /**
      * Boot a graphical Minosoft client in a local world with the composed content stack,
-     * place a single queued asset, capture a PNG, and exit. The asset id/target
+     * stage one queued asset, capture a PNG, and exit. The asset id/target
      * is resolved against the content queue so previews stay in lockstep with
-     * demand. Blocks use bounded real-world placement; items use the content-preview
-     * data pack's display function. The frame is captured via {@code visual.capture}.
+     * demand. Flat blocks use bounded, version-aware pages that exactly cover the
+     * registry's legal state set; underwater blocks remain single material samples,
+     * and items use the content-preview data pack's display function. Each state page
+     * is captured with a machine-readable provenance sidecar.
      */
     private void runContentPreview(List<String> rawArguments) throws Exception {
         List<String> arguments = new ArrayList<>(rawArguments);
         require(!arguments.isEmpty(),
-            "Usage: ./play.sh content preview <asset> [--manifest NAME] [--stage SOURCE] [--output FILE] [--distance N] [--scene flat|underwater] [--json]");
+            "Usage: ./play.sh content preview <asset> [--manifest NAME] [--stage SOURCE] [--output FILE] [--distance N] [--scene flat|underwater] [--state-page all|N] [--states-per-page N] [--settle MS] [--settle-frames N] [--strict] [--json]");
         String asset = arguments.remove(0);
         String manifestReference = "standalone";
         String stage = "";
         Path output = null;
-        double distance = 3.5;
+        double distance = 2.75;
         String scene = "flat";
+        String statePage = "all";
+        int statesPerPage = DEFAULT_PREVIEW_STATES_PER_PAGE;
+        long settleMillis = DEFAULT_PREVIEW_SETTLE_MILLIS;
+        long settleFrames = DEFAULT_PREVIEW_SETTLE_FRAMES;
+        boolean strict = false;
         boolean json = false;
         while (!arguments.isEmpty()) {
             String option = arguments.remove(0);
@@ -482,6 +497,28 @@ public final class Play {
                 scene = arguments.remove(0).toLowerCase(Locale.ROOT);
             } else if (option.startsWith("--scene=")) {
                 scene = option.substring("--scene=".length()).toLowerCase(Locale.ROOT);
+            } else if (option.equals("--state-page")) {
+                require(!arguments.isEmpty(), "--state-page requires all or a one-based page number.");
+                statePage = parsePreviewStatePage(arguments.remove(0));
+            } else if (option.startsWith("--state-page=")) {
+                statePage = parsePreviewStatePage(option.substring("--state-page=".length()));
+            } else if (option.equals("--states-per-page")) {
+                require(!arguments.isEmpty(), "--states-per-page requires a count.");
+                statesPerPage = parsePreviewStatesPerPage(arguments.remove(0));
+            } else if (option.startsWith("--states-per-page=")) {
+                statesPerPage = parsePreviewStatesPerPage(option.substring("--states-per-page=".length()));
+            } else if (option.equals("--settle")) {
+                require(!arguments.isEmpty(), "--settle requires milliseconds.");
+                settleMillis = parsePreviewSettleMillis(arguments.remove(0));
+            } else if (option.startsWith("--settle=")) {
+                settleMillis = parsePreviewSettleMillis(option.substring("--settle=".length()));
+            } else if (option.equals("--settle-frames")) {
+                require(!arguments.isEmpty(), "--settle-frames requires a frame count.");
+                settleFrames = parsePreviewSettleFrames(arguments.remove(0));
+            } else if (option.startsWith("--settle-frames=")) {
+                settleFrames = parsePreviewSettleFrames(option.substring("--settle-frames=".length()));
+            } else if (option.equals("--strict")) {
+                strict = true;
             } else if (option.equals("--json")) {
                 json = true;
             } else {
@@ -490,6 +527,7 @@ public final class Play {
         }
         require(distance >= 1.0 && distance <= 32.0, "--distance must be between 1 and 32.");
         require(scene.equals("flat") || scene.equals("underwater"), "--scene must be flat or underwater.");
+        require(scene.equals("flat") || statePage.equals("all"), "--state-page applies only to the flat scene.");
 
         // 1. Resolve the asset against the content queue (kind = block | item).
         ContentStackManifest.Definition definition = readContentStack(manifestReference);
@@ -509,9 +547,11 @@ public final class Play {
         contentStage = stage;
         modpackName = definition.managedModpack();
         standaloneContent = definition.standalone();
+        suppressManagedShaderPack = true;
         installDistribution();
         PreparedPack pack = modpackName.isBlank() ? null : prepareModpack(modpackName, trajectory);
         supervisedClient = launchSupervisedClient(pack, null);
+        ArrayNode captures = DebugJson.MAPPER.createArrayNode();
         try {
             PredicateObservation joined = waitForPredicate("client.joined", Duration.ofSeconds(120), supervisedClient.pid());
             require(joined.matched, "Client did not join the local world within 120 seconds.");
@@ -523,27 +563,66 @@ public final class Play {
             try (DebugClient client = DebugClient.connect(DebugPaths.system(), endpoint)) {
                 ObjectNode reference = DebugJson.MAPPER.createObjectNode();
                 reference.put("timeOfDay", 6000).put("clearWeather", true)
-                    .put("hideHud", true).put("hideClouds", true).put("hideHitboxes", true);
-                client.request("visual.prepare-reference", reference, 10_000);
-
-                if (resolved.kind().equals("block")) {
-                    client.request("content.place-blocks", blockPlacementBody(resolved, distance, scene), 10_000);
+                    .put("hideHud", true).put("hideClouds", true).put("hideHitboxes", true)
+                    .put("hideEntities", resolved.kind().equals("block")).put("hideParticles", true).put("hideArm", true);
+                if (resolved.kind().equals("block") && scene.equals("flat")) {
+                    int requestedPage = statePage.equals("all") ? 0 : Integer.parseInt(statePage) - 1;
+                    ObjectNode probe = previewStateSculptureBody(resolved.id(), requestedPage, statesPerPage, distance);
+                    JsonNode catalog = client.request("content.place-block-state-sculpture", probe, 10_000);
+                    int totalPages = catalog.path("totalPages").asInt(0);
+                    require(totalPages > 0, "Block-state sculpture returned no pages.");
+                    require(requestedPage < totalPages,
+                        "--state-page must be between 1 and " + totalPages + " for " + resolved.id() + ".");
+                    int firstPage = statePage.equals("all") ? 0 : requestedPage;
+                    int lastPage = statePage.equals("all") ? totalPages : requestedPage + 1;
+                    for (int pageIndex = firstPage; pageIndex < lastPage; pageIndex++) {
+                        ObjectNode placement = previewStateSculptureBody(
+                            resolved.id(),
+                            pageIndex,
+                            statesPerPage,
+                            distance,
+                            catalog.path("columns").asInt(1),
+                            catalog.path("rows").asInt(1),
+                            catalog.path("spacing").asInt(2)
+                        );
+                        PreviewPageCapture capture = capturePreviewPage(
+                            client,
+                            reference,
+                            "content.place-block-state-sculpture",
+                            placement,
+                            settleMillis,
+                            settleFrames,
+                            strict
+                        );
+                        Path pageOutput = previewPageOutput(output, pageIndex, totalPages, statePage.equals("all"));
+                        writePreviewCapture(pageOutput, capture.response());
+                        ObjectNode manifest = previewCaptureManifest(
+                            resolved,
+                            definition,
+                            scene,
+                            settleMillis,
+                            settleFrames,
+                            strict,
+                            pageOutput,
+                            capture.placement(),
+                            capture.response()
+                        );
+                        writeJsonAtomic(previewManifestPath(pageOutput), manifest);
+                        captures.add(manifest);
+                    }
                 } else {
-                    client.request("content.execute-local", previewPlacementBody(resolved, distance), 10_000);
+                    String placementOperation = resolved.kind().equals("block") ? "content.place-blocks" : "content.execute-local";
+                    ObjectNode placement = resolved.kind().equals("block")
+                        ? blockPlacementBody(resolved, distance, scene)
+                        : previewPlacementBody(resolved, distance);
+                    PreviewPageCapture capture = capturePreviewPage(
+                        client, reference, placementOperation, placement, settleMillis, settleFrames, strict
+                    );
+                    writePreviewCapture(output, capture.response());
+                    ObjectNode result = capture.response().result().deepCopy();
+                    result.put("output", output.toString());
+                    captures.add(result);
                 }
-                // Let terrain builds/uploads settle so we do not capture mid-initialization.
-                ObjectNode flush = DebugJson.MAPPER.createObjectNode();
-                flush.put("condition", "ALL").put("timeoutMs", 10_000);
-                try {
-                    client.request("render.terrain.flush-idle", flush, 15_000);
-                } catch (DebugClientException unavailable) {
-                    System.err.println("Terrain did not reach the preview idle boundary: " + unavailable.getMessage());
-                }
-                waitFrames(client, 24, 20_000);
-
-                DebugResponse response = client.requestWithAttachment("visual.capture", DebugJson.MAPPER.createObjectNode(), 15_000);
-                require(response.hasAttachment(), "visual.capture returned no PNG.");
-                Files.write(output, response.attachment());
             }
         } finally {
             cleanupSupervisor();
@@ -551,15 +630,199 @@ public final class Play {
 
         ObjectNode summary = DebugJson.MAPPER.createObjectNode();
         summary.put("asset", resolved.id()).put("kind", resolved.kind())
-            .put("target", resolved.target()).put("manifest", definition.name()).put("output", output.toString());
+            .put("target", resolved.target()).put("manifest", definition.name()).put("output", output.toString())
+            .put("contentFingerprint", activeContentFingerprint)
+            .put("scene", scene).put("statePage", statePage).put("statesPerPage", statesPerPage)
+            .put("settleMillis", settleMillis).put("settleFrames", settleFrames).put("strict", strict)
+            .set("captures", captures);
+        if (resolved.kind().equals("block") && scene.equals("flat")) {
+            summary.put("schema", 1).put("captureSet", previewCaptureSetPath(output).toString());
+            writeJsonAtomic(previewCaptureSetPath(output), summary);
+        }
         printDebugJson(summary, json);
     }
 
-    private record PreviewAsset(String id, String kind, String target) {}
+    static String parsePreviewStatePage(String value) {
+        String normalized = value.toLowerCase(Locale.ROOT);
+        if (normalized.equals("all")) return normalized;
+        long page = parseLong(value, "--state-page");
+        require(page >= 1L && page <= Integer.MAX_VALUE, "--state-page must be all or a positive page number.");
+        return Long.toString(page);
+    }
+
+    static int parsePreviewStatesPerPage(String value) {
+        long count = parseLong(value, "--states-per-page");
+        require(count >= 1L && count <= MAX_PREVIEW_STATES_PER_PAGE,
+            "--states-per-page must be between 1 and " + MAX_PREVIEW_STATES_PER_PAGE + ".");
+        return (int) count;
+    }
+
+    private ObjectNode previewStateSculptureBody(String id, int pageIndex, int pageSize, double distance) {
+        int columns = (int) Math.ceil(Math.sqrt(pageSize));
+        int rows = (pageSize + columns - 1) / columns;
+        return previewStateSculptureBody(id, pageIndex, pageSize, distance, columns, rows, 2);
+    }
+
+    private ObjectNode previewStateSculptureBody(
+        String id,
+        int pageIndex,
+        int pageSize,
+        double distance,
+        int columns,
+        int rows,
+        int spacing
+    ) {
+        require(columns >= 1 && rows >= 1 && spacing >= 2, "Block-state sculpture returned an invalid layout.");
+        double targetY = 20.5 + (rows - 1) * spacing / 2.0;
+        double width = (columns - 1) * 2.0 + 1.0;
+        double height = (rows - 1) * spacing + (spacing > 2 ? 2.0 : 1.0);
+        double framingDistance = Math.min(32.0, Math.max(distance, Math.max(width, height) * 1.375));
+        ObjectNode body = DebugJson.MAPPER.createObjectNode();
+        body.put("block", id).put("page", pageIndex).put("pageSize", pageSize);
+        body.set("origin", localPoseJson(0.5, targetY, 0.5, 0.0f, 0.0f));
+        body.set("camera", previewCameraJson(0.5, targetY, 0.5, framingDistance));
+        return body;
+    }
+
+    private PreviewPageCapture capturePreviewPage(
+        DebugClient client,
+        ObjectNode reference,
+        String placementOperation,
+        ObjectNode placement,
+        long settleMillis,
+        long settleFrames,
+        boolean strict
+    ) throws Exception {
+        client.request("visual.prepare-reference", reference, 10_000);
+        JsonNode placementResult = client.request(placementOperation, placement, 10_000);
+        ObjectNode flush = DebugJson.MAPPER.createObjectNode();
+        flush.put("condition", "ALL").put("timeoutMs", settleMillis);
+        try {
+            long requestDeadlineMillis = Math.min(DebugChannelServer.MAX_DEADLINE_MS, settleMillis + 5_000L);
+            client.request("render.terrain.flush-idle", flush, requestDeadlineMillis);
+        } catch (DebugClientException unavailable) {
+            String message = "Terrain did not reach the preview idle boundary: " + unavailable.getMessage();
+            if (strict) throw failure(message);
+            System.err.println(message);
+        }
+        long frameTimeoutMillis = Math.max(20_000L, Math.min(120_000L, settleFrames * 1_000L));
+        waitFrames(client, settleFrames, frameTimeoutMillis);
+
+        // A debug round trip can reopen transient UI on a focus-pausing host.
+        // Re-prepare and reapply real blocks at the capture boundary. Item
+        // functions replace display entities, so retain their settled instance.
+        client.request("visual.prepare-reference", reference, 10_000);
+        if (!placementOperation.equals("content.execute-local")) {
+            placementResult = client.request(placementOperation, placement, 10_000);
+        }
+        DebugResponse response = client.requestWithAttachment(
+            "visual.capture", DebugJson.MAPPER.createObjectNode(), 15_000
+        );
+        require(response.hasAttachment(), "visual.capture returned no PNG.");
+        return new PreviewPageCapture(placementResult, response);
+    }
+
+    private void writePreviewCapture(Path output, DebugResponse response) throws Exception {
+        byte[] attachment = response.attachment();
+        require(attachment.length <= MAX_SCREENSHOT_FILE_BYTES, "visual.capture exceeded the screenshot byte limit.");
+        String actualHash = HexFormat.of().formatHex(digest("sha256").digest(attachment));
+        String expectedHash = response.result().path("sha256").asText("");
+        require(expectedHash.isBlank() || expectedHash.equals(actualHash),
+            "visual.capture attachment hash did not match its metadata.");
+        if (output.getParent() != null) Files.createDirectories(output.getParent());
+        Files.write(output, attachment);
+    }
+
+    private ObjectNode previewCaptureManifest(
+        PreviewAsset asset,
+        ContentStackManifest.Definition definition,
+        String scene,
+        long settleMillis,
+        long settleFrames,
+        boolean strict,
+        Path output,
+        JsonNode placement,
+        DebugResponse response
+    ) throws Exception {
+        String verifiedHash = HexFormat.of().formatHex(digest("sha256").digest(response.attachment()));
+        ObjectNode manifest = DebugJson.MAPPER.createObjectNode();
+        manifest.put("schema", 1).put("kind", "block-state-sculpture-capture")
+            .put("asset", asset.id()).put("target", asset.target()).put("contentManifest", definition.name())
+            .put("contentFingerprint", activeContentFingerprint)
+            .put("scene", scene).put("output", output.toString()).put("bytes", response.attachment().length)
+            .put("verifiedSha256", verifiedHash).put("settleMillis", settleMillis)
+            .put("settleFrames", settleFrames).put("strict", strict);
+        manifest.set("sculpture", placement.deepCopy());
+        manifest.set("capture", response.result().deepCopy());
+        return manifest;
+    }
+
+    private static Path previewPageOutput(Path output, int pageIndex, int totalPages, boolean allPages) {
+        if (!allPages || totalPages == 1) return output;
+        String fileName = output.getFileName().toString();
+        int suffix = fileName.lastIndexOf('.');
+        String stem = suffix > 0 ? fileName.substring(0, suffix) : fileName;
+        String extension = suffix > 0 ? fileName.substring(suffix) : ".png";
+        String pageName = String.format(
+            Locale.ROOT, "%s-states-%03d-of-%03d%s", stem, pageIndex + 1, totalPages, extension
+        );
+        return output.resolveSibling(pageName);
+    }
+
+    private static Path previewManifestPath(Path output) {
+        String fileName = output.getFileName().toString();
+        int suffix = fileName.lastIndexOf('.');
+        String stem = suffix > 0 ? fileName.substring(0, suffix) : fileName;
+        return output.resolveSibling(stem + ".json");
+    }
+
+    private static Path previewCaptureSetPath(Path output) {
+        String fileName = output.getFileName().toString();
+        int suffix = fileName.lastIndexOf('.');
+        String stem = suffix > 0 ? fileName.substring(0, suffix) : fileName;
+        return output.resolveSibling(stem + ".capture-set.json");
+    }
+
+    private static void writeJsonAtomic(Path output, JsonNode value) throws IOException {
+        if (output.getParent() != null) Files.createDirectories(output.getParent());
+        Path candidate = output.resolveSibling("." + output.getFileName() + ".candidate-" + ProcessHandle.current().pid());
+        try {
+            DebugJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(candidate.toFile(), value);
+            try {
+                Files.move(candidate, output, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException error) {
+                Files.move(candidate, output, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(candidate);
+        }
+    }
+
+    private record PreviewPageCapture(JsonNode placement, DebugResponse response) {}
+
+    static long parsePreviewSettleMillis(String value) {
+        long millis = parseLong(value, "--settle");
+        require(millis >= 1L && millis <= MAX_PREVIEW_SETTLE_MILLIS,
+            "--settle must be between 1 and " + MAX_PREVIEW_SETTLE_MILLIS + " milliseconds.");
+        return millis;
+    }
+
+    static long parsePreviewSettleFrames(String value) {
+        long frames = parseLong(value, "--settle-frames");
+        require(frames >= 0L && frames <= MAX_PREVIEW_SETTLE_FRAMES,
+            "--settle-frames must be between 0 and " + MAX_PREVIEW_SETTLE_FRAMES + ".");
+        return frames;
+    }
+
+    record PreviewAsset(String id, String kind, String target) {}
 
     /** Validate the requested asset against the content queue and infer block vs item. */
     private PreviewAsset resolvePreviewAsset(String asset, Path queueFile) throws IOException {
         JsonNode queue = DebugJson.MAPPER.readTree(readBoundedFile(queueFile, MAX_SCENARIO_BYTES, "Content queue"));
+        return resolvePreviewAsset(asset, queue);
+    }
+
+    static PreviewAsset resolvePreviewAsset(String asset, JsonNode queue) {
         String normalized = asset.contains(":") ? asset : "minecraft:" + asset;
         boolean targetReference = asset.startsWith("assets/");
         if (!targetReference) {
@@ -567,32 +830,64 @@ public final class Play {
                 "Preview asset must be a canonical resource location or an exact queue target: " + asset);
         }
         String pathPart = normalized.substring(normalized.indexOf(':') + 1);
+        String namespacePrefix = "assets/" + normalized.substring(0, normalized.indexOf(':')) + "/";
+        PreviewAsset best = null;
+        int bestRank = Integer.MAX_VALUE;
         for (JsonNode entry : queue.path("entries")) {
             String target = entry.path("target").asText("");
             String resource = entry.path("resource").asText("");
             boolean match = asset.equals(target)
                 || resource.equals(normalized)
-                || target.endsWith("/" + pathPart + ".json")
-                || target.endsWith("/" + pathPart + ".png");
+                || (target.startsWith(namespacePrefix) && (
+                    target.endsWith("/" + pathPart + ".json") || target.endsWith("/" + pathPart + ".png")
+                ));
             if (match) {
                 String kind = target.contains("/models/item/") || target.contains("/textures/item/") ? "item" : "block";
-                return new PreviewAsset(targetReference ? previewId(target) : normalized, kind, target);
+                PreviewAsset candidate = new PreviewAsset(targetReference ? previewId(target) : normalized, kind, target);
+                if (targetReference) return candidate;
+                int rank = previewTargetRank(target);
+                if (rank < bestRank) {
+                    best = candidate;
+                    bestRank = rank;
+                }
             }
+        }
+        if (best != null) {
+            if (best.kind().equals("item") && hasStateSculpture(normalized)) {
+                int separator = normalized.indexOf(':');
+                String target = "assets/" + normalized.substring(0, separator)
+                    + "/blockstates/" + normalized.substring(separator + 1) + ".json";
+                return new PreviewAsset(normalized, "block", target);
+            }
+            return best;
         }
         require(!targetReference, "Preview queue does not contain target: " + asset);
         // Not found in the (post-drain) queue entries: still previewable, infer kind from the id.
         return new PreviewAsset(normalized, "block", "");
     }
 
-    private String previewId(String target) {
+    private static int previewTargetRank(String target) {
+        if (target.contains("/blockstates/")) return 0;
+        if (target.contains("/models/block/")) return 1;
+        if (target.contains("/textures/block/")) return 2;
+        if (target.contains("/models/item/")) return 3;
+        if (target.contains("/textures/item/")) return 4;
+        return 5;
+    }
+
+    private static String previewId(String target) {
         String[] segments = target.replace('\\', '/').split("/", 4);
         require(segments.length == 4 && segments[0].equals("assets"), "Invalid preview target: " + target);
         String path = segments[3];
-        int slash = path.lastIndexOf('/');
-        String name = slash < 0 ? path : path.substring(slash + 1);
-        int suffix = name.lastIndexOf('.');
-        if (suffix > 0) name = name.substring(0, suffix);
-        String id = segments[1] + ":" + name;
+        if (segments[2].equals("models") || segments[2].equals("textures")) {
+            require(path.startsWith("block/") || path.startsWith("item/"), "Unsupported preview target: " + target);
+            path = path.substring(path.indexOf('/') + 1);
+        } else {
+            require(segments[2].equals("blockstates"), "Unsupported preview target: " + target);
+        }
+        int suffix = path.lastIndexOf('.');
+        if (suffix > 0) path = path.substring(0, suffix);
+        String id = segments[1] + ":" + path;
         require(SAFE_RESOURCE_LOCATION.matcher(id).matches(), "Could not derive a preview resource from target: " + target);
         return id;
     }
@@ -605,49 +900,67 @@ public final class Play {
         // Origin at the block; camera pulled back toward -x/-z and angled down for a 3/4 view.
         // A negative yaw faces the +x/+z diagonal that points back at the origin.
         body.set("origin", localPoseJson(0.5, 20.0, 0.5, 0.0f, 0.0f));
-        double back = distance / Math.sqrt(2.0);
-        body.set("camera", localPoseJson(0.5 - back, 20.0 + distance * 0.45, 0.5 - back, -45.0f, 25.0f));
+        body.set("camera", previewCameraJson(0.5, 20.5, 0.5, distance));
         return body;
     }
 
-    /**
-     * content.place-blocks body: set the real asset block at the origin plus four
-     * torches at ±2 on X/Z for light, framed by the camera. The underwater scene
-     * additionally fills a water cuboid enclosing the asset and puts the camera
-     * inside it so submerged fog/tint is exercised.
-     */
+    /** content.place-blocks body for the single-sample underwater material scene. */
     private ObjectNode blockPlacementBody(PreviewAsset asset, double distance, String scene) {
+        require(scene.equals("underwater"), "Flat block previews use the complete registry-state sculpture operation.");
         ObjectNode body = DebugJson.MAPPER.createObjectNode();
         ArrayNode blocks = body.putArray("blocks");
         final int x = 0;
         final int y = 20;
         final int z = 0;
         addBlock(blocks, x, y, z, asset.id());
-        addBlock(blocks, x - 2, y, z, "minecraft:torch");
-        addBlock(blocks, x + 2, y, z, "minecraft:torch");
-        addBlock(blocks, x, y, z - 2, "minecraft:torch");
-        addBlock(blocks, x, y, z + 2, "minecraft:torch");
-        if (scene.equals("underwater")) {
-            for (int dx = -3; dx <= 3; dx++) {
-                for (int dy = -2; dy <= 3; dy++) {
-                    for (int dz = -3; dz <= 3; dz++) {
-                        if (dx == 0 && dy == 0 && dz == 0) continue;
-                        addBlock(blocks, x + dx, y + dy, z + dz, "minecraft:water");
-                    }
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dy = -2; dy <= 3; dy++) {
+                for (int dz = -3; dz <= 3; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+                    addBlock(blocks, x + dx, y + dy, z + dz, "minecraft:water");
                 }
             }
-            body.set("origin", localPoseJson(x + 0.5, y + 0.5, z + 0.5, 0.0f, 0.0f));
-            body.set("camera", localPoseJson(x + 0.5 - 2.5, y + 0.5, z + 0.5 - 2.5, -45.0f, 15.0f));
-            return body;
         }
         body.set("origin", localPoseJson(x + 0.5, y + 0.5, z + 0.5, 0.0f, 0.0f));
-        double back = distance / Math.sqrt(2.0);
-        body.set("camera", localPoseJson(x + 0.5 - back, y + 0.5 + distance * 0.45, z + 0.5 - back, -45.0f, 25.0f));
+        body.set("camera", previewCameraJson(x + 0.5, y + 0.5, z + 0.5, Math.min(distance, 3.0)));
         return body;
     }
 
-    private void addBlock(ArrayNode blocks, int x, int y, int z, String state) {
+    private static void addBlock(ArrayNode blocks, int x, int y, int z, String state) {
         blocks.addObject().put("x", x).put("y", y).put("z", z).put("state", state);
+    }
+
+    private static String minecraftPath(String id) {
+        return id.startsWith("minecraft:") ? id.substring("minecraft:".length()) : null;
+    }
+
+    private static boolean isFence(String path) {
+        return path.endsWith("_fence") && !path.endsWith("_fence_gate");
+    }
+
+    private static boolean isPane(String path) {
+        return path.endsWith("_pane") || path.equals("iron_bars");
+    }
+
+    private static boolean hasAxis(String path) {
+        return path.endsWith("_log") || path.endsWith("_wood") || path.endsWith("_stem")
+            || path.endsWith("_hyphae") || path.endsWith("_pillar") || path.equals("basalt")
+            || path.equals("polished_basalt") || path.equals("bone_block") || path.equals("hay_block");
+    }
+
+    private static boolean hasStateSculpture(String id) {
+        String path = minecraftPath(id);
+        return path != null && (isFence(path) || isPane(path) || path.endsWith("_wall")
+            || path.endsWith("_stairs") || path.endsWith("_door") || path.endsWith("_trapdoor")
+            || path.endsWith("_slab") || path.endsWith("_fence_gate") || path.equals("redstone_wire")
+            || path.equals("rail") || path.endsWith("_rail") || hasAxis(path));
+    }
+
+    static ObjectNode previewCameraJson(double targetX, double targetY, double targetZ, double distance) {
+        double back = distance / Math.sqrt(2.0);
+        double height = distance * 0.4;
+        float pitch = (float) Math.toDegrees(Math.atan2(height, distance));
+        return localPoseJson(targetX - back, targetY + height, targetZ - back, -45.0f, pitch);
     }
 
     private static ObjectNode localPoseJson(double x, double y, double z, float yaw, float pitch) {
@@ -3685,7 +3998,10 @@ public final class Play {
             System.out.printf("Starting Minosoft and connecting to %s (log: %s)...%n", serverAddress, clientLog);
         }
         Map<String, String> childEnvironment = new HashMap<>();
-        if (
+        if (suppressManagedShaderPack) {
+            childEnvironment.put("MINOSOFT_SHADER_PACK", "");
+            childEnvironment.put("MINOSOFT_SHADER_OPTIONS", "");
+        } else if (
             pack != null &&
             pack.shaderPack != null &&
             environment.getOrDefault("MINOSOFT_SHADER_PACK", "").isBlank()
@@ -3693,6 +4009,7 @@ public final class Play {
             childEnvironment.put("MINOSOFT_SHADER_PACK", pack.shaderPack.toString());
         }
         if (
+            !suppressManagedShaderPack &&
             pack != null &&
             pack.shaderOptions != null &&
             !pack.shaderOptions.isBlank() &&
@@ -3719,6 +4036,7 @@ public final class Play {
     }
 
     private void materializeAssetProfile(PreparedPack pack) throws Exception {
+        activeContentFingerprint = "";
         Path profile = pack.instance.resolve("profiles/minosoft/resources/Default.json");
         List<Path> managedResourcePacks = new ArrayList<>();
         ContentPackAdapter.Result adapted = null;
@@ -3749,6 +4067,7 @@ public final class Play {
             for (Path faithful : faithfulPacks) sources.add(contentSource(faithful, "faithful-overlay"));
             String stackName = contentStack != null ? contentStack.name() : (contentProvider.isBlank() ? "local" : contentProvider);
             composed = ContentPackComposer.compose(sources, modpackStore, stackName);
+            activeContentFingerprint = composed.fingerprint();
             managedResourcePacks.add(composed.resourcePack());
             System.out.printf(
                 "Composed content stack %s with %,d processed files (%,d bytes) from %,d ordered sources.%n",
@@ -5183,7 +5502,7 @@ public final class Play {
               ./play.sh content compose [--manifest NAME] [--stage SOURCE] [ORDERED SOURCES] [--json]
               ./play.sh content queue [--manifest NAME | --no-manifest --name NAME --audit PATH] [--stage SOURCE] [--top K] [--authoring] [--csv [--csv-output FILE]] [--output FILE] [--json]
               ./play.sh content audit [--trajectory NAME] [--stage NAME] [--output FILE] [--json]
-              ./play.sh content preview ASSET [--manifest NAME] [--scene flat|underwater] [--output FILE] [--json]
+              ./play.sh content preview ASSET [--manifest NAME] [--scene flat|underwater] [--output FILE] [--state-page all|N] [--states-per-page N] [--settle MS] [--settle-frames N] [--strict] [--json]
               ./play.sh debug COMMAND [--role client|server] [--trajectory NAME] [--endpoint ID]
               ./play.sh wait PREDICATE [--timeout 120s] [--trajectory NAME] [--json]
               ./play.sh scenario run FILE [--artifacts PATH] [--jfr MODE] [--json]
@@ -5221,7 +5540,7 @@ public final class Play {
               content compose Build one immutable resource-pack layout from ordered local sources
               content queue   Triage audited missing targets; --top K ranks, --csv exports for handoff
               content audit   Write a deterministic missing model and texture report from a live client
-              content preview Render one queued block or item in an isolated local client
+              content preview Render a queued block-state sculpture or item in an isolated local client
               debug endpoints List live, discoverable client/server debug endpoints
               debug status    Sample selected endpoint status
               debug state     Sample a named client state view

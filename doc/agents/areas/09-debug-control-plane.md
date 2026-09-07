@@ -79,6 +79,7 @@ stages. The CLI now composes one-shot operations into checked scenario files.
 | Verified | The immutable client player sample includes model-owned sprint state, allowing normal-path input acceptance to distinguish sprint activation from ordinary displacement. | `ClientDebugChannel`, `input.inject`, and [double-tap sprint evidence](../evidence/2026-07-23-double-tap-sprint.md). |
 | Verified | Both roles expose `metrics.snapshot` from shared core instrumentation: at most 256 named operation series, fixed latency buckets, outcome counters, total/max latency, and role-owned runtime gauges. | `DebugMetrics`, both status/metrics suppliers, core tests, live capabilities, and [automation evidence](../evidence/2026-07-23-automation-observability.md). |
 | Verified | The CLI consumes semantic lifecycle predicates and checked JSON scenarios through `DebugClient`, including assertions, typed expected-error steps, visual baselines, matrix/repeat/soak execution, JSON/JUnit artifacts, and optional JFR around a run. Managed content previews bind their control requests to the exact launched client PID, preventing another same-trajectory generation from receiving scene mutation or capture requests. | `Play`, [scenario protocol](../acceptance/scenarios.md), the content-placement rejection suite, and live smoke/matrix/failure runs. |
+| Verified | Flat content previews expose a version-aware art-review sculpture rather than a hand-picked family sample. `content.place-block-state-sculpture` deterministically pages every legal registry state into isolated cells, replaces final cell values and clears unused slots for a fixed block/page size, exports canonical Java property values, and reports the exact ordered states plus a catalog hash. `content preview --state-page all\|N` captures those pages with per-PNG manifests and a capture-set index carrying content/capture provenance. | `BlockStateSculptureCatalog`, `ClientDebugChannel.placeBlockStateSculpture`, `Play.runContentPreview`, `BlockStateSculptureCatalogIT`, `ContentPreviewTest`, and [content-forge preview evidence](../evidence/2026-08-10-content-forge-block-load-gate.md). |
 | Verified | macOS discovery directories are `0700`; descriptors, credentials, and sockets are `0600`; wrong credentials and stale descriptors are rejected in tests. | Live `stat` evidence plus `DebugDiscoveryTest` and `DebugChannelServerTest`. |
 | Observed | Windows named-pipe code compiles and applies an owner/SYSTEM DACL, but this pass did not execute it on a Windows host. | `DebugWindowsPipes` and cross-platform build configuration. |
 
@@ -179,7 +180,7 @@ Windows named pipes.
 | `state.respawn` | client | render queue/session protocol | health- and `DEAD`-gated normal client respawn request for recovering interrupted live visual acceptance; rejects a living client |
 | `visual.capture` | client | render queue | final framebuffer PNG plus dimensions/frame/time, SHA-256, suggested filename, user screenshot directory, and top-left RGBA8 semantics; `includeScene=true` adds a bounded same-frame block/texture/item/entity review inventory |
 | `visual.sample` | client | render queue | ≤4096 points and ≤65536-pixel region hash/luminance |
-| `visual.prepare-reference` | client | render queue | clear transient GUI overlays; explicitly control HUD plus non-persistent hitbox, cloud, world-border, entity, and particle presentation; optionally pin/restore presentation-only time and clear/restore presentation-only weather without mutating authoritative world state |
+| `visual.prepare-reference` | client | render queue | clear transient GUI overlays; explicitly control HUD plus non-persistent hitbox, cloud, world-border, entity, particle, and first-person arm presentation; optionally pin/restore presentation-only time and clear/restore presentation-only weather without mutating authoritative world state |
 | `visual.background-throttle` | client | render queue | compare-and-set `default`/`enabled`/`disabled` non-persistent override for unfocused-window throttling; returns prior/current state and never changes the rendering profile |
 | `render.substrate` | client | render queue | selected graph, terrain/shader owners, bounded frame/terrain timings, visible mesh/vertex/state totals, generation/lease/resource counts, authored material-animation publication counters, per-contract scene bind plus actual OpenGL draw/vertex ledgers, and submitted/missing compiled main-view vertex/state ABI sets |
 | `render.terrain-diagnostics` | client | render queue | one complete atomic version-one world/provider/pipeline/material/coverage/scheduling/residency/submission snapshot, with optional 1–1,024 page area/prefix window, domain-registry-bound opaque cursor, and structured request/cursor rejection |
@@ -209,6 +210,7 @@ Windows named pipes.
 | `render.prepare-sun-scatter` | client | render queue/world presentation | force or restore the production sun-scatter draw while retaining its real matrix, mesh, position, and intensity path |
 | `render.prepare-fire-overlay` | client | render queue/world presentation | force or restore the first-person fire overlay without mutating player fire state |
 | `render.prepare-reference-hand` | client | render queue/hand presentation | bind or restore a generated opaque cyan/magenta skin-sized texture only for the first-person arm draw; report selected/reference texture IDs, draw/frame counters, exact binding, and unchanged player-skin state |
+| `content.place-block-state-sculpture` | client local world | render queue/local session runtime | one block’s legal registry states, 1–64 states per page, fixed isolated stage, canonical Java state keys and catalog hash |
 | `content.execute-local` | client local world | render queue/local session runtime | one bounded mounted function plus explicit origin/camera pose and execution metadata |
 | `input.inject` | client | render/input path | ≤256 key, text, mouse-move, or scroll events |
 | `world.blocks.sample` | both | loaded world state | inclusive box, ≤32768 cells, palette/RLE |
@@ -238,8 +240,8 @@ or debug menu. It clears poppable overlays, selects HUD visibility, and can
 disable the active renderer's hitbox manager and cloud pass without persisting
 a profile change; `hideHud`, `hideHitboxes`, and `hideClouds` default to true.
 An explicit `hideWorldBorder` can additionally suppress that transient pass for
-a checked reference and defaults to false. Explicit `hideEntities` and
-`hideParticles` controls also default to false. They suppress only the
+a checked reference and defaults to false. Explicit `hideEntities`,
+`hideParticles`, and `hideArm` controls also default to false. They suppress only the
 corresponding render-graph submissions: entities keep visibility, animation,
 and retained meshes, while particles keep their queue and simulation state.
 The operation does not mutate authoritative world or entity state. Scenario screenshot steps may

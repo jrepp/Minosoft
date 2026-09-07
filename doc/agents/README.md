@@ -219,6 +219,10 @@ instructions that differ from the root contract.
   records the selectable local Mojang compatibility lane, the independent
   renderer/credits stand-in and complete-stand-in target, and the accepted
   out-of-source content-forge/Blockbench provenance lane.
+- [Content-forge block-load and preview evidence](evidence/2026-08-10-content-forge-block-load-gate.md)
+  captures common vanilla Java blockstate-definition forms, the 966-file
+  semantic load/bake gate, deterministic strict content previews, and the remaining
+  producer-side modern-wall and item-model decisions.
 - [Content-fidelity foundation evidence](evidence/2026-07-24-content-fidelity-foundation.md)
   records the OptiFine native-adapter decision, explicit model-culling and AO
   contracts, tiled animation support, and the ordered gates for EMF, ETF,
