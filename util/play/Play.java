@@ -243,6 +243,10 @@ public final class Play {
             runModpack(arguments.subList(1, arguments.size()));
             return;
         }
+        if (!arguments.isEmpty() && arguments.get(0).equals("setup")) {
+            runSetup(arguments.subList(1, arguments.size()));
+            return;
+        }
         if (!arguments.isEmpty() && arguments.get(0).equals("content")) {
             runContent(arguments.subList(1, arguments.size()));
             return;
@@ -2814,6 +2818,74 @@ public final class Play {
         }
     }
 
+    private void runSetup(List<String> rawArguments) throws Exception {
+        List<String> arguments = new ArrayList<>(rawArguments);
+        String action = arguments.isEmpty() ? "list" : arguments.remove(0);
+        require(action.equals("list"), "Unknown setup action: " + action);
+        boolean json = false;
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            if (option.equals("--json")) json = true;
+            else throw failure("Unknown setup list option: " + option);
+        }
+
+        List<ExistingSetup> setups = discoverExistingSetups(modpackStore);
+        if (json) {
+            ObjectNode result = DebugJson.MAPPER.createObjectNode();
+            result.put("schema", 1).put("store", modpackStore.toString()).put("count", setups.size());
+            ArrayNode values = result.putArray("setups");
+            for (ExistingSetup setup : setups) {
+                ObjectNode value = values.addObject();
+                value.put("trajectory", setup.trajectory()).put("modpack", setup.modpack())
+                    .put("path", setup.path().toString())
+                    .put("defined", Files.isRegularFile(modpacksDirectory.resolve(setup.modpack()).resolve("pack.toml")))
+                    .put("command", "./play.sh dev --modpack " + setup.modpack() + " --trajectory " + setup.trajectory());
+            }
+            printDebugJson(result, true);
+            return;
+        }
+
+        if (setups.isEmpty()) {
+            System.out.println("No existing setups found under " + modpackStore.resolve("trajectories") + ".");
+            return;
+        }
+        System.out.printf("%-40s %s%n", "TRAJECTORY", "MODPACK");
+        for (ExistingSetup setup : setups) System.out.printf("%-40s %s%n", setup.trajectory(), setup.modpack());
+    }
+
+    static List<ExistingSetup> discoverExistingSetups(Path store) throws IOException {
+        Path trajectories = store.resolve("trajectories");
+        if (!Files.isDirectory(trajectories) || Files.isSymbolicLink(trajectories)) return List.of();
+
+        List<ExistingSetup> setups = new ArrayList<>();
+        try (var trajectoryEntries = Files.list(trajectories)) {
+            List<Path> trajectoryDirectories = trajectoryEntries
+                .filter(path -> Files.isDirectory(path) && !Files.isSymbolicLink(path))
+                .filter(path -> SAFE_NAME.matcher(path.getFileName().toString()).matches())
+                .sorted()
+                .collect(Collectors.toList());
+            for (Path trajectoryDirectory : trajectoryDirectories) {
+                try (var packEntries = Files.list(trajectoryDirectory)) {
+                    List<Path> packDirectories = packEntries
+                        .filter(path -> Files.isDirectory(path) && !Files.isSymbolicLink(path))
+                        .filter(path -> SAFE_NAME.matcher(path.getFileName().toString()).matches())
+                        .filter(path -> Files.isDirectory(path.resolve("home")) && Files.isDirectory(path.resolve("profiles")))
+                        .sorted()
+                        .collect(Collectors.toList());
+                    for (Path packDirectory : packDirectories) {
+                        require(setups.size() < 10_000, "The setup store contains more than 10000 trajectory/modpack pairs.");
+                        setups.add(new ExistingSetup(
+                            trajectoryDirectory.getFileName().toString(),
+                            packDirectory.getFileName().toString(),
+                            packDirectory
+                        ));
+                    }
+                }
+            }
+        }
+        return List.copyOf(setups);
+    }
+
     private void runModpackCache(List<String> arguments) throws Exception {
         require(!arguments.isEmpty() && arguments.remove(0).equals("add"),
             "Usage: ./play.sh modpack cache add FILE [--hash-format sha256|sha512]");
@@ -5103,6 +5175,7 @@ public final class Play {
 
             Usage:
               ./play.sh ACTION [TARGET] [--modpack NAME] [--trajectory NAME]
+              ./play.sh setup list [--json]
               ./play.sh modpack list
               ./play.sh modpack cache add FILE [--hash-format sha256|sha512]
               ./play.sh modpack prepare NAME [--trajectory NAME]
@@ -5140,6 +5213,7 @@ public final class Play {
               stop client     Stop only the Minosoft client
               status          Show both process states
               status --json   Emit the PID/readiness contract as one JSON object
+              setup list      List existing trajectory/modpack setups in the configured store
               modpack list    List source-controlled Fabric packs
               modpack cache   Add a hash-addressed artifact to a portable cache
               modpack prepare Resolve and verify a pack without starting Minosoft
@@ -5231,6 +5305,8 @@ public final class Play {
             super(message);
         }
     }
+
+    record ExistingSetup(String trajectory, String modpack, Path path) {}
 
     private static final class PredicateObservation {
         private final boolean matched;
