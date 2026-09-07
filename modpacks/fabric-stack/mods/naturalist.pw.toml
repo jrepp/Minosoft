@@ -6,5 +6,5 @@ side = "both"
 
 [download]
 hash-format = "sha512"
-hash = "9fed808a6c7d550989ea1e6bad2ce27a8239893d3dba38f389881154307c418f1af90de11a7f7ad31e8ce7c962a74fe3f82c7f341290bf7df2eedd9ea001fd07"
-url = "minosoft-cache:naturalist-5.0.0-pre.4+fabric-1.20.4.jar"
+hash = "de03e454b3f06769c62a981f800952bc2e13d9879532238f657de4b175ff19b46b3b8729ec9be1dd7551dbc8780740ebd089e771b67a030c6f5987c353ca7f9a"
+url = "https://github.com/jrepp/Naturalist/releases/download/v5.0.0-pre.4-fabric-1.20.4/naturalist-5.0.0-pre.4%2Bfabric-1.20.4.jar"
