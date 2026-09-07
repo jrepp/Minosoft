@@ -176,6 +176,7 @@ Windows named pipes.
 | `core.capabilities` | both | transport-safe | operation names and owners, payload/deadline limits |
 | `core.status` | both | immutable snapshot | process, trajectory, generation, readiness summary |
 | `state.sample` | both | client session or server tick snapshot | named client/server view; `client.entities` is bounded to 128 nearby records |
+| `state.respawn` | client | render queue/session protocol | health- and `DEAD`-gated normal client respawn request for recovering interrupted live visual acceptance; rejects a living client |
 | `visual.capture` | client | render queue | final framebuffer PNG plus dimensions/frame/time, SHA-256, suggested filename, user screenshot directory, and top-left RGBA8 semantics |
 | `visual.sample` | client | render queue | ≤4096 points and ≤65536-pixel region hash/luminance |
 | `visual.prepare-reference` | client | render queue | clear transient GUI overlays; explicitly control HUD plus non-persistent hitbox, cloud, world-border, entity, and particle presentation; optionally pin/restore presentation-only time and clear/restore presentation-only weather without mutating authoritative world state |

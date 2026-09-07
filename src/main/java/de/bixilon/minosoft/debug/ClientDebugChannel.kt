@@ -243,6 +243,7 @@ object ClientDebugChannel : AutoCloseable {
         server.operations().register("client", "visual.background-throttle") { _, body ->
             onRender { configureBackgroundThrottle(it, body) }
         }
+        server.operations().register("client", "state.respawn") { _, _ -> onRender(::respawn) }
         server.operations().register("client", "input.inject") { _, body -> onRender { injectInput(it, body) } }
         server.operations().register("client", "world.blocks.sample") { _, body -> completed(sampleBlocks(body)) }
         server.operations().register("client", "world.aoi") { _, body -> completed(sampleBlocks(body)) }
@@ -3089,6 +3090,26 @@ object ClientDebugChannel : AutoCloseable {
             }
         }
         return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().put("injected", injected).put("frame", context.frameNumber))
+    }
+
+    /**
+     * Recovers a dead live client through the same protocol action as the
+     * respawn menu. Keeping this health- and state-gated prevents the debug
+     * control plane from becoming a general gameplay action surface.
+     */
+    private fun respawn(context: RenderContext): DebugOperationResult {
+        val session = context.session
+        val health = session.player.healthCondition.hp
+        if (session.state != PlaySessionStates.DEAD || health > 0.0f) {
+            throw DebugOperationException("invalid_state", "client is not dead")
+        }
+        session.util.respawn()
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("requested", true)
+            put("sessionState", session.state.name.lowercase())
+            put("health", health)
+            put("frame", context.frameNumber)
+        })
     }
 
     private inline fun <reified T : Enum<T>> enumValue(node: JsonNode, field: String): T {
