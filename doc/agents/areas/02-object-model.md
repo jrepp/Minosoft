@@ -34,6 +34,8 @@ chunks, dimensions, and session-owned world state.
 | Verified | The Distant Horizons boundary represents explored, locally generated, persisted, and managed-server terrain with the same immutable 16x16 surface/material tile. Each tile retains an opaque bed below water and no live chunk or registry ID. A session-owned access-ordered store caps retained data at a configured 4,096–65,536 tiles, and versioned persistence serializes resource identities for reconstruction against a later session. Distance-banded rendering consumes snapshots without changing ownership. | `DistantLodTile`, `DistantLodTileStore`, `DistantLodPersistence`, `DistantHorizonsLodController`, focused tests, and [DH/Bliss integration evidence](../evidence/2026-07-29-distant-horizons-bliss-integration.md). |
 | Verified | Modern biome tag packets decode against the session biome registry, and tag membership can be queried without duplicating biome identity in the renderer. ETF derives `biomeTag` from this session-owned state while retaining the legacy tag path for older protocol versions. | `TagsS2CP`, `MinecraftTagTypes.BIOME`, `TagList.matching`, `EntityTextureContextFactory`, `TagListTest`, and `EntityTextureContextFactoryTest`. |
 
+| Verified | Flattened fence states preserve their four multipart direction properties; PixLyzer walls preserve four sides and the post property. Modern wall values remain `none|low|tall`, while fence booleans normalize through the shared multipart enum. Legacy fence properties and neighbour rendering remain separate. | `FenceBlock.registerProperties`, `WallBlock`, `PixLyzerBlockFactories`, and `ConnectedBlockStateIT`. |
+
 ## Stable contracts
 
 - Never share mutable world, entity, registry, or container state across play

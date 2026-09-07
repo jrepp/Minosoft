@@ -50,6 +50,7 @@ object PixLyzerBlockFactories : DefaultClassFactory<PixLyzerBlockFactory<*>>(
     SeagrassBlock,
     StoneButtonBlock,
     WoodenButtonBlock,
+    WallBlock,
     PlantBlock,
     CropBlock,
     CraftingTableBlock,

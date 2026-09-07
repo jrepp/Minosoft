@@ -16,6 +16,7 @@ package de.bixilon.minosoft.data.registries.blocks.types.building
 import de.bixilon.minosoft.data.direction.Directions
 import de.bixilon.minosoft.data.entities.block.BlockEntity
 import de.bixilon.minosoft.data.registries.blocks.light.TransparentProperty
+import de.bixilon.minosoft.data.registries.blocks.properties.BlockProperties
 import de.bixilon.minosoft.data.registries.blocks.properties.list.MapPropertyList
 import de.bixilon.minosoft.data.registries.blocks.properties.primitives.BooleanProperty
 import de.bixilon.minosoft.data.registries.blocks.settings.BlockSettings
@@ -52,7 +53,12 @@ abstract class FenceBlock(identifier: ResourceLocation, settings: BlockSettings)
     override fun registerProperties(version: Version, list: MapPropertyList) {
         super<Block>.registerProperties(version, list)
 
-        if (!version.flattened) { // TODO: in flattening versions too?
+        if (version.flattened) {
+            list += BlockProperties.MULTIPART_NORTH
+            list += BlockProperties.MULTIPART_SOUTH
+            list += BlockProperties.MULTIPART_WEST
+            list += BlockProperties.MULTIPART_EAST
+        } else {
             list += NORTH
             list += SOUTH
             list += WEST
