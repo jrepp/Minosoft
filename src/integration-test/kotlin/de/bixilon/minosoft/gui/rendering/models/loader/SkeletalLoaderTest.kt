@@ -48,10 +48,13 @@ import de.bixilon.minosoft.data.entities.entities.animal.Pig
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.framebuffer.FramebufferManager
 import de.bixilon.minosoft.gui.rendering.framebuffer.world.MainWorldTarget
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.FallbackLivingEntityRenderer
+import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerRenderer
 import de.bixilon.minosoft.gui.rendering.models.loader.SkeletalLoader.Companion.sModel
 import de.bixilon.minosoft.gui.rendering.skeletal.baked.BakedSkeletalTransform
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.inspectDrawPasses
 import de.bixilon.minosoft.gui.rendering.skeletal.model.SkeletalModel
+import de.bixilon.minosoft.gui.rendering.skeletal.model.textures.SkeletalTextureMap
 import de.bixilon.minosoft.gui.rendering.system.dummy.DummyRenderSystem
 import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTexture
 import de.bixilon.minosoft.gui.rendering.system.dummy.texture.DummyTextureManager
@@ -107,6 +110,12 @@ class SkeletalLoaderTest {
         return registered::class.java.getFieldOrNull("model")!!.get(registered).unsafeCast()
     }
 
+    private fun SkeletalLoader.getRegisteredOverride(name: ResourceLocation): SkeletalTextureMap {
+        val map = SkeletalLoader::class.java.getFieldOrNull("registered")!!.get(this).unsafeCast<Map<ResourceLocation, Any>>()
+        val registered = map[name] ?: throw IllegalArgumentException("Can not find model!")
+        return registered::class.java.getFieldOrNull("override")!!.get(registered).unsafeCast()
+    }
+
     fun `load dummy model from file`() {
         val loader = createLoader()
         loader.loadDummyModel()
@@ -114,6 +123,19 @@ class SkeletalLoaderTest {
 
         assertEquals(raw.elements.size, 1)
         assertEquals(raw.elements["body"]!!.children["head1"]!!.transform, "head")
+    }
+
+    fun `fallback living model uses the allocated debug texture`() {
+        val context = createContext()
+        context.textures.loadDefaultTextures()
+        val loader = ModelLoader(context)
+
+        FallbackLivingEntityRenderer.register(loader)
+
+        assertSame(
+            loader.skeletal.getRegisteredOverride(FallbackLivingEntityRenderer.MODEL)[PlayerRenderer.SKIN],
+            context.textures.debugTexture,
+        )
     }
 
     fun `adapted Gecko route and render layer bake through stable content identity without upstream code`() {

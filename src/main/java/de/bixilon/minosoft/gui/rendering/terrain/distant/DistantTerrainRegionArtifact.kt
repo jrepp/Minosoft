@@ -122,9 +122,10 @@ internal object DistantTerrainRegionArtifactEncoder {
         )
         val solid = artifact.quads.filter { it.fluid == null }
         val water = artifact.quads.filter { it.fluid != null }
+        val surfaceFlags = if (page.key.detailLevel == 0) BASE_PAGE_SURFACE_FLAG else 0
         val streams = buildList(2) {
-            encodeStream("distant:opaque", solidMaterial, solid, offsetX, offsetZ)?.let(::add)
-            encodeStream("distant:water", waterMaterial, water, offsetX, offsetZ)?.let(::add)
+            encodeStream("distant:opaque", solidMaterial, solid, offsetX, offsetZ, surfaceFlags)?.let(::add)
+            encodeStream("distant:water", waterMaterial, water, offsetX, offsetZ, surfaceFlags)?.let(::add)
         }
         val bounds = if (artifact.quads.isEmpty()) null else artifact.quads.bounds(offsetX, offsetZ)
         return TerrainMeshArtifact(
@@ -142,6 +143,7 @@ internal object DistantTerrainRegionArtifactEncoder {
         quads: List<DistantMeshQuad>,
         offsetX: Int,
         offsetZ: Int,
+        surfaceFlags: Int,
     ): TerrainArtifactStream? {
         if (quads.isEmpty()) return null
         val vertices = ByteBuffer.allocate(Math.multiplyExact(quads.size, BYTES_PER_QUAD))
@@ -149,7 +151,7 @@ internal object DistantTerrainRegionArtifactEncoder {
         val indices = ByteBuffer.allocate(Math.multiplyExact(Math.multiplyExact(quads.size, 6), Int.SIZE_BYTES))
             .order(ByteOrder.LITTLE_ENDIAN)
         quads.forEachIndexed { quadIndex, quad ->
-            encodeQuad(vertices, quad, offsetX, offsetZ)
+            encodeQuad(vertices, quad, offsetX, offsetZ, surfaceFlags)
             val base = Math.multiplyExact(quadIndex, 4)
             indices.putInt(base + 3)
             indices.putInt(base + 2)
@@ -168,7 +170,13 @@ internal object DistantTerrainRegionArtifactEncoder {
         )
     }
 
-    private fun encodeQuad(destination: ByteBuffer, quad: DistantMeshQuad, offsetX: Int, offsetZ: Int) {
+    private fun encodeQuad(
+        destination: ByteBuffer,
+        quad: DistantMeshQuad,
+        offsetX: Int,
+        offsetZ: Int,
+        surfaceFlags: Int,
+    ) {
         val material = DistantLodMaterial.of(ResourceLocation.of(quad.material.value))
         val color = quad.tint?.resolvedRgb?.let { rgb ->
             RGBAColor(
@@ -189,7 +197,7 @@ internal object DistantTerrainRegionArtifactEncoder {
             DistantFaceDirection.WEST -> WEST_NORMAL
             DistantFaceDirection.EAST -> EAST_NORMAL
         }
-        val normalMaterial = (material.dhId shl 3) or normal
+        val normalMaterial = (surfaceFlags shl SURFACE_FLAG_SHIFT) or (material.dhId shl 3) or normal
         fun vertex(u: Int, v: Int) {
             when (quad.direction) {
                 DistantFaceDirection.UP,
@@ -300,6 +308,9 @@ internal object DistantTerrainRegionArtifactEncoder {
 
     private const val BYTES_PER_VERTEX = 24
     private const val BYTES_PER_QUAD = BYTES_PER_VERTEX * 4
+    // Bit zero remains the built-in water-bed depth-support marker.
+    private const val BASE_PAGE_SURFACE_FLAG = 1 shl 1
+    private const val SURFACE_FLAG_SHIFT = 11
     private const val UP_NORMAL = 1
     private const val NORTH_NORMAL = 2
     private const val SOUTH_NORMAL = 3

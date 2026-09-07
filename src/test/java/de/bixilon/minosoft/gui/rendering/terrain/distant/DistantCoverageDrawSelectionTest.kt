@@ -24,6 +24,7 @@ import de.bixilon.minosoft.terrain.model.identity.TerrainDomain
 import de.bixilon.minosoft.terrain.model.identity.TerrainPageKey
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DistantCoverageDrawSelectionTest {
@@ -84,6 +85,38 @@ class DistantCoverageDrawSelectionTest {
         assertEquals(listOf(key(3, 3)), main.drawable)
         assertTrue(covered.all { (x, z) -> main.drawable.none { it.coversBasePage(x, z) } })
         assertTrue(main.drawable.any { it.coversBasePage(3, 3) })
+    }
+
+    @Test
+    fun `exact base ownership masks owned pages while partial coarse coverage remains drawable`() {
+        val ownedBase = key(0, 0)
+        val uncoveredBase = key(1, 0)
+        val partialCoarse = key(0, 0, detail = 1)
+        val coverage = TerrainCoverageSnapshot(
+            revision = 16L,
+            providerGeneration = 1L,
+            worldEpoch = WORLD_EPOCH,
+            cells = listOf(
+                TerrainCoverageCell(
+                    page = TerrainPageKey(TerrainDomain.NEAR, 0, 0L, 0L, 0L, WORLD_EPOCH),
+                    state = TerrainCoverageState.READY,
+                    surfaceRelevant = true,
+                    transitionAgeFrames = 8,
+                    contributesCoverage = true,
+                    coverageAgeFrames = 8,
+                ),
+            ),
+        )
+
+        val result = distantCoverageDrawSelection(
+            listOf(ownedBase, uncoveredBase, partialCoarse),
+            coverage,
+            TerrainCoverageTransitionPolicy(true, 8),
+        )
+
+        assertFalse(ownedBase in result.drawable)
+        assertTrue(uncoveredBase in result.drawable)
+        assertTrue(partialCoarse in result.drawable)
     }
 
     private fun key(x: Long, z: Long, detail: Int = 0) = TerrainPageKey(

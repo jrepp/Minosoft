@@ -28,17 +28,33 @@ internal object IrisBlissHandTransformer {
             return stages
         }
 
-        val authored =
+        val authoredClassifier =
+            "bool hand = abs(dataUnpacked-0.75) < 0.01 && texture2D(depthtex1,taauTC).x < 1.0;"
+        val classifierStart = fragment.indexOf(authoredClassifier)
+        require(classifierStart >= 0) { "Bliss hand current-depth rule changed before rejection correction" }
+        require(fragment.indexOf(authoredClassifier, classifierStart + authoredClassifier.length) < 0) {
+            "Bliss hand current-depth rule changed before rejection correction: duplicate source block"
+        }
+        val currentDepthClassifier =
+            "bool hand = abs(dataUnpacked-0.75) < 0.01 && texture2D(depthtex0,taauTC).x < 1.0;" +
+                " // minosoft: validate the current hand draw, not pre-hand background depth"
+        val correctedClassifier = fragment.replaceRange(
+            classifierStart,
+            classifierStart + authoredClassifier.length,
+            currentDepthClassifier,
+        )
+
+        val authoredHistory =
             "if(hand) blendingFactor = clamp(length(velocity/texelSize),blendingFactor,1.0);"
-        val start = fragment.indexOf(authored)
-        require(start >= 0) { "Bliss hand TAA history rule changed before rejection correction" }
-        require(fragment.indexOf(authored, start + authored.length) < 0) {
+        val historyStart = correctedClassifier.indexOf(authoredHistory)
+        require(historyStart >= 0) { "Bliss hand TAA history rule changed before rejection correction" }
+        require(correctedClassifier.indexOf(authoredHistory, historyStart + authoredHistory.length) < 0) {
             "Bliss hand TAA history rule changed before rejection correction: duplicate source block"
         }
         return stages.copy(
-            fragment = fragment.replaceRange(
-                start,
-                start + authored.length,
+            fragment = correctedClassifier.replaceRange(
+                historyStart,
+                historyStart + authoredHistory.length,
                 "if(hand) blendingFactor = 1.0; // minosoft: reject world history on the hand",
             ),
         )

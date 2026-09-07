@@ -59,7 +59,8 @@ class DistantTerrainRegionArtifactBaselineTest {
             val offsetZ = 16
             for ((quadIndex, direction) in DistantFaceDirection.entries.withIndex()) {
                 val expected = expectedPositions(direction, offsetX, offsetZ)
-                val normalMaterial = (DistantLodMaterial.STONE.dhId shl 3) or NORMALS.getValue(direction)
+                val normalMaterial = BASE_PAGE_PACKED_FLAG or
+                    (DistantLodMaterial.STONE.dhId shl 3) or NORMALS.getValue(direction)
                 repeat(4) { vertexIndex ->
                     assertEquals(expected[vertexIndex][0], vertices.float, "$direction vertex $vertexIndex x")
                     assertEquals(expected[vertexIndex][1], vertices.float, "$direction vertex $vertexIndex y")
@@ -112,7 +113,36 @@ class DistantTerrainRegionArtifactBaselineTest {
             waterVertices.position(3 * Float.SIZE_BYTES)
             assertEquals(RGBAColor(0x20, 0x40, 0x60, DistantLodMaterial.WATER.color.alpha).rgba, waterVertices.int)
             assertEquals(0xB7, waterVertices.int)
-            assertEquals((DistantLodMaterial.WATER.dhId shl 3) or NORMALS.getValue(DistantFaceDirection.UP), waterVertices.int)
+            val normalMaterial = waterVertices.int
+            assertEquals(DistantLodMaterial.WATER.dhId, normalMaterial shr 3 and 0xFF)
+            assertEquals(BASE_PAGE_SURFACE_FLAG, normalMaterial shr SURFACE_FLAG_SHIFT)
+            assertEquals(0, normalMaterial and WATER_BED_PACKED_FLAG)
+            assertEquals(NORMALS.getValue(DistantFaceDirection.UP), normalMaterial and 0x7)
+        } finally {
+            artifact.close()
+        }
+    }
+
+    @Test
+    fun `coarse pages retain the built in near overlap guard`() {
+        val page = emptyPage(TerrainPageKey(TerrainDomain.DISTANT, 1, 4L, 0L, -3L, 3L))
+        val quad = quad(DistantFaceDirection.UP, STONE, null)
+        val mesh = DistantPageMeshArtifact(page.key, 4L, page.semanticDigest, 1, listOf(quad))
+        val artifact = DistantTerrainRegionArtifactEncoder.encode(
+            identity(page.key),
+            page,
+            mesh,
+            TerrainRegionExtent(8, 1, 8),
+        )
+
+        try {
+            val vertices = ByteBuffer.wrap(artifact.streams.single().vertices.copyBytes())
+                .order(ByteOrder.LITTLE_ENDIAN)
+            vertices.position(5 * Int.SIZE_BYTES)
+            val normalMaterial = vertices.int
+            assertEquals(0, normalMaterial shr SURFACE_FLAG_SHIFT)
+            assertEquals(DistantLodMaterial.STONE.dhId, normalMaterial shr 3 and 0xFF)
+            assertEquals(NORMALS.getValue(DistantFaceDirection.UP), normalMaterial and 0x7)
         } finally {
             artifact.close()
         }
@@ -197,6 +227,10 @@ class DistantTerrainRegionArtifactBaselineTest {
     )
 
     private companion object {
+        const val SURFACE_FLAG_SHIFT = 11
+        const val BASE_PAGE_SURFACE_FLAG = 1 shl 1
+        const val BASE_PAGE_PACKED_FLAG = BASE_PAGE_SURFACE_FLAG shl SURFACE_FLAG_SHIFT
+        const val WATER_BED_PACKED_FLAG = 1 shl SURFACE_FLAG_SHIFT
         val STONE = TerrainSemanticMaterialId("minecraft:stone")
         val WATER = TerrainSemanticMaterialId("minecraft:water")
         val NORMALS = mapOf(

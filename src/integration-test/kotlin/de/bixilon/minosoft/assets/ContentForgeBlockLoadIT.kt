@@ -44,8 +44,18 @@ class ContentForgeBlockLoadIT {
     fun `all content forge blockstates load and bake headlessly`() {
         val root = OfflineTestAssets.contentForgeRoot()
             ?: throw SkipException("Set ${OfflineTestAssets.CONTENT_FORGE_ROOT_ENV} to validate external authored block models.")
+        validate(root, EXPECTED_BLOCKSTATES)
+    }
+
+    fun `survival authored blockstates load and bake headlessly`() {
+        val configured = System.getenv("MINOSOFT_SURVIVAL_CONTENT")?.trim().orEmpty()
+        if (configured.isEmpty()) throw SkipException("Set MINOSOFT_SURVIVAL_CONTENT to validate the authored survival overlay.")
+        validate(Path.of(configured).toAbsolutePath().normalize(), 24)
+    }
+
+    private fun validate(root: Path, expectedBlockstates: Int) {
         val blockstates = blockstates(root)
-        assertEquals(blockstates.size, EXPECTED_BLOCKSTATES, "Unexpected content-forge blockstate surface.")
+        assertEquals(blockstates.size, expectedBlockstates, "Unexpected content-forge blockstate surface.")
 
         assertTrue(IT.VERSION.flattened, "Integration bootstrap did not load the supported version catalog.")
         val session = createSession(version = MINECRAFT_VERSION)

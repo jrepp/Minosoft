@@ -356,6 +356,94 @@ class RendererPipelineTest {
         assertSame(manager.context.system.shader.shader, internalComposite)
     }
 
+    fun `restoring built in pipeline resyncs unchanged retained uniforms once`() {
+        val manager = manager()
+        val fallbackWrites = mutableListOf<Float>()
+        var reentrantUploads = 0
+        val fallback = object : Shader(object : DummyNativeShader(manager.context) {
+            override fun setFloat(uniform: String, value: Float) {
+                fallbackWrites += value
+            }
+        }) {
+            override val sceneContract = SceneShaderContract(
+                SceneProgramFamily.SKY_BASIC,
+                SceneVertexAbi.SKY_POSITION,
+                SceneStateAbi.SKY_COLOR,
+            )
+            var exposure by uniform("uExposure", 0.75f)
+            val reentrant = uniform("uReentrant", Unit) { _, _, _ ->
+                reentrantUploads++
+                use()
+            }
+        }
+        fallback.load()
+        val selectedWrites = mutableListOf<Float>()
+        val selected = object : Shader(object : DummyNativeShader(manager.context) {
+            override fun setFloat(uniform: String, value: Float) {
+                selectedWrites += value
+            }
+        }) {}
+        val producer = manager.register(object : WorldRenderer {
+            override val context = manager.context
+            override val passes = WorldPassRegistry()
+            override fun registerPasses() = Unit
+        })
+        producer.passes.add(
+            OpaqueLayer,
+            fallback,
+            renderer = { fallback.exposure = 1.25f },
+            semantic = PipelineSemantic.SKY,
+            passId = RenderPassId("minosoft:test/pipeline-handback"),
+        )
+        val pipeline = object : WorldShaderPipeline {
+            override val owner = IrisShaderPackPlanner.OWNER
+            override val plan = pipelinePlan()
+
+            override fun bindTerrain(view: RenderViewId, material: TerrainMaterialClass, fallback: Shader) {
+                error("Terrain binding is outside this pipeline-handback test")
+            }
+
+            override fun bindScene(
+                semantic: PipelineSemantic,
+                contract: SceneShaderContract,
+                fallback: Shader,
+            ): Shader = selected
+
+            override fun composite(fallback: FramebufferShader) = fallback
+            override fun close() = Unit
+        }
+        val terrain = TerrainBackendDescriptor(
+            owner = RenderOwnerId("minosoft:test-terrain"),
+            implementation = "test",
+            materials = TerrainMaterialClass.entries.toSet(),
+            vertexLayout = BuiltInTerrainVertexLayout.VALUE,
+            supportsAuxiliaryViews = true,
+        )
+        val registration = manager.context.shaderPipeline.replace(terrain) { pipeline }
+        manager.pipeline.rebuild()
+        val pass = manager.pipeline.generation.passes.single {
+            it.id == RenderPassId("minosoft:test/pipeline-handback")
+        }
+
+        manager.context.shaderPipeline.withFramePipeline {
+            pass.draw(FrameGraphExecution(manager.context))
+        }
+        assertTrue(1.25f in selectedWrites)
+        assertEquals(fallbackWrites, listOf(0.75f))
+
+        registration.close()
+        manager.pipeline.rebuild()
+        repeat(2) {
+            manager.context.shaderPipeline.withFramePipeline {
+                pass.draw(FrameGraphExecution(manager.context))
+            }
+        }
+
+        assertEquals(fallbackWrites, listOf(0.75f, 1.25f))
+        assertEquals(reentrantUploads, 4)
+        fallback.unload()
+    }
+
     fun `internal target keeps scene geometry on host shader and restores routing`() {
         val manager = manager()
         val fallbackWrites = mutableListOf<Float>()
@@ -424,7 +512,7 @@ class RendererPipelineTest {
         }
 
         assertEquals(routed, 2)
-        assertEquals(fallbackWrites, listOf(0.75f))
+        assertEquals(fallbackWrites, listOf(0.75f, 0.75f))
         assertEquals(selectedWrites, listOf(0.0f, 0.75f))
     }
 

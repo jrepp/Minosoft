@@ -29,6 +29,8 @@ abstract class Shader(override val native: NativeShader) : AbstractShader {
     open val sceneContract: SceneShaderContract? = null
     private val sceneProgramFamily = ThreadLocal<SceneProgramFamily?>()
     private val uniforms: MutableMap<String, ShaderUniform> = mutableMapOf()
+    private var synchronizedUniformTarget: NativeShader? = null
+    private var synchronizingUniformTarget: NativeShader? = null
     internal var uniformRevision: Long = 0L
         private set
     internal var uniformUploadInProgress: Boolean = false
@@ -40,6 +42,7 @@ abstract class Shader(override val native: NativeShader) : AbstractShader {
             native.context.system.shader.shader = null
         }
         native.unload()
+        synchronizedUniformTarget = null
         native.context.system.shader -= this
     }
 
@@ -47,7 +50,7 @@ abstract class Shader(override val native: NativeShader) : AbstractShader {
         native.load()
         native.context.system.shader += this
         activate()
-        syncUniformsTo(native)
+        syncUniformsOnTargetTransition(native)
     }
 
     override fun use() {
@@ -121,6 +124,26 @@ abstract class Shader(override val native: NativeShader) : AbstractShader {
         }
     }
 
+    /** Restores retained uniforms once when rendering returns to another native target. */
+    internal fun syncUniformsOnTargetTransition(target: NativeShader) {
+        if (synchronizedUniformTarget === target) return
+        if (synchronizingUniformTarget === target) return
+
+        val previous = synchronizingUniformTarget
+        synchronizingUniformTarget = target
+        try {
+            syncUniformsTo(target)
+            synchronizedUniformTarget = target
+        } finally {
+            synchronizingUniformTarget = previous
+        }
+    }
+
+    /** Records a successful provider-owned synchronization for transition detection. */
+    internal fun markUniformTargetSynchronized(target: NativeShader) {
+        synchronizedUniformTarget = target
+    }
+
     internal fun beginUniformUpload(): Long {
         check(!uniformUploadInProgress) { "A shader uniform upload is already active" }
         uniformRevision++
@@ -138,7 +161,8 @@ abstract class Shader(override val native: NativeShader) : AbstractShader {
     fun reload() {
         native.reload()
         activate()
-        syncUniformsTo(native)
+        synchronizedUniformTarget = null
+        syncUniformsOnTargetTransition(native)
     }
 
     private fun <T : ShaderUniform> T.register(): T {

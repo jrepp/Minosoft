@@ -863,19 +863,19 @@ class SolidSectionMesherTest {
                 bounds = FLUID_BOUNDS,
                 vertexBytes = 2_016,
                 indexBytes = 176,
-                contentDigest = "291010e83525ef6b3bcc2b9e7b6e20cbbc24df1681d158a76199516f0190a3c0",
+                contentDigest = "47f9d3c6eb1138c733c6ab7b50741c4e7f8ea934a127f6ce7f33331f7ec5f55d",
             ),
             FluidSemanticFixture.WATER_FLOWING to FluidSemanticSignature(
                 bounds = FLUID_BOUNDS,
                 vertexBytes = 2_016,
                 indexBytes = 176,
-                contentDigest = "e44add9230b92c3a52766512d7f91c93e96c9aff34f67b9bf6650c0e3a4a690f",
+                contentDigest = "07c3b4ee34ebe722f36c43d886af1207a28f9c65dfb67147c34c7fcdcc583cc9",
             ),
             FluidSemanticFixture.LAVA_STILL to FluidSemanticSignature(
                 bounds = FLUID_BOUNDS,
                 vertexBytes = 2_016,
                 indexBytes = 176,
-                contentDigest = "7208c5fd2b3c1333bd46ae688182b4182147c80dc6b5b27cafae13bf78d836bd",
+                contentDigest = "f8f2bfe360e7892709cce1012ab84b38dba87f04f6b3e995c4f9ea8816a95fa6",
             ),
         )
 

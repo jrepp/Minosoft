@@ -1,0 +1,173 @@
+{
+  "name": "small-survival-authored-materials",
+  "steps": [
+    {
+      "name": "Bliss client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "use authored transmission and retain ordinary emissive blocks",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.configure-options",
+      "deadlineMs": 30000,
+      "body": {
+        "options": {
+          "SSS_TYPE": "3",
+          "EMISSIVE_TYPE": "1"
+        }
+      },
+      "assert": [
+        {
+          "pointer": "/configured",
+          "equals": true
+        },
+        {
+          "pointer": "/presentationInstalled",
+          "equals": true
+        },
+        {
+          "pointer": "/options/SSS_TYPE",
+          "equals": "3"
+        },
+        {
+          "pointer": "/options/EMISSIVE_TYPE",
+          "equals": "1"
+        }
+      ]
+    },
+    {
+      "name": "material profile transition drains",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": {
+        "condition": "ALL",
+        "timeoutMs": 29000
+      },
+      "assert": [
+        {
+          "pointer": "/idleState/queuedBuilds",
+          "equals": 0
+        },
+        {
+          "pointer": "/idleState/pendingUploads",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "name": "reload populated shader pipeline",
+      "type": "request",
+      "role": "client",
+      "operation": "mods.iris.reload-shaders",
+      "deadlineMs": 30000,
+      "body": {},
+      "assert": [
+        {
+          "pointer": "/reloaded",
+          "equals": true
+        },
+        {
+          "pointer": "/presentationInstalled",
+          "equals": true
+        },
+        {
+          "pointer": "/shaderPack",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "name": "reload populated resource generation",
+      "type": "request",
+      "role": "client",
+      "operation": "render.reload-content",
+      "deadlineMs": 30000,
+      "body": {},
+      "assert": [
+        {
+          "pointer": "/accepted",
+          "equals": true
+        },
+        {
+          "pointer": "/generation",
+          "min": 1
+        }
+      ]
+    },
+    {
+      "name": "shader and resource replacements drain",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.flush-idle",
+      "deadlineMs": 30000,
+      "body": {
+        "condition": "ALL",
+        "timeoutMs": 29000
+      },
+      "assert": [
+        {
+          "pointer": "/idleState/queuedBuilds",
+          "equals": 0
+        },
+        {
+          "pointer": "/idleState/pendingUploads",
+          "equals": 0
+        },
+        {
+          "pointer": "/idleState/retiredBytes",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "name": "main and shadow publish the restored generation",
+      "type": "request",
+      "role": "client",
+      "operation": "render.terrain.summary",
+      "body": {},
+      "assert": [
+        {
+          "pointer": "/snapshot/pipeline/mode",
+          "equals": "UNIFIED"
+        },
+        {
+          "pointer": "/snapshot/pipeline/shaderPipelineGeneration",
+          "min": 2
+        },
+        {
+          "pointer": "/snapshot/publication/0/views/0/drawPageCount",
+          "min": 1
+        },
+        {
+          "pointer": "/snapshot/publication/0/views/1/drawPageCount",
+          "min": 1
+        },
+        {
+          "pointer": "/snapshot/publication/0/views/0/missingPageCount",
+          "equals": 0
+        },
+        {
+          "pointer": "/snapshot/publication/0/views/1/missingPageCount",
+          "equals": 0
+        },
+        {
+          "pointer": "/snapshot/scheduling/runtime/failed",
+          "equals": 0
+        },
+        {
+          "pointer": "/snapshot/residency/0/accounting/retiredBytes",
+          "equals": 0
+        },
+        {
+          "pointer": "/snapshot/submission/failedSubmissionCount",
+          "equals": 0
+        }
+      ]
+    }
+  ]
+}

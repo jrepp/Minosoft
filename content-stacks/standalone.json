@@ -61,6 +61,13 @@
       "artifact": "GUIRevision_2.1.0.zip"
     },
     {
+      "type": "directory",
+      "label": "survival-authored",
+      "environment": "MINOSOFT_SURVIVAL_CONTENT",
+      "default": "../content-forge/out-survival",
+      "optional": true
+    },
+    {
       "type": "archive",
       "label": "local-resource-packs",
       "environment": "MINOSOFT_RESOURCE_PACKS",

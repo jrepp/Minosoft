@@ -230,6 +230,14 @@ class IrisShaderPackPlannerTest {
             plan.programs.single { it.name == "composite6" }.fragment,
             "if(hand) blendingFactor = 1.0; // minosoft: reject world history on the hand",
         )
+        assertContains(
+            plan.programs.single { it.name == "composite6" }.fragment,
+            "bool hand = abs(dataUnpacked-0.75) < 0.01 && texture(depthtex0,taauTC).x < 1.0;",
+        )
+        assertFalse(
+            "texture(depthtex1,taauTC).x < 1.0" in
+                plan.programs.single { it.name == "composite6" }.fragment,
+        )
         val composite = plan.programs.single { it.name == "composite1" }.fragment
         assertContains(composite, "#ifdef Ambient_SSS")
         assertEquals(2, Regex("""#ifdef\s+Ambient_SSS""").findAll(composite).count())

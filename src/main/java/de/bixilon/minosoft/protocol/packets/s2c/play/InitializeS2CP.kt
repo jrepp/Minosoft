@@ -172,6 +172,9 @@ class InitializeS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
         }
 
         session.world.hardcore = isHardcore
+        if (session.version >= ProtocolVersions.V_19W13A) {
+            session.world.view.announceServerViewDistance(viewDistance)
+        }
 
         registries?.let { session.registries.updateNbt(session.version, it) }
         val nextDimension = dimension ?: session.registries.dimension[dimensionName]?.properties ?: throw NullPointerException("Can not find dimension: $dimensionName")
@@ -183,8 +186,6 @@ class InitializeS2CP(buffer: PlayInByteBuffer) : PlayS2CPacket {
                 if (session.version >= ProtocolVersions.V_19W36A) "seed-hash:$hashedSeed" else null,
             )
         }
-
-
         session.world.entities.clear(session, local = true)
         session.world.entities.add(entityId, null, playerEntity)
         playerEntity.id = entityId

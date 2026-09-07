@@ -55,6 +55,13 @@ instructions that differ from the root contract.
 
 ## Acceptance and evidence
 
+- [Small Survival shader/entity follow-up](evidence/2026-09-07-small-survival-render-fixes.md)
+  records shadow/DH/temporal coordinate corrections, native uniform handback,
+  fallback texture and entity-sort fixes, visual comparisons, and remote DH limits.
+
+- [Small survival content remediation](evidence/2026-09-07-small-survival-content-fix.md)
+  records palette decoding, authored generation and source priority, the Bliss
+  scattering diagnosis, material reload acceptance, and remaining visual limits.
 - [Small survival visual probe](evidence/2026-09-07-small-survival-visual-probe.md)
   records matched live framebuffer/scene captures, persistent black foliage,
   the unresolved material/shadow defects, texture source priority over
@@ -74,6 +81,9 @@ instructions that differ from the root contract.
   near-provider, distant-data, and distant-renderer ownership moves, focused
   gates, plus the first Phase 2 world-epoch, consolidated-identity, bounded
   scheduler/mailbox, and near-production adoption boundary.
+- [Agent-native debugging assessment and plan](backlog/agent-native-debugging-plan.md)
+  prioritizes typed tools, persistent probes, bounded frame queries, movement
+  capture and automatic restoration from the Small Survival investigation.
 - [Agent trajectory tooling backlog](backlog/agent-trajectory-tooling.md)
   prioritizes runtime leases, atomic diagnosis bundles, safe world snapshots,
   compare-and-restore checkpoints, visual A/B automation, and isolated

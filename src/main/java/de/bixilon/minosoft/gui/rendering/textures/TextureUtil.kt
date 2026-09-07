@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -32,9 +33,6 @@ import javax.imageio.ImageIO
 
 object TextureUtil {
     private const val MAX_ENCODED_TEXTURE_BYTES = 64 * 1024 * 1024
-    private val COMPONENTS_4 = intArrayOf(0, 1, 2, 3)
-    private val COMPONENTS_3 = intArrayOf(0, 1, 2)
-    private val COMPONENTS_1 = intArrayOf(0, 0, 0)
 
     fun ResourceLocation.texture(): ResourceLocation {
         return this.extend(prefix = "textures/", suffix = ".png")
@@ -66,21 +64,26 @@ object TextureUtil {
             else -> RGBA8Buffer(size)
         }
 
-        val samples = when (image.raster.numBands) {
-            4 -> COMPONENTS_4
-            3 -> COMPONENTS_3
-            else -> COMPONENTS_1
+        val colors = image.colorModel
+        val componentBits = colors.componentSize
+        fun component(samples: IntArray, index: Int): Int {
+            val maximum = (1L shl componentBits[index]) - 1
+            return ((samples[index].toLong() * 255 + maximum / 2) / maximum).toInt()
         }
-
         for (y in 0 until image.height) {
             for (x in 0 until image.width) {
-                var rgba = RGBAColor(image.raster.getSample(x, y, samples[0]), image.raster.getSample(x, y, samples[1]), image.raster.getSample(x, y, samples[2]))
-
-                if (samples.size > 3) {
-                    rgba = rgba.with(alpha = image.raster.getSample(x, y, samples[3]))
-                } else {
-                    rgba = rgba.with(alpha = image.alphaRaster?.getSample(x, y, 0) ?: 0xFF)
-                }
+                // Raster samples may be palette indices or sub/greater-than-eight-bit
+                // intensities. Resolve the color model before normalizing components.
+                // Do not use getRGB for gray PNGs: its sRGB conversion changes the
+                // encoded intensity compared with the primary PNG decoder.
+                val samples = colors.getComponents(image.raster.getDataElements(x, y, null), null, 0)
+                val gray = colors.numColorComponents == 1
+                val rgba = RGBAColor(
+                    component(samples, 0),
+                    component(samples, if (gray) 0 else 1),
+                    component(samples, if (gray) 0 else 2),
+                    if (colors.hasAlpha()) component(samples, colors.numColorComponents) else 255,
+                )
                 buffer.setRGBA(x, y, rgba)
             }
         }

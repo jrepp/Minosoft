@@ -152,25 +152,33 @@ object TerrainVisibilityTraversal {
         data class Visit(val position: SectionPosition, val entry: Directions?)
 
         val queue = ArrayDeque<Visit>()
-        val visited = HashSet<SectionPosition>(nodes.size)
+        val visitedState = HashMap<SectionPosition, Int>(nodes.size)
         val result = ArrayList<SectionPosition>(nodes.size)
         queue += Visit(camera, null)
 
         while (queue.isNotEmpty()) {
             val visit = queue.removeFirst()
-            if (!visited.add(visit.position)) continue
+            val entryBit = visit.entry?.let(::entryBit) ?: ENTRY_MASK
+            val previousEntries = visitedState[visit.position] ?: 0
+            if (previousEntries and entryBit != 0) continue
+            var currentState = previousEntries or entryBit
+            visitedState[visit.position] = currentState
             val node = nodes[visit.position] ?: continue
-            result += visit.position
+            if (previousEntries and ENTRY_MASK == 0) result += visit.position
 
             for (exit in Directions.VALUES) {
+                val exitBit = exitBit(exit)
+                if (currentState and exitBit != 0) continue
                 if (
                     visit.entry != null &&
                     node.connectivity?.connects(visit.entry, exit) == false
                 ) {
                     continue
                 }
+                currentState = currentState or exitBit
+                visitedState[visit.position] = currentState
                 val next = offset(visit.position, exit)
-                if (next !in visited && next in nodes) queue += Visit(next, exit.inverted)
+                if (next in nodes) queue += Visit(next, exit.inverted)
             }
         }
         return result
@@ -211,38 +219,62 @@ object TerrainVisibilityTraversal {
             ) explicit[index(position.x, position.y, position.z)] = node
         }
 
-        val visited = BooleanArray(volume)
+        // A section's connectivity depends on the face through which traversal
+        // entered it. Retain one bit per entry face so a first blocked approach
+        // can not suppress a later connected approach. The ring contains each
+        // cell at most once at a time; new entry bits accumulate in [pending].
+        val state = IntArray(volume)
+        val pending = IntArray(volume)
         val queueIndices = IntArray(volume)
-        val queueEntries = ByteArray(volume)
         val result = ArrayList<SectionPosition>(nodes.size)
         var read = 0
-        var write = 1
-        queueIndices[0] = index(camera.x, camera.y, camera.z)
-        visited[queueIndices[0]] = true
+        var write = 0
+        var queued = 0
 
-        while (read < write) {
+        fun enqueue(cell: Int, entries: Int) {
+            val unseen = entries and ENTRY_MASK and state[cell].inv()
+            if (unseen == 0) return
+            state[cell] = state[cell] or unseen
+            pending[cell] = pending[cell] or unseen
+            if (state[cell] and QUEUED_BIT != 0) return
+            check(queued < volume) { "Terrain visibility queue exceeded its bounded cell volume" }
+            queueIndices[write] = cell
+            write = (write + 1) % volume
+            queued++
+            state[cell] = state[cell] or QUEUED_BIT
+        }
+
+        val cameraIndex = index(camera.x, camera.y, camera.z)
+        enqueue(cameraIndex, ENTRY_MASK)
+
+        while (queued > 0) {
             val current = queueIndices[read]
-            val entryOrdinal = queueEntries[read++].toInt() - 1
+            read = (read + 1) % volume
+            queued--
+            val entries = pending[current]
+            pending[current] = 0
+            state[current] = state[current] and QUEUED_BIT.inv()
             val node = explicit[current]
-            if (node != null) result += node.position
+            if (node != null && state[current] and EMITTED_BIT == 0) {
+                result += node.position
+                state[current] = state[current] or EMITTED_BIT
+            }
 
             val localY = current / plane
             val remainder = current - localY * plane
             val localZ = remainder / width
             val localX = remainder - localZ * width
             for (exit in Directions.VALUES) {
-                if (entryOrdinal >= 0 && node?.connectivity?.connects(Directions.VALUES[entryOrdinal], exit) == false) continue
+                val exitBit = exitBit(exit)
+                if (state[current] and exitBit != 0) continue
+                if (current != cameraIndex && node?.connectivity != null && !connects(node.connectivity, entries, exit)) continue
+                state[current] = state[current] or exitBit
                 val nextX = localX + exit.x
                 val nextY = localY + exit.y
                 val nextZ = localZ + exit.z
                 if (nextX !in 0 until width || nextY !in 0 until height || nextZ !in 0 until depth) continue
                 val next = nextY * plane + nextZ * width + nextX
-                if (!visited[next]) {
-                    visited[next] = true
-                    queueIndices[write] = next
-                    queueEntries[write] = (exit.inverted.ordinal + 1).toByte()
-                    write++
-                }
+                enqueue(next, entryBit(exit.inverted))
             }
         }
         return result
@@ -270,4 +302,24 @@ object TerrainVisibilityTraversal {
         position.y + direction.y,
         position.z + direction.z,
     )
+
+    private fun connects(
+        connectivity: TerrainDirectionalVisibility,
+        entries: Int,
+        exit: Directions,
+    ): Boolean {
+        for (entry in Directions.VALUES) {
+            if (entries and entryBit(entry) != 0 && connectivity.connects(entry, exit)) return true
+        }
+        return false
+    }
+
+    private fun entryBit(direction: Directions): Int = 1 shl direction.ordinal
+
+    private fun exitBit(direction: Directions): Int = entryBit(direction) shl EXIT_SHIFT
+
+    private const val ENTRY_MASK = (1 shl Directions.SIZE) - 1
+    private const val QUEUED_BIT = 1 shl Directions.SIZE
+    private const val EMITTED_BIT = 1 shl (Directions.SIZE + 1)
+    private const val EXIT_SHIFT = Directions.SIZE + 2
 }

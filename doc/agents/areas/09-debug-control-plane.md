@@ -19,6 +19,10 @@ mutation API. One-shot version-one operations are implemented; subscriptions,
 advanced AOI layers, and connection-owned input state remain explicit later
 stages. The CLI now composes one-shot operations into checked scenario files.
 
+The next debugging/query/probe delivery is proposed in the
+[agent-native tooling assessment](../backlog/agent-native-debugging-plan.md).
+It reuses this control plane and distinguishes existing capabilities from targets.
+
 ## Current evidence
 
 | Status | Claim | Evidence |

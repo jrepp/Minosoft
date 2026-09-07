@@ -14,6 +14,8 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class IrisBlissHandTransformerTest {
     @Test
@@ -31,6 +33,31 @@ class IrisBlissHandTransformerTest {
     }
 
     @Test
+    fun `DH-only background validates the current hand depth and preserves stale marker rejection`() {
+        val transformed = IrisBlissHandTransformer.transform(
+            "composite6",
+            ShaderProgramPhase.COMPOSITE,
+            stages(blissFragment()),
+        )
+
+        assertContains(
+            transformed.fragment,
+            "bool hand = abs(dataUnpacked-0.75) < 0.01 && texture2D(depthtex0,taauTC).x < 1.0;",
+        )
+        assertFalse("texture2D(depthtex1,taauTC).x < 1.0" in transformed.fragment)
+
+        fun classifiedAsHand(marker: Double, sampledDepth: Double): Boolean =
+            kotlin.math.abs(marker - 0.75) < 0.01 && sampledDepth < 1.0
+
+        val nativeBackgroundDepth = 1.0
+        val currentHandDepth = 0.2
+        assertFalse(classifiedAsHand(0.75, nativeBackgroundDepth))
+        assertTrue(classifiedAsHand(0.75, currentHandDepth))
+        assertFalse(classifiedAsHand(0.55, currentHandDepth))
+        assertFalse(classifiedAsHand(0.75, 1.0))
+    }
+
+    @Test
     fun `changed Bliss hand history rule fails closed`() {
         val failure = assertFailsWith<IllegalArgumentException> {
             IrisBlissHandTransformer.transform(
@@ -41,6 +68,19 @@ class IrisBlissHandTransformerTest {
         }
 
         assertContains(failure.message.orEmpty(), "Bliss hand TAA history rule changed")
+    }
+
+    @Test
+    fun `changed Bliss hand depth rule fails closed`() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            IrisBlissHandTransformer.transform(
+                "composite6",
+                ShaderProgramPhase.COMPOSITE,
+                stages(blissFragment().replace("depthtex1", "dhDepthTex1")),
+            )
+        }
+
+        assertContains(failure.message.orEmpty(), "Bliss hand current-depth rule changed")
     }
 
     @Test

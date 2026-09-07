@@ -159,7 +159,7 @@ class BakedFaceTest {
             assertEquals(data[offset + 10], 1.0f, 0.001f)
             assertEquals(data[offset + 14], 0.0f, 0.001f)
             assertEquals(data[offset + 15], 0.0f, 0.001f)
-            assertEquals(data[offset + 16], 1.0f, 0.001f)
+            assertEquals(data[offset + 16], -1.0f, 0.001f)
             assertEquals(data[offset + 20], 14.0f)
         }
         assertEquals(data[17], 0.5f, 0.001f)

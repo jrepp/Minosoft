@@ -131,7 +131,7 @@ final class ContentStackManifestTest {
                 "generated", "voxelibre", "managed_mods", "mods", "directory",
                 "notice",
                 "managed_resource_pack", "managed_resource_pack", "managed_resource_pack", "managed_resource_pack",
-                "archive", "archive"
+                "directory", "archive", "archive"
             ),
             manifest.sources().stream().map(ContentStackManifest.Source::type).toList()
         );
@@ -143,6 +143,10 @@ final class ContentStackManifestTest {
                 .toList()
         );
         assertEquals("VanillaEvolved_1.9.0.zip", manifest.sources().get(7).artifact());
+        var survival = manifest.sources().get(10);
+        assertEquals("survival-authored", survival.label());
+        assertEquals("MINOSOFT_SURVIVAL_CONTENT", survival.environment());
+        assertTrue(survival.optional());
         assertEquals("faithful-overlays", manifest.sources().getLast().label());
         assertEquals("MINOSOFT_FAITHFUL_PACKS", manifest.sources().getLast().environment());
     }

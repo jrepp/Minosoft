@@ -622,9 +622,10 @@ internal object IrisLegacyShaderTransformer {
      * the graph producer.
      */
     private fun transformDistantTerrain(name: String, vertex: String, fragment: String): Stages {
-        val modelView = if (name == "dh_shadow") "shadowModelView" else "gbufferModelView"
-        val projection = if (name == "dh_shadow") "shadowProjection" else "dhProjection"
-        var transformedVertex = transformNeutralMaterial(core(vertex))
+        val shadow = name == "dh_shadow"
+        val modelView = if (shadow) "minosoftPlayerShadowModelView" else "minosoftPlayerModelView"
+        val projection = if (shadow) "shadowProjection" else "dhProjection"
+        var transformedVertex = terrainPlayerModelView(transformNeutralMaterial(core(vertex)))
             .replace(
                 Regex(
                     """(?m)^\s*uniform\s+mat4\s+""" +
@@ -637,7 +638,7 @@ internal object IrisLegacyShaderTransformer {
             replacements = mapOf(
                 "attribute" to "in",
                 "varying" to "out",
-                "gl_Vertex" to "vec4(vinPosition + uPageOffset, 1.0)",
+                "gl_Vertex" to "vec4(minosoftDhPosition(), 1.0)",
                 "gl_Color" to "minosoftDhColor()",
                 "gl_NormalMatrix" to "mat3($modelView)",
                 "gl_Normal" to "minosoftDhNormal()",
@@ -666,7 +667,7 @@ internal object IrisLegacyShaderTransformer {
         val transformedFragment = transformCoreFragmentOutputs(
             insertAfterVersion(
                 transformNeutralMaterial(
-                    core(fragment)
+                    terrainPlayerModelView(core(fragment))
                         .replace(Regex("""\bvarying\b"""), "in")
                         .replace(MODERN_DIFFUSE_SAMPLER, "")
                         .replace(
@@ -974,6 +975,10 @@ internal object IrisLegacyShaderTransformer {
                 "gl_MultiTexCoord0" to "vec4(minosoftFullscreenUv, 0.0, 1.0)",
                 "gl_MultiTexCoord1" to "vec4(1.0)",
                 "gl_Color" to "vec4(1.0)",
+                "gbufferModelView" to "minosoftPlayerModelView",
+                "gbufferModelViewInverse" to "minosoftPlayerModelViewInverse",
+                "shadowModelView" to "minosoftPlayerShadowModelView",
+                "shadowModelViewInverse" to "minosoftPlayerShadowModelViewInverse",
             ),
             emptyCallReplacements = mapOf(
                 "ftransform" to "vec4(minosoftFullscreenPosition, 0.0, 1.0)",
@@ -1065,6 +1070,8 @@ internal object IrisLegacyShaderTransformer {
                     "varying" to "in",
                     "gbufferModelView" to "minosoftPlayerModelView",
                     "gbufferModelViewInverse" to "minosoftPlayerModelViewInverse",
+                    "shadowModelView" to "minosoftPlayerShadowModelView",
+                    "shadowModelViewInverse" to "minosoftPlayerShadowModelViewInverse",
                 ),
             ),
         )
@@ -1105,6 +1112,7 @@ internal object IrisLegacyShaderTransformer {
     }
 
     private fun transformModernTerrainVertex(source: String, shadow: Boolean): String {
+        val modelView = if (shadow) "shadowModelView" else "gbufferModelView"
         var transformed = terrainPlayerModelView(core(source))
             .replace(Regex("""\bvarying\b"""), "out")
             .replace(Regex("""\battribute\b"""), "in")
@@ -1124,9 +1132,9 @@ internal object IrisLegacyShaderTransformer {
             .replace(Regex("""\bat_midBlock\b"""), "minosoftMidBlock.xyz")
             .replace(Regex("""\bgl_Vertex\b"""), "vec4(vinPosition, 1.0)")
             .replace(Regex("""\bgl_Color\b"""), "minosoftTerrainColor()")
-            .replace(Regex("""\bgl_NormalMatrix\b"""), "mat3(gbufferModelView)")
+            .replace(Regex("""\bgl_NormalMatrix\b"""), "mat3($modelView)")
             .replace(Regex("""\bgl_Normal\b"""), "vaNormal")
-            .replace(Regex("""\bgl_ModelViewMatrix\b"""), "gbufferModelView")
+            .replace(Regex("""\bgl_ModelViewMatrix\b"""), modelView)
             .replace(
                 Regex("""\bgl_ProjectionMatrix\b"""),
                 if (shadow) "shadowProjection" else "gbufferProjection",
@@ -1138,6 +1146,11 @@ internal object IrisLegacyShaderTransformer {
             .replace(Regex("""gl_TextureMatrix\s*\[\s*[01]\s*]"""), "mat4(1.0)")
             .replace(Regex("""\bgl_MultiTexCoord0\b"""), "vec4(minosoftTerrainUv(), 0.0, 1.0)")
             .replace(Regex("""\bgl_MultiTexCoord1\b"""), "vec4(minosoftTerrainLightUv(), 0.0, 1.0)")
+        // The authored shadow declaration was renamed above for camera-relative
+        // math. Fixed-function caster expressions need a separate host matrix.
+        if (shadow && !Regex("""\buniform\s+mat4\s+shadowModelView\s*;""").containsMatchIn(transformed)) {
+            transformed = insertAfterVersion(transformed, "uniform mat4 shadowModelView;")
+        }
         transformed = renameMain(transformed, "minosoftPackMain")
         transformed = insertAfterVersion(
             transformed,
@@ -1303,7 +1316,7 @@ internal object IrisLegacyShaderTransformer {
         header: String,
         bridgeLegacyColor: Boolean = true,
     ): String {
-        var transformed = core(source)
+        var transformed = terrainPlayerModelView(core(source))
             .replace(Regex("""\bvarying\b"""), "in")
             .replace(MODERN_DIFFUSE_SAMPLER, "")
             .replace(
@@ -2019,15 +2032,16 @@ internal object IrisLegacyShaderTransformer {
     }
 
     /**
-     * Pack terrain matrices are rotation-only, while retained vertices and the
-     * host model-view share one rebased world origin. Keep the host matrix for
-     * legacy gl_ModelViewMatrix aliases, but expose the rotation-only pair to
-     * authored gbufferModelView expressions so reconstructed playerPos values
-     * remain camera-relative at non-zero world coordinates.
+     * Pack terrain matrices consume camera-relative positions, while retained
+     * vertices and host matrices share one rebased world origin. Rewrite
+     * authored matrices before fixed-function aliases are injected so the
+     * latter continue to transform host geometry.
      */
     private fun terrainPlayerModelView(source: String): String = source
         .replace(Regex("""\bgbufferModelViewInverse\b"""), "minosoftPlayerModelViewInverse")
         .replace(Regex("""\bgbufferModelView\b"""), "minosoftPlayerModelView")
+        .replace(Regex("""\bshadowModelViewInverse\b"""), "minosoftPlayerShadowModelViewInverse")
+        .replace(Regex("""\bshadowModelView\b"""), "minosoftPlayerShadowModelView")
 
     private fun transformTerrainFragment(source: String): String {
         var transformed = terrainPlayerModelView(core(source))
@@ -2368,7 +2382,12 @@ internal object IrisLegacyShaderTransformer {
         layout (location = 3) in float vinNormalMaterial;
         uniform mat4 uViewProjectionMatrix;
         uniform vec3 uPageOffset;
+        uniform vec3 minosoftCameraOffset;
         out vec4 minosoftDhVertexColor;
+
+        vec3 minosoftDhPosition() {
+            return vinPosition + uPageOffset - minosoftCameraOffset;
+        }
 
         uint minosoftDhNormalMaterial() {
             return floatBitsToUint(vinNormalMaterial);

@@ -20,9 +20,12 @@ import de.bixilon.kutil.reflection.ReflectionUtil.forceSet
 import de.bixilon.kutil.reflection.ReflectionUtil.getFieldOrNull
 import de.bixilon.minosoft.data.registries.shapes.aabb.AABB
 import de.bixilon.minosoft.data.world.positions.BlockPosition
+import de.bixilon.minosoft.data.world.positions.SectionPosition
 import de.bixilon.minosoft.gui.rendering.camera.Camera
 import de.bixilon.minosoft.gui.rendering.camera.WorldOffset
+import de.bixilon.minosoft.gui.rendering.entities.EntityRendererTestUtil
 import de.bixilon.minosoft.test.ITUtil.allocate
+import org.testng.Assert.assertEquals
 import org.testng.Assert.assertFalse
 import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
@@ -95,6 +98,42 @@ class FrustumTest {
         assertFalse(AABB(12377.953316849576, 90.0, -1837647.0120724367, 12378.203316849576, 90.25, -1837646.7620724367) in frustum)
         assertFalse(AABB(12379.90899152872, 98.0, -1837647.6819665642, 12380.15899152872, 98.25, -1837647.4319665642) in frustum)
         assertFalse(AABB(12379.90899152872, 980.0, -1837647.6819665642, 12380.15899152872, 980.25, -1837647.4319665642) in frustum)
+    }
+
+    fun `world section visibility defaults to whole section bounds`() {
+        val context = EntityRendererTestUtil.createContext(version = "1.20.4")
+        val culling = context.camera.frustum
+        FRUSTUM[culling] = object : Frustum {
+            override fun containsSphere(x: Float, y: Float, z: Float, radius: Float) = FrustumResults.OUTSIDE
+
+            override fun containsAABB(
+                minX: Float,
+                minY: Float,
+                minZ: Float,
+                maxX: Float,
+                maxY: Float,
+                maxZ: Float,
+            ) = if (maxX - minX == 16.0f && maxY - minY == 16.0f && maxZ - minZ == 16.0f) {
+                FrustumResults.PARTLY_INSIDE
+            } else {
+                FrustumResults.OUTSIDE
+            }
+
+            override fun containsAABB(
+                minX: Float,
+                minY: Float,
+                minZ: Float,
+                maxX: Float,
+                maxY: Float,
+                maxZ: Float,
+                full: Boolean,
+            ) = containsAABB(minX, minY, minZ, maxX, maxY, maxZ)
+        }
+
+        assertEquals(
+            context.camera.visibility.isSectionVisible(SectionPosition(0, 0, 0), full = false),
+            FrustumResults.PARTLY_INSIDE,
+        )
     }
 
     @Test(enabled = false)
