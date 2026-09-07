@@ -55,6 +55,10 @@ instructions that differ from the root contract.
 
 ## Acceptance and evidence
 
+- [Small survival visual probe](evidence/2026-09-07-small-survival-visual-probe.md)
+  records matched live framebuffer/scene captures, persistent black foliage,
+  the unresolved material/shadow defects, texture source priority over
+  content-forge outputs, and restored presentation state.
 - [Hot-reload acceptance protocol](acceptance/hot-reload.md) defines the
   repeatable process-generation gates and failure-preservation check.
 - [Java 25 build baseline](evidence/2026-07-30-java-25-baseline.md) records the
