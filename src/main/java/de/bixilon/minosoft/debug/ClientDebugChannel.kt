@@ -237,7 +237,9 @@ object ClientDebugChannel : AutoCloseable {
 
     private fun register(server: DebugChannelServer) {
         server.operations().register("client", "state.sample") { _, body -> completed(sampleState(body)) }
-        server.operations().register("client", "visual.capture") { _, _ -> onRender(::capture) }
+        server.operations().register("client", "visual.capture") { _, body ->
+            onRender { capture(it, body.path("includeScene").asBoolean(false)) }
+        }
         server.operations().register("client", "visual.sample") { _, body -> onRender { sampleVisual(it, body) } }
         server.operations().register("client", "visual.prepare-reference") { _, body -> onRender { prepareVisualReference(it, body) } }
         server.operations().register("client", "visual.background-throttle") { _, body ->
@@ -689,7 +691,7 @@ object ClientDebugChannel : AutoCloseable {
         return DebugOperationResult.json(result)
     }
 
-    private fun capture(context: RenderContext): DebugOperationResult {
+    private fun capture(context: RenderContext, includeScene: Boolean = false): DebugOperationResult {
         val screenshot = context.screenshotTaker.capture()
         validateFramebuffer(screenshot.size)
         val bytes = encodePng(screenshot.buffer)
@@ -702,6 +704,7 @@ object ClientDebugChannel : AutoCloseable {
             put("userScreenshotDirectory", context.screenshotTaker.userDirectory.toString())
             put("pixelFormat", "rgba8")
             put("origin", "top-left")
+            if (includeScene) set<ObjectNode>("scene", SceneReviewCapture.capture(context))
         }
         return DebugOperationResult.attachment(metadata, bytes, "image/png", screenshot.suggestedFilename)
     }

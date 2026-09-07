@@ -174,7 +174,11 @@ final class TrajectoryDiagnostics {
 
     private void captureVisual(Path output, DebugClient client, ArrayNode artifacts, ArrayNode warnings) {
         try {
-            DebugResponse response = client.requestWithAttachment("visual.capture", empty(), 10_000);
+            DebugResponse response = client.requestWithAttachment(
+                "visual.capture",
+                DebugJson.MAPPER.createObjectNode().put("includeScene", true),
+                10_000
+            );
             if (!response.hasAttachment()) throw new IOException("operation returned no attachment");
             if (response.attachment().length > MAX_SCREENSHOT_BYTES) throw new IOException("attachment exceeded 64 MiB");
             String actual = sha256(response.attachment());
@@ -182,9 +186,11 @@ final class TrajectoryDiagnostics {
             if (!expected.isBlank() && !expected.equals(actual)) throw new IOException("attachment hash mismatch");
             writeBytes(output, "frame.png", response.attachment(), artifacts);
             ObjectNode metadata = response.result().deepCopy();
+            JsonNode scene = metadata.remove("scene");
             metadata.put("verifiedSha256", actual);
             metadata.put("bytes", response.attachment().length);
             writeJson(output, "frame.json", metadata, artifacts);
+            if (scene != null && scene.isObject()) writeJson(output, "scene.json", scene, artifacts);
         } catch (Exception error) {
             warnings.add("visual.capture failed: " + concise(error));
         }
