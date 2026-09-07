@@ -21,6 +21,34 @@ import kotlin.test.assertTrue
 
 class IrisLegacyShaderTransformerTest {
     @Test
+    fun `legacy terrain preserves explicitly normalized light coordinates`() {
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "gbuffers_terrain",
+            ShaderProgramPhase.TERRAIN,
+            """
+                #version 120
+                varying vec2 lightCoordinates;
+                void main() {
+                    lightCoordinates = gl_MultiTexCoord1.xy / 240.0;
+                    lightCoordinates += gl_MultiTexCoord1.xy / 240.01;
+                    gl_Position = ftransform();
+                }
+            """.trimIndent(),
+            """
+                #version 120
+                varying vec2 lightCoordinates;
+                void main() {
+                    gl_FragData[0] = vec4(lightCoordinates, 0.0, 1.0);
+                }
+            """.trimIndent(),
+        )
+
+        assertContains(transformed.vertex, "lightCoordinates = minosoftLegacyLightUv();")
+        assertContains(transformed.vertex, "lightCoordinates += vec4(minosoftLegacyLightUv(), 0.0, 1.0).xy / 240.01;")
+        assertFalse("minosoftLegacyLightUv(), 0.0, 1.0).xy / 240.0;" in transformed.vertex)
+    }
+
+    @Test
     fun `material selector rewrite does not capture unrelated sampler parameters`() {
         val transformed = IrisLegacyShaderTransformer.transform(
             "gbuffers_textured",

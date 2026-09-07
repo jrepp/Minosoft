@@ -43,27 +43,43 @@ internal object IrisBlissWaterTransformer {
         val authoredOutput = """
             gl_FragData[0].rgb = clamp(FinalColor / gl_FragData[0].a*alpha0*(1.0-fresnel) * 0.1		+	Reflections_Final / gl_FragData[0].a * 0.1,0.0,65100.0);
         """.trimIndent()
-        return stages.copy(
-            fragment = replaceExactlyOnce(
-                fragment,
-                authoredOutput,
-                """
-                    float minosoftWaterSurfaceScale =
-                        isWater && isEyeInWater == 0 ? 0.30 : 0.1;
-                    vec3 minosoftWaterSurfaceFloor =
-                        isWater && isEyeInWater == 0 ? toLinear(color.rgb) * 0.12 : vec3(0.0);
-                    gl_FragData[0].rgb = max(
+        val lifted = replaceExactlyOnce(
+            fragment,
+            authoredOutput,
+            """
+                    float minosoftWaterDiffuseScale =
+                        isWater && isEyeInWater == 0 ? 0.24 : 0.1;
+                    float minosoftWaterReflectionScale =
+                        isWater && isEyeInWater == 0 ? 0.12 : 0.1;
+                    vec3 minosoftWaterSurfaceLift =
+                        isWater && isEyeInWater == 0
+                            ? toLinear(color.rgb) * mix(0.01, 0.03, fresnel)
+                            : vec3(0.0);
+                    gl_FragData[0].rgb = clamp(
                         clamp(
-                            FinalColor / gl_FragData[0].a * alpha0 * (1.0-fresnel) * minosoftWaterSurfaceScale +
-                            Reflections_Final / gl_FragData[0].a * minosoftWaterSurfaceScale,
+                            FinalColor / gl_FragData[0].a * alpha0 * (1.0-fresnel) * minosoftWaterDiffuseScale +
+                            Reflections_Final / gl_FragData[0].a * minosoftWaterReflectionScale,
                             0.0,
                             65100.0
-                        ),
-                        minosoftWaterSurfaceFloor
+                        ) + minosoftWaterSurfaceLift,
+                        0.0,
+                        65100.0
                     );
-                """.trimIndent(),
-                "Bliss reflective-water output changed before presentation correction",
-            ),
+            """.trimIndent(),
+            "Bliss reflective-water output changed before presentation correction",
+        )
+        return stages.copy(fragment = rejectWaterScreenHistory(lifted))
+    }
+
+    private fun rejectWaterScreenHistory(fragment: String): String {
+        val historySample =
+            "Reflections.rgb = texture2D(colortex5, previousPosition.xy).rgb * Metals;"
+        if (historySample !in fragment) return fragment
+        return replaceExactlyOnce(
+            fragment,
+            "if (rtPos.z < 1.0){",
+            "if (rtPos.z < 1.0 && !isWater){",
+            "Bliss reflective-water screen-history guard changed before hand exclusion",
         )
     }
 

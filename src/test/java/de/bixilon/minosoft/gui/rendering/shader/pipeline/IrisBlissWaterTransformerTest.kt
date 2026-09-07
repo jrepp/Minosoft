@@ -13,11 +13,12 @@ package de.bixilon.minosoft.gui.rendering.shader.pipeline
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 
 class IrisBlissWaterTransformerTest {
     @Test
-    fun `dark above-water surfaces receive a bounded lift`() {
+    fun `dark above-water surfaces receive a detail-preserving lift`() {
         val transformed = IrisBlissWaterTransformer.transform(
             "gbuffers_water",
             ShaderProgramPhase.TERRAIN,
@@ -28,17 +29,27 @@ class IrisBlissWaterTransformerTest {
                     void main() {
                         bool isWater = true;
                         if(isEyeInWater == 1 && isWater) BackgroundReflection.rgb = vec3(0.0);
+                        vec3 rtPos = vec3(0.0);
+                        if (rtPos.z < 1.0){
+                            Reflections.rgb = texture2D(colortex5, previousPosition.xy).rgb * Metals;
+                        }
                         gl_FragData[0].rgb = clamp(FinalColor / gl_FragData[0].a*alpha0*(1.0-fresnel) * 0.1		+	Reflections_Final / gl_FragData[0].a * 0.1,0.0,65100.0);
                     }
                 """.trimIndent(),
             ),
         )
 
-        assertContains(transformed.fragment, "float minosoftWaterSurfaceScale")
-        assertContains(transformed.fragment, "isWater && isEyeInWater == 0 ? 0.30 : 0.1")
-        assertContains(transformed.fragment, "isWater && isEyeInWater == 0 ? toLinear(color.rgb) * 0.12")
-        assertContains(transformed.fragment, "minosoftWaterSurfaceFloor")
-        assertContains(transformed.fragment, "Reflections_Final / gl_FragData[0].a * minosoftWaterSurfaceScale")
+        assertContains(transformed.fragment, "float minosoftWaterDiffuseScale")
+        assertContains(transformed.fragment, "isWater && isEyeInWater == 0 ? 0.24 : 0.1")
+        assertContains(transformed.fragment, "float minosoftWaterReflectionScale")
+        assertContains(transformed.fragment, "isWater && isEyeInWater == 0 ? 0.12 : 0.1")
+        assertContains(transformed.fragment, "vec3 minosoftWaterSurfaceLift")
+        assertContains(transformed.fragment, "toLinear(color.rgb) * mix(0.01, 0.03, fresnel)")
+        assertContains(transformed.fragment, ") + minosoftWaterSurfaceLift")
+        assertFalse("minosoftWaterSurfaceFloor" in transformed.fragment)
+        assertContains(transformed.fragment, "if (rtPos.z < 1.0 && !isWater){")
+        assertContains(transformed.fragment, "FinalColor / gl_FragData[0].a * alpha0 * (1.0-fresnel) * minosoftWaterDiffuseScale")
+        assertContains(transformed.fragment, "Reflections_Final / gl_FragData[0].a * minosoftWaterReflectionScale")
     }
 
     @Test

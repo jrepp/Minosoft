@@ -216,11 +216,19 @@ class IrisShaderPackPlannerTest {
         assertFalse("colortex6" in bloomBlur.resourceUsage.sampledCustomTextures)
         assertContains(
             plan.programs.single { it.name == "gbuffers_water" }.fragment,
-            "float minosoftWaterSurfaceScale",
+            "float minosoftWaterDiffuseScale",
+        )
+        assertContains(
+            plan.programs.single { it.name == "gbuffers_water" }.fragment,
+            "if (rtPos.z < 1.0 && !isWater){",
         )
         assertContains(
             plan.programs.single { it.name == "composite4" }.fragment,
             "color.rgb * mix(vec3(1.0), thresholdAbsorbedColor, 0.65)",
+        )
+        assertContains(
+            plan.programs.single { it.name == "composite6" }.fragment,
+            "if(hand) blendingFactor = 1.0; // minosoft: reject world history on the hand",
         )
         val composite = plan.programs.single { it.name == "composite1" }.fragment
         assertContains(composite, "#ifdef Ambient_SSS")

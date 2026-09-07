@@ -1975,6 +1975,13 @@ internal object IrisLegacyShaderTransformer {
 
     private fun transformTerrainVertex(source: String): String {
         var transformed = terrainPlayerModelView(core(source))
+            // Fixed-function light coordinates arrive as 0..240 values. The
+            // host bridge already exposes their normalized 0..1 equivalent,
+            // so preserve packs that normalize the raw coordinates directly.
+            .replace(
+                Regex("""\bgl_MultiTexCoord1\s*\.\s*xy\s*/\s*240(?:\.0+)?(?![\w.])"""),
+                "minosoftLegacyLightUv()",
+            )
             .replace(MC_ENTITY, "")
             .replace(Regex("""\bvarying\b"""), "out")
             .replace(Regex("""\battribute\b"""), "in")
