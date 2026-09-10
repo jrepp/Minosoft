@@ -14,7 +14,6 @@
 package de.bixilon.minosoft.data.registries.fluid.fluids
 
 import de.bixilon.kmath.vec.vec3.d.Vec3d
-import de.bixilon.kutil.cast.CastUtil.unsafeNull
 import de.bixilon.kutil.random.RandomUtil.chance
 import de.bixilon.minosoft.data.direction.Directions
 import de.bixilon.minosoft.data.registries.blocks.state.BlockState
@@ -42,7 +41,7 @@ import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import java.util.*
 
 open class LavaFluid(identifier: ResourceLocation = Companion.identifier) : Fluid(identifier), FluidCollisionHandler, FoggedFluid {
-    private val lavaParticleType: ParticleType = unsafeNull()
+    private val lavaParticleType: ParticleType? = null
     override val priority: Int get() = 1
 
     init {

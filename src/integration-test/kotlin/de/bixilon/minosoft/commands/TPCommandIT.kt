@@ -55,8 +55,9 @@ class TPCommandIT {
 
         node.execute("tp @s ~ ~10 ~")
 
-        assertEquals(stack!!["tp"], "tp")
-        assertEquals(stack!!["target"], SelectorEntityTarget(TargetSelectors.SELF, emptyMap()))
-        assertEquals(stack!!["destination"], Vec3Coordinate(Coordinate(CoordinateRelatives.TILDE, 0.0f), Coordinate(CoordinateRelatives.TILDE, +10.0f), Coordinate(CoordinateRelatives.TILDE, 0.0f)))
+        val result = checkNotNull(stack)
+        assertEquals(result["tp"], "tp")
+        assertEquals(result["target"], SelectorEntityTarget(TargetSelectors.SELF, emptyMap()))
+        assertEquals(result["destination"], Vec3Coordinate(Coordinate(CoordinateRelatives.TILDE, 0.0f), Coordinate(CoordinateRelatives.TILDE, +10.0f), Coordinate(CoordinateRelatives.TILDE, 0.0f)))
     }
 }

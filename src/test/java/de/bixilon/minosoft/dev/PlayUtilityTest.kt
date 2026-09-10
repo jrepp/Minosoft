@@ -14,6 +14,7 @@
 package de.bixilon.minosoft.dev
 
 import de.bixilon.minosoft.util.json.Jackson
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
@@ -32,23 +33,52 @@ class PlayUtilityTest {
     private val project = Path.of("").toAbsolutePath().normalize()
     private val java = Path.of(System.getProperty("java.home"), "bin", if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
 
-    private fun runPlay(vararg arguments: String, environment: Map<String, String> = emptyMap()): String {
+    private fun runPlay(vararg arguments: String, environment: Map<String, String> = emptyMap(), removedEnvironment: Set<String> = emptySet()): String {
         val command = mutableListOf(
             java.toString(),
             "-Dminosoft.project=$project",
             "-cp",
-            project.resolve("util/play/build/install/play-util/lib/*").toString(),
+            project.resolve("util/play/build/install/play-util/lib").toString() + File.separator + "*",
             "Play",
         )
         command += arguments
         val builder = ProcessBuilder(command).redirectErrorStream(true)
         builder.environment().putAll(environment)
-        val process = builder.start()
+        removedEnvironment.forEach { builder.environment().remove(it) }
+        val outputFile = Files.createTempFile("play-test-output", ".log")
+        try {
+            val process = builder.redirectOutput(outputFile.toFile()).start()
+            try {
+                assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Play utility did not finish.")
+                val output = Files.readString(outputFile)
+                assertEquals(0, process.exitValue(), output)
+                return output
+            } finally {
+                if (process.isAlive) {
+                    process.destroyForcibly()
+                    process.waitFor(5, TimeUnit.SECONDS)
+                }
+            }
+        } finally {
+            Files.deleteIfExists(outputFile)
+        }
+    }
 
-        assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Play utility did not finish.")
-        val output = process.inputStream.bufferedReader().readText()
-        assertEquals(0, process.exitValue(), output)
-        return output
+    @Test
+    fun `launcher works without a HOME environment variable`() {
+        val output = runPlay("help", removedEnvironment = setOf("HOME", "MINOSOFT_MODPACK_STORE"))
+        assertTrue(output.contains("--canary"), output)
+    }
+
+    @Test
+    fun `explicit modpack store works without a HOME environment variable`() {
+        val store = createTempDirectory("play-store")
+        try {
+            val output = runPlay("help", environment = mapOf("MINOSOFT_MODPACK_STORE" to store.toString()), removedEnvironment = setOf("HOME"))
+            assertTrue(output.contains("--canary"), output)
+        } finally {
+            Files.deleteIfExists(store)
+        }
     }
 
     @Test
@@ -98,6 +128,18 @@ class PlayUtilityTest {
         assertTrue(output.contains("--world-generator"), output)
         assertTrue(output.contains("--world-seed"), output)
         assertTrue(output.contains("MINOSOFT_LOCAL_WORLD=true"), output)
+        assertTrue(output.contains("--content-provider"), output)
+        assertTrue(output.contains("--content-stack"), output)
+        assertTrue(output.contains("--voxelibre-root"), output)
+        assertTrue(output.contains("--faithful-pack"), output)
+        assertTrue(output.contains("--content-source"), output)
+        assertTrue(output.contains("--content-mods"), output)
+        assertTrue(output.contains("--standalone-content"), output)
+        assertTrue(output.contains("content compose"), output)
+        assertTrue(output.contains("content audit"), output)
+        assertTrue(output.contains("MINOSOFT_CONTENT_PROVIDER=voxelibre"), output)
+        assertTrue(output.contains("MINOSOFT_CONTENT_STACK"), output)
+        assertTrue(output.contains("MINOSOFT_FAITHFUL_PACKS"), output)
         assertTrue(output.contains("MINOSOFT_WORLD_GENERATOR"), output)
         assertTrue(output.contains("scenario run"), output)
         assertTrue(output.contains("worldgen inspect"), output)

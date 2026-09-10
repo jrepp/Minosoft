@@ -1,0 +1,16 @@
+# Copyright (C) 2026 Jacob Repp
+# Upstream content license: CC BY-NC-SA 4.0
+# https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+name = "Vanilla Evolved"
+filename = "VanillaEvolved_1.9.0.zip"
+side = "client"
+
+[download]
+hash-format = "sha512"
+hash = "503124e6a51135d4914fc9b02aa009a0da22c2a07a46b0b66b65efbb02e0546cb8bf6a566bf972164b33e5539c3f998a6c57dce1c1c7a553970be5385406facf"
+url = "https://cdn.modrinth.com/data/5Wz8MWHt/versions/jQThsQmn/VanillaEvolved_1.9.0.zip"
+
+[update.modrinth]
+mod-id = "5Wz8MWHt"
+version = "jQThsQmn"

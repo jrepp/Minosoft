@@ -42,6 +42,14 @@ class LocalChunkManager(
         load(position, distance)
     }
 
+    /** Generates and registers a single chunk if it is not already loaded. */
+    fun ensureLoaded(position: ChunkPosition) {
+        if (session.world.chunks[position] != null) return
+        val builder = ChunkBuilder(session.world, position)
+        generator.generate(builder)
+        session.world.chunks.update(position, builder.toData(), false)
+    }
+
 
     private fun unloadAll(center: ChunkPosition, distance: Int) {
         session.world.lock.lock()

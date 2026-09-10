@@ -54,7 +54,8 @@ class ResourceLocationRegistry(
     }
 
     override fun getId(value: ResourceLocation): Int {
-        return valueIdMap[value] ?: parent?.getId(value) ?: -1
+        if (valueIdMap.containsKey(value)) return valueIdMap.getInt(value)
+        return parent?.getId(value) ?: -1
     }
 
     override fun updatePixlyzer(data: Map<String, Any>?, version: Version, registries: Registries?) {

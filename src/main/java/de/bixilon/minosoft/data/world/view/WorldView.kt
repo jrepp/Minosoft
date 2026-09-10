@@ -17,10 +17,11 @@ import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import kotlin.math.abs
 
-@Deprecated("biggest junk ever")
 open class WorldView(
     private val session: PlaySession,
 ) {
+    private var hasAnnouncedServerViewDistance = false
+
     var serverViewDistance = Int.MAX_VALUE
         set(value) {
             if (field == value) {
@@ -66,7 +67,15 @@ open class WorldView(
         }
 
     @Synchronized
+    fun announceServerViewDistance(viewDistance: Int) {
+        require(viewDistance >= 0) { "Server view distance must not be negative: $viewDistance" }
+        hasAnnouncedServerViewDistance = true
+        serverViewDistance = viewDistance
+    }
+
+    @Synchronized
     open fun updateServerDistance() {
+        if (hasAnnouncedServerViewDistance) return
         val cameraPosition = session.player.physics.positionInfo.chunkPosition
         val size = session.world.chunks.size.size
         val min = Vec2i(size.min.x - cameraPosition.x, size.min.y - cameraPosition.z)

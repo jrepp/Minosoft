@@ -1,6 +1,7 @@
 /*
  * Minosoft
  * Copyright (C) 2020-2025 Moritz Zwerger
+ * Copyright (C) 2026 Jacob Repp
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
  *
@@ -131,6 +132,30 @@ class EntityDrawerTest {
             }.semantic,
             PipelineSemantic.ENTITIES_TRANSLUCENT,
         )
+    }
+
+    fun `retained feature ordering survives entity removal during shadow sorting`() {
+        val drawer = create()
+        fun feature(id: Int): Pair<Entity, ItemFeature> {
+            val entity = drawer.entity()
+            drawer.renderer.session.world.entities.add(id, null, entity)
+            val renderer = object : EntityRenderer<Entity>(drawer.renderer, entity) {
+                override fun collect(drawer: EntityDrawer) = Unit
+            }
+            return entity to ItemFeature(renderer, null, DisplayPositions.GROUND)
+        }
+        val (entity, first) = feature(32)
+        val (_, second) = feature(31)
+        drawer.addShadow(first)
+        drawer.addShadow(second)
+        drawer.prepare()
+        val before = drawer.shadow(EntityLayer.Translucent).toList()
+        assertEquals(first.stableOrder, 32L)
+        drawer.renderer.session.world.entities.remove(entity)
+        assertEquals(entity.id, null)
+        assertEquals(first.stableOrder, 32L)
+        drawer.prepare()
+        assertEquals(drawer.shadow(EntityLayer.Translucent).toList(), before)
     }
 
     fun `world item feature publishes entity and nested item identities`() {

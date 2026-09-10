@@ -52,7 +52,7 @@ import java.util.*
 
 open class NetherPortalBlock(identifier: ResourceLocation = NetherPortalBlock.identifier, settings: BlockSettings) : Block(identifier, settings), UnbreakableBlock, FlatteningRenamedModel, OutlinedBlock, RandomDisplayTickable, BlockWithItem<Item> {
     override val item: Item = this::item.inject(this.identifier)
-    val particle: ParticleType = this::particle.inject(PortalParticle)
+    val particle: ParticleType? = this::particle.inject(PortalParticle)
 
     override val lightProperties get() = TransparentProperty
     override val legacyModelName get() = LEGACY_MODEL
@@ -74,7 +74,7 @@ open class NetherPortalBlock(identifier: ResourceLocation = NetherPortalBlock.id
 
     override fun randomDisplayTick(session: PlaySession, state: BlockState, position: BlockPosition, random: Random) {
         val particle = session.world.particle ?: return
-        if (this.particle == null) return
+        val particleType = this.particle ?: return
 
         for (i in 0 until 4) {
             val particlePosition = MVec3d(
@@ -97,7 +97,7 @@ open class NetherPortalBlock(identifier: ResourceLocation = NetherPortalBlock.id
                 session,
                 particlePosition.unsafe,
                 velocity,
-                this.particle.default(),
+                particleType.default(),
             )
         }
     }

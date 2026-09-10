@@ -19,7 +19,7 @@ import de.bixilon.kutil.string.StringUtil.formatPlaceholder
 import de.bixilon.kutil.uuid.UUIDUtil.trim
 import de.bixilon.minosoft.assets.util.InputStreamUtil.readJsonObject
 import de.bixilon.minosoft.data.entities.entities.player.properties.textures.PlayerTextures
-import java.net.URL
+import java.net.URI
 import java.util.*
 
 data class PlayerProperties(
@@ -33,7 +33,7 @@ data class PlayerProperties(
 
         fun fetch(uuid: UUID): PlayerProperties {
             val url = URL.formatPlaceholder("uuid" to uuid.trim())
-            val data = URL(url).openStream().readJsonObject()
+            val data = URI.create(url).toURL().openStream().readJsonObject()
 
             var textures: PlayerTextures? = null
 

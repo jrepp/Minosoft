@@ -22,8 +22,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Arrays;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 
 final class DebugWindowsPipes {
     private static final int BUFFER_SIZE = 64 * 1024;
@@ -38,7 +38,7 @@ final class DebugWindowsPipes {
             String descriptor, int revision, PointerByReference securityDescriptor, IntByReference descriptorSize);
     }
 
-    static DebugTransportListener listen(String address) {
+    static DebugTransportListener listen(String address) throws IOException {
         return new Listener(address);
     }
 
@@ -46,7 +46,7 @@ final class DebugWindowsPipes {
         for (int attempt = 0; attempt < 20; attempt++) {
             WinNT.HANDLE handle = Kernel32.INSTANCE.CreateFile(address,
                 WinNT.GENERIC_READ | WinNT.GENERIC_WRITE, 0, null, WinNT.OPEN_EXISTING, 0, null);
-            if (!WinBase.INVALID_HANDLE_VALUE.equals(handle)) return connection(handle, false);
+            if (!WinBase.INVALID_HANDLE_VALUE.equals(handle)) return connection(handle);
             int error = Kernel32.INSTANCE.GetLastError();
             if (error != WinError.ERROR_PIPE_BUSY || !Kernel32.INSTANCE.WaitNamedPipe(address, 250)) {
                 if (error != WinError.ERROR_PIPE_BUSY) throw winError("could not connect to named debug pipe", error);
@@ -57,37 +57,89 @@ final class DebugWindowsPipes {
 
     private static final class Listener implements DebugTransportListener {
         private final String address;
-        private final AtomicBoolean open = new AtomicBoolean(true);
-        private final AtomicReference<WinNT.HANDLE> pending = new AtomicReference<>();
+        private boolean open = true;
+        private boolean accepting;
+        private WinNT.HANDLE pending;
+        private WinNT.HANDLE acceptingHandle;
+        private CompletableFuture<Void> acceptFinished;
 
-        private Listener(String address) { this.address = address; }
+        private Listener(String address) throws IOException {
+            this.address = address;
+            pending = createPrivatePipe(address);
+        }
 
         @Override
         public DebugTransportConnection accept() throws IOException {
-            if (!open.get()) throw new IOException("named debug pipe is closed");
-            WinNT.HANDLE handle = createPrivatePipe(address);
-            pending.set(handle);
-            boolean connected = Kernel32.INSTANCE.ConnectNamedPipe(handle, null);
-            int error = connected ? WinError.ERROR_SUCCESS : Kernel32.INSTANCE.GetLastError();
-            pending.compareAndSet(handle, null);
-            if (!open.get()) {
-                Kernel32.INSTANCE.CloseHandle(handle);
-                throw new IOException("named debug pipe is closed");
+            WinNT.HANDLE handle;
+            synchronized (this) {
+                if (!open) throw new IOException("named debug pipe is closed");
+                if (accepting) throw new IOException("named debug pipe already has an accept in progress");
+                accepting = true;
+                acceptFinished = new CompletableFuture<>();
+                handle = pending;
+                acceptingHandle = handle;
             }
-            if (!connected && error != WinError.ERROR_PIPE_CONNECTED) {
-                Kernel32.INSTANCE.CloseHandle(handle);
-                throw winError("could not accept named debug pipe", error);
+            try {
+                boolean connected = Kernel32.INSTANCE.ConnectNamedPipe(handle, null);
+                int error = connected ? WinError.ERROR_SUCCESS : Kernel32.INSTANCE.GetLastError();
+                synchronized (this) {
+                    // The accepting thread retains ownership until the native call returns.
+                    if (!open) throw new IOException("named debug pipe is closed");
+                    pending = null;
+                    try {
+                        if (!connected && error != WinError.ERROR_PIPE_CONNECTED) {
+                            throw winError("could not accept named debug pipe", error);
+                        }
+                        // Keep the next instance ready before handing this connection off.
+                        pending = createPrivatePipe(address);
+                        return connection(handle);
+                    } catch (IOException | RuntimeException errorDuringAccept) {
+                        open = false;
+                        Kernel32.INSTANCE.CloseHandle(handle);
+                        throw errorDuringAccept;
+                    }
+                }
+            } finally {
+                synchronized (this) {
+                    if (!open && pending == handle) {
+                        pending = null;
+                        Kernel32.INSTANCE.CloseHandle(handle);
+                    }
+                    accepting = false;
+                    acceptingHandle = null;
+                    acceptFinished.complete(null);
+                }
             }
-            return connection(handle, true);
         }
 
-        @Override public boolean isOpen() { return open.get(); }
+        @Override public synchronized boolean isOpen() { return open; }
 
         @Override
         public void close() {
-            if (!open.compareAndSet(true, false)) return;
-            WinNT.HANDLE handle = pending.getAndSet(null);
-            if (handle != null) Kernel32.INSTANCE.CloseHandle(handle);
+            WinNT.HANDLE handle;
+            CompletableFuture<Void> finished;
+            synchronized (this) {
+                if (!open) return;
+                open = false;
+                handle = pending;
+                finished = accepting && handle == acceptingHandle ? acceptFinished : null;
+                if (finished == null) pending = null;
+            }
+            if (handle == null) return;
+            if (finished == null) {
+                Kernel32.INSTANCE.CloseHandle(handle);
+                return;
+            }
+            // CloseHandle waits for a synchronous ConnectNamedPipe. A local connection
+            // releases that call, including the race where accept has not entered it yet.
+            WinNT.HANDLE wake = Kernel32.INSTANCE.CreateFile(address,
+                WinNT.GENERIC_READ | WinNT.GENERIC_WRITE, 0, null, WinNT.OPEN_EXISTING, 0, null);
+            try {
+                // The accepting thread closes its handle before completing this future.
+                finished.join();
+            } finally {
+                if (!WinBase.INVALID_HANDLE_VALUE.equals(wake)) Kernel32.INSTANCE.CloseHandle(wake);
+            }
         }
     }
 
@@ -116,7 +168,7 @@ final class DebugWindowsPipes {
         }
     }
 
-    private static DebugTransportConnection connection(WinNT.HANDLE handle, boolean serverSide) {
+    private static DebugTransportConnection connection(WinNT.HANDLE handle) {
         AtomicBoolean open = new AtomicBoolean(true);
         InputStream input = new InputStream() {
             @Override public int read() throws IOException {
@@ -159,7 +211,8 @@ final class DebugWindowsPipes {
         };
         return new DebugTransportConnection(input, output, () -> {
             if (!open.compareAndSet(true, false)) return;
-            if (serverSide) Kernel32.INSTANCE.DisconnectNamedPipe(handle);
+            // This instance is never reused. DisconnectNamedPipe would discard an
+            // unread final response; closing our handle lets the peer drain it.
             Kernel32.INSTANCE.CloseHandle(handle);
         });
     }

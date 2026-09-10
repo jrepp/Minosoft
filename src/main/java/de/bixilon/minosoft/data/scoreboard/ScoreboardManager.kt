@@ -39,6 +39,7 @@ class ScoreboardManager(private val session: PlaySession) {
         return null
     }
 
+    @Suppress("DEPRECATION") // The event remains the compatibility notification until scoreboard observables replace it.
     fun updateScoreTeams(team: Team, members: Set<String>, remove: Boolean = false, fireEvent: Boolean = true) {
         objectives.lock.acquire()
         for (objective in objectives.values) {

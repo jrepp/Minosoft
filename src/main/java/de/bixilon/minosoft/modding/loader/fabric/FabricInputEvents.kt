@@ -87,6 +87,7 @@ object FabricInputEvents {
     }
 }
 
+@ConsistentCopyVisibility
 data class FabricKeyBindingRegistration internal constructor(
     internal val id: Long,
     val owner: String,

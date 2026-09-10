@@ -135,6 +135,9 @@ and tests remain the behavioral authority.
 
 ## Verification checklist
 
+- Treat a compiler warning as a baseline regression. Kotlin and Java warnings
+  fail every JVM project; fix the diagnostic or replace a stale deprecation
+  contract instead of weakening the repository-wide gate.
 - Add a focused test for the behavior and at least one failure, boundary, or
   cleanup case exposed by the change.
 - For parsers and adapters, cover malformed, oversized, deeply nested,

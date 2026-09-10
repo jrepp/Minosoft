@@ -30,7 +30,6 @@ object MessageVerifyUtil {
         return null
     }
 
-    @Deprecated("TODO")
     fun verifyMessage(
         version: Version,
         sent: Instant,

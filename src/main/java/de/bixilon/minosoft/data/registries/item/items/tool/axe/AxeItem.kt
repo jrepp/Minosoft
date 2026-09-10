@@ -28,7 +28,6 @@ import de.bixilon.minosoft.input.interaction.InteractionResults
 abstract class AxeItem(identifier: ResourceLocation, registries: Registries, data: JsonObject) : InteractingToolItem(identifier) {
     override val tag: ResourceLocation get() = TAG
 
-    @Deprecated("StrippableBLock")
     protected val strippable = data["strippables_blocks"]?.toAnyMap()?.blocks(registries)
 
 

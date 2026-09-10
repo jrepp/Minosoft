@@ -14,7 +14,6 @@ package de.bixilon.minosoft.modding.event.events
 
 import de.bixilon.kutil.collections.CollectionUtil.synchronizedSetOf
 
-@Deprecated("field")
 interface CancelableEvent {
     var cancelled: Boolean
         get() = CANCELLED_EVENTS.contains(this)

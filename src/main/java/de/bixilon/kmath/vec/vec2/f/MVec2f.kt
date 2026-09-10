@@ -135,7 +135,7 @@ value class MVec2f(
         const val LENGTH = 2
 
         inline operator fun invoke(other: _Vec2d) = MVec2f(other.x.f, other.y.f)
-        inline operator fun invoke(other: _Vec2f) = MVec2f(other.x.f, other.y.f)
+        inline operator fun invoke(other: _Vec2f) = MVec2f(other.x, other.y)
         inline operator fun invoke(other: Vec2i) = MVec2f(other.x.f, other.y.f)
 
         operator fun invoke() = EMPTY

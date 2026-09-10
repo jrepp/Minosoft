@@ -141,6 +141,6 @@ value class MVec4f(
     companion object {
         val EMPTY get() = MVec4f(0)
 
-        inline operator fun invoke(other: _Vec4f) = MVec4f(other.x.f, other.y.f, other.z.f, other.w.f)
+        inline operator fun invoke(other: _Vec4f) = MVec4f(other.x, other.y, other.z, other.w)
     }
 }

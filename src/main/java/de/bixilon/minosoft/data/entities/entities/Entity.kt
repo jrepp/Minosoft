@@ -252,6 +252,7 @@ abstract class Entity(
 
     open fun postTick() {
         physics.postTick()
+        @Suppress("SENSELESS_COMPARISON") // renderInfo is an unsafe-null field when rendering is disabled.
         if (renderInfo != null) { // unsafeNull
             renderInfo.tick()
         }

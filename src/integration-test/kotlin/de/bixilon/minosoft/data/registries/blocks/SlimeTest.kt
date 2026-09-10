@@ -42,5 +42,4 @@ class SlimeTest : BlockTest<SlimeBlock>() {
     }
 }
 
-@Deprecated("")
 var SlimeTest0: SlimeTest = CastUtil.unsafeNull()

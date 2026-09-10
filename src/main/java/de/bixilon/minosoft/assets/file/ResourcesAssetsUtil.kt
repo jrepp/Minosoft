@@ -24,6 +24,7 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 
+@Suppress("DEPRECATION")
 object ResourcesAssetsUtil {
 
     private fun Path.getParent(up: Int): Path {

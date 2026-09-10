@@ -20,6 +20,9 @@ plugins {
     `java-library`
 }
 
+group = "de.bixilon.minosoft"
+version = "0.1.0"
+
 repositories {
     mavenCentral()
 }
@@ -33,4 +36,24 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+val standardTest = tasks.named<Test>("test")
+
+tasks.register<Test>("localTerrainTest") {
+    group = "verification"
+    description = "Runs deterministic distant-terrain contract tests."
+    dependsOn(tasks.named("testClasses"))
+    testClassesDirs = standardTest.get().testClassesDirs
+    classpath = standardTest.get().classpath
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching("de.bixilon.minosoft.terrain.distant.lighting.DistantDetachedLightingTest")
+        includeTestsMatching("de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageHierarchyTest")
+        includeTestsMatching("de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageMesherBaselineTest")
+        includeTestsMatching("de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageMeshingTest")
+        includeTestsMatching("de.bixilon.minosoft.terrain.distant.hierarchy.DistantPageSelectorTest")
+        includeTestsMatching("de.bixilon.minosoft.terrain.model.coverage.TerrainCoverageMaskingTest")
+        isFailOnNoMatchingTests = true
+    }
 }

@@ -187,6 +187,14 @@ data class IrisFrameState(
     ),
     val playerModelViewMatrix: Mat4f = irisPlayerModelView(modelViewMatrix),
     val playerModelViewMatrixInverse: Mat4f = playerModelViewMatrix.inverse(),
+    val previousPlayerModelViewMatrix: Mat4f = irisPlayerModelView(previousModelViewMatrix),
+    val playerShadowModelView: Mat4f = irisPlayerShadowModelView(
+        shadowModelView,
+        cameraPosition,
+        renderOrigin,
+    ),
+    val playerShadowModelViewInverse: Mat4f = playerShadowModelView.inverse(),
+    val renderCameraOffset: Vec3f = Vec3f(cameraPosition - renderOrigin),
 ) {
     init {
         require(playerMood in 0.0f..1.0f)
@@ -218,7 +226,10 @@ data class IrisFrameState(
                 "minosoftPlayerModelView" -> native.setMat4f(uniform, playerModelViewMatrix)
                 "minosoftPlayerModelViewInverse" ->
                     native.setMat4f(uniform, playerModelViewMatrixInverse)
-                "gbufferPreviousModelView" -> native.setMat4f(uniform, previousModelViewMatrix)
+                "minosoftPlayerShadowModelView" -> native.setMat4f(uniform, playerShadowModelView)
+                "minosoftPlayerShadowModelViewInverse" ->
+                    native.setMat4f(uniform, playerShadowModelViewInverse)
+                "gbufferPreviousModelView" -> native.setMat4f(uniform, previousPlayerModelViewMatrix)
 
                 "projectionMatrix", "gbufferProjection" -> native.setMat4f(uniform, projectionMatrix)
                 "projectionMatrixInverse", "gbufferProjectionInverse" ->
@@ -235,6 +246,7 @@ data class IrisFrameState(
                 "dhPreviousProjection" -> native.setMat4f(uniform, distantHorizons.previousProjection)
 
                 "cameraPosition" -> native.setVec3f(uniform, Vec3f(cameraPosition))
+                "minosoftCameraOffset" -> native.setVec3f(uniform, renderCameraOffset)
                 "previousCameraPosition" -> native.setVec3f(uniform, Vec3f(previousCameraPosition))
                 "eyePosition" -> native.setVec3f(uniform, Vec3f(eyePosition))
                 "relativeEyePosition" -> native.setVec3f(uniform, Vec3f(relativeEyePosition))
@@ -448,14 +460,14 @@ data class IrisFrameState(
             put("hasCeiling", worldInfo.hasCeiling.number())
             put("hasSkylight", worldInfo.hasSkylight.number())
             put("ambientLight", worldInfo.ambientLight.toDouble())
-            putMatrix("gbufferModelView", modelViewMatrix)
-            putMatrix("gbufferModelViewInverse", modelViewMatrixInverse)
-            putMatrix("gbufferPreviousModelView", previousModelViewMatrix)
+            putMatrix("gbufferModelView", playerModelViewMatrix)
+            putMatrix("gbufferModelViewInverse", playerModelViewMatrixInverse)
+            putMatrix("gbufferPreviousModelView", previousPlayerModelViewMatrix)
             putMatrix("gbufferProjection", projectionMatrix)
             putMatrix("gbufferProjectionInverse", projectionMatrixInverse)
             putMatrix("gbufferPreviousProjection", previousProjectionMatrix)
-            putMatrix("shadowModelView", shadowModelView)
-            putMatrix("shadowModelViewInverse", shadowModelViewInverse)
+            putMatrix("shadowModelView", playerShadowModelView)
+            putMatrix("shadowModelViewInverse", playerShadowModelViewInverse)
             putMatrix("shadowProjection", shadowProjection)
             putMatrix("shadowProjectionInverse", shadowProjectionInverse)
             put("shadowMapResolution", shadowMapResolution.toDouble())
@@ -488,6 +500,8 @@ data class IrisFrameState(
             "gbufferModelViewInverse",
             "minosoftPlayerModelView",
             "minosoftPlayerModelViewInverse",
+            "minosoftPlayerShadowModelView",
+            "minosoftPlayerShadowModelViewInverse",
             "gbufferPreviousModelView",
             "gbufferProjection",
             "gbufferProjectionInverse",
@@ -501,6 +515,7 @@ data class IrisFrameState(
             "dhProjectionInverse",
             "dhPreviousProjection",
             "cameraPosition",
+            "minosoftCameraOffset",
             "previousCameraPosition",
             "eyePosition",
             "relativeEyePosition",
@@ -1012,6 +1027,20 @@ internal fun irisPlayerModelView(host: Mat4f): Mat4f = MMat4f(host).apply {
     this[2, 3] = 0.0f
 }.unsafe
 
+/**
+ * Pack-authored shadow receivers use camera-relative positions, while host
+ * casters use render-origin-relative positions. Change only the input origin
+ * and preserve the snapped light-space transform held by the host matrix.
+ */
+internal fun irisPlayerShadowModelView(host: Mat4f, camera: Vec3d, renderOrigin: Vec3d): Mat4f =
+    MMat4f(host).apply {
+        translateAssign(
+            (camera.x - renderOrigin.x).toFloat(),
+            (camera.y - renderOrigin.y).toFloat(),
+            (camera.z - renderOrigin.z).toFloat(),
+        )
+    }.unsafe
+
 internal fun irisShadowProjection(directives: IrisShadowDirectives): Mat4f =
     directives.mapFov?.let { fov ->
         // Pinned Iris uses the legacy fixed depth range for perspective shadow maps.
@@ -1156,7 +1185,8 @@ internal class IrisFrameStateClock {
         val fogColor = fog.color ?: context.system.clearColor
         val cameraEntity = context.session.camera.entity
         val eyePosition = player.renderInfo.eyePosition
-        val camera = cameraEntity.renderInfo.eyePosition - context.camera.offset.offset
+        val renderOrigin = context.camera.offset.offset
+        val camera = context.camera.view.view.eyePosition
         val lightningBoltPosition = world.entities.lock.acquired {
             world.entities.entities
                 .firstOrNull { it is LightningBolt }
@@ -1197,12 +1227,11 @@ internal class IrisFrameStateClock {
         val size = scaledFramebufferSize(worldTarget.size, worldTarget.scale)
         val sunAngle = time.time / WorldTime.TICKS_PER_DAYf
         val shadowAngle = if (sunAngle <= 0.5f) sunAngle else sunAngle - 0.5f
-        val renderOrigin = context.camera.offset.offset
         val shadowModelView = irisShadowModelView(
             shadowAngle = shadowAngle,
             sunPathRotation = plan?.sunPathRotation ?: 0.0f,
             intervalSize = shadow.intervalSize,
-            cameraWorld = cameraEntity.renderInfo.eyePosition,
+            cameraWorld = camera,
             renderOrigin = Vec3d(
                 renderOrigin.x.toDouble(),
                 renderOrigin.y.toDouble(),

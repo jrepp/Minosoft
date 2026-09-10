@@ -11,6 +11,8 @@
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
 
+@file:Suppress("DEPRECATION") // The legacy bed entity remains required for pre-1.13 color data.
+
 package de.bixilon.minosoft.data.registries.blocks.types.pixlyzer.entity
 
 import de.bixilon.minosoft.data.entities.block.BedBlockEntity
@@ -29,4 +31,3 @@ open class BedBlock(identifier: ResourceLocation, registries: Registries, data: 
         }
     }
 }
-

@@ -42,6 +42,7 @@ import de.bixilon.minosoft.commands.parser.minecraft.uuid.UUIDParser
 import de.bixilon.minosoft.commands.parser.minosoft.dummy.DummyParser
 import de.bixilon.minosoft.data.registries.factory.DefaultFactory
 
+@Suppress("DEPRECATION") // Protocol compatibility still registers the explicitly incomplete parser factories below.
 object ArgumentParserFactories : DefaultFactory<ArgumentParserFactory<*>>(
     BooleanParser,
     FloatParser,

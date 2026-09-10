@@ -13,7 +13,6 @@
 
 package de.bixilon.minosoft.gui.rendering.gui.elements
 
-@Deprecated("events")
 interface Pollable {
 
     /**

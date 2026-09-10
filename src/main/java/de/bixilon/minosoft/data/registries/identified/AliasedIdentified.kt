@@ -13,7 +13,6 @@
 
 package de.bixilon.minosoft.data.registries.identified
 
-@Deprecated("fixer")
 interface AliasedIdentified {
     val identifiers: Set<ResourceLocation>
 }

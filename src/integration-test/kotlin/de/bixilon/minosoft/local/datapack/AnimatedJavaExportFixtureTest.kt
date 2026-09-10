@@ -28,6 +28,7 @@ import de.bixilon.minosoft.test.IT
 import org.testng.Assert.assertEquals
 import org.testng.Assert.assertFalse
 import org.testng.Assert.assertSame
+import org.testng.Assert.assertThrows
 import org.testng.Assert.assertTrue
 import org.testng.annotations.Test
 import java.nio.file.Files
@@ -40,12 +41,12 @@ class AnimatedJavaExportFixtureTest {
     @Test
     fun `runs pinned 1_10_2 summon tick and removal lifecycle`() {
         val previous = RenderingOptions.disabled
-        RenderingOptions.disabled = true
         val fixture = Paths.get(
             requireNotNull(javaClass.classLoader.getResource("content_fidelity/animated_java-1.10.2/fixture.json")).toURI(),
         ).parent
         val data = DirectoryAssetsManager(fixture, prefix = "data")
         try {
+            RenderingOptions.disabled = true
             IT.VERSION
             data.load()
             val session = createSession(version = "1.20.4")
@@ -94,20 +95,39 @@ class AnimatedJavaExportFixtureTest {
                 ),
             ).isEmpty())
         } finally {
-            data.unload()
-            RenderingOptions.disabled = previous
+            try {
+                data.unload()
+            } finally {
+                RenderingOptions.disabled = previous
+            }
         }
     }
 
     @Test
     fun `runs unmodified 1_10_2 Blockbench export`() {
-        val previous = RenderingOptions.disabled
-        RenderingOptions.disabled = true
         val fixture = Paths.get(
             requireNotNull(
                 javaClass.classLoader.getResource("content_fidelity/animated_java-1.10.2-export/fixture.json"),
             ).toURI(),
         ).parent
+        runUnmodifiedExport(fixture)
+    }
+
+    @Test
+    fun `rejecting a modified export leaves rendering enabled`() {
+        val previous = RenderingOptions.disabled
+        val fixture = Files.createTempDirectory("invalid-animated-java-export")
+        try {
+            RenderingOptions.disabled = false
+            assertThrows(AssertionError::class.java) { runUnmodifiedExport(fixture) }
+            assertFalse(RenderingOptions.disabled)
+        } finally {
+            RenderingOptions.disabled = previous
+            Files.deleteIfExists(fixture)
+        }
+    }
+
+    private fun runUnmodifiedExport(fixture: Path) {
         assertEquals(
             fixture.manifestHash(),
             "d4ae9d007aeb6c736255de8738e5c63c54d6e2b9a0c0f6fbb3dfb5c2d5192c11",
@@ -115,7 +135,9 @@ class AnimatedJavaExportFixtureTest {
 
         val resources = DirectoryAssetsManager(fixture.resolve("resources"))
         val data = DirectoryAssetsManager(fixture.resolve("datapacks"), prefix = "data")
+        val previous = RenderingOptions.disabled
         try {
+            RenderingOptions.disabled = true
             IT.VERSION
             resources.load()
             data.load()
@@ -178,16 +200,18 @@ class AnimatedJavaExportFixtureTest {
             runtime.executeAs("aj:armor_stand_minimal/remove/this", root)
             assertTrue(entities.select("@e[tag=aj.armor_stand_minimal.entity]", context).isEmpty())
         } finally {
-            if (resources.loaded) resources.unload()
-            if (data.loaded) data.unload()
-            RenderingOptions.disabled = previous
+            try {
+                if (resources.loaded) resources.unload()
+                if (data.loaded) data.unload()
+            } finally {
+                RenderingOptions.disabled = previous
+            }
         }
     }
 
     @Test
     fun `repeatedly reloads unmodified export with retained entities and owned cleanup`() {
         val previous = RenderingOptions.disabled
-        RenderingOptions.disabled = true
         val fixture = Paths.get(
             requireNotNull(
                 javaClass.classLoader.getResource("content_fidelity/animated_java-1.10.2-export/fixture.json"),
@@ -198,6 +222,7 @@ class AnimatedJavaExportFixtureTest {
         val store = ContentGenerationStore<de.bixilon.minosoft.assets.model.generation.ContentFidelitySnapshot>()
         var host: SessionDataPackRuntime? = null
         try {
+            RenderingOptions.disabled = true
             IT.VERSION
             resources.load()
             data.load()
@@ -334,11 +359,14 @@ class AnimatedJavaExportFixtureTest {
             assertEquals(cleaned.size, published.size)
             assertEquals(cleaned.toSet(), published.toSet())
         } finally {
-            host?.close()
-            store.close()
-            if (resources.loaded) resources.unload()
-            if (data.loaded) data.unload()
-            RenderingOptions.disabled = previous
+            try {
+                host?.close()
+                store.close()
+                if (resources.loaded) resources.unload()
+                if (data.loaded) data.unload()
+            } finally {
+                RenderingOptions.disabled = previous
+            }
         }
     }
 

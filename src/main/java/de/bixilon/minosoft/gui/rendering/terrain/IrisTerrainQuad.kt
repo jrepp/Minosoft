@@ -53,9 +53,11 @@ data class IrisTerrainQuad(
             val edge2Y = positions[7] - positions[1]
             val edge2Z = positions[8] - positions[2]
 
-            val rawNormalX = edge1Y * edge2Z - edge1Z * edge2Y
-            val rawNormalY = edge1Z * edge2X - edge1X * edge2Z
-            val rawNormalZ = edge1X * edge2Y - edge1Y * edge2X
+            // Baked block/fluid faces use clockwise corners when viewed from
+            // outside. Reverse the cross product to match their outward face.
+            val rawNormalX = edge2Y * edge1Z - edge2Z * edge1Y
+            val rawNormalY = edge2Z * edge1X - edge2X * edge1Z
+            val rawNormalZ = edge2X * edge1Y - edge2Y * edge1X
             val normalLength = length(rawNormalX, rawNormalY, rawNormalZ)
             val normal = if (normalLength > EPSILON) {
                 Vec3f(rawNormalX / normalLength, rawNormalY / normalLength, rawNormalZ / normalLength)

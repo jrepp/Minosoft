@@ -131,6 +131,33 @@ class TerrainConsolidatedPipelineTest {
     }
 
     @Test
+    fun `graph traversal merges alternate entry faces before suppressing exits`() {
+        val camera = SectionPosition(0, 0, 0)
+        val south = SectionPosition(0, 0, 1)
+        val east = SectionPosition(1, 0, 0)
+        val junction = SectionPosition(1, 0, 1)
+        val barrier = SectionPosition(2, 0, 0)
+        val target = SectionPosition(2, 0, 1)
+        val northToEast = TerrainDirectionalVisibility.of(listOf(Directions.NORTH to Directions.EAST))
+        val nodes = listOf(camera, south, east, junction, barrier, target).associateWith { position ->
+            val connectivity = when (position) {
+                junction -> northToEast
+                barrier -> TerrainDirectionalVisibility.NONE
+                else -> TerrainDirectionalVisibility.ALL
+            }
+            TerrainVisibilityNode(position, connectivity)
+        }
+
+        assertTrue(target in TerrainVisibilityTraversal.traverse(camera, nodes))
+        assertTrue(target in TerrainVisibilityTraversal.traverseBounded(
+            camera = camera,
+            nodes = nodes,
+            minimum = camera,
+            maximumInclusive = target,
+        ))
+    }
+
+    @Test
     fun `real consolidated contracts execute the headless terrain pipeline`() {
         val contextClosed = AtomicBoolean()
         val runtime = TerrainBuildRuntime<WorkerContext, TerrainMeshArtifact>(

@@ -43,5 +43,4 @@ class WaterTest : BlockTest<Block>() {
     }
 }
 
-@Deprecated("")
 var WaterTest0: WaterTest = unsafeNull()

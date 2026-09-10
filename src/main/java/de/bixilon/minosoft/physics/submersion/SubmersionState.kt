@@ -47,7 +47,6 @@ class SubmersionState(private val physics: EntityPhysics<*>) : Tickable {
         private set
     val heights: Object2DoubleOpenHashMap<Fluid> = Object2DoubleOpenHashMap(0, 0.1f)
 
-    @Deprecated("eye is WaterFluid")
     var waterSubmersionState: Boolean = false
         private set
 
@@ -132,7 +131,6 @@ class SubmersionState(private val physics: EntityPhysics<*>) : Tickable {
         }
     }
 
-    @Deprecated("performance")
     private fun update(type: ResourceLocation, aabb: AABB, pushable: Boolean, previousHeight: Double) {
         val fluid = physics.entity.session.registries.fluid[type] // TODO: remove this and stream fluids: waterlogged makes problems
         update(fluid, aabb, pushable, previousHeight)

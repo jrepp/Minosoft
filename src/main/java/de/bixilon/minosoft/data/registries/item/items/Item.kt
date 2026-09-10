@@ -22,7 +22,6 @@ import de.bixilon.minosoft.gui.rendering.models.item.ItemRender
 abstract class Item(
     override val identifier: ResourceLocation,
 ) : RegistryItem(), Translatable {
-    @Deprecated("interface")
     open val rarity: Rarities get() = Rarities.COMMON
 
     override val translationKey = identifier.translation("item")

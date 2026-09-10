@@ -31,5 +31,6 @@ class ArmShader(native: NativeShader) : Shader(native), TintedShader, TextureSha
     var texture by uniform("uTexture", 0x00, NativeShader::setUInt)
     override var tint by uniform("uTintColor", ChatColors.WHITE.rgb())
     var skinParts by uniform("uSkinParts", 0xFF, NativeShader::setUInt)
-    var transform by uniform("uTransform", Mat4f.EMPTY)
+    var viewProjection by uniform("uViewProjectionMatrix", Mat4f.EMPTY)
+    var matrix by uniform("uMatrix", Mat4f.EMPTY)
 }

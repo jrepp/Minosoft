@@ -17,6 +17,7 @@ import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.kmath.vec.vec4.f.Vec4f
 import de.bixilon.kutil.concurrent.lock.LockUtil.acquired
 import de.bixilon.kutil.concurrent.lock.LockUtil.locked
+import de.bixilon.minosoft.assets.audit.ContentAssetAudit
 import de.bixilon.minosoft.config.key.KeyCodes
 import de.bixilon.minosoft.data.container.equipment.EquipmentSlots
 import de.bixilon.minosoft.data.container.stack.ItemStack
@@ -46,6 +47,7 @@ import de.bixilon.minosoft.data.world.border.area.StaticBorderArea
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import de.bixilon.minosoft.data.world.time.WorldTime
 import de.bixilon.minosoft.data.world.weather.WorldWeather
+import de.bixilon.minosoft.debug.content.BlockStateSculptureCatalog
 import de.bixilon.minosoft.debug.terrain.TerrainDiagnosticDebugOperation
 import de.bixilon.minosoft.debug.terrain.TerrainFaultAction
 import de.bixilon.minosoft.debug.terrain.TerrainFlushIdleCondition
@@ -98,6 +100,7 @@ import de.bixilon.minosoft.gui.rendering.system.window.KeyChangeTypes
 import de.bixilon.minosoft.gui.rendering.terrain.runtime.TerrainPerformanceSnapshot
 import de.bixilon.minosoft.gui.rendering.terrain.distant.DistantTerrainRenderer
 import de.bixilon.minosoft.local.LocalConnection
+import de.bixilon.minosoft.local.datapack.parseLocalBlockState
 import de.bixilon.minosoft.modding.loader.ModOptions
 import de.bixilon.minosoft.modding.loader.fabric.FabricModDiagnostics
 import de.bixilon.minosoft.modding.loader.fabric.FabricResourceReloadEvents
@@ -126,6 +129,8 @@ object ClientDebugChannel : AutoCloseable {
     private const val MAX_REGION_PIXELS = 65536
     private const val NEAR_BLACK_LUMINANCE = 5.1
     private const val MAX_BLOCKS = 32768
+    private const val MAX_PLACE_BLOCKS = 512
+    private const val MAX_PLACE_BLOCKS_CHUNKS = 64
     private const val MAX_FUNCTION_ARGUMENTS = 16
     private const val MAX_FUNCTION_ARGUMENT_BYTES = 8192
     private const val CREEPER_OVERLAY_FUSE_TICKS = 20
@@ -233,16 +238,20 @@ object ClientDebugChannel : AutoCloseable {
 
     private fun register(server: DebugChannelServer) {
         server.operations().register("client", "state.sample") { _, body -> completed(sampleState(body)) }
-        server.operations().register("client", "visual.capture") { _, _ -> onRender(::capture) }
+        server.operations().register("client", "visual.capture") { _, body ->
+            onRender { capture(it, body.path("includeScene").asBoolean(false)) }
+        }
         server.operations().register("client", "visual.sample") { _, body -> onRender { sampleVisual(it, body) } }
         server.operations().register("client", "visual.prepare-reference") { _, body -> onRender { prepareVisualReference(it, body) } }
         server.operations().register("client", "visual.background-throttle") { _, body ->
             onRender { configureBackgroundThrottle(it, body) }
         }
+        server.operations().register("client", "state.respawn") { _, _ -> onRender(::respawn) }
         server.operations().register("client", "input.inject") { _, body -> onRender { injectInput(it, body) } }
         server.operations().register("client", "world.blocks.sample") { _, body -> completed(sampleBlocks(body)) }
         server.operations().register("client", "world.aoi") { _, body -> completed(sampleBlocks(body)) }
         server.operations().register("client", "mods.debug") { _, _ -> completed(modDiagnostics()) }
+        server.operations().register("client", "content.audit") { _, _ -> onRender(::contentAudit) }
         server.operations().register("client", "render.substrate") { _, _ -> onRender(::renderSubstrate) }
         TerrainDiagnosticDebugOperation.register(server.operations()) { _, body ->
             onRender { terrainDiagnostics(it, body) }
@@ -350,6 +359,10 @@ object ClientDebugChannel : AutoCloseable {
             onRender { prepareChunkBorder(it, body) }
         }
         server.operations().register("client", "content.execute-local") { _, body -> onRender { executeLocalContent(it, body) } }
+        server.operations().register("client", "content.place-blocks") { _, body -> onRender { placeLocalBlocks(it, body) } }
+        server.operations().register("client", "content.place-block-state-sculpture") { _, body ->
+            onRender { placeBlockStateSculpture(it, body) }
+        }
     }
 
     private fun status(): JsonNode {
@@ -406,6 +419,44 @@ object ClientDebugChannel : AutoCloseable {
         val sessions = PlaySession.collectSessions()
         put("sessions", sessions.size)
         put("playingSessions", sessions.count { it.state == PlaySessionStates.PLAYING })
+    }
+
+    private fun contentAudit(context: RenderContext): DebugOperationResult {
+        val snapshot = context.contentAssetAudit.snapshot()
+        val known = context.session.assets.list()
+        val result = DebugJson.MAPPER.createObjectNode().apply {
+            put("schema", ContentAssetAudit.SCHEMA)
+            put("auditVersion", ContentAssetAudit.AUDIT_VERSION)
+            put("minecraftVersion", context.session.version.name)
+            put("fingerprint", snapshot.fingerprint)
+            put("complete", snapshot.entries.isEmpty())
+            put("truncated", snapshot.truncated)
+            putObject("inventory").apply {
+                put("resources", known.size)
+                put("blockstates", known.count { it.path.startsWith("blockstates/") && it.path.endsWith(".json") })
+                put("models", known.count { it.path.startsWith("models/") && it.path.endsWith(".json") })
+                put("textures", known.count { it.path.startsWith("textures/") && it.path.endsWith(".png") })
+            }
+            putObject("counts").apply {
+                put("blockstates", snapshot.count(ContentAssetAudit.Kind.BLOCKSTATE))
+                put("models", snapshot.count(ContentAssetAudit.Kind.MODEL))
+                put("textures", snapshot.count(ContentAssetAudit.Kind.TEXTURE))
+                put("total", snapshot.entries.size)
+            }
+            val missing = putObject("missing")
+            for (kind in ContentAssetAudit.Kind.entries) {
+                val entries = missing.putArray(kind.wireName + "s")
+                snapshot.entries.asSequence().filter { it.kind == kind }.forEach { entry ->
+                    entries.addObject().apply {
+                        put("resource", entry.resource)
+                        put("target", entry.target)
+                        put("consumersTruncated", entry.consumersTruncated)
+                        putArray("consumers").also { consumers -> entry.consumers.forEach(consumers::add) }
+                    }
+                }
+            }
+        }
+        return DebugOperationResult.json(result)
     }
 
     private fun sampleState(body: JsonNode): DebugOperationResult {
@@ -644,7 +695,7 @@ object ClientDebugChannel : AutoCloseable {
         return DebugOperationResult.json(result)
     }
 
-    private fun capture(context: RenderContext): DebugOperationResult {
+    private fun capture(context: RenderContext, includeScene: Boolean = false): DebugOperationResult {
         val screenshot = context.screenshotTaker.capture()
         validateFramebuffer(screenshot.size)
         val bytes = encodePng(screenshot.buffer)
@@ -657,6 +708,7 @@ object ClientDebugChannel : AutoCloseable {
             put("userScreenshotDirectory", context.screenshotTaker.userDirectory.toString())
             put("pixelFormat", "rgba8")
             put("origin", "top-left")
+            if (includeScene) set<ObjectNode>("scene", SceneReviewCapture.capture(context))
         }
         return DebugOperationResult.attachment(metadata, bytes, "image/png", screenshot.suggestedFilename)
     }
@@ -763,12 +815,17 @@ object ClientDebugChannel : AutoCloseable {
         if (hideParticlesNode != null && !hideParticlesNode.isBoolean) {
             throw DebugOperationException("invalid_request", "hideParticles must be boolean")
         }
+        val hideArmNode = body["hideArm"]
+        if (hideArmNode != null && !hideArmNode.isBoolean) {
+            throw DebugOperationException("invalid_request", "hideArm must be boolean")
+        }
         val hideHud = hideHudNode?.asBoolean() ?: true
         val hideHitboxes = hideHitboxesNode?.asBoolean() ?: true
         val hideClouds = hideCloudsNode?.asBoolean() ?: true
         val hideWorldBorder = hideWorldBorderNode?.asBoolean() ?: false
         val hideEntities = hideEntitiesNode?.asBoolean() ?: false
         val hideParticles = hideParticlesNode?.asBoolean() ?: false
+        val hideArm = hideArmNode?.asBoolean() ?: false
         val gui = context.renderer[GUIRenderer]
             ?: throw DebugOperationException("not_ready", "GUI renderer is not active")
         val world = context.session.world
@@ -833,6 +890,7 @@ object ClientDebugChannel : AutoCloseable {
         context.renderer[WorldBorderRenderer]?.referenceSuppressed = hideWorldBorder
         context.renderer[EntitiesRenderer]?.referenceSuppressed = hideEntities
         context.renderer[ParticleRenderer]?.referenceSuppressed = hideParticles
+        context.renderer[ArmRenderer]?.referenceSuppressed = hideArm
         return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
             put("overlaysCleared", true)
             put("hudEnabled", gui.hud.enabled)
@@ -841,6 +899,7 @@ object ClientDebugChannel : AutoCloseable {
             put("worldBorderSuppressed", context.renderer[WorldBorderRenderer]?.referenceSuppressed)
             put("entitiesSuppressed", context.renderer[EntitiesRenderer]?.referenceSuppressed)
             put("particlesSuppressed", context.renderer[ParticleRenderer]?.referenceSuppressed)
+            put("armSuppressed", context.renderer[ArmRenderer]?.referenceSuppressed)
             put("time", world.presentationTime.time)
             put("authoritativeTime", world.time.time)
             put("timePrepared", preparedVisualReferenceTime != null)
@@ -3047,6 +3106,26 @@ object ClientDebugChannel : AutoCloseable {
         return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().put("injected", injected).put("frame", context.frameNumber))
     }
 
+    /**
+     * Recovers a dead live client through the same protocol action as the
+     * respawn menu. Keeping this health- and state-gated prevents the debug
+     * control plane from becoming a general gameplay action surface.
+     */
+    private fun respawn(context: RenderContext): DebugOperationResult {
+        val session = context.session
+        val health = session.player.healthCondition.hp
+        if (session.state != PlaySessionStates.DEAD || health > 0.0f) {
+            throw DebugOperationException("invalid_state", "client is not dead")
+        }
+        session.util.respawn()
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("requested", true)
+            put("sessionState", session.state.name.lowercase())
+            put("health", health)
+            put("frame", context.frameNumber)
+        })
+    }
+
     private inline fun <reified T : Enum<T>> enumValue(node: JsonNode, field: String): T {
         val value = node.path(field).asText().uppercase()
         return try { enumValueOf<T>(value) } catch (_: IllegalArgumentException) {
@@ -3075,6 +3154,8 @@ object ClientDebugChannel : AutoCloseable {
 
         val palette = linkedMapOf<String, Int>()
         val indices = ArrayList<Int>(volume)
+        val blockLight = ArrayList<Int>(volume)
+        val skyLight = ArrayList<Int>(volume)
         var notLoaded = 0
         session.world.lock.acquired {
             for (y in min.y..max.y) for (z in min.z..max.z) for (x in min.x..max.x) {
@@ -3091,6 +3172,9 @@ object ClientDebugChannel : AutoCloseable {
                         "${it.key.toString().lowercase()}=${it.value.toString().lowercase()}"
                     })
                 }
+                val light = chunk?.light?.get(position.inChunkPosition)
+                blockLight += light?.block ?: 0
+                skyLight += light?.sky ?: 0
                 indices += palette.getOrPut(name) { palette.size }
             }
         }
@@ -3108,6 +3192,10 @@ object ClientDebugChannel : AutoCloseable {
             runs.addArray().add(value).add(count)
             index += count
         }
+        val blockLightJson = result.putArray("blockLight")
+        blockLight.forEach(blockLightJson::add)
+        val skyLightJson = result.putArray("skyLight")
+        skyLight.forEach(skyLightJson::add)
         return DebugOperationResult.json(result)
     }
 
@@ -4148,6 +4236,185 @@ object ClientDebugChannel : AutoCloseable {
         val pitch = finiteDouble(node, "pitch", name).toFloat()
         if (pitch !in -90.0f..90.0f) throw DebugOperationException("invalid_request", "$name pitch must be within -90..90")
         return LocalPose(Vec3d(x, y, z), EntityRotation(yaw, pitch))
+    }
+
+    private fun optionalLocalPose(node: JsonNode, name: String): LocalPose? {
+        if (node.isMissingNode || node.isNull) return null
+        return localPose(node, name)
+    }
+
+    /**
+     * Places a bounded set of real blocks into the source-native local world.
+     * The explicit optional origin/camera pair keeps preview captures repeatable
+     * without adding an unrestricted world mutation surface to remote servers.
+     */
+    private fun placeLocalBlocks(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val session = context.session
+        val connection = session.connection as? LocalConnection
+            ?: throw DebugOperationException("not_ready", "content.place-blocks requires an active local world")
+        val blocksNode = body["blocks"]
+        if (!blocksNode.isArray || blocksNode.isEmpty) {
+            throw DebugOperationException("invalid_request", "blocks must be a non-empty array")
+        }
+        if (blocksNode.size() > MAX_PLACE_BLOCKS) {
+            throw DebugOperationException("limit_exceeded", "blocks exceed the $MAX_PLACE_BLOCKS placement limit")
+        }
+        val placements = blocksNode.map { node ->
+            if (!node.isObject) throw DebugOperationException("invalid_request", "each block must be an object")
+            LocalConnection.LocalBlockPlacement(blockPosition(node), blockState(session, node["state"]))
+        }
+        val chunks = placements.mapTo(hashSetOf()) { it.position.chunkPosition }
+        if (chunks.size > MAX_PLACE_BLOCKS_CHUNKS) {
+            throw DebugOperationException("limit_exceeded", "block placements touch ${chunks.size} chunks, exceeding $MAX_PLACE_BLOCKS_CHUNKS")
+        }
+        val placed = try {
+            connection.placeBlocks(placements)
+        } catch (error: IllegalStateException) {
+            throw DebugOperationException("not_ready", error.message ?: "local world is not ready for block placement")
+        } catch (error: IllegalArgumentException) {
+            throw DebugOperationException("invalid_request", error.message ?: "block placement was rejected")
+        }
+        val origin = optionalLocalPose(body.path("origin"), "origin")
+        val camera = optionalLocalPose(body.path("camera"), "camera")
+        origin?.let { teleportLocalPose(session, it) }
+        camera?.let { teleportLocalPose(session, it) }
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("placed", placed)
+            put("frame", context.frameNumber)
+            set<ObjectNode>("origin", origin?.let(::localPoseJson))
+            set<ObjectNode>("camera", camera?.let(::localPoseJson))
+        })
+    }
+
+    /**
+     * Places one deterministic page from the complete legal state set of a block.
+     * Unused slots are cleared in the same replacement, so repeated and out-of-order
+     * requests for one block/page size are independent of the previously viewed page.
+     */
+    private fun placeBlockStateSculpture(context: RenderContext, body: JsonNode): DebugOperationResult {
+        val session = context.session
+        val connection = session.connection as? LocalConnection
+            ?: throw DebugOperationException("not_ready", "content.place-block-state-sculpture requires an active local world")
+        val blockName = body["block"]?.takeIf(JsonNode::isTextual)?.asText()
+            ?: throw DebugOperationException("invalid_request", "block must be a resource identifier")
+        if (blockName.isBlank() || blockName.length > 256) {
+            throw DebugOperationException("invalid_request", "block must contain 1..256 characters")
+        }
+        val identifier = try {
+            ResourceLocation.of(blockName)
+        } catch (error: IllegalArgumentException) {
+            throw DebugOperationException("invalid_request", error.message ?: "invalid block resource identifier")
+        }
+        val block = session.registries.block[identifier]
+            ?: throw DebugOperationException("invalid_request", "unknown block $identifier")
+        val pageIndex = boundedSculptureInteger(body, "page", 0, 0, Int.MAX_VALUE)
+        val pageSize = boundedSculptureInteger(
+            body,
+            "pageSize",
+            BlockStateSculptureCatalog.DEFAULT_PAGE_SIZE,
+            BlockStateSculptureCatalog.MIN_PAGE_SIZE,
+            BlockStateSculptureCatalog.MAX_PAGE_SIZE,
+        )
+        val page = try {
+            BlockStateSculptureCatalog.page(block, pageIndex, pageSize)
+        } catch (error: IllegalArgumentException) {
+            throw DebugOperationException("invalid_request", error.message ?: "invalid sculpture page")
+        }
+        val air = session.registries.block[ResourceLocation.of("minecraft:air")]?.states?.default
+            ?: throw DebugOperationException("not_ready", "the local registry has no air block")
+        val origin = optionalLocalPose(body.path("origin"), "origin")
+        val camera = optionalLocalPose(body.path("camera"), "camera")
+        val placements = page.entries.flatMap { entry ->
+            listOf(LocalConnection.LocalBlockPlacement(entry.position, entry.state)) +
+                entry.context.map { LocalConnection.LocalBlockPlacement(it.position, it.state) }
+        }
+        try {
+            // Publish only final cell values. Replaying an unchanged page then
+            // preserves the settled meshes and lighting through World.set.
+            val replacements = page.slots.associateWithTo(linkedMapOf()) { air }
+            for (placement in placements) replacements[placement.position] = placement.state
+            connection.placeBlocks(replacements.map { (position, state) ->
+                LocalConnection.LocalBlockPlacement(position, state)
+            })
+        } catch (error: IllegalStateException) {
+            throw DebugOperationException("not_ready", error.message ?: "local world is not ready for sculpture placement")
+        } catch (error: IllegalArgumentException) {
+            throw DebugOperationException("invalid_request", error.message ?: "sculpture placement was rejected")
+        }
+        origin?.let { teleportLocalPose(session, it) }
+        camera?.let { teleportLocalPose(session, it) }
+
+        return DebugOperationResult.json(DebugJson.MAPPER.createObjectNode().apply {
+            put("schema", 1)
+            put("block", block.identifier.toString())
+            put("page", page.pageIndex + 1)
+            put("pageIndex", page.pageIndex)
+            put("pageSize", page.pageSize)
+            put("totalPages", page.totalPages)
+            put("totalStates", page.totalStates)
+            put("stateStart", page.entries.first().catalogIndex)
+            put("stateEnd", page.entries.last().catalogIndex + 1)
+            put("columns", page.columns)
+            put("rows", page.rows)
+            put("spacing", page.spacing)
+            put("catalogSha256", page.fingerprint)
+            put("placed", placements.size)
+            put("catalogStates", page.entries.size)
+            put("frame", context.frameNumber)
+            set<ObjectNode>("origin", origin?.let(::localPoseJson))
+            set<ObjectNode>("camera", camera?.let(::localPoseJson))
+            putArray("states").apply {
+                for (entry in page.entries) addObject().apply {
+                    put("index", entry.catalogIndex)
+                    put("key", entry.key)
+                    set<ObjectNode>("position", positionJson(entry.position))
+                    set<ObjectNode>("state", blockStateJson(entry.state))
+                    putArray("context").apply {
+                        for (context in entry.context) addObject().apply {
+                            set<ObjectNode>("position", positionJson(context.position))
+                            set<ObjectNode>("state", blockStateJson(context.state))
+                        }
+                    }
+                }
+            }
+        })
+    }
+
+    private fun boundedSculptureInteger(body: JsonNode, field: String, default: Int, minimum: Int, maximum: Int): Int {
+        val node = body[field] ?: return default
+        if (!node.isIntegralNumber || !node.canConvertToInt()) {
+            throw DebugOperationException("invalid_request", "$field must be an integer")
+        }
+        val value = node.intValue()
+        if (value !in minimum..maximum) {
+            throw DebugOperationException("invalid_request", "$field must be within $minimum..$maximum")
+        }
+        return value
+    }
+
+    private fun blockStateJson(state: BlockState) = DebugJson.MAPPER.createObjectNode().apply {
+        put("Name", state.block.identifier.toString())
+        putObject("Properties").apply {
+            for ((property, value) in state.properties.entries.sortedBy { it.key.name }) {
+                put(property.name, BlockStateSculptureCatalog.canonicalValue(state, property, value))
+            }
+        }
+    }
+
+    private fun blockState(session: PlaySession, node: JsonNode): BlockState {
+        val raw: Any = when {
+            node.isTextual -> node.asText()
+            node.isObject -> DebugJson.MAPPER.convertValue(node, Map::class.java)
+            else -> throw DebugOperationException("invalid_request", "block state must be an identifier or an object")
+        }
+        return session.parseLocalBlockState(raw)
+            ?: throw DebugOperationException("invalid_request", "unknown block state")
+    }
+
+    private fun teleportLocalPose(session: PlaySession, pose: LocalPose) {
+        session.player.physics.forceTeleport(pose.position)
+        session.player.physics.forceSetRotation(pose.rotation)
+        session.player.physics.forceSetHeadYaw(pose.rotation.yaw)
     }
 
     private fun boundedCoordinate(node: JsonNode, field: String, name: String): Double {

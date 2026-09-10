@@ -4571,6 +4571,60 @@ planner assertions for both injected markers. The earlier captures remain
 diagnostic history, but post-audit multi-pose real-OpenGL pixel qualification is
 open. The independent Bliss performance workload also remains open.
 
+On 2026-08-11, a clear-weather `small-survival` geometry-through-final cutoff
+sweep localized a flat cyan water surface to `gbuffers_water`; disabling Iris
+at the same pose restored the textured water surface. Lowering the biome-tinted
+floor from 0.12 to 0.03 only darkened the plateau because the hard per-channel
+maximum still replaced weak authored variation. The surface correction now
+adds a 0.01-to-0.03 biome tint modulated by Bliss's existing Fresnel term after
+scaling the authored signal, so reflection and wave variation survive while
+the lift remains water-only and bounded. Focused and exact-archive source gates
+cover the new marker; matched-pose real-OpenGL qualification remains open after
+concurrent player input invalidated the zero-floor comparison capture.
+
+The same live review exposed the first-person arm in the water reflection.
+Bliss's water SSR samples `colortex5`, its previous-frame TAA buffer containing
+the composed hand pass, and the pack provides no separate hand-free color
+history. The resolved `gbuffers_water` correction therefore rejects temporal
+screen-space hits for water fragments only. It leaves the pack's authored
+sky/sun reflections, Fresnel response, wave normals, and non-water SSR path
+unchanged. An arm-visible/suppressed framebuffer pair records the contributing
+hand pass; exact-archive source validation covers the water-only rejection.
+
+The remaining arm-colored wedge was independent of water. Ordinary/reference
+hand and entity-visible/suppressed A/B captures showed world/entity history
+inside opaque hand pixels. Bliss's executable `composite6` program resolves
+`dimensions/composite5.fsh`, where its hand branch retained reprojected scene
+history according to velocity. `IrisBlissHandTransformer` keeps the pack's
+0.75 hand sentinel and world TAA, but selects the current frame for hand pixels.
+The focused transformer tests and exact Bliss archive gate pass; the live
+`reference-hand-taa-fixed.png` capture binds the generated opaque cyan/magenta
+texture and contains no prior-scene wedge.
+
+The same daylight capture also separated the reported lit block/water tiles
+from world lighting data. A 24,650-cell loaded-block sample contained ordinary
+stone, terracotta, gravel, blackstone, basalt, calcite, dirt-like materials,
+water, and sparse glow lichen rather than luminous ground blocks. The larger
+terrain failure came from the legacy bridge exposing normalized 0..1 light
+coordinates to Bliss source that explicitly divided the fixed-function value
+by 240 again. `IrisLegacyShaderTransformer` now recognizes that authored
+normalization and substitutes the host normalized value directly. A focused
+test and the exact archive gate pass; watched generation
+`lit-block-water-light-coordinate-fix.png` restores block textures and local
+shading in place of the dark green plates.
+
+Bliss separately zeros sampled water albedo by default. The live trajectory now
+uses the pack-authored `Vanilla_like_water=true` path, reduced cloud layers,
+`BLOOMY_FOG=0`, `BLOOM_STRENGTH=0`, `Haze_amount=0`, and
+`TOGGLE_VL_FOG=false`. Disabling `WATER_BACKGROUND_SPECULAR` keeps the wave
+texture and sun highlights while preventing sky/cloud reflections from turning
+bounded pools into white plates; `ambient_brightness=2.0` restores some shaded
+fill without reintroducing the volumetric green veil. The matched
+`final-enhanced-minecraft.png` capture retains Minecraft texture detail, blue
+water, and a thin selected-block edge without the former bloom halo. These
+values are persisted only in the isolated `small-survival` trajectory profile;
+they do not change the external Bliss archive or another trajectory.
+
 ## External references
 
 - [Iris program order](https://shaders.properties/current/reference/programs/overview/)

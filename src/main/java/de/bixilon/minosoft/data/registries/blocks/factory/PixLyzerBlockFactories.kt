@@ -38,7 +38,6 @@ import de.bixilon.minosoft.data.registries.blocks.types.pixlyzer.water.KelpPlant
 import de.bixilon.minosoft.data.registries.blocks.types.pixlyzer.water.SeagrassBlock
 import de.bixilon.minosoft.data.registries.factory.clazz.DefaultClassFactory
 
-@Deprecated("BlockFactories")
 object PixLyzerBlockFactories : DefaultClassFactory<PixLyzerBlockFactory<*>>(
     PixLyzerBlock,
     LeverBlock,
@@ -51,6 +50,7 @@ object PixLyzerBlockFactories : DefaultClassFactory<PixLyzerBlockFactory<*>>(
     SeagrassBlock,
     StoneButtonBlock,
     WoodenButtonBlock,
+    WallBlock,
     PlantBlock,
     CropBlock,
     CraftingTableBlock,

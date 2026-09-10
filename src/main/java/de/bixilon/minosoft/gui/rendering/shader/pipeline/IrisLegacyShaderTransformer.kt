@@ -622,9 +622,10 @@ internal object IrisLegacyShaderTransformer {
      * the graph producer.
      */
     private fun transformDistantTerrain(name: String, vertex: String, fragment: String): Stages {
-        val modelView = if (name == "dh_shadow") "shadowModelView" else "gbufferModelView"
-        val projection = if (name == "dh_shadow") "shadowProjection" else "dhProjection"
-        var transformedVertex = transformNeutralMaterial(core(vertex))
+        val shadow = name == "dh_shadow"
+        val modelView = if (shadow) "minosoftPlayerShadowModelView" else "minosoftPlayerModelView"
+        val projection = if (shadow) "shadowProjection" else "dhProjection"
+        var transformedVertex = terrainPlayerModelView(transformNeutralMaterial(core(vertex)))
             .replace(
                 Regex(
                     """(?m)^\s*uniform\s+mat4\s+""" +
@@ -637,7 +638,7 @@ internal object IrisLegacyShaderTransformer {
             replacements = mapOf(
                 "attribute" to "in",
                 "varying" to "out",
-                "gl_Vertex" to "vec4(vinPosition + uPageOffset, 1.0)",
+                "gl_Vertex" to "vec4(minosoftDhPosition(), 1.0)",
                 "gl_Color" to "minosoftDhColor()",
                 "gl_NormalMatrix" to "mat3($modelView)",
                 "gl_Normal" to "minosoftDhNormal()",
@@ -666,7 +667,7 @@ internal object IrisLegacyShaderTransformer {
         val transformedFragment = transformCoreFragmentOutputs(
             insertAfterVersion(
                 transformNeutralMaterial(
-                    core(fragment)
+                    terrainPlayerModelView(core(fragment))
                         .replace(Regex("""\bvarying\b"""), "in")
                         .replace(MODERN_DIFFUSE_SAMPLER, "")
                         .replace(
@@ -974,6 +975,10 @@ internal object IrisLegacyShaderTransformer {
                 "gl_MultiTexCoord0" to "vec4(minosoftFullscreenUv, 0.0, 1.0)",
                 "gl_MultiTexCoord1" to "vec4(1.0)",
                 "gl_Color" to "vec4(1.0)",
+                "gbufferModelView" to "minosoftPlayerModelView",
+                "gbufferModelViewInverse" to "minosoftPlayerModelViewInverse",
+                "shadowModelView" to "minosoftPlayerShadowModelView",
+                "shadowModelViewInverse" to "minosoftPlayerShadowModelViewInverse",
             ),
             emptyCallReplacements = mapOf(
                 "ftransform" to "vec4(minosoftFullscreenPosition, 0.0, 1.0)",
@@ -1065,6 +1070,8 @@ internal object IrisLegacyShaderTransformer {
                     "varying" to "in",
                     "gbufferModelView" to "minosoftPlayerModelView",
                     "gbufferModelViewInverse" to "minosoftPlayerModelViewInverse",
+                    "shadowModelView" to "minosoftPlayerShadowModelView",
+                    "shadowModelViewInverse" to "minosoftPlayerShadowModelViewInverse",
                 ),
             ),
         )
@@ -1105,6 +1112,7 @@ internal object IrisLegacyShaderTransformer {
     }
 
     private fun transformModernTerrainVertex(source: String, shadow: Boolean): String {
+        val modelView = if (shadow) "shadowModelView" else "gbufferModelView"
         var transformed = terrainPlayerModelView(core(source))
             .replace(Regex("""\bvarying\b"""), "out")
             .replace(Regex("""\battribute\b"""), "in")
@@ -1124,9 +1132,9 @@ internal object IrisLegacyShaderTransformer {
             .replace(Regex("""\bat_midBlock\b"""), "minosoftMidBlock.xyz")
             .replace(Regex("""\bgl_Vertex\b"""), "vec4(vinPosition, 1.0)")
             .replace(Regex("""\bgl_Color\b"""), "minosoftTerrainColor()")
-            .replace(Regex("""\bgl_NormalMatrix\b"""), "mat3(gbufferModelView)")
+            .replace(Regex("""\bgl_NormalMatrix\b"""), "mat3($modelView)")
             .replace(Regex("""\bgl_Normal\b"""), "vaNormal")
-            .replace(Regex("""\bgl_ModelViewMatrix\b"""), "gbufferModelView")
+            .replace(Regex("""\bgl_ModelViewMatrix\b"""), modelView)
             .replace(
                 Regex("""\bgl_ProjectionMatrix\b"""),
                 if (shadow) "shadowProjection" else "gbufferProjection",
@@ -1138,6 +1146,11 @@ internal object IrisLegacyShaderTransformer {
             .replace(Regex("""gl_TextureMatrix\s*\[\s*[01]\s*]"""), "mat4(1.0)")
             .replace(Regex("""\bgl_MultiTexCoord0\b"""), "vec4(minosoftTerrainUv(), 0.0, 1.0)")
             .replace(Regex("""\bgl_MultiTexCoord1\b"""), "vec4(minosoftTerrainLightUv(), 0.0, 1.0)")
+        // The authored shadow declaration was renamed above for camera-relative
+        // math. Fixed-function caster expressions need a separate host matrix.
+        if (shadow && !Regex("""\buniform\s+mat4\s+shadowModelView\s*;""").containsMatchIn(transformed)) {
+            transformed = insertAfterVersion(transformed, "uniform mat4 shadowModelView;")
+        }
         transformed = renameMain(transformed, "minosoftPackMain")
         transformed = insertAfterVersion(
             transformed,
@@ -1303,7 +1316,7 @@ internal object IrisLegacyShaderTransformer {
         header: String,
         bridgeLegacyColor: Boolean = true,
     ): String {
-        var transformed = core(source)
+        var transformed = terrainPlayerModelView(core(source))
             .replace(Regex("""\bvarying\b"""), "in")
             .replace(MODERN_DIFFUSE_SAMPLER, "")
             .replace(
@@ -1975,6 +1988,13 @@ internal object IrisLegacyShaderTransformer {
 
     private fun transformTerrainVertex(source: String): String {
         var transformed = terrainPlayerModelView(core(source))
+            // Fixed-function light coordinates arrive as 0..240 values. The
+            // host bridge already exposes their normalized 0..1 equivalent,
+            // so preserve packs that normalize the raw coordinates directly.
+            .replace(
+                Regex("""\bgl_MultiTexCoord1\s*\.\s*xy\s*/\s*240(?:\.0+)?(?![\w.])"""),
+                "minosoftLegacyLightUv()",
+            )
             .replace(MC_ENTITY, "")
             .replace(Regex("""\bvarying\b"""), "out")
             .replace(Regex("""\battribute\b"""), "in")
@@ -2012,15 +2032,16 @@ internal object IrisLegacyShaderTransformer {
     }
 
     /**
-     * Pack terrain matrices are rotation-only, while retained vertices and the
-     * host model-view share one rebased world origin. Keep the host matrix for
-     * legacy gl_ModelViewMatrix aliases, but expose the rotation-only pair to
-     * authored gbufferModelView expressions so reconstructed playerPos values
-     * remain camera-relative at non-zero world coordinates.
+     * Pack terrain matrices consume camera-relative positions, while retained
+     * vertices and host matrices share one rebased world origin. Rewrite
+     * authored matrices before fixed-function aliases are injected so the
+     * latter continue to transform host geometry.
      */
     private fun terrainPlayerModelView(source: String): String = source
         .replace(Regex("""\bgbufferModelViewInverse\b"""), "minosoftPlayerModelViewInverse")
         .replace(Regex("""\bgbufferModelView\b"""), "minosoftPlayerModelView")
+        .replace(Regex("""\bshadowModelViewInverse\b"""), "minosoftPlayerShadowModelViewInverse")
+        .replace(Regex("""\bshadowModelView\b"""), "minosoftPlayerShadowModelView")
 
     private fun transformTerrainFragment(source: String): String {
         var transformed = terrainPlayerModelView(core(source))
@@ -2361,7 +2382,12 @@ internal object IrisLegacyShaderTransformer {
         layout (location = 3) in float vinNormalMaterial;
         uniform mat4 uViewProjectionMatrix;
         uniform vec3 uPageOffset;
+        uniform vec3 minosoftCameraOffset;
         out vec4 minosoftDhVertexColor;
+
+        vec3 minosoftDhPosition() {
+            return vinPosition + uPageOffset - minosoftCameraOffset;
+        }
 
         uint minosoftDhNormalMaterial() {
             return floatBitsToUint(vinNormalMaterial);
@@ -3182,7 +3208,7 @@ internal object IrisLegacyShaderTransformer {
 
     private val MODERN_HAND_VERTEX_BODY = """
         // minosoft:scene_bridge HELD_ITEM HELD_ITEM uTextures,uViewProjectionMatrix,uMatrix,uTintColor
-        // minosoft:scene_bridge ARM_SKELETAL ARM uTextures,uTexture,uTintColor,uSkinParts,uTransform
+        // minosoft:scene_bridge ARM_SKELETAL ARM uTextures,uTexture,uTintColor,uSkinParts,uViewProjectionMatrix,uMatrix
         out vec2 uv;
         out vec2 uv_local;
         out vec2 texCoord;
@@ -3274,16 +3300,22 @@ internal object IrisLegacyShaderTransformer {
         layout (location = 4) in vec4 vinTangent;
         uniform uint uTexture;
         uniform uint uSkinParts;
-        uniform mat4 uTransform;
+        uniform mat4 uViewProjectionMatrix;
+        uniform mat4 uMatrix;
         void main() {
             minosoftSceneTextureArray = uTexture >> 28u;
             minosoftSceneTextureLayer = float((uTexture >> 12u) & 0xFFFFu);
             minosoftPrepareHandUv(vinUV, vinMidUV);
             lmCoord = vec2(1.0);
-            scene_pos = vinPosition;
-            position_view = vinPosition;
-            position_scene = vinPosition;
-            normal = normalize(minosoftDecodeNormal(floatBitsToUint(vinPartTransformNormal) & 0xFFFu));
+            vec4 position = uMatrix * vec4(vinPosition, 1.0);
+            scene_pos = position.xyz;
+            position_view = position.xyz;
+            position_scene = position.xyz;
+            normal = normalize((uMatrix * vec4(
+                minosoftDecodeNormal(floatBitsToUint(vinPartTransformNormal) & 0xFFFu),
+                0.0
+            )).xyz);
+            vec3 minosoftTangent = normalize((uMatrix * vec4(vinTangent.xyz, 0.0)).xyz);
             tint = uTintColor;
             glColor = tint;
             material_mask = uint(max(currentRenderedItemId - 10000, 0));
@@ -3293,8 +3325,8 @@ internal object IrisLegacyShaderTransformer {
             northVec = normalize(gbufferModelView[2].xyz);
             eastVec = normalize(gbufferModelView[0].xyz);
             light_levels = vec2(1.0);
-            minosoftPrepareHandPbr(scene_pos, normal, vinTangent);
-            gl_Position = uTransform * vec4(vinPosition, 1.0);
+            minosoftPrepareHandPbr(scene_pos, normal, vec4(minosoftTangent, vinTangent.w));
+            gl_Position = uViewProjectionMatrix * position;
         }
         #else
         layout (location = 0) in vec3 vinPosition;
@@ -4716,7 +4748,7 @@ internal object IrisLegacyShaderTransformer {
         // minosoft:scene_bridge WORLD_BORDER WORLD_BORDER uTextures,uViewProjectionMatrix,uCameraPosition,fog,uTintColor,uTexture,uTextureOffset
         // minosoft:scene_bridge SKELETAL SKELETAL_TINTED uTextures,uViewProjectionMatrix,uCameraPosition,fog,uSkeletalBuffer,uTintColor,uOutlineColor
         // minosoft:scene_bridge SKELETAL SKELETAL_LIGHTMAP uTextures,uViewProjectionMatrix,uCameraPosition,fog,uSkeletalBuffer,uLight,uLightMapBuffer,uPlayerLightPosition,uPlayerLightIntensity,uPlayerLightRadius
-        // minosoft:scene_bridge ARM_SKELETAL ARM uTextures,uTexture,uTintColor,uSkinParts,uTransform
+        // minosoft:scene_bridge ARM_SKELETAL ARM uTextures,uTexture,uTintColor,uSkinParts,uViewProjectionMatrix,uMatrix
         out vec4 color;
         out vec2 coord0;
         out vec2 coord1;
@@ -4852,7 +4884,8 @@ internal object IrisLegacyShaderTransformer {
         uniform uint uTexture;
         uniform vec4 uTintColor;
         uniform uint uSkinParts;
-        uniform mat4 uTransform;
+        uniform mat4 uViewProjectionMatrix;
+        uniform mat4 uMatrix;
         #include "minosoft:skeletal/shade"
         void main() {
             uint part = floatBitsToUint(vinPartTransformNormal);
@@ -4862,12 +4895,12 @@ internal object IrisLegacyShaderTransformer {
                 color = vec4(0.0);
                 return;
             }
-            vec4 position = uTransform * vec4(vinPosition, 1.0);
-            vec3 normal = transformNormal(decodeNormal(part & 0xFFFu), uTransform);
+            vec4 position = uMatrix * vec4(vinPosition, 1.0);
+            vec3 normal = transformNormal(decodeNormal(part & 0xFFFu), uMatrix);
             minosoftTextureArray = uTexture >> 28u;
             minosoftTextureLayer = float((uTexture >> 12u) & 0xFFFFu);
             minosoftLightIndex = 255u;
-            gl_Position = position;
+            gl_Position = uViewProjectionMatrix * position;
             color = vec4(vec3(getShade(normal)), 1.0) * uTintColor;
             coord0 = minosoftMaterialLogicalUv(vinUV, minosoftTextureArray);
             coord1 = vec2(1.0);

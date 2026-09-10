@@ -21,6 +21,34 @@ import kotlin.test.assertTrue
 
 class IrisLegacyShaderTransformerTest {
     @Test
+    fun `legacy terrain preserves explicitly normalized light coordinates`() {
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "gbuffers_terrain",
+            ShaderProgramPhase.TERRAIN,
+            """
+                #version 120
+                varying vec2 lightCoordinates;
+                void main() {
+                    lightCoordinates = gl_MultiTexCoord1.xy / 240.0;
+                    lightCoordinates += gl_MultiTexCoord1.xy / 240.01;
+                    gl_Position = ftransform();
+                }
+            """.trimIndent(),
+            """
+                #version 120
+                varying vec2 lightCoordinates;
+                void main() {
+                    gl_FragData[0] = vec4(lightCoordinates, 0.0, 1.0);
+                }
+            """.trimIndent(),
+        )
+
+        assertContains(transformed.vertex, "lightCoordinates = minosoftLegacyLightUv();")
+        assertContains(transformed.vertex, "lightCoordinates += vec4(minosoftLegacyLightUv(), 0.0, 1.0).xy / 240.01;")
+        assertFalse("minosoftLegacyLightUv(), 0.0, 1.0).xy / 240.0;" in transformed.vertex)
+    }
+
+    @Test
     fun `material selector rewrite does not capture unrelated sampler parameters`() {
         val transformed = IrisLegacyShaderTransformer.transform(
             "gbuffers_textured",
@@ -96,7 +124,9 @@ class IrisLegacyShaderTransformerTest {
         assertContains(transformed.vertex, "layout (location = 3) in float vinNormalMaterial;")
         assertContains(transformed.vertex, "uniform mat4 dhProjection;")
         assertContains(transformed.vertex, "uniform vec3 uPageOffset;")
-        assertContains(transformed.vertex, "vec4(vinPosition + uPageOffset, 1.0)")
+        assertContains(transformed.vertex, "uniform vec3 minosoftCameraOffset;")
+        assertContains(transformed.vertex, "vec4(minosoftDhPosition(), 1.0)")
+        assertContains(transformed.vertex, "dhProjection * minosoftPlayerModelView")
         assertFalse("gl_Vertex" in transformed.vertex)
         assertFalse("dhMaterialId" in transformed.vertex)
         assertContains(transformed.vertex, "in vec4 at_tangent;")
@@ -427,7 +457,38 @@ class IrisLegacyShaderTransformerTest {
     }
 
     @Test
-    fun `modern shadow terrain uses retained position without redeclaring pack matrices`() {
+    fun `fixed function shadow positions and normals use the light view`() {
+        for (declaresShadow in listOf(false, true)) {
+            val declaration = if (declaresShadow) "uniform mat4 shadowModelView;" else ""
+            val transformed = IrisLegacyShaderTransformer.transform(
+                "shadow",
+                ShaderProgramPhase.SHADOW,
+                """
+                    #version 120
+                    $declaration
+                    uniform mat4 shadowProjection;
+                    void main() {
+                        vec3 position = mat3(gl_ModelViewMatrix) * gl_Vertex.xyz + gl_ModelViewMatrix[3].xyz;
+                        vec3 normal = gl_NormalMatrix * gl_Normal;
+                        gl_Position = gl_ProjectionMatrix * vec4(position + normal * 0.01, 1.0);
+                    }
+                """.trimIndent(),
+                """
+                    #version 120
+                    uniform sampler2D texture;
+                    void main() { gl_FragData[0] = texture2D(texture, vec2(0.0)); }
+                """.trimIndent(),
+            )
+            assertContains(transformed.vertex, "vec3 position = mat3(shadowModelView) * vec4(vinPosition, 1.0).xyz + shadowModelView[3].xyz;")
+            assertContains(transformed.vertex, "vec3 normal = mat3(shadowModelView) * vaNormal;")
+            // One declaration in each mutually exclusive terrain/entity branch.
+            assertEquals(2, Regex("""uniform mat4 shadowModelView;""").findAll(transformed.vertex).count())
+            assertFalse("mat3(gbufferModelView) * vec4(vinPosition" in transformed.vertex)
+        }
+    }
+
+    @Test
+    fun `modern shadow terrain separates authored and fixed function coordinate frames`() {
         val transformed = IrisLegacyShaderTransformer.transform(
             "shadow",
             ShaderProgramPhase.SHADOW,
@@ -453,8 +514,11 @@ class IrisLegacyShaderTransformerTest {
         assertFalse("ftransform" in transformed.vertex)
         assertContains(
             transformed.vertex,
-            "shadowModelViewInverse * shadowProjectionInverse * shadowProjection * shadowModelView * vec4(vinPosition, 1.0)",
+            "minosoftPlayerShadowModelViewInverse * shadowProjectionInverse * shadowProjection * shadowModelView * vec4(vinPosition, 1.0)",
         )
+        assertContains(transformed.vertex, "shadowProjection * minosoftPlayerShadowModelView * position")
+        assertContains(transformed.vertex, "uniform mat4 minosoftPlayerShadowModelView;")
+        assertContains(transformed.vertex, "uniform mat4 minosoftPlayerShadowModelViewInverse;")
         // The mutually exclusive scene and terrain branches each retain their own
         // declaration; either compiled specialization still sees exactly one.
         assertEquals(2, Regex("""uniform mat4 shadowProjection;""").findAll(transformed.vertex).count())
@@ -463,6 +527,42 @@ class IrisLegacyShaderTransformerTest {
         assertContains(transformed.vertex, "minosoftFinishShadow")
         assertContains(transformed.vertex, "out vec2 texCoord;")
         assertContains(transformed.vertex, "texcoord = texCoord;")
+    }
+
+    @Test
+    fun `main terrain shadow receivers use camera relative authored matrices`() {
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "gbuffers_terrain",
+            ShaderProgramPhase.TERRAIN,
+            """
+                #version 330 compatibility
+                uniform mat4 gbufferModelView;
+                uniform mat4 gbufferModelViewInverse;
+                uniform mat4 gbufferProjection;
+                uniform mat4 shadowModelView;
+                void main() {
+                    vec4 player = gbufferModelViewInverse * gl_ModelViewMatrix * gl_Vertex;
+                    vec4 shadowPosition = shadowModelView * player;
+                    gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex + shadowPosition * 0.0;
+                }
+            """.trimIndent(),
+            """
+                #version 330 compatibility
+                uniform sampler2D gtexture;
+                uniform mat4 shadowModelViewInverse;
+                void main() {
+                    gl_FragData[0] = texture(gtexture, vec2(0.0)) + shadowModelViewInverse[0] * 0.0;
+                }
+            """.trimIndent(),
+        )
+
+        assertContains(
+            transformed.vertex,
+            "minosoftPlayerModelViewInverse * gbufferModelView * vec4(vinPosition, 1.0)",
+        )
+        assertContains(transformed.vertex, "minosoftPlayerShadowModelView * player")
+        assertContains(transformed.fragment, "uniform mat4 minosoftPlayerShadowModelViewInverse;")
+        assertFalse("uniform mat4 shadowModelView;" in transformed.vertex)
     }
 
     @Test
@@ -531,7 +631,15 @@ class IrisLegacyShaderTransformerTest {
             """
                 #version 330 compatibility
                 uniform sampler2D gtexture;
-                void main() { gl_FragData[0] = texture(gtexture, vec2(0.0)); }
+                uniform mat4 gbufferModelView;
+                uniform mat4 gbufferModelViewInverse;
+                uniform mat4 shadowModelView;
+                uniform mat4 shadowModelViewInverse;
+                void main() {
+                    vec4 player = gbufferModelViewInverse * gbufferModelView * vec4(1.0);
+                    gl_FragData[0] = texture(gtexture, vec2(0.0)) +
+                        shadowModelViewInverse * shadowModelView * player * 0.0;
+                }
             """.trimIndent(),
         )
 
@@ -597,6 +705,16 @@ class IrisLegacyShaderTransformerTest {
             "minosoftPrepareEntityPbr(scene_pos, normal, vec4(minosoftTangent, vinTangent.w))",
         )
         assertContains(transformed.vertex, "uViewProjectionMatrix * worldPosition")
+        assertContains(transformed.vertex, "uniform mat4 gbufferModelView;")
+        assertFalse("minosoftPlayerModelView" in transformed.vertex)
+        assertContains(
+            transformed.fragment,
+            "minosoftPlayerModelViewInverse * minosoftPlayerModelView * vec4(1.0)",
+        )
+        assertContains(
+            transformed.fragment,
+            "minosoftPlayerShadowModelViewInverse * minosoftPlayerShadowModelView * player",
+        )
     }
 
     @Test
@@ -780,6 +898,10 @@ class IrisLegacyShaderTransformerTest {
         assertContains(transformed.vertex, "layout (location = 6) in vec4 vinTangent")
         assertContains(transformed.vertex, "minosoftPrepareHandUv(vinUV, vinMidUV)")
         assertContains(transformed.vertex, "minosoftPrepareHandUv(unpackedUv, vinMidUV)")
+        assertContains(transformed.vertex, "vec4 position = uMatrix * vec4(vinPosition, 1.0)")
+        assertContains(transformed.vertex, "scene_pos = position.xyz")
+        assertContains(transformed.vertex, "gl_Position = uViewProjectionMatrix * position")
+        assertFalse("scene_pos = vinPosition" in transformed.vertex)
         assertContains(transformed.vertex, "flat out vec3 binormal")
         assertContains(transformed.vertex, "out vec3 viewVector")
         assertContains(transformed.vertex, "out vec4 vTexCoordAM")
@@ -1180,6 +1302,99 @@ class IrisLegacyShaderTransformerTest {
             "minosoftPlayerModelViewInverse * minosoftPlayerModelView * vec4(1.0)",
         )
         assertFalse("gbufferModelView" in transformed.fragment)
+    }
+
+    @Test
+    fun `fullscreen authored matrices use camera relative coordinates in both stages`() {
+        val declarations = """
+            #version 330 core
+            uniform mat4 gbufferModelView;
+            uniform mat4 gbufferModelViewInverse;
+            uniform mat4 shadowModelView;
+            uniform mat4 shadowModelViewInverse;
+            float shadowModelViewExtra = 1.0;
+        """.trimIndent()
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "composite",
+            ShaderProgramPhase.COMPOSITE,
+            declarations + "\nvoid main() { gl_Position = shadowModelView * gbufferModelViewInverse * vec4(1.0); }",
+            declarations + "\nout vec4 color; void main() { color = shadowModelViewInverse * shadowModelView * gbufferModelView * vec4(1.0); }",
+        )
+
+        for (source in listOf(transformed.vertex, transformed.fragment)) {
+            assertContains(source, "uniform mat4 minosoftPlayerShadowModelView;")
+            assertContains(source, "uniform mat4 minosoftPlayerShadowModelViewInverse;")
+            assertContains(source, "uniform mat4 minosoftPlayerModelView;")
+            assertContains(source, "uniform mat4 minosoftPlayerModelViewInverse;")
+            assertContains(source, "float shadowModelViewExtra = 1.0;")
+        }
+        assertContains(
+            transformed.vertex,
+            "minosoftPlayerShadowModelView * minosoftPlayerModelViewInverse * vec4(1.0)",
+        )
+        assertContains(
+            transformed.fragment,
+            "minosoftPlayerShadowModelViewInverse * minosoftPlayerShadowModelView * minosoftPlayerModelView * vec4(1.0)",
+        )
+    }
+
+    @Test
+    fun `distant terrain exposes camera relative authored coordinates`() {
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "dh_terrain",
+            ShaderProgramPhase.DISTANT_HORIZONS,
+            """
+                #version 330 compatibility
+                uniform mat4 gbufferModelViewInverse;
+                uniform mat4 shadowModelView;
+                void main() {
+                    vec4 localPosition = gbufferModelViewInverse * gl_ModelViewMatrix * gl_Vertex;
+                    gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;
+                    gl_Position += shadowModelView * localPosition * 0.0;
+                }
+            """.trimIndent(),
+            """
+                #version 330 compatibility
+                uniform mat4 gbufferModelViewInverse;
+                void main() { gl_FragData[0] = gbufferModelViewInverse[0]; }
+            """.trimIndent(),
+        )
+
+        assertContains(
+            transformed.vertex,
+            "minosoftPlayerModelViewInverse * minosoftPlayerModelView * vec4(minosoftDhPosition(), 1.0)",
+        )
+        assertContains(transformed.vertex, "minosoftPlayerShadowModelView * localPosition")
+        assertContains(transformed.fragment, "uniform mat4 minosoftPlayerModelViewInverse;")
+        assertFalse("uniform mat4 shadowModelView;" in transformed.vertex)
+    }
+
+    @Test
+    fun `distant shadow fixed function coordinates use player shadow matrix`() {
+        val transformed = IrisLegacyShaderTransformer.transform(
+            "dh_shadow",
+            ShaderProgramPhase.SHADOW,
+            """
+                #version 120
+                uniform mat4 shadowModelView;
+                uniform mat4 shadowModelViewInverse;
+                uniform mat4 shadowProjection;
+                void main() {
+                    vec3 position = mat3(gl_ModelViewMatrix) * gl_Vertex.xyz + gl_ModelViewMatrix[3].xyz;
+                    vec4 localPosition = shadowModelViewInverse * vec4(position, 1.0);
+                    gl_Position = gl_ProjectionMatrix * shadowModelView * localPosition;
+                }
+            """.trimIndent(),
+            "#version 120\nvoid main() { gl_FragData[0] = vec4(1.0); }",
+        )
+
+        assertContains(transformed.vertex, "mat3(minosoftPlayerShadowModelView) * vec4(minosoftDhPosition(), 1.0).xyz")
+        assertContains(transformed.vertex, "minosoftPlayerShadowModelView[3].xyz")
+        assertContains(
+            transformed.vertex,
+            "minosoftPlayerShadowModelViewInverse * vec4(position, 1.0)",
+        )
+        assertContains(transformed.vertex, "shadowProjection * minosoftPlayerShadowModelView * localPosition")
     }
 
     @Test

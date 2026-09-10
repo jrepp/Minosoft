@@ -34,7 +34,6 @@ class ChunkData(
     var topLight: LightArray? = null,
 ) {
 
-    @Deprecated("useless")
     fun update(data: ChunkData) {
         data.blocks?.let { this.blocks = it }
         data.entities?.let { this.entities = it }

@@ -21,6 +21,7 @@ import de.bixilon.minosoft.assets.source.LocalAssetSource
 import de.bixilon.minosoft.assets.util.FileAssetsTypes
 import de.bixilon.minosoft.assets.util.FileAssetsUtil
 import de.bixilon.minosoft.assets.util.HashTypes
+import java.net.URI
 import java.net.URL
 
 open class PlayerTexture(
@@ -30,7 +31,7 @@ open class PlayerTexture(
     var data: ByteArray? = null
         private set
 
-    val url = if (url.protocol == "http") URL("https://" + url.toString().removePrefix("http://")) else url
+    val url = if (url.protocol == "http") URI.create("https://" + url.toString().removePrefix("http://")).toURL() else url
 
     init {
         url.checkWeb()

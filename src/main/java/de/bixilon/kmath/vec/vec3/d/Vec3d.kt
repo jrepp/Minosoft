@@ -125,7 +125,7 @@ value class Vec3d(
         inline operator fun invoke(other: Vec3d) = other
         inline operator fun invoke(other: _Vec3i) = Vec3d(other.x.d, other.y.d, other.z.d)
         inline operator fun invoke(other: _Vec3f) = Vec3d(other.x.d, other.y.d, other.z.d)
-        inline operator fun invoke(other: _Vec3d) = Vec3d(other.x.d, other.y.d, other.z.d)
+        inline operator fun invoke(other: _Vec3d) = Vec3d(other.x, other.y, other.z)
 
         operator fun invoke() = EMPTY
     }

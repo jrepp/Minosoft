@@ -58,6 +58,171 @@ class IrisFrameStateTest {
     }
 
     @Test
+    fun `temporal reprojection applies camera movement once across render origin changes`() {
+        val worldPoint = Vec3d(-490.5, 82.0, 301.25)
+        val previousCamera = Vec3d(-500.1, 78.62, 271.9)
+        val previousOrigin = Vec3d(-512.0, 0.0, 256.0)
+        fun view(camera: Vec3d, origin: Vec3d, yaw: Float) = MMat4f().apply {
+            clearAssign()
+            rotateXAssign(0.13f)
+            rotateYAssign(yaw)
+            val offset = camera - origin
+            translateAssign(-offset.x.toFloat(), -offset.y.toFloat(), -offset.z.toFloat())
+        }.unsafe
+        fun point(value: Vec3d) = Vec4f(value.x.toFloat(), value.y.toFloat(), value.z.toFloat(), 1.0f)
+        val previousHost = view(previousCamera, previousOrigin, 0.31f)
+        val expected = previousHost * point(worldPoint - previousOrigin)
+        for (step in 0..4) {
+            val camera = previousCamera + Vec3d(step * 0.25, 0.0, -step * 0.125)
+            val origin = Vec3d(-256.0, 0.0, 256.0)
+            val host = view(camera, origin, 0.31f + step * 0.02f)
+            val state = frameState(
+                cameraPosition = camera,
+                previousCameraPosition = previousCamera,
+                previousModelViewMatrix = previousHost,
+            )
+            val native = RecordingNativeShader()
+            state.uploadTo(native, setOf("gbufferPreviousModelView"))
+            val currentView = host * point(worldPoint - origin)
+            val currentPlayer = irisPlayerModelView(host).inverse() * currentView
+            val motion = camera - previousCamera
+            val previousPlayer = Vec4f(
+                currentPlayer.x + motion.x.toFloat(),
+                currentPlayer.y + motion.y.toFloat(),
+                currentPlayer.z + motion.z.toFloat(),
+                1.0f,
+            )
+            val actual = native.matrices.getValue("gbufferPreviousModelView") * previousPlayer
+            assertEquals(expected.x, actual.x, 0.0001f, "step=$step x")
+            assertEquals(expected.y, actual.y, 0.0001f, "step=$step y")
+            assertEquals(expected.z, actual.z, 0.0001f, "step=$step z")
+        }
+    }
+
+    @Test
+    fun `camera relative shadow receivers match rebased casters during fractional movement`() {
+        val origins = listOf(
+            Vec3d.EMPTY,
+            Vec3d(-512.0, 64.0, 256.0),
+            Vec3d(29_999_744.0, 64.0, -29_999_744.0),
+        )
+        for (origin in origins) {
+            val worldPoint = origin + Vec3d(-73.5, 12.0, 40.25)
+            for (step in 0..4) {
+                val camera = origin + Vec3d(13.9 - step * 0.25, 14.53, -15.84)
+                val host = irisShadowModelView(0.17f, -35.0f, 2.0f, camera, origin)
+                val receiver = irisPlayerShadowModelView(host, camera, origin)
+                val casterPosition = worldPoint - origin
+                val receiverPosition = worldPoint - camera
+                val expected = host * Vec4f(
+                    casterPosition.x.toFloat(),
+                    casterPosition.y.toFloat(),
+                    casterPosition.z.toFloat(),
+                    1.0f,
+                )
+                val actual = receiver * Vec4f(
+                    receiverPosition.x.toFloat(),
+                    receiverPosition.y.toFloat(),
+                    receiverPosition.z.toFloat(),
+                    1.0f,
+                )
+                assertEquals(expected.x, actual.x, 0.0001f, "origin=$origin step=$step x")
+                assertEquals(expected.y, actual.y, 0.0001f, "origin=$origin step=$step y")
+                assertEquals(expected.z, actual.z, 0.0001f, "origin=$origin step=$step z")
+                assertEquals(expected.w, actual.w, 0.0001f, "origin=$origin step=$step w")
+
+                val restored = receiver.inverse() * actual
+                assertEquals(receiverPosition.x.toFloat(), restored.x, 0.0001f)
+                assertEquals(receiverPosition.y.toFloat(), restored.y, 0.0001f)
+                assertEquals(receiverPosition.z.toFloat(), restored.z, 0.0001f)
+            }
+        }
+    }
+
+    @Test
+    fun `camera relative bridge uniforms upload`() {
+        val origin = Vec3d(-512.0, 64.0, 256.0)
+        val camera = origin + Vec3d(13.65, 14.53, -15.84)
+        val host = irisShadowModelView(0.17f, -35.0f, 2.0f, camera, origin)
+        val player = irisPlayerShadowModelView(host, camera, origin)
+        val state = frameState(
+            cameraPosition = camera,
+            previousCameraPosition = camera,
+            renderOrigin = origin,
+            shadowModelView = host,
+        )
+        val native = RecordingNativeShader()
+
+        val uploads = state.uploadTo(
+            native,
+            setOf(
+                "minosoftPlayerShadowModelView",
+                "minosoftPlayerShadowModelViewInverse",
+                "minosoftCameraOffset",
+            ),
+        )
+
+        assertEquals(3, uploads)
+        assertEquals(player, native.matrices["minosoftPlayerShadowModelView"])
+        assertEquals(player.inverse(), native.matrices["minosoftPlayerShadowModelViewInverse"])
+        assertEquals(Vec3f(camera - origin), native.vectors["minosoftCameraOffset"])
+    }
+
+    @Test
+    fun `distant camera relative bridge preserves projection and stable rounded world position`() {
+        val origins = listOf(Vec3d.EMPTY, Vec3d(-512.0, 64.0, 256.0))
+        val rebasedPosition = Vec3d(31.0, 5.0, -47.0)
+        for (origin in origins) {
+            var roundedWorld: Vec3f? = null
+            for (step in 0..4) {
+                val camera = origin + Vec3d(13.9 - step * 0.25, 14.53, -15.84 + step * 0.125)
+                val cameraOffset = camera - origin
+                val host = MMat4f().apply {
+                    clearAssign()
+                    rotateXAssign(0.41f)
+                    rotateYAssign(-0.23f)
+                    translateAssign(
+                        -cameraOffset.x.toFloat(),
+                        -cameraOffset.y.toFloat(),
+                        -cameraOffset.z.toFloat(),
+                    )
+                }.unsafe
+                val player = irisPlayerModelView(host)
+                val cameraRelative = rebasedPosition - cameraOffset
+                val hostView = host * Vec4f(
+                    rebasedPosition.x.toFloat(),
+                    rebasedPosition.y.toFloat(),
+                    rebasedPosition.z.toFloat(),
+                    1.0f,
+                )
+                val playerView = player * Vec4f(
+                    cameraRelative.x.toFloat(),
+                    cameraRelative.y.toFloat(),
+                    cameraRelative.z.toFloat(),
+                    1.0f,
+                )
+                assertEquals(hostView.x, playerView.x, 0.0001f, "origin=$origin step=$step x")
+                assertEquals(hostView.y, playerView.y, 0.0001f, "origin=$origin step=$step y")
+                assertEquals(hostView.z, playerView.z, 0.0001f, "origin=$origin step=$step z")
+
+                val cameraFraction = camera - Vec3d(
+                    kotlin.math.floor(camera.x),
+                    kotlin.math.floor(camera.y),
+                    kotlin.math.floor(camera.z),
+                )
+                val roundedPlayer = Vec3f(
+                    (kotlin.math.floor(cameraRelative.x + cameraFraction.x + 0.5) - cameraFraction.x).toFloat(),
+                    (kotlin.math.floor(cameraRelative.y + cameraFraction.y + 0.5) - cameraFraction.y).toFloat(),
+                    (kotlin.math.floor(cameraRelative.z + cameraFraction.z + 0.5) - cameraFraction.z).toFloat(),
+                )
+                val world = roundedPlayer + Vec3f(camera)
+                roundedWorld?.let { assertVec3Close(it, world) }
+                roundedWorld = world
+            }
+        }
+    }
+
+    @Test
     fun `distant projection retains host field of view with an independent far plane`() {
         val host = de.bixilon.minosoft.gui.rendering.camera.CameraUtil.perspective(
             fovY = 1.1f,
@@ -652,6 +817,39 @@ class IrisFrameStateTest {
     }
 
     @Test
+    fun `custom expressions expose the same camera relative matrix ABI as shaders`() {
+        val origin = Vec3d(-512.0, 64.0, 256.0)
+        val camera = origin + Vec3d(13.65, 14.53, -15.84)
+        val offset = camera - origin
+        val modelView = MMat4f().apply {
+            clearAssign()
+            rotateYAssign(0.31f)
+            translateAssign(-offset.x.toFloat(), -offset.y.toFloat(), -offset.z.toFloat())
+        }.unsafe
+        val shadowModelView = irisShadowModelView(0.17f, -35.0f, 2.0f, camera, origin)
+        val state = frameState(
+            cameraPosition = camera,
+            previousCameraPosition = camera,
+            renderOrigin = origin,
+            modelViewMatrix = modelView,
+            shadowModelView = shadowModelView,
+        )
+
+        val variables = state.customExpressionVariables(0.0f)
+        for ((name, matrix) in listOf(
+            "gbufferModelView" to state.playerModelViewMatrix,
+            "gbufferModelViewInverse" to state.playerModelViewMatrixInverse,
+            "gbufferPreviousModelView" to state.previousPlayerModelViewMatrix,
+            "shadowModelView" to state.playerShadowModelView,
+            "shadowModelViewInverse" to state.playerShadowModelViewInverse,
+        )) {
+            for (column in 0..3) for (row in 0..3) {
+                assertEquals(matrix[row, column].toDouble(), variables.getValue("$name.$column.$row"), name)
+            }
+        }
+    }
+
+    @Test
     fun `celestial uniforms follow Iris day night and sun path transforms`() {
         val dayNative = RecordingNativeShader()
         val day = frameState(
@@ -827,6 +1025,10 @@ class IrisFrameStateTest {
         eyeBrightness: Vec2i = Vec2i.EMPTY,
         skyColor: Vec3f = Vec3f.EMPTY,
         hideGui: Boolean = false,
+        renderOrigin: Vec3d = Vec3d.EMPTY,
+        modelViewMatrix: Mat4f = Mat4f(),
+        shadowModelView: Mat4f = Mat4f(),
+        previousModelViewMatrix: Mat4f = Mat4f(),
     ) = IrisFrameState(
         frameCounter = 0,
         frameTime = 0.0f,
@@ -835,14 +1037,14 @@ class IrisFrameStateTest {
         viewHeight = 1.0f,
         near = 0.05f,
         far = 1.0f,
-        modelViewMatrix = Mat4f(),
-        modelViewMatrixInverse = Mat4f(),
-        previousModelViewMatrix = Mat4f(),
+        modelViewMatrix = modelViewMatrix,
+        modelViewMatrixInverse = modelViewMatrix.inverse(),
+        previousModelViewMatrix = previousModelViewMatrix,
         projectionMatrix = Mat4f(),
         projectionMatrixInverse = Mat4f(),
         previousProjectionMatrix = Mat4f(),
-        shadowModelView = Mat4f(),
-        shadowModelViewInverse = Mat4f(),
+        shadowModelView = shadowModelView,
+        shadowModelViewInverse = shadowModelView.inverse(),
         shadowProjection = Mat4f(),
         shadowProjectionInverse = Mat4f(),
         cameraPosition = cameraPosition,
@@ -865,6 +1067,7 @@ class IrisFrameStateTest {
         fogStart = 0.0f,
         fogEnd = 1.0f,
         fogColor = Vec4f.EMPTY,
+        renderOrigin = renderOrigin,
     )
 
     private fun assertVec3Close(expected: Vec3f, actual: Vec3f) {

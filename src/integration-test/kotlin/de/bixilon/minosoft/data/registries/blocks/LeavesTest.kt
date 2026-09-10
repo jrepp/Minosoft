@@ -42,6 +42,4 @@ class LeavesTest : BlockTest<LeavesBlock>() {
     }
 }
 
-@Deprecated("")
 var LeavesTest0: LeavesTest = CastUtil.unsafeNull()
-

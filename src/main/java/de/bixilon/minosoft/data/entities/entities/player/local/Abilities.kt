@@ -19,6 +19,5 @@ data class Abilities(
     val allowFly: Boolean = false,
 
     val flyingSpeed: Float = 0.05f,
-    @Deprecated("unused")
     val walkingSpeed: Float = 0.1f,
 )

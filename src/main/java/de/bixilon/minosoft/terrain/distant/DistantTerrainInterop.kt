@@ -23,7 +23,7 @@ object DistantTerrainInterop {
     const val PROVIDER_ID = "minosoft:distant-terrain"
     const val SEMANTIC_LAYOUT_ID = "minosoft:distant-semantic-v2"
     const val PHYSICAL_LAYOUT_ID = "minosoft:distant-compact-v1"
-    const val PHYSICAL_LAYOUT_GENERATION = 1L
+    const val PHYSICAL_LAYOUT_GENERATION = 2L
 
     val descriptor = TerrainInteropDescriptor(
         providerId = PROVIDER_ID,

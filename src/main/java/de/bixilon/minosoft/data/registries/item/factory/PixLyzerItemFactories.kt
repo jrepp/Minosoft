@@ -19,7 +19,6 @@ import de.bixilon.minosoft.data.registries.item.items.pixlyzer.DyeItem
 import de.bixilon.minosoft.data.registries.item.items.pixlyzer.MusicDiscItem
 import de.bixilon.minosoft.data.registries.item.items.pixlyzer.SpawnEggItem
 
-@Deprecated("item factory")
 object PixLyzerItemFactories : DefaultClassFactory<PixLyzerItemFactory<*>>(
     PixLyzerBlockItem,
     TallBlockItem,

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "id": "minosoft_distant_horizons_bliss",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "name": "Minosoft Distant Horizons + Bliss",
-  "description": "A focused source-native integration pack for Distant Horizons LOD ingestion and Bliss shader compatibility.",
+  "description": "A focused source-native integration pack for Distant Horizons LOD ingestion, Bliss shader compatibility, and managed Faithful and GUI assets.",
   "environment": "client",
   "license": "GPL-3.0-only",
   "depends": {

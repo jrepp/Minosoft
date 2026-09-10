@@ -21,7 +21,6 @@ import de.bixilon.minosoft.data.registries.blocks.types.properties.offset.Random
 import de.bixilon.minosoft.data.world.positions.BlockPosition
 import java.util.*
 
-@Deprecated(message = "Use VecXUtil instead")
 object VecUtil {
 
     val Float.sqr: Float

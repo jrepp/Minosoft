@@ -86,6 +86,7 @@ import java.util.stream.Collectors;
 /** Repository-local launcher built incrementally and invoked by the thin play.sh shim. */
 public final class Play {
     private static final Pattern SAFE_NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]*");
+    private static final Pattern SAFE_RESOURCE_LOCATION = Pattern.compile("[a-z0-9_.-]+:[a-z0-9/._-]+");
     private static final Pattern SAFE_MANAGED_FILENAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._+-]*");
     private static final Pattern MINECRAFT_VERSION_ID = Pattern.compile("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
     private static final String MINOSOFT_MAIN = "de.bixilon.minosoft.Minosoft";
@@ -97,6 +98,12 @@ public final class Play {
     private static final long MAX_SCREENSHOT_PIXELS = 16_777_216L;
     private static final long MAX_SCREENSHOT_FILE_BYTES = 64L * 1024 * 1024;
     private static final long MAX_MODPACK_ARTIFACT_BYTES = 1024L * 1024 * 1024;
+    private static final long DEFAULT_PREVIEW_SETTLE_MILLIS = 10_000L;
+    private static final long MAX_PREVIEW_SETTLE_MILLIS = DebugChannelServer.MAX_DEADLINE_MS;
+    private static final long DEFAULT_PREVIEW_SETTLE_FRAMES = 24L;
+    private static final long MAX_PREVIEW_SETTLE_FRAMES = 600L;
+    private static final int DEFAULT_PREVIEW_STATES_PER_PAGE = 16;
+    private static final int MAX_PREVIEW_STATES_PER_PAGE = 64;
     private static final int[] ARGB_CHANNEL_SHIFTS = {24, 16, 8, 0};
 
     private final Map<String, String> environment = System.getenv();
@@ -124,6 +131,7 @@ public final class Play {
     private final Path defaultClientDistribution;
     private final Path hotReloadDistributionRoot;
     private final Path modpacksDirectory;
+    private final Path contentStacksDirectory;
     private final Path modpackStore;
     private final Path modpackCache;
     private final Path canarySourceDirectory;
@@ -131,12 +139,23 @@ public final class Play {
     private String modpackName;
     private final String serverModpackName;
     private String trajectory;
+    private String contentProvider;
+    private Path voxelibreRoot;
+    private final List<Path> faithfulPacks = new ArrayList<>();
+    private final List<ContentPackComposer.Source> contentSources = new ArrayList<>();
+    private boolean standaloneContent;
+    private String contentStackName;
+    private String contentStage;
+    private ContentStackManifest.Definition contentStack;
     private boolean canaryEnabled;
     private boolean localWorld;
     private boolean debugGpuMemoryLeaks;
+    private boolean suppressManagedShaderPack;
+    private String activeContentFingerprint = "";
     private boolean jsonOutput;
     private long worldSeed;
     private String worldGenerator;
+    private boolean itemPreviewDataPack;
     private int clientGeneration = 1;
     private volatile Path activeClientDistribution;
     private String sessionId;
@@ -177,8 +196,18 @@ public final class Play {
         modpackName = environment.getOrDefault("MINOSOFT_MODPACK", "");
         serverModpackName = environment.getOrDefault("MINOSOFT_SERVER_MODPACK", "fabric-stack");
         trajectory = environment.getOrDefault("MINOSOFT_TRAJECTORY", "default");
+        contentProvider = normalizeContentProvider(environment.getOrDefault("MINOSOFT_CONTENT_PROVIDER", ""));
+        voxelibreRoot = resolveProjectPath(environment.getOrDefault("MINOSOFT_VOXELIBRE_ROOT", "../VoxeLibre"));
+        addConfiguredPaths(faithfulPacks, environment.get("MINOSOFT_FAITHFUL_PACKS"));
+        standaloneContent = environment.getOrDefault("MINOSOFT_STANDALONE_CONTENT", "false").equalsIgnoreCase("true") || contentProvider.equals("voxelibre");
         modpacksDirectory = resolveProjectPath(env("MINOSOFT_MODPACKS_DIR", project.resolve("modpacks").toString()));
-        modpackStore = resolveProjectPath(env("MINOSOFT_MODPACK_STORE", defaultModpackStore().toString()));
+        contentStacksDirectory = project.resolve("content-stacks");
+        contentStackName = environment.getOrDefault("MINOSOFT_CONTENT_STACK", "").trim();
+        contentStage = environment.getOrDefault("MINOSOFT_CONTENT_STAGE", "").trim();
+        String configuredModpackStore = environment.get("MINOSOFT_MODPACK_STORE");
+        modpackStore = resolveProjectPath(configuredModpackStore == null || configuredModpackStore.isBlank()
+            ? defaultModpackStore().toString()
+            : configuredModpackStore);
         String configuredModpackCache = environment.get("MINOSOFT_MODPACK_CACHE");
         modpackCache = configuredModpackCache == null || configuredModpackCache.isBlank()
             ? null
@@ -226,6 +255,14 @@ public final class Play {
             runModpack(arguments.subList(1, arguments.size()));
             return;
         }
+        if (!arguments.isEmpty() && arguments.get(0).equals("setup")) {
+            runSetup(arguments.subList(1, arguments.size()));
+            return;
+        }
+        if (!arguments.isEmpty() && arguments.get(0).equals("content")) {
+            runContent(arguments.subList(1, arguments.size()));
+            return;
+        }
         if (!arguments.isEmpty() && arguments.get(0).equals("wait")) {
             runWait(arguments.subList(1, arguments.size()));
             return;
@@ -265,7 +302,20 @@ public final class Play {
             target = arguments.remove(0);
         }
         parsePackOptions(arguments);
+        if (!contentStackName.isBlank()) {
+            contentStack = readContentStack(contentStackName);
+            if (!contentStack.managedModpack().isBlank()) {
+                if (modpackName.isBlank()) modpackName = contentStack.managedModpack();
+                else require(modpackName.equals(contentStack.managedModpack()),
+                    "Content stack '" + contentStack.name() + "' requires modpack " + contentStack.managedModpack() + ", not " + modpackName + ".");
+            }
+            standaloneContent = contentStack.standalone();
+        }
+        if (contentProvider.equals("voxelibre")) standaloneContent = true;
         if (localWorld) require(target.equals("client"), "--local-world requires the client target; use './play.sh dev client --local-world'.");
+        if (contentStack != null || !contentProvider.isBlank() || !faithfulPacks.isEmpty() || !contentSources.isEmpty() || standaloneContent) {
+            require(!modpackName.isBlank(), "External content providers require --modpack so the launcher can isolate their profile and cache state.");
+        }
         if (!Set.of("dev", "start", "stop", "status").contains(action)) {
             usage();
             throw failure("Unknown action: " + action);
@@ -302,6 +352,911 @@ public final class Play {
             }
             default -> throw failure("Unsupported command.");
         }
+    }
+
+    private void runContent(List<String> rawArguments) throws Exception {
+        List<String> arguments = new ArrayList<>(rawArguments);
+        require(!arguments.isEmpty(),
+            "Usage: ./play.sh content compose [OPTIONS] | content queue [OPTIONS] | content audit [--trajectory NAME] [--stage NAME] [--output FILE] [--json]");
+        String action = arguments.remove(0);
+        if (action.equals("audit")) {
+            runContentAudit(arguments);
+            return;
+        }
+        if (action.equals("queue")) {
+            runContentQueue(arguments);
+            return;
+        }
+        if (action.equals("preview")) {
+            runContentPreview(arguments);
+            return;
+        }
+        require(action.equals("compose"),
+            "Usage: ./play.sh content compose [--manifest NAME|PATH] [--stage SOURCE] [--name NAME] [--source TYPE=PATH] [--json]");
+        String name = null;
+        String manifestReference = "standalone";
+        String stage = "";
+        boolean json = false;
+        boolean voxelibre = false;
+        List<ContentPackComposer.Source> overlays = new ArrayList<>();
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            if (option.equals("--manifest")) {
+                require(!arguments.isEmpty(), "--manifest requires a content stack name or path.");
+                manifestReference = arguments.remove(0);
+            } else if (option.startsWith("--manifest=")) {
+                manifestReference = option.substring("--manifest=".length());
+            } else if (option.equals("--no-manifest")) {
+                manifestReference = "";
+            } else if (option.equals("--stage")) {
+                require(!arguments.isEmpty(), "--stage requires a source label.");
+                stage = arguments.remove(0);
+            } else if (option.startsWith("--stage=")) {
+                stage = option.substring("--stage=".length());
+            } else if (option.equals("--name")) {
+                require(!arguments.isEmpty(), "--name requires a content stack name.");
+                name = arguments.remove(0);
+            } else if (option.startsWith("--name=")) {
+                name = option.substring("--name=".length());
+            } else if (option.equals("--voxelibre")) {
+                voxelibre = true;
+            } else if (option.equals("--voxelibre-root")) {
+                require(!arguments.isEmpty(), "--voxelibre-root requires a directory.");
+                voxelibreRoot = resolveProjectPath(arguments.remove(0));
+                voxelibre = true;
+            } else if (option.startsWith("--voxelibre-root=")) {
+                voxelibreRoot = resolveProjectPath(option.substring("--voxelibre-root=".length()));
+                voxelibre = true;
+            } else if (option.equals("--source")) {
+                require(!arguments.isEmpty(), "--source requires TYPE=PATH.");
+                overlays.add(parseContentSource(arguments.remove(0)));
+            } else if (option.startsWith("--source=")) {
+                overlays.add(parseContentSource(option.substring("--source=".length())));
+            } else if (option.equals("--mods")) {
+                require(!arguments.isEmpty(), "--mods requires a mod JAR or directory.");
+                overlays.add(new ContentPackComposer.Source(ContentPackComposer.SourceType.MODS, resolveProjectPath(arguments.remove(0)), "cli-mods"));
+            } else if (option.startsWith("--mods=")) {
+                overlays.add(new ContentPackComposer.Source(ContentPackComposer.SourceType.MODS, resolveProjectPath(option.substring("--mods=".length())), "cli-mods"));
+            } else if (option.equals("--faithful-pack")) {
+                require(!arguments.isEmpty(), "--faithful-pack requires a ZIP or resource-pack directory.");
+                Path path = resolveProjectPath(arguments.remove(0));
+                overlays.add(contentSource(path, "faithful-overlay"));
+            } else if (option.startsWith("--faithful-pack=")) {
+                Path path = resolveProjectPath(option.substring("--faithful-pack=".length()));
+                overlays.add(contentSource(path, "faithful-overlay"));
+            } else if (option.equals("--json")) {
+                json = true;
+            } else {
+                throw failure("Unknown content compose option: " + option);
+            }
+        }
+        List<ContentPackComposer.Source> sources = new ArrayList<>();
+        if (!manifestReference.isBlank()) {
+            ContentStackManifest.Definition definition = readContentStack(manifestReference);
+            PreparedPack pack = definition.managedModpack().isBlank() ? null : prepareModpack(definition.managedModpack(), trajectory);
+            sources.addAll(expandContentStack(definition, pack, stage));
+            if (name == null) name = definition.name();
+        }
+        require(name != null, "--name is required with --no-manifest.");
+        validateName("content stack", name);
+        if (voxelibre) {
+            ContentPackAdapter.Result adapted = ContentPackAdapter.prepareVoxeLibre(voxelibreRoot, modpackStore);
+            sources.add(0, new ContentPackComposer.Source(ContentPackComposer.SourceType.DIRECTORY, adapted.resourcePack(), "voxelibre-base"));
+        }
+        sources.addAll(overlays);
+        ContentPackComposer.Result result = ContentPackComposer.compose(sources, modpackStore, name);
+        ObjectNode output = DebugJson.MAPPER.createObjectNode();
+        output.put("name", name).put("fingerprint", result.fingerprint()).put("path", result.resourcePack().toString())
+            .put("filesProcessed", result.files()).put("bytesProcessed", result.bytes()).put("sources", result.sources().size());
+        printDebugJson(output, json);
+    }
+
+    /**
+     * Boot a graphical Minosoft client in a local world with the composed content stack,
+     * stage one queued asset, capture a PNG, and exit. The asset id/target
+     * is resolved against the content queue so previews stay in lockstep with
+     * demand. Flat blocks use bounded, version-aware pages that exactly cover the
+     * registry's legal state set; underwater blocks remain single material samples,
+     * and items use the content-preview data pack's display function. Each state page
+     * is captured with a machine-readable provenance sidecar.
+     */
+    private void runContentPreview(List<String> rawArguments) throws Exception {
+        List<String> arguments = new ArrayList<>(rawArguments);
+        require(!arguments.isEmpty(),
+            "Usage: ./play.sh content preview <asset> [--manifest NAME] [--stage SOURCE] [--output FILE] [--distance N] [--scene flat|underwater] [--state-page all|N] [--states-per-page N] [--settle MS] [--settle-frames N] [--strict] [--json]");
+        String asset = arguments.remove(0);
+        String manifestReference = "standalone";
+        String stage = "";
+        Path output = null;
+        double distance = 2.75;
+        String scene = "flat";
+        String statePage = "all";
+        int statesPerPage = DEFAULT_PREVIEW_STATES_PER_PAGE;
+        long settleMillis = DEFAULT_PREVIEW_SETTLE_MILLIS;
+        long settleFrames = DEFAULT_PREVIEW_SETTLE_FRAMES;
+        boolean strict = false;
+        boolean json = false;
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            if (option.equals("--manifest")) {
+                require(!arguments.isEmpty(), "--manifest requires a content stack name or path.");
+                manifestReference = arguments.remove(0);
+            } else if (option.startsWith("--manifest=")) {
+                manifestReference = option.substring("--manifest=".length());
+            } else if (option.equals("--stage")) {
+                require(!arguments.isEmpty(), "--stage requires a source label.");
+                stage = arguments.remove(0);
+            } else if (option.startsWith("--stage=")) {
+                stage = option.substring("--stage=".length());
+            } else if (option.equals("--output")) {
+                require(!arguments.isEmpty(), "--output requires a path.");
+                output = resolveProjectPath(arguments.remove(0));
+            } else if (option.startsWith("--output=")) {
+                output = resolveProjectPath(option.substring("--output=".length()));
+            } else if (option.equals("--distance")) {
+                require(!arguments.isEmpty(), "--distance requires a number.");
+                distance = Double.parseDouble(arguments.remove(0));
+            } else if (option.equals("--scene")) {
+                require(!arguments.isEmpty(), "--scene requires flat or underwater.");
+                scene = arguments.remove(0).toLowerCase(Locale.ROOT);
+            } else if (option.startsWith("--scene=")) {
+                scene = option.substring("--scene=".length()).toLowerCase(Locale.ROOT);
+            } else if (option.equals("--state-page")) {
+                require(!arguments.isEmpty(), "--state-page requires all or a one-based page number.");
+                statePage = parsePreviewStatePage(arguments.remove(0));
+            } else if (option.startsWith("--state-page=")) {
+                statePage = parsePreviewStatePage(option.substring("--state-page=".length()));
+            } else if (option.equals("--states-per-page")) {
+                require(!arguments.isEmpty(), "--states-per-page requires a count.");
+                statesPerPage = parsePreviewStatesPerPage(arguments.remove(0));
+            } else if (option.startsWith("--states-per-page=")) {
+                statesPerPage = parsePreviewStatesPerPage(option.substring("--states-per-page=".length()));
+            } else if (option.equals("--settle")) {
+                require(!arguments.isEmpty(), "--settle requires milliseconds.");
+                settleMillis = parsePreviewSettleMillis(arguments.remove(0));
+            } else if (option.startsWith("--settle=")) {
+                settleMillis = parsePreviewSettleMillis(option.substring("--settle=".length()));
+            } else if (option.equals("--settle-frames")) {
+                require(!arguments.isEmpty(), "--settle-frames requires a frame count.");
+                settleFrames = parsePreviewSettleFrames(arguments.remove(0));
+            } else if (option.startsWith("--settle-frames=")) {
+                settleFrames = parsePreviewSettleFrames(option.substring("--settle-frames=".length()));
+            } else if (option.equals("--strict")) {
+                strict = true;
+            } else if (option.equals("--json")) {
+                json = true;
+            } else {
+                throw failure("Unknown content preview option: " + option);
+            }
+        }
+        require(distance >= 1.0 && distance <= 32.0, "--distance must be between 1 and 32.");
+        require(scene.equals("flat") || scene.equals("underwater"), "--scene must be flat or underwater.");
+        require(scene.equals("flat") || statePage.equals("all"), "--state-page applies only to the flat scene.");
+
+        // 1. Resolve the asset against the content queue (kind = block | item).
+        ContentStackManifest.Definition definition = readContentStack(manifestReference);
+        Path queueFile = runDirectory.resolve("content-queues").resolve(definition.name() + ".json");
+        require(Files.isRegularFile(queueFile), "Content queue not found: " + queueFile
+            + " — run './play.sh content queue --manifest " + definition.name() + " --json' first.");
+        PreviewAsset resolved = resolvePreviewAsset(asset, queueFile);
+        itemPreviewDataPack = resolved.kind().equals("item");
+        if (output == null) {
+            output = runDirectory.resolve("previews").resolve(safeFileName(resolved.id().replace(':', '_')) + ".png");
+        }
+        Files.createDirectories(output.getParent());
+
+        // 2. Configure a graphical local launch with the composed stack.
+        localWorld = true;
+        if (worldSeed == 0L) worldSeed = 1L;
+        contentStack = definition;
+        contentStage = stage;
+        modpackName = definition.managedModpack();
+        standaloneContent = definition.standalone();
+        suppressManagedShaderPack = true;
+        installDistribution();
+        PreparedPack pack = modpackName.isBlank() ? null : prepareModpack(modpackName, trajectory);
+        supervisedClient = launchSupervisedClient(pack, null);
+        ArrayNode captures = DebugJson.MAPPER.createArrayNode();
+        try {
+            PredicateObservation joined = waitForPredicate("client.joined", Duration.ofSeconds(120), supervisedClient.pid());
+            require(joined.matched, "Client did not join the local world within 120 seconds.");
+            PredicateObservation renderReady = waitForPredicate("client.render-ready", Duration.ofSeconds(60), supervisedClient.pid());
+            require(renderReady.matched, "Client did not become render-ready within 60 seconds.");
+
+            // 3. Drive: realistic conditions -> place the asset -> settle -> capture.
+            DebugEndpointDescriptor endpoint = selectedEndpoint(DebugEndpointRole.CLIENT, supervisedClient.pid());
+            try (DebugClient client = DebugClient.connect(DebugPaths.system(), endpoint)) {
+                ObjectNode reference = DebugJson.MAPPER.createObjectNode();
+                reference.put("timeOfDay", 6000).put("clearWeather", true)
+                    .put("hideHud", true).put("hideClouds", true).put("hideHitboxes", true)
+                    .put("hideEntities", resolved.kind().equals("block")).put("hideParticles", true).put("hideArm", true);
+                if (resolved.kind().equals("block") && scene.equals("flat")) {
+                    int requestedPage = statePage.equals("all") ? 0 : Integer.parseInt(statePage) - 1;
+                    ObjectNode probe = previewStateSculptureBody(resolved.id(), requestedPage, statesPerPage, distance);
+                    JsonNode catalog = client.request("content.place-block-state-sculpture", probe, 10_000);
+                    int totalPages = catalog.path("totalPages").asInt(0);
+                    require(totalPages > 0, "Block-state sculpture returned no pages.");
+                    require(requestedPage < totalPages,
+                        "--state-page must be between 1 and " + totalPages + " for " + resolved.id() + ".");
+                    int firstPage = statePage.equals("all") ? 0 : requestedPage;
+                    int lastPage = statePage.equals("all") ? totalPages : requestedPage + 1;
+                    for (int pageIndex = firstPage; pageIndex < lastPage; pageIndex++) {
+                        ObjectNode placement = previewStateSculptureBody(
+                            resolved.id(),
+                            pageIndex,
+                            statesPerPage,
+                            distance,
+                            catalog.path("columns").asInt(1),
+                            catalog.path("rows").asInt(1),
+                            catalog.path("spacing").asInt(2)
+                        );
+                        PreviewPageCapture capture = capturePreviewPage(
+                            client,
+                            reference,
+                            "content.place-block-state-sculpture",
+                            placement,
+                            settleMillis,
+                            settleFrames,
+                            strict
+                        );
+                        Path pageOutput = previewPageOutput(output, pageIndex, totalPages, statePage.equals("all"));
+                        writePreviewCapture(pageOutput, capture.response());
+                        ObjectNode manifest = previewCaptureManifest(
+                            resolved,
+                            definition,
+                            scene,
+                            settleMillis,
+                            settleFrames,
+                            strict,
+                            pageOutput,
+                            capture.placement(),
+                            capture.response()
+                        );
+                        writeJsonAtomic(previewManifestPath(pageOutput), manifest);
+                        captures.add(manifest);
+                    }
+                } else {
+                    String placementOperation = resolved.kind().equals("block") ? "content.place-blocks" : "content.execute-local";
+                    ObjectNode placement = resolved.kind().equals("block")
+                        ? blockPlacementBody(resolved, distance, scene)
+                        : previewPlacementBody(resolved, distance);
+                    PreviewPageCapture capture = capturePreviewPage(
+                        client, reference, placementOperation, placement, settleMillis, settleFrames, strict
+                    );
+                    writePreviewCapture(output, capture.response());
+                    ObjectNode result = capture.response().result().deepCopy();
+                    result.put("output", output.toString());
+                    result.set("placement", capture.placement().deepCopy());
+                    captures.add(result);
+                }
+            }
+        } finally {
+            cleanupSupervisor();
+        }
+
+        ObjectNode summary = DebugJson.MAPPER.createObjectNode();
+        summary.put("asset", resolved.id()).put("kind", resolved.kind())
+            .put("target", resolved.target()).put("manifest", definition.name()).put("output", output.toString())
+            .put("contentFingerprint", activeContentFingerprint)
+            .put("scene", scene).put("statePage", statePage).put("statesPerPage", statesPerPage)
+            .put("settleMillis", settleMillis).put("settleFrames", settleFrames).put("strict", strict)
+            .set("captures", captures);
+        if (resolved.kind().equals("block") && scene.equals("flat")) {
+            summary.put("schema", 1).put("captureSet", previewCaptureSetPath(output).toString());
+            writeJsonAtomic(previewCaptureSetPath(output), summary);
+        }
+        printDebugJson(summary, json);
+    }
+
+    static String parsePreviewStatePage(String value) {
+        String normalized = value.toLowerCase(Locale.ROOT);
+        if (normalized.equals("all")) return normalized;
+        long page = parseLong(value, "--state-page");
+        require(page >= 1L && page <= Integer.MAX_VALUE, "--state-page must be all or a positive page number.");
+        return Long.toString(page);
+    }
+
+    static int parsePreviewStatesPerPage(String value) {
+        long count = parseLong(value, "--states-per-page");
+        require(count >= 1L && count <= MAX_PREVIEW_STATES_PER_PAGE,
+            "--states-per-page must be between 1 and " + MAX_PREVIEW_STATES_PER_PAGE + ".");
+        return (int) count;
+    }
+
+    private ObjectNode previewStateSculptureBody(String id, int pageIndex, int pageSize, double distance) {
+        int columns = (int) Math.ceil(Math.sqrt(pageSize));
+        int rows = (pageSize + columns - 1) / columns;
+        return previewStateSculptureBody(id, pageIndex, pageSize, distance, columns, rows, 2);
+    }
+
+    private ObjectNode previewStateSculptureBody(
+        String id,
+        int pageIndex,
+        int pageSize,
+        double distance,
+        int columns,
+        int rows,
+        int spacing
+    ) {
+        require(columns >= 1 && rows >= 1 && spacing >= 2, "Block-state sculpture returned an invalid layout.");
+        double targetY = 20.5 + (rows - 1) * spacing / 2.0;
+        double width = (columns - 1) * 2.0 + 1.0;
+        double height = (rows - 1) * spacing + (spacing > 2 ? 2.0 : 1.0);
+        double framingDistance = Math.min(32.0, Math.max(distance, Math.max(width, height) * 1.375));
+        ObjectNode body = DebugJson.MAPPER.createObjectNode();
+        body.put("block", id).put("page", pageIndex).put("pageSize", pageSize);
+        body.set("origin", localPoseJson(0.5, targetY, 0.5, 0.0f, 0.0f));
+        body.set("camera", previewCameraJson(0.5, targetY, 0.5, framingDistance));
+        return body;
+    }
+
+    private PreviewPageCapture capturePreviewPage(
+        DebugClient client,
+        ObjectNode reference,
+        String placementOperation,
+        ObjectNode placement,
+        long settleMillis,
+        long settleFrames,
+        boolean strict
+    ) throws Exception {
+        client.request("visual.prepare-reference", reference, 10_000);
+        JsonNode placementResult = client.request(placementOperation, placement, 10_000);
+        validatePreviewPlacement(placementOperation, placementResult);
+        ObjectNode flush = DebugJson.MAPPER.createObjectNode();
+        flush.put("condition", "ALL").put("timeoutMs", settleMillis);
+        try {
+            long requestDeadlineMillis = Math.min(DebugChannelServer.MAX_DEADLINE_MS, settleMillis + 5_000L);
+            client.request("render.terrain.flush-idle", flush, requestDeadlineMillis);
+        } catch (DebugClientException unavailable) {
+            String message = "Terrain did not reach the preview idle boundary: " + unavailable.getMessage();
+            if (strict) throw failure(message);
+            System.err.println(message);
+        }
+        long frameTimeoutMillis = Math.max(20_000L, Math.min(120_000L, settleFrames * 1_000L));
+        waitFrames(client, settleFrames, frameTimeoutMillis);
+
+        // A debug round trip can reopen transient UI on a focus-pausing host.
+        // Re-prepare and reapply real blocks at the capture boundary. Item
+        // functions replace display entities, so retain their settled instance.
+        client.request("visual.prepare-reference", reference, 10_000);
+        if (!placementOperation.equals("content.execute-local")) {
+            placementResult = client.request(placementOperation, placement, 10_000);
+        } else {
+            ObjectNode cameraOnly = placement.deepCopy();
+            cameraOnly.put("function", "content_preview:camera");
+            JsonNode cameraResult = client.request("content.execute-local", cameraOnly, 10_000);
+            validatePreviewPlacement("content.execute-local", cameraResult);
+            ((ObjectNode) placementResult).set("captureCamera", cameraResult);
+        }
+        DebugResponse response = client.requestWithAttachment(
+            "visual.capture", DebugJson.MAPPER.createObjectNode().put("includeScene", true), 15_000
+        );
+        require(response.hasAttachment(), "visual.capture returned no PNG.");
+        return new PreviewPageCapture(placementResult, response);
+    }
+
+    private void writePreviewCapture(Path output, DebugResponse response) throws Exception {
+        byte[] attachment = response.attachment();
+        require(attachment.length <= MAX_SCREENSHOT_FILE_BYTES, "visual.capture exceeded the screenshot byte limit.");
+        String actualHash = HexFormat.of().formatHex(digest("sha256").digest(attachment));
+        String expectedHash = response.result().path("sha256").asText("");
+        require(expectedHash.isBlank() || expectedHash.equals(actualHash),
+            "visual.capture attachment hash did not match its metadata.");
+        if (output.getParent() != null) Files.createDirectories(output.getParent());
+        Files.write(output, attachment);
+    }
+
+    static void validatePreviewPlacement(String operation, JsonNode placement) {
+        if (operation.equals("content.execute-local")) {
+            require(placement.path("executed").asInt(0) > 0,
+                "Item preview function did not execute; verify that the content-preview data pack is mounted.");
+        }
+    }
+
+    static ArrayNode configurePreviewDataPack(ArrayNode configured, Path previewPack, boolean enabled) {
+        Path normalized = previewPack.toAbsolutePath().normalize();
+        ArrayNode result = DebugJson.MAPPER.createArrayNode();
+        for (JsonNode entry : configured) {
+            String path = entry.path("path").asText("");
+            if (!path.equals(normalized.toString())) result.add(entry.deepCopy());
+        }
+        if (enabled) {
+            require(Files.isRegularFile(normalized.resolve("pack.mcmeta")), "Content-preview data pack is missing: " + normalized);
+            result.addObject().put("type", "DIRECTORY").put("path", normalized.toString());
+        }
+        return result;
+    }
+
+    private ObjectNode previewCaptureManifest(
+        PreviewAsset asset,
+        ContentStackManifest.Definition definition,
+        String scene,
+        long settleMillis,
+        long settleFrames,
+        boolean strict,
+        Path output,
+        JsonNode placement,
+        DebugResponse response
+    ) throws Exception {
+        String verifiedHash = HexFormat.of().formatHex(digest("sha256").digest(response.attachment()));
+        ObjectNode manifest = DebugJson.MAPPER.createObjectNode();
+        manifest.put("schema", 1).put("kind", "block-state-sculpture-capture")
+            .put("asset", asset.id()).put("target", asset.target()).put("contentManifest", definition.name())
+            .put("contentFingerprint", activeContentFingerprint)
+            .put("scene", scene).put("output", output.toString()).put("bytes", response.attachment().length)
+            .put("verifiedSha256", verifiedHash).put("settleMillis", settleMillis)
+            .put("settleFrames", settleFrames).put("strict", strict);
+        manifest.set("sculpture", placement.deepCopy());
+        manifest.set("capture", response.result().deepCopy());
+        return manifest;
+    }
+
+    private static Path previewPageOutput(Path output, int pageIndex, int totalPages, boolean allPages) {
+        if (!allPages || totalPages == 1) return output;
+        String fileName = output.getFileName().toString();
+        int suffix = fileName.lastIndexOf('.');
+        String stem = suffix > 0 ? fileName.substring(0, suffix) : fileName;
+        String extension = suffix > 0 ? fileName.substring(suffix) : ".png";
+        String pageName = String.format(
+            Locale.ROOT, "%s-states-%03d-of-%03d%s", stem, pageIndex + 1, totalPages, extension
+        );
+        return output.resolveSibling(pageName);
+    }
+
+    private static Path previewManifestPath(Path output) {
+        String fileName = output.getFileName().toString();
+        int suffix = fileName.lastIndexOf('.');
+        String stem = suffix > 0 ? fileName.substring(0, suffix) : fileName;
+        return output.resolveSibling(stem + ".json");
+    }
+
+    private static Path previewCaptureSetPath(Path output) {
+        String fileName = output.getFileName().toString();
+        int suffix = fileName.lastIndexOf('.');
+        String stem = suffix > 0 ? fileName.substring(0, suffix) : fileName;
+        return output.resolveSibling(stem + ".capture-set.json");
+    }
+
+    private static void writeJsonAtomic(Path output, JsonNode value) throws IOException {
+        if (output.getParent() != null) Files.createDirectories(output.getParent());
+        Path candidate = output.resolveSibling("." + output.getFileName() + ".candidate-" + ProcessHandle.current().pid());
+        try {
+            DebugJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(candidate.toFile(), value);
+            try {
+                Files.move(candidate, output, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException error) {
+                Files.move(candidate, output, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(candidate);
+        }
+    }
+
+    private record PreviewPageCapture(JsonNode placement, DebugResponse response) {}
+
+    static long parsePreviewSettleMillis(String value) {
+        long millis = parseLong(value, "--settle");
+        require(millis >= 1L && millis <= MAX_PREVIEW_SETTLE_MILLIS,
+            "--settle must be between 1 and " + MAX_PREVIEW_SETTLE_MILLIS + " milliseconds.");
+        return millis;
+    }
+
+    static long parsePreviewSettleFrames(String value) {
+        long frames = parseLong(value, "--settle-frames");
+        require(frames >= 0L && frames <= MAX_PREVIEW_SETTLE_FRAMES,
+            "--settle-frames must be between 0 and " + MAX_PREVIEW_SETTLE_FRAMES + ".");
+        return frames;
+    }
+
+    record PreviewAsset(String id, String kind, String target) {}
+
+    /** Validate the requested asset against the content queue and infer block vs item. */
+    private PreviewAsset resolvePreviewAsset(String asset, Path queueFile) throws IOException {
+        JsonNode queue = DebugJson.MAPPER.readTree(readBoundedFile(queueFile, MAX_SCENARIO_BYTES, "Content queue"));
+        return resolvePreviewAsset(asset, queue);
+    }
+
+    static PreviewAsset resolvePreviewAsset(String asset, JsonNode queue) {
+        String normalized = asset.contains(":") ? asset : "minecraft:" + asset;
+        boolean targetReference = asset.startsWith("assets/");
+        if (!targetReference) {
+            require(SAFE_RESOURCE_LOCATION.matcher(normalized).matches() && !normalized.contains("/../"),
+                "Preview asset must be a canonical resource location or an exact queue target: " + asset);
+        }
+        String pathPart = normalized.substring(normalized.indexOf(':') + 1);
+        String namespacePrefix = "assets/" + normalized.substring(0, normalized.indexOf(':')) + "/";
+        PreviewAsset best = null;
+        int bestRank = Integer.MAX_VALUE;
+        for (JsonNode entry : queue.path("entries")) {
+            String target = entry.path("target").asText("");
+            String resource = entry.path("resource").asText("");
+            boolean match = asset.equals(target)
+                || resource.equals(normalized)
+                || (target.startsWith(namespacePrefix) && (
+                    target.endsWith("/" + pathPart + ".json") || target.endsWith("/" + pathPart + ".png")
+                ));
+            if (match) {
+                String kind = target.contains("/models/item/") || target.contains("/textures/item/") ? "item" : "block";
+                PreviewAsset candidate = new PreviewAsset(targetReference ? previewId(target) : normalized, kind, target);
+                if (targetReference) return candidate;
+                int rank = previewTargetRank(target);
+                if (rank < bestRank) {
+                    best = candidate;
+                    bestRank = rank;
+                }
+            }
+        }
+        if (best != null) {
+            if (best.kind().equals("item") && hasStateSculpture(normalized)) {
+                int separator = normalized.indexOf(':');
+                String target = "assets/" + normalized.substring(0, separator)
+                    + "/blockstates/" + normalized.substring(separator + 1) + ".json";
+                return new PreviewAsset(normalized, "block", target);
+            }
+            return best;
+        }
+        require(!targetReference, "Preview queue does not contain target: " + asset);
+        // Not found in the (post-drain) queue entries: still previewable, infer kind from the id.
+        return new PreviewAsset(normalized, "block", "");
+    }
+
+    private static int previewTargetRank(String target) {
+        if (target.contains("/blockstates/")) return 0;
+        if (target.contains("/models/block/")) return 1;
+        if (target.contains("/textures/block/")) return 2;
+        if (target.contains("/models/item/")) return 3;
+        if (target.contains("/textures/item/")) return 4;
+        return 5;
+    }
+
+    private static String previewId(String target) {
+        String[] segments = target.replace('\\', '/').split("/", 4);
+        require(segments.length == 4 && segments[0].equals("assets"), "Invalid preview target: " + target);
+        String path = segments[3];
+        if (segments[2].equals("models") || segments[2].equals("textures")) {
+            require(path.startsWith("block/") || path.startsWith("item/"), "Unsupported preview target: " + target);
+            path = path.substring(path.indexOf('/') + 1);
+        } else {
+            require(segments[2].equals("blockstates"), "Unsupported preview target: " + target);
+        }
+        int suffix = path.lastIndexOf('.');
+        if (suffix > 0) path = path.substring(0, suffix);
+        String id = segments[1] + ":" + path;
+        require(SAFE_RESOURCE_LOCATION.matcher(id).matches(), "Could not derive a preview resource from target: " + target);
+        return id;
+    }
+
+    /** content.execute-local body: place the asset via the content-preview data pack, framed by the camera. */
+    private ObjectNode previewPlacementBody(PreviewAsset asset, double distance) {
+        ObjectNode body = DebugJson.MAPPER.createObjectNode();
+        body.put("function", asset.kind().equals("item") ? "content_preview:show_item" : "content_preview:show_block");
+        body.putObject("arguments").put("asset", asset.id());
+        // Origin at the block; camera pulled back toward -x/-z and angled down for a 3/4 view.
+        // A negative yaw faces the +x/+z diagonal that points back at the origin.
+        body.set("origin", localPoseJson(0.5, 20.0, 0.5, 0.0f, 0.0f));
+        body.set("camera", previewCameraJson(0.5, 20.5, 0.5, distance));
+        return body;
+    }
+
+    /** content.place-blocks body for the single-sample underwater material scene. */
+    private ObjectNode blockPlacementBody(PreviewAsset asset, double distance, String scene) {
+        require(scene.equals("underwater"), "Flat block previews use the complete registry-state sculpture operation.");
+        ObjectNode body = DebugJson.MAPPER.createObjectNode();
+        ArrayNode blocks = body.putArray("blocks");
+        final int x = 0;
+        final int y = 20;
+        final int z = 0;
+        addBlock(blocks, x, y, z, asset.id());
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dy = -2; dy <= 3; dy++) {
+                for (int dz = -3; dz <= 3; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+                    addBlock(blocks, x + dx, y + dy, z + dz, "minecraft:water");
+                }
+            }
+        }
+        body.set("origin", localPoseJson(x + 0.5, y + 0.5, z + 0.5, 0.0f, 0.0f));
+        body.set("camera", previewCameraJson(x + 0.5, y + 0.5, z + 0.5, Math.min(distance, 3.0)));
+        return body;
+    }
+
+    private static void addBlock(ArrayNode blocks, int x, int y, int z, String state) {
+        blocks.addObject().put("x", x).put("y", y).put("z", z).put("state", state);
+    }
+
+    private static String minecraftPath(String id) {
+        return id.startsWith("minecraft:") ? id.substring("minecraft:".length()) : null;
+    }
+
+    private static boolean isFence(String path) {
+        return path.endsWith("_fence") && !path.endsWith("_fence_gate");
+    }
+
+    private static boolean isPane(String path) {
+        return path.endsWith("_pane") || path.equals("iron_bars");
+    }
+
+    private static boolean hasAxis(String path) {
+        return path.endsWith("_log") || path.endsWith("_wood") || path.endsWith("_stem")
+            || path.endsWith("_hyphae") || path.endsWith("_pillar") || path.equals("basalt")
+            || path.equals("polished_basalt") || path.equals("bone_block") || path.equals("hay_block");
+    }
+
+    private static boolean hasStateSculpture(String id) {
+        String path = minecraftPath(id);
+        return path != null && (isFence(path) || isPane(path) || path.endsWith("_wall")
+            || path.endsWith("_stairs") || path.endsWith("_door") || path.endsWith("_trapdoor")
+            || path.endsWith("_slab") || path.endsWith("_fence_gate") || path.equals("redstone_wire")
+            || path.equals("rail") || path.endsWith("_rail") || hasAxis(path));
+    }
+
+    static ObjectNode previewCameraJson(double targetX, double targetY, double targetZ, double distance) {
+        double back = distance / Math.sqrt(2.0);
+        double height = distance * 0.4;
+        float pitch = (float) Math.toDegrees(Math.atan2(height, distance));
+        return localPoseJson(targetX - back, targetY + height, targetZ - back, -45.0f, pitch);
+    }
+
+    private static ObjectNode localPoseJson(double x, double y, double z, float yaw, float pitch) {
+        ObjectNode pose = DebugJson.MAPPER.createObjectNode();
+        pose.put("x", x).put("y", y).put("z", z).put("yaw", yaw).put("pitch", pitch);
+        return pose;
+    }
+
+    private void runContentQueue(List<String> rawArguments) throws Exception {
+        List<String> arguments = new ArrayList<>(rawArguments);
+        String name = null;
+        String manifestReference = "standalone";
+        String stage = "";
+        Path output = null;
+        Path explicitAudit = null;
+        boolean json = false;
+        boolean voxelibre = false;
+        boolean authoring = false;
+        boolean csv = false;
+        Path csvOutput = null;
+        int top = -1;
+        List<ContentPackComposer.Source> overlays = new ArrayList<>();
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            if (option.equals("--manifest")) {
+                require(!arguments.isEmpty(), "--manifest requires a content stack name or path.");
+                manifestReference = arguments.remove(0);
+            } else if (option.startsWith("--manifest=")) {
+                manifestReference = option.substring("--manifest=".length());
+            } else if (option.equals("--no-manifest")) {
+                manifestReference = "";
+            } else if (option.equals("--stage")) {
+                require(!arguments.isEmpty(), "--stage requires a source label.");
+                stage = arguments.remove(0);
+            } else if (option.startsWith("--stage=")) {
+                stage = option.substring("--stage=".length());
+            } else if (option.equals("--name")) {
+                require(!arguments.isEmpty(), "--name requires a content stack name.");
+                name = arguments.remove(0);
+            } else if (option.startsWith("--name=")) {
+                name = option.substring("--name=".length());
+            } else if (option.equals("--voxelibre")) {
+                voxelibre = true;
+            } else if (option.equals("--voxelibre-root")) {
+                require(!arguments.isEmpty(), "--voxelibre-root requires a directory.");
+                voxelibreRoot = resolveProjectPath(arguments.remove(0));
+                voxelibre = true;
+            } else if (option.startsWith("--voxelibre-root=")) {
+                voxelibreRoot = resolveProjectPath(option.substring("--voxelibre-root=".length()));
+                voxelibre = true;
+            } else if (option.equals("--source")) {
+                require(!arguments.isEmpty(), "--source requires TYPE=PATH.");
+                overlays.add(parseContentSource(arguments.remove(0)));
+            } else if (option.startsWith("--source=")) {
+                overlays.add(parseContentSource(option.substring("--source=".length())));
+            } else if (option.equals("--mods")) {
+                require(!arguments.isEmpty(), "--mods requires a mod JAR or directory.");
+                overlays.add(new ContentPackComposer.Source(ContentPackComposer.SourceType.MODS, resolveProjectPath(arguments.remove(0)), "cli-mods"));
+            } else if (option.startsWith("--mods=")) {
+                overlays.add(new ContentPackComposer.Source(ContentPackComposer.SourceType.MODS, resolveProjectPath(option.substring("--mods=".length())), "cli-mods"));
+            } else if (option.equals("--faithful-pack")) {
+                require(!arguments.isEmpty(), "--faithful-pack requires a ZIP or resource-pack directory.");
+                Path path = resolveProjectPath(arguments.remove(0));
+                overlays.add(contentSource(path, "faithful-overlay"));
+            } else if (option.startsWith("--faithful-pack=")) {
+                Path path = resolveProjectPath(option.substring("--faithful-pack=".length()));
+                overlays.add(contentSource(path, "faithful-overlay"));
+            } else if (option.equals("--output")) {
+                require(!arguments.isEmpty(), "--output requires a JSON file path.");
+                output = resolveProjectPath(arguments.remove(0));
+            } else if (option.startsWith("--output=")) {
+                output = resolveProjectPath(option.substring("--output=".length()));
+            } else if (option.equals("--audit")) {
+                require(!arguments.isEmpty(), "--audit requires a JSON file or directory.");
+                explicitAudit = resolveProjectPath(arguments.remove(0));
+            } else if (option.startsWith("--audit=")) {
+                explicitAudit = resolveProjectPath(option.substring("--audit=".length()));
+            } else if (option.equals("--top")) {
+                require(!arguments.isEmpty(), "--top requires a non-negative integer.");
+                top = parseTop(arguments.remove(0));
+            } else if (option.startsWith("--top=")) {
+                top = parseTop(option.substring("--top=".length()));
+            } else if (option.equals("--authoring")) {
+                authoring = true;
+            } else if (option.equals("--csv")) {
+                csv = true;
+            } else if (option.equals("--csv-output")) {
+                require(!arguments.isEmpty(), "--csv-output requires a file path.");
+                csvOutput = resolveProjectPath(arguments.remove(0));
+            } else if (option.startsWith("--csv-output=")) {
+                csvOutput = resolveProjectPath(option.substring("--csv-output=".length()));
+            } else if (option.equals("--json")) {
+                json = true;
+            } else {
+                throw failure("Unknown content queue option: " + option);
+            }
+        }
+
+        Path audit = explicitAudit;
+        List<ContentSubmissionQueue.SelectionSource> selectionSources = new ArrayList<>();
+        List<ContentPackComposer.Source> sources = new ArrayList<>();
+        require(explicitAudit == null || manifestReference.isBlank(), "--audit is only valid with --no-manifest.");
+        if (!manifestReference.isBlank()) {
+            ContentStackManifest.Definition definition = readContentStack(manifestReference);
+            if (name == null) name = definition.name();
+            for (ContentStackManifest.Source source : definition.sources()) {
+                if (source.type().equals("generated")) {
+                    List<Path> paths = contentSourcePaths(source);
+                    require(paths.size() <= 1, "Generated content source '" + source.label() + "' accepts at most one audit file or directory.");
+                    if (audit == null) audit = paths.isEmpty() ? null : paths.getFirst();
+                }
+            }
+            PreparedPack pack = definition.managedModpack().isBlank() ? null : prepareModpack(definition.managedModpack(), trajectory);
+            sources.addAll(expandContentStack(definition, pack, stage));
+        }
+        for (ContentPackComposer.Source source : sources) {
+            if (source.label().startsWith("generated-compatibility")) continue;
+            selectionSources.add(new ContentSubmissionQueue.SelectionSource(source.label(), source.path()));
+        }
+        for (ContentPackComposer.Source overlay : overlays) {
+            selectionSources.add(new ContentSubmissionQueue.SelectionSource(overlay.label(), overlay.path()));
+        }
+        require(audit != null, "Content queue requires a manifest 'generated' audit source or --audit PATH.");
+        require(Files.exists(audit), "Content queue audit source is missing: " + audit);
+        require(name != null, "--name is required with --no-manifest.");
+        validateName("content stack", name);
+
+        if (voxelibre) {
+            ContentPackAdapter.Result adapted = ContentPackAdapter.prepareVoxeLibre(voxelibreRoot, modpackStore);
+            sources.add(0, new ContentPackComposer.Source(ContentPackComposer.SourceType.DIRECTORY, adapted.resourcePack(), "voxelibre-base"));
+            selectionSources.add(0, new ContentSubmissionQueue.SelectionSource("voxelibre-base", adapted.resourcePack()));
+        }
+        sources.addAll(overlays);
+        require(!sources.isEmpty(), "Content queue requires at least one composed source.");
+
+        ContentPackComposer.Result composed = ContentPackComposer.compose(sources, modpackStore, name);
+        GeneratedContentPack.Result generated = GeneratedContentPack.prepare(audit, modpackStore);
+        ContentSubmissionQueue.Result queue = ContentSubmissionQueue.prepare(audit, generated.resourcePack(), composed.resourcePack(), selectionSources);
+        if (output == null) {
+            output = runDirectory.resolve("content-queues").resolve(name + ".json");
+        }
+        require(output.getFileName() != null && output.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".json"),
+            "content queue output must be a .json file: " + output);
+        Files.createDirectories(output.getParent());
+        Path candidate = output.resolveSibling(output.getFileName() + ".candidate-" + ProcessHandle.current().pid());
+        try {
+            DebugJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(candidate.toFile(), ContentSubmissionQueue.toJson(queue));
+            try {
+                Files.move(candidate, output, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(candidate, output, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(candidate);
+        }
+
+        ObjectNode result = DebugJson.MAPPER.createObjectNode();
+        result.put("name", name).put("fingerprint", queue.fingerprint())
+            .put("audits", queue.audits())
+            .put("generate", queue.generate()).put("select", queue.select())
+            .put("selectWithCandidates", queue.selectCandidates()).put("selectUnavailable", queue.selectUnavailable())
+            .put("resolved", queue.resolved())
+            .put("total", queue.entries().size()).put("output", output.toAbsolutePath().normalize().toString());
+        if (top >= 0) {
+            ObjectNode topNode = ContentSubmissionQueue.topJson(
+                ContentSubmissionQueue.top(queue.entries(), top, authoring),
+                authoring ? ContentSubmissionQueue.AUTHORING_RULE : ContentSubmissionQueue.RANKING_RULE);
+            result.set("ranking", topNode);
+        }
+        printDebugJson(result, json);
+        if (csv) {
+            if (csvOutput == null) {
+                csvOutput = runDirectory.resolve("content-queues").resolve(name + ".csv");
+            }
+            require(csvOutput.getFileName() != null && csvOutput.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".csv"),
+                "content queue CSV output must be a .csv file: " + csvOutput);
+            Files.createDirectories(csvOutput.getParent());
+            Path csvCandidate = csvOutput.resolveSibling(csvOutput.getFileName() + ".candidate-" + ProcessHandle.current().pid());
+            try {
+                Files.writeString(csvCandidate, ContentSubmissionQueue.toCsv(queue), StandardCharsets.UTF_8);
+                try {
+                    Files.move(csvCandidate, csvOutput, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException ignored) {
+                    Files.move(csvCandidate, csvOutput, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } finally {
+                Files.deleteIfExists(csvCandidate);
+            }
+            System.out.println("CSV: " + csvOutput.toAbsolutePath().normalize());
+        }
+    }
+
+    private int parseTop(String value) {
+        try {
+            int parsed = Integer.parseInt(value.trim());
+            require(parsed >= 0, "--top must be a non-negative integer: " + value);
+            return parsed;
+        } catch (NumberFormatException error) {
+            throw failure("--top must be a non-negative integer: " + value);
+        }
+    }
+
+    private void runContentAudit(List<String> arguments) throws Exception {
+        DebugSelection selection = parseDebugSelection(arguments);
+        require(selection.role == null || selection.role == DebugEndpointRole.CLIENT,
+            "content audit requires a client endpoint.");
+        Path output = null;
+        String stage = null;
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            if (option.equals("--output")) {
+                require(!arguments.isEmpty(), "--output requires a JSON file path.");
+                output = resolveProjectPath(arguments.remove(0));
+            } else if (option.startsWith("--output=")) {
+                output = resolveProjectPath(option.substring("--output=".length()));
+            } else if (option.equals("--stage")) {
+                require(!arguments.isEmpty(), "--stage requires a stable audit stage name.");
+                stage = arguments.remove(0);
+            } else if (option.startsWith("--stage=")) {
+                stage = option.substring("--stage=".length());
+            } else {
+                throw failure("Unknown content audit option: " + option);
+            }
+        }
+        if (stage != null) validateName("content audit stage", stage);
+        if (output == null) {
+            output = stage == null
+                ? runDirectory.resolve("content-audits").resolve(selection.trajectory + ".json")
+                : runDirectory.resolve("content-audits").resolve(selection.trajectory + "-stages").resolve(stage + ".json");
+        }
+        require(output.getFileName() != null && output.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".json"),
+            "content audit output must be a .json file: " + output);
+
+        DebugDiscovery discovery = new DebugDiscovery(DebugPaths.system());
+        DebugEndpointDescriptor endpoint = selectDebugEndpoint(discovery, selection, DebugEndpointRole.CLIENT);
+        JsonNode report;
+        try (DebugClient client = DebugClient.connect(DebugPaths.system(), endpoint)) {
+            report = client.request("content.audit", DebugJson.MAPPER.createObjectNode(), 10_000);
+        }
+
+        Files.createDirectories(output.getParent());
+        Path candidate = output.resolveSibling(output.getFileName() + ".candidate-" + ProcessHandle.current().pid());
+        try {
+            DebugJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(candidate.toFile(), report);
+            try {
+                Files.move(candidate, output, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(candidate, output, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(candidate);
+        }
+
+        ObjectNode result = DebugJson.MAPPER.createObjectNode();
+        result.put("trajectory", endpoint.getTrajectory());
+        result.put("generation", endpoint.getGeneration());
+        result.put("fingerprint", report.path("fingerprint").asText());
+        result.put("complete", report.path("complete").asBoolean());
+        if (stage != null) result.put("stage", stage);
+        result.set("counts", report.path("counts").deepCopy());
+        result.put("output", output.toAbsolutePath().normalize().toString());
+        printDebugJson(result, selection.json);
     }
 
     private void runDiagnose(List<String> rawArguments) throws IOException {
@@ -1675,7 +2630,29 @@ public final class Play {
                     String operation = requiredText(step, "operation");
                     JsonNode body = step.has("body") ? step.path("body") : DebugJson.MAPPER.createObjectNode();
                     long deadlineMs = step.path("deadlineMs").asLong(5_000);
-                    JsonNode result = scenarioRequest(role, operation, body, deadlineMs);
+                    JsonNode expectedError = step.path("expectError");
+                    JsonNode result;
+                    if (expectedError.isMissingNode() || expectedError.isNull()) {
+                        result = scenarioRequest(role, operation, body, deadlineMs);
+                    } else {
+                        require(expectedError.isObject(), "Scenario expectError must be an object.");
+                        String expectedCode = requiredText(expectedError, "code");
+                        try {
+                            JsonNode unexpected = scenarioRequest(role, operation, body, deadlineMs);
+                            throw failure("Expected debug error " + expectedCode + ", got successful result: " + unexpected);
+                        } catch (DebugClientException error) {
+                            require(expectedCode.equals(error.code()),
+                                "Expected debug error " + expectedCode + ", got " + error.code() + ": " + error.getMessage());
+                            if (expectedError.has("messageContains")) {
+                                String expectedMessage = requiredText(expectedError, "messageContains");
+                                require(error.getMessage() != null && error.getMessage().contains(expectedMessage),
+                                    "Expected debug error message containing '" + expectedMessage + "', got: " + error.getMessage());
+                            }
+                            ObjectNode errorResult = DebugJson.MAPPER.createObjectNode();
+                            errorResult.put("code", error.code()).put("message", error.getMessage());
+                            result = errorResult;
+                        }
+                    }
                     report.set("result", result);
                     assertScenario(result, step.path("assert"));
                 }
@@ -1747,11 +2724,25 @@ public final class Play {
     }
 
     private DebugEndpointDescriptor selectedEndpoint(DebugEndpointRole role) throws IOException {
-        DebugSelection selection = new DebugSelection();
-        selection.role = role;
-        selection.trajectory = trajectory;
-        selection.trajectorySpecified = true;
-        return selectDebugEndpoint(new DebugDiscovery(DebugPaths.system()), selection, role);
+        return selectedEndpoint(role, null);
+    }
+
+    private DebugEndpointDescriptor selectedEndpoint(DebugEndpointRole role, Long expectedPid) throws IOException {
+        List<DebugEndpointDescriptor> endpoints = new DebugDiscovery(DebugPaths.system()).list(true).stream()
+            .filter(endpoint -> endpoint.getRole() == role)
+            .filter(endpoint -> endpoint.getTrajectory().equals(trajectory))
+            .filter(endpoint -> expectedPid == null || endpoint.getPid() == expectedPid)
+            .sorted(Comparator.comparingInt(DebugEndpointDescriptor::getGeneration).reversed()
+                .thenComparing(DebugEndpointDescriptor::getProcessStart, Comparator.reverseOrder()))
+            .collect(Collectors.toList());
+        require(!endpoints.isEmpty(), "No live debug endpoint matched trajectory " + trajectory
+            + " and role " + role.wireName()
+            + (expectedPid == null ? "." : " for PID " + expectedPid + "."));
+        if (expectedPid == null && endpoints.size() > 1
+            && endpoints.get(0).getGeneration() == endpoints.get(1).getGeneration()) {
+            throw failure("Multiple debug endpoints match; select one with --endpoint. Use './play.sh debug endpoints'.");
+        }
+        return endpoints.get(0);
     }
 
     private static DebugEndpointRole parseRole(String value) {
@@ -2057,7 +3048,7 @@ public final class Play {
         }
         if (node.isObject()) {
             ObjectNode result = DebugJson.MAPPER.createObjectNode();
-            node.fields().forEachRemaining(entry -> result.set(entry.getKey(), substitute(entry.getValue(), variables)));
+            node.properties().forEach(entry -> result.set(entry.getKey(), substitute(entry.getValue(), variables)));
             return result;
         }
         return node.deepCopy();
@@ -2092,6 +3083,9 @@ public final class Play {
     }
 
     private static String conciseError(Throwable error) {
+        if (error instanceof DebugClientException debug) {
+            return "DebugClientException[" + debug.code() + "]: " + debug.getMessage();
+        }
         String message = error.getMessage();
         return error.getClass().getSimpleName() + (message == null || message.isBlank() ? "" : ": " + message);
     }
@@ -2169,6 +3163,74 @@ public final class Play {
             installDistribution();
             runInherited(List.of(javaBin.toString(), "-cp", project.resolve("build/install/minosoft/lib/*").toString(), FABRIC_PREFLIGHT, pack.view.toString()), project);
         }
+    }
+
+    private void runSetup(List<String> rawArguments) throws Exception {
+        List<String> arguments = new ArrayList<>(rawArguments);
+        String action = arguments.isEmpty() ? "list" : arguments.remove(0);
+        require(action.equals("list"), "Unknown setup action: " + action);
+        boolean json = false;
+        while (!arguments.isEmpty()) {
+            String option = arguments.remove(0);
+            if (option.equals("--json")) json = true;
+            else throw failure("Unknown setup list option: " + option);
+        }
+
+        List<ExistingSetup> setups = discoverExistingSetups(modpackStore);
+        if (json) {
+            ObjectNode result = DebugJson.MAPPER.createObjectNode();
+            result.put("schema", 1).put("store", modpackStore.toString()).put("count", setups.size());
+            ArrayNode values = result.putArray("setups");
+            for (ExistingSetup setup : setups) {
+                ObjectNode value = values.addObject();
+                value.put("trajectory", setup.trajectory()).put("modpack", setup.modpack())
+                    .put("path", setup.path().toString())
+                    .put("defined", Files.isRegularFile(modpacksDirectory.resolve(setup.modpack()).resolve("pack.toml")))
+                    .put("command", "./play.sh dev --modpack " + setup.modpack() + " --trajectory " + setup.trajectory());
+            }
+            printDebugJson(result, true);
+            return;
+        }
+
+        if (setups.isEmpty()) {
+            System.out.println("No existing setups found under " + modpackStore.resolve("trajectories") + ".");
+            return;
+        }
+        System.out.printf("%-40s %s%n", "TRAJECTORY", "MODPACK");
+        for (ExistingSetup setup : setups) System.out.printf("%-40s %s%n", setup.trajectory(), setup.modpack());
+    }
+
+    static List<ExistingSetup> discoverExistingSetups(Path store) throws IOException {
+        Path trajectories = store.resolve("trajectories");
+        if (!Files.isDirectory(trajectories) || Files.isSymbolicLink(trajectories)) return List.of();
+
+        List<ExistingSetup> setups = new ArrayList<>();
+        try (var trajectoryEntries = Files.list(trajectories)) {
+            List<Path> trajectoryDirectories = trajectoryEntries
+                .filter(path -> Files.isDirectory(path) && !Files.isSymbolicLink(path))
+                .filter(path -> SAFE_NAME.matcher(path.getFileName().toString()).matches())
+                .sorted()
+                .collect(Collectors.toList());
+            for (Path trajectoryDirectory : trajectoryDirectories) {
+                try (var packEntries = Files.list(trajectoryDirectory)) {
+                    List<Path> packDirectories = packEntries
+                        .filter(path -> Files.isDirectory(path) && !Files.isSymbolicLink(path))
+                        .filter(path -> SAFE_NAME.matcher(path.getFileName().toString()).matches())
+                        .filter(path -> Files.isDirectory(path.resolve("home")) && Files.isDirectory(path.resolve("profiles")))
+                        .sorted()
+                        .collect(Collectors.toList());
+                    for (Path packDirectory : packDirectories) {
+                        require(setups.size() < 10_000, "The setup store contains more than 10000 trajectory/modpack pairs.");
+                        setups.add(new ExistingSetup(
+                            trajectoryDirectory.getFileName().toString(),
+                            packDirectory.getFileName().toString(),
+                            packDirectory
+                        ));
+                    }
+                }
+            }
+        }
+        return List.copyOf(setups);
     }
 
     private void runModpackCache(List<String> arguments) throws Exception {
@@ -2642,6 +3704,45 @@ public final class Play {
                 canaryEnabled = true;
             } else if (option.equals("--local-world")) {
                 localWorld = true;
+            } else if (option.equals("--content-provider")) {
+                require(!arguments.isEmpty(), "--content-provider requires voxelibre or none.");
+                contentProvider = normalizeContentProvider(arguments.remove(0));
+            } else if (option.startsWith("--content-provider=")) {
+                contentProvider = normalizeContentProvider(option.substring("--content-provider=".length()));
+            } else if (option.equals("--content-stack")) {
+                require(!arguments.isEmpty(), "--content-stack requires a manifest name or path.");
+                contentStackName = arguments.remove(0);
+            } else if (option.startsWith("--content-stack=")) {
+                contentStackName = option.substring("--content-stack=".length());
+            } else if (option.equals("--content-stage")) {
+                require(!arguments.isEmpty(), "--content-stage requires a manifest source label.");
+                contentStage = arguments.remove(0);
+            } else if (option.startsWith("--content-stage=")) {
+                contentStage = option.substring("--content-stage=".length());
+            } else if (option.equals("--voxelibre-root")) {
+                require(!arguments.isEmpty(), "--voxelibre-root requires a directory.");
+                voxelibreRoot = resolveProjectPath(arguments.remove(0));
+            } else if (option.startsWith("--voxelibre-root=")) {
+                voxelibreRoot = resolveProjectPath(option.substring("--voxelibre-root=".length()));
+            } else if (option.equals("--faithful-pack")) {
+                require(!arguments.isEmpty(), "--faithful-pack requires a ZIP or resource-pack directory.");
+                faithfulPacks.add(resolveProjectPath(arguments.remove(0)));
+            } else if (option.startsWith("--faithful-pack=")) {
+                faithfulPacks.add(resolveProjectPath(option.substring("--faithful-pack=".length())));
+            } else if (option.equals("--content-source")) {
+                require(!arguments.isEmpty(), "--content-source requires TYPE=PATH.");
+                contentSources.add(parseContentSource(arguments.remove(0)));
+            } else if (option.startsWith("--content-source=")) {
+                contentSources.add(parseContentSource(option.substring("--content-source=".length())));
+            } else if (option.equals("--content-mods")) {
+                require(!arguments.isEmpty(), "--content-mods requires a mod JAR or directory.");
+                Path path = resolveProjectPath(arguments.remove(0));
+                contentSources.add(new ContentPackComposer.Source(ContentPackComposer.SourceType.MODS, path, "cli-mods"));
+            } else if (option.startsWith("--content-mods=")) {
+                Path path = resolveProjectPath(option.substring("--content-mods=".length()));
+                contentSources.add(new ContentPackComposer.Source(ContentPackComposer.SourceType.MODS, path, "cli-mods"));
+            } else if (option.equals("--standalone-content")) {
+                standaloneContent = true;
             } else if (option.equals("--debug-gpu-memory-leaks")) {
                 debugGpuMemoryLeaks = true;
             } else if (option.equals("--world-seed")) {
@@ -2665,6 +3766,28 @@ public final class Play {
         require(normalized.isEmpty() || Set.of("flat", "debug", "void", "tech_reborn").contains(normalized),
             "World generator must be flat, debug, void, or tech_reborn.");
         return normalized;
+    }
+
+    private String normalizeContentProvider(String value) {
+        String normalized = value.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+        require(normalized.isEmpty() || normalized.equals("none") || normalized.equals("voxelibre"),
+            "Content provider must be voxelibre or none.");
+        return normalized.equals("none") ? "" : normalized;
+    }
+
+    private void addConfiguredPaths(List<Path> output, String configured) {
+        if (configured == null || configured.isBlank()) return;
+        for (String value : configured.split(Pattern.quote(System.getProperty("path.separator")))) {
+            if (!value.isBlank()) output.add(resolveProjectPath(value));
+        }
+    }
+
+    private ContentPackComposer.Source parseContentSource(String value) {
+        int separator = value.indexOf('=');
+        require(separator > 0 && separator + 1 < value.length(), "--content-source requires TYPE=PATH.");
+        ContentPackComposer.SourceType type = ContentPackComposer.SourceType.parse(value.substring(0, separator));
+        Path path = resolveProjectPath(value.substring(separator + 1));
+        return new ContentPackComposer.Source(type, path, "cli-" + type.name().toLowerCase(Locale.ROOT));
     }
 
     private String selectedWorldGenerator() {
@@ -2909,7 +4032,10 @@ public final class Play {
             System.out.printf("Starting Minosoft and connecting to %s (log: %s)...%n", serverAddress, clientLog);
         }
         Map<String, String> childEnvironment = new HashMap<>();
-        if (
+        if (suppressManagedShaderPack) {
+            childEnvironment.put("MINOSOFT_SHADER_PACK", "");
+            childEnvironment.put("MINOSOFT_SHADER_OPTIONS", "");
+        } else if (
             pack != null &&
             pack.shaderPack != null &&
             environment.getOrDefault("MINOSOFT_SHADER_PACK", "").isBlank()
@@ -2917,6 +4043,7 @@ public final class Play {
             childEnvironment.put("MINOSOFT_SHADER_PACK", pack.shaderPack.toString());
         }
         if (
+            !suppressManagedShaderPack &&
             pack != null &&
             pack.shaderOptions != null &&
             !pack.shaderOptions.isBlank() &&
@@ -2943,7 +4070,47 @@ public final class Play {
     }
 
     private void materializeAssetProfile(PreparedPack pack) throws Exception {
+        activeContentFingerprint = "";
         Path profile = pack.instance.resolve("profiles/minosoft/resources/Default.json");
+        List<Path> managedResourcePacks = new ArrayList<>();
+        ContentPackAdapter.Result adapted = null;
+        ContentPackComposer.Result composed = null;
+        if (contentProvider.equals("voxelibre")) {
+            adapted = ContentPackAdapter.prepareVoxeLibre(voxelibreRoot, modpackStore);
+            System.out.printf(
+                "Prepared VoxeLibre content adapter %s with %,d mapped textures from %s.%n",
+                adapted.fingerprint().substring(0, 12), adapted.mappedTextures(), voxelibreRoot
+            );
+        }
+        boolean composeContent = contentStack != null || adapted != null || standaloneContent || !contentSources.isEmpty() || !faithfulPacks.isEmpty();
+        if (composeContent) {
+            List<ContentPackComposer.Source> sources = new ArrayList<>();
+            if (contentStack != null) {
+                sources.addAll(expandContentStack(contentStack, pack, contentStage));
+            } else {
+                if (adapted != null) {
+                    sources.add(new ContentPackComposer.Source(ContentPackComposer.SourceType.DIRECTORY, adapted.resourcePack(), "voxelibre-base"));
+                }
+                sources.add(new ContentPackComposer.Source(ContentPackComposer.SourceType.MODS, pack.view.resolve("mods"), "managed-mod-assets"));
+                for (Path resourcePack : pack.resourcePacks) sources.add(contentSource(resourcePack, "managed-resource-pack"));
+            }
+            for (PreparedContentFixture fixture : pack.contentFixtures) {
+                sources.add(new ContentPackComposer.Source(ContentPackComposer.SourceType.DIRECTORY, fixture.resources, "fixture:" + fixture.id));
+            }
+            sources.addAll(contentSources);
+            for (Path faithful : faithfulPacks) sources.add(contentSource(faithful, "faithful-overlay"));
+            String stackName = contentStack != null ? contentStack.name() : (contentProvider.isBlank() ? "local" : contentProvider);
+            composed = ContentPackComposer.compose(sources, modpackStore, stackName);
+            activeContentFingerprint = composed.fingerprint();
+            managedResourcePacks.add(composed.resourcePack());
+            System.out.printf(
+                "Composed content stack %s with %,d processed files (%,d bytes) from %,d ordered sources.%n",
+                composed.fingerprint().substring(0, 12), composed.files(), composed.bytes(), composed.sources().size()
+            );
+        } else {
+            managedResourcePacks.addAll(pack.resourcePacks);
+            for (PreparedContentFixture fixture : pack.contentFixtures) managedResourcePacks.add(fixture.resources);
+        }
         ObjectNode root;
         if (Files.isRegularFile(profile)) {
             JsonNode parsed = DebugJson.MAPPER.readTree(profile.toFile());
@@ -2961,29 +4128,54 @@ public final class Play {
         } else {
             assets = root.putObject("assets");
         }
+        Set<Path> previouslyManaged = new HashSet<>();
+        JsonNode previousManagedNode = assets.get("play_managed_resource_packs");
+        if (previousManagedNode != null && previousManagedNode.isArray()) {
+            for (JsonNode value : previousManagedNode) {
+                try {
+                    previouslyManaged.add(Path.of(value.asText()).toAbsolutePath().normalize());
+                } catch (RuntimeException ignored) {
+                }
+            }
+        }
         ArrayNode preserved = DebugJson.MAPPER.createArrayNode();
         JsonNode existingPacks = assets.get("resource_packs");
         if (existingPacks != null && existingPacks.isArray()) {
             for (JsonNode existing : existingPacks) {
                 String path = existing.path("path").asText("");
-                if (path.isBlank() || !isLauncherManagedPack(path)) {
+                boolean wasManaged = false;
+                try {
+                    wasManaged = previouslyManaged.contains(Path.of(path).toAbsolutePath().normalize());
+                } catch (RuntimeException ignored) {
+                }
+                if (path.isBlank() || (!isLauncherManagedPack(path) && !wasManaged)) {
                     preserved.add(existing.deepCopy());
                 }
             }
         }
 
         ArrayNode configured = assets.putArray("resource_packs");
-        for (Path resourcePack : pack.resourcePacks) {
+        for (Path resourcePack : managedResourcePacks) {
             ObjectNode entry = configured.addObject();
-            entry.put("type", "ZIP");
+            entry.put("type", Files.isDirectory(resourcePack) ? "DIRECTORY" : "ZIP");
             entry.put("path", resourcePack.toAbsolutePath().normalize().toString());
         }
-        for (PreparedContentFixture fixture : pack.contentFixtures) {
-            ObjectNode entry = configured.addObject();
-            entry.put("type", "DIRECTORY");
-            entry.put("path", fixture.resources.toAbsolutePath().normalize().toString());
-        }
         configured.addAll(preserved);
+        ArrayNode managedPaths = assets.putArray("play_managed_resource_packs");
+        for (Path resourcePack : managedResourcePacks) {
+            managedPaths.add(resourcePack.toAbsolutePath().normalize().toString());
+        }
+        if (composed != null && standaloneContent) {
+            assets.put("disable_index_assets", true);
+            assets.put("disable_jar_assets", true);
+            assets.put("play_content_provider", contentProvider.isBlank() ? "composed" : contentProvider);
+            assets.put("play_content_fingerprint", composed.fingerprint());
+        } else if (!assets.path("play_content_provider").asText("").isBlank()) {
+            assets.put("disable_index_assets", false);
+            assets.put("disable_jar_assets", false);
+            assets.remove("play_content_provider");
+            assets.remove("play_content_fingerprint");
+        }
 
         ArrayNode preservedData = DebugJson.MAPPER.createArrayNode();
         JsonNode existingDataPacks = assets.get("data_packs");
@@ -3002,6 +4194,8 @@ public final class Play {
             entry.put("path", fixture.dataPacks.toAbsolutePath().normalize().toString());
         }
         configuredData.addAll(preservedData);
+        configuredData = configurePreviewDataPack(configuredData, project.resolve("acceptance/datapacks/content-preview"), itemPreviewDataPack);
+        assets.set("data_packs", configuredData);
 
         Files.createDirectories(profile.getParent());
         Path candidate = profile.resolveSibling("." + profile.getFileName() + ".resourcepacks." + ProcessHandle.current().pid());
@@ -3012,8 +4206,8 @@ public final class Play {
             Files.move(candidate, profile, StandardCopyOption.REPLACE_EXISTING);
         }
         System.out.println(
-            "Configured " + (pack.resourcePacks.size() + pack.contentFixtures.size())
-                + " managed resource pack(s) and " + pack.contentFixtures.size()
+            "Configured " + managedResourcePacks.size()
+                + " managed resource pack(s) and " + (pack.contentFixtures.size() + (itemPreviewDataPack ? 1 : 0))
                 + " managed data pack(s) in " + profile + "."
         );
     }
@@ -3024,6 +4218,100 @@ public final class Play {
         } catch (RuntimeException ignored) {
             return false;
         }
+    }
+
+    private ContentPackComposer.Source contentSource(Path path, String label) {
+        path = path.toAbsolutePath().normalize();
+        ContentPackComposer.SourceType type = Files.isDirectory(path)
+            ? ContentPackComposer.SourceType.DIRECTORY
+            : ContentPackComposer.SourceType.ARCHIVE;
+        return new ContentPackComposer.Source(type, path, label + ":" + path.getFileName());
+    }
+
+    private ContentStackManifest.Definition readContentStack(String reference) throws IOException {
+        Path path = Path.of(reference);
+        if (!path.isAbsolute() && path.getNameCount() == 1) path = contentStacksDirectory.resolve(reference.endsWith(".json") ? reference : reference + ".json");
+        else path = resolveProjectPath(reference);
+        return ContentStackManifest.read(path);
+    }
+
+    private List<ContentPackComposer.Source> expandContentStack(
+        ContentStackManifest.Definition definition,
+        PreparedPack pack,
+        String requestedStage
+    ) throws Exception {
+        List<ContentPackComposer.Source> sources = new ArrayList<>();
+        String stage = requestedStage == null ? "" : requestedStage.trim();
+        boolean stageFound = stage.isEmpty();
+        for (ContentStackManifest.Source source : definition.sources()) {
+            switch (source.type()) {
+                case "generated" -> {
+                    List<Path> paths = contentSourcePaths(source);
+                    require(paths.size() <= 1, "Generated content source '" + source.label() + "' accepts at most one audit file or directory.");
+                    Path audit = paths.isEmpty() ? null : paths.getFirst();
+                    if (audit != null && !Files.exists(audit)) {
+                        if (source.optional()) audit = null;
+                        else throw failure("Required generated content audit source is missing: " + audit);
+                    }
+                    GeneratedContentPack.Result generated = GeneratedContentPack.prepare(audit, modpackStore);
+                    sources.add(new ContentPackComposer.Source(
+                        ContentPackComposer.SourceType.DIRECTORY,
+                        generated.resourcePack(),
+                        source.label()
+                    ));
+                }
+                case "voxelibre" -> {
+                    Path root = contentSourcePaths(source).stream().findFirst().orElseThrow(() -> failure(
+                        "Content source '" + source.label() + "' did not resolve a VoxeLibre root."
+                    ));
+                    ContentPackAdapter.Result adapted = ContentPackAdapter.prepareVoxeLibre(root, modpackStore);
+                    sources.add(new ContentPackComposer.Source(ContentPackComposer.SourceType.DIRECTORY, adapted.resourcePack(), source.label()));
+                }
+                case "managed_mods" -> {
+                    require(pack != null, "Content source '" + source.label() + "' requires the manifest's managed_modpack.");
+                    sources.add(new ContentPackComposer.Source(ContentPackComposer.SourceType.MODS, pack.view.resolve("mods"), source.label()));
+                }
+                case "managed_resource_packs" -> {
+                    require(pack != null, "Content source '" + source.label() + "' requires the manifest's managed_modpack.");
+                    for (Path resourcePack : pack.resourcePacks) sources.add(contentSource(resourcePack, source.label()));
+                }
+                case "managed_resource_pack" -> {
+                    require(pack != null, "Content source '" + source.label() + "' requires the manifest's managed_modpack.");
+                    Path selected = pack.resourcePacks.stream()
+                        .filter(path -> path.getFileName().toString().equals(source.artifact()))
+                        .findFirst()
+                        .orElseThrow(() -> failure(
+                            "Managed resource pack '" + source.artifact() + "' required by source '" + source.label() + "' is unavailable."
+                        ));
+                    sources.add(contentSource(selected, source.label()));
+                }
+                case "directory", "archive", "mods", "notice" -> {
+                    ContentPackComposer.SourceType type = ContentPackComposer.SourceType.parse(source.type());
+                    List<Path> paths = contentSourcePaths(source);
+                    if (paths.isEmpty() && !source.optional()) throw failure("Required content source '" + source.label() + "' has no configured path.");
+                    for (Path path : paths) sources.add(new ContentPackComposer.Source(type, path, source.label()));
+                }
+                default -> throw failure("Unsupported content source type: " + source.type());
+            }
+            if (source.label().equals(stage)) {
+                stageFound = true;
+                break;
+            }
+        }
+        require(stageFound, "Content stage '" + stage + "' is not a source label in stack '" + definition.name() + "'.");
+        return sources;
+    }
+
+    private List<Path> contentSourcePaths(ContentStackManifest.Source source) {
+        String configured = source.environment().isBlank() ? "" : environment.getOrDefault(source.environment(), "");
+        if (configured.isBlank()) configured = source.defaultPath();
+        if (configured.isBlank()) return List.of();
+        List<Path> paths = new ArrayList<>();
+        String[] values = source.multiple()
+            ? configured.split(Pattern.quote(System.getProperty("path.separator")))
+            : new String[]{configured};
+        for (String value : values) if (!value.isBlank()) paths.add(resolveProjectPath(value));
+        return paths;
     }
 
     private void stopClient() throws Exception {
@@ -3124,11 +4412,15 @@ public final class Play {
 
     private List<Path> externalWatchPaths() {
         String configured = environment.get("MINOSOFT_HOT_RELOAD_PATHS");
-        if (configured == null || configured.isBlank()) return List.of();
         List<Path> paths = new ArrayList<>();
-        for (String value : configured.split(Pattern.quote(System.getProperty("path.separator")))) {
-            if (!value.isBlank()) paths.add(resolveProjectPath(value));
+        if (configured != null && !configured.isBlank()) {
+            for (String value : configured.split(Pattern.quote(System.getProperty("path.separator")))) {
+                if (!value.isBlank()) paths.add(resolveProjectPath(value));
+            }
         }
+        if (contentProvider.equals("voxelibre")) paths.add(voxelibreRoot);
+        paths.addAll(faithfulPacks);
+        for (ContentPackComposer.Source source : contentSources) paths.add(source.path());
         return paths;
     }
 
@@ -4159,7 +5451,8 @@ public final class Play {
 
     private Path defaultModpackStore() {
         String home = environment.get("HOME");
-        require(home != null && !home.isBlank(), "HOME is required to choose the modpack store; set MINOSOFT_MODPACK_STORE.");
+        if (home == null || home.isBlank()) home = System.getProperty("user.home");
+        require(home != null && !home.isBlank(), "A user home is required to choose the modpack store; set MINOSOFT_MODPACK_STORE.");
         if (isMac()) return Path.of(home, "Library", "Caches", "Minosoft", "modpacks");
         if (isWindows()) return Path.of(environment.getOrDefault("LOCALAPPDATA", Path.of(home, ".cache").toString()), "Minosoft", "modpacks");
         return Path.of(environment.getOrDefault("XDG_CACHE_HOME", Path.of(home, ".cache").toString()), "minosoft", "modpacks");
@@ -4238,10 +5531,15 @@ public final class Play {
 
             Usage:
               ./play.sh ACTION [TARGET] [--modpack NAME] [--trajectory NAME]
+              ./play.sh setup list [--json]
               ./play.sh modpack list
               ./play.sh modpack cache add FILE [--hash-format sha256|sha512]
               ./play.sh modpack prepare NAME [--trajectory NAME]
               ./play.sh modpack inspect NAME [--trajectory NAME]
+              ./play.sh content compose [--manifest NAME] [--stage SOURCE] [ORDERED SOURCES] [--json]
+              ./play.sh content queue [--manifest NAME | --no-manifest --name NAME --audit PATH] [--stage SOURCE] [--top K] [--authoring] [--csv [--csv-output FILE]] [--output FILE] [--json]
+              ./play.sh content audit [--trajectory NAME] [--stage NAME] [--output FILE] [--json]
+              ./play.sh content preview ASSET [--manifest NAME] [--scene flat|underwater] [--output FILE] [--state-page all|N] [--states-per-page N] [--settle MS] [--settle-frames N] [--strict] [--json]
               ./play.sh debug COMMAND [--role client|server] [--trajectory NAME] [--endpoint ID]
               ./play.sh wait PREDICATE [--timeout 120s] [--trajectory NAME] [--json]
               ./play.sh scenario run FILE [--artifacts PATH] [--jfr MODE] [--json]
@@ -4271,10 +5569,15 @@ public final class Play {
               stop client     Stop only the Minosoft client
               status          Show both process states
               status --json   Emit the PID/readiness contract as one JSON object
+              setup list      List existing trajectory/modpack setups in the configured store
               modpack list    List source-controlled Fabric packs
               modpack cache   Add a hash-addressed artifact to a portable cache
               modpack prepare Resolve and verify a pack without starting Minosoft
               modpack inspect Resolve a pack and run Minosoft's Fabric compatibility preflight
+              content compose Build one immutable resource-pack layout from ordered local sources
+              content queue   Triage audited missing targets; --top K ranks, --csv exports for handoff
+              content audit   Write a deterministic missing model and texture report from a live client
+              content preview Render a queued block-state sculpture or item in an isolated local client
               debug endpoints List live, discoverable client/server debug endpoints
               debug status    Sample selected endpoint status
               debug state     Sample a named client state view
@@ -4306,6 +5609,20 @@ public final class Play {
               --trajectory NAME Isolate mutable state for a branch/experiment (default: default)
               --canary          Build, publish, load, and watch the native hot-reload canary mod
               --local-world     Use the source-native authoritative local world (client target only)
+              --content-provider voxelibre
+                                Adapt an installed VoxeLibre tree as the local base-content layer
+              --content-stack NAME
+                                Read a checked-in content-stacks manifest and manage its profile
+              --voxelibre-root PATH
+                                VoxeLibre source tree (default: ../VoxeLibre)
+              --faithful-pack PATH
+                                Add a user-supplied Faithful ZIP/directory overlay; repeatable
+              --content-source TYPE=PATH
+                                Add an ordered directory, archive, or mods source; repeatable
+              --content-mods PATH
+                                Collect assets from each JAR/ZIP in a mod directory
+              --standalone-content
+                                Disable Minecraft jar/index layers for the composed stack
               --debug-gpu-memory-leaks
                                 Retain OpenGL buffer allocation stacks for leak diagnosis
               --world-generator Select flat, debug, void, or tech_reborn (default: flat; tech-reborn pack: tech_reborn)
@@ -4321,6 +5638,11 @@ public final class Play {
               MINOSOFT_MODPACK_CACHE (optional portable, read-only download source)
               MINOSOFT_CANARY=true (equivalent to --canary)
               MINOSOFT_LOCAL_WORLD=true, MINOSOFT_WORLD_GENERATOR, MINOSOFT_WORLD_SEED
+              MINOSOFT_CONTENT_PROVIDER=voxelibre, MINOSOFT_VOXELIBRE_ROOT
+              MINOSOFT_CONTENT_STACK, MINOSOFT_CONTENT_DIRECTORIES
+              MINOSOFT_RESOURCE_PACKS, MINOSOFT_CONTENT_MODS
+              MINOSOFT_FAITHFUL_PACKS (platform-separated ZIP/directory paths)
+              MINOSOFT_STANDALONE_CONTENT=true
               MINOSOFT_DEBUG_GPU_MEMORY_LEAKS=true
               MINOSOFT_LEASE_OWNER (optional bounded lease owner label)
               MINOSOFT_HOT_RELOAD_PATHS (platform-separated external source/staging roots)
@@ -4333,10 +5655,14 @@ public final class Play {
     }
 
     private static final class PlayFailure extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
         private PlayFailure(String message) {
             super(message);
         }
     }
+
+    record ExistingSetup(String trajectory, String modpack, Path path) {}
 
     private static final class PredicateObservation {
         private final boolean matched;

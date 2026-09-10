@@ -35,7 +35,7 @@ object RegistriesUtil {
             if (Clearable::class.java.isAssignableFrom(field.type)) {
                 clearable += field
             }
-            if (Parentable::class.java.isAssignableFrom(field.type) && field.name != Parentable<*>::parent.name) {
+            if (Parentable::class.java.isAssignableFrom(field.type) && field.name != Parentable<Any?>::parent.name) {
                 parentable += field
             }
             if (Registry::class.java.isAssignableFrom(field.type)) {
@@ -49,7 +49,7 @@ object RegistriesUtil {
 
         if (field.type != Registry::class.java) {
             var type = field.type
-            while (type != Object::class.java) {
+            while (type != Any::class.java) {
                 if (type.superclass == Registry::class.java) {
                     clazz = type.genericSuperclass
                     break

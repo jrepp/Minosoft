@@ -18,7 +18,6 @@ import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
 object ItemRenderUtil {
 
-    @Deprecated("please let this be the last fucking hack in this game") // TODO
     fun Item.getModel(session: PlaySession): ItemRender? {
         // BlockItem.model already gives an explicit item renderer priority over
         // its block/default-state fallback. Preserve that priority for

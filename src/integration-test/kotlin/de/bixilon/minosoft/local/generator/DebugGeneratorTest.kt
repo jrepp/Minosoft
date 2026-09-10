@@ -25,10 +25,29 @@ import de.bixilon.minosoft.data.world.positions.InChunkPosition
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil.createSession
 import org.testng.Assert.assertEquals
 import org.testng.Assert.assertNotSame
+import org.testng.Assert.assertNull
 import org.testng.annotations.Test
 
 @Test(groups = ["chunk"])
 class DebugGeneratorTest {
+
+    fun `debug catalog has a bounded continuous stone floor and spawn apron`() {
+        val session = createSession()
+        val generator = DebugGenerator(session)
+        val spawn = ChunkBuilder(session.world, ChunkPosition(0, 0)).also(generator::generate)
+        val apron = ChunkBuilder(session.world, ChunkPosition(-1, 0)).also(generator::generate)
+        val beyondApron = ChunkBuilder(session.world, ChunkPosition(-2, 0)).also(generator::generate)
+        val beyondCatalog = ChunkBuilder(session.world, ChunkPosition(1_000, 1_000)).also(generator::generate)
+
+        for (x in 0 until 16) {
+            for (z in 0 until 16) {
+                assertEquals(spawn[x, 7, z]?.block?.identifier?.toString(), "minecraft:stone")
+                assertEquals(apron[x, 7, z]?.block?.identifier?.toString(), "minecraft:stone")
+                assertNull(beyondApron[x, 7, z])
+                assertNull(beyondCatalog[x, 7, z])
+            }
+        }
+    }
 
     fun `terrain canary spans water lighting detail and biome seam`() {
         val session = createSession()

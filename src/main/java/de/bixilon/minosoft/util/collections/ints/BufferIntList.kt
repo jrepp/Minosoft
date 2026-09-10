@@ -59,9 +59,9 @@ class BufferIntList(
         buffer.put(value)
     }
 
-    override fun add(Ints: IntArray, offset: Int, length: Int) {
+    override fun add(array: IntArray, offset: Int, length: Int) {
         ensureSize(length)
-        buffer.put(Ints, offset, length)
+        buffer.put(array, offset, length)
     }
 
     override fun add(buffer: IntBuffer, offset: Int, length: Int) {

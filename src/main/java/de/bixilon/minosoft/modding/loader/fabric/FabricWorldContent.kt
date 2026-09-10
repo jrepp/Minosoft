@@ -150,7 +150,7 @@ object FabricWorldContentReader {
         fun collectConditions(node: JsonNode) {
             when {
                 node.isArray -> node.forEach(::collectConditions)
-                node.isObject -> node.fields().forEachRemaining { (name, value) ->
+                node.isObject -> node.properties().forEach { (name, value) ->
                     if (name == "OR" || name == "AND") {
                         collectConditions(value)
                     } else if (value.isValueNode) {

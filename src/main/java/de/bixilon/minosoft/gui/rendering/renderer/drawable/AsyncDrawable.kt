@@ -13,7 +13,6 @@
 
 package de.bixilon.minosoft.gui.rendering.renderer.drawable
 
-@Deprecated("Garbage, this is more like async updateable")
 interface AsyncDrawable {
 
     fun drawAsync() {}

@@ -31,6 +31,5 @@ object ChunkSize {
     const val CHUNK_MAX_SECTIONS = CHUNK_MAX_HEIGHT / SECTION_HEIGHT_Y
 
 
-    @Deprecated("cherry pick rewrite-light-engine")
     const val MAX_LIGHT_LEVEL_I = 15
 }

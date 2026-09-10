@@ -28,7 +28,6 @@ class WaterBucketTest : ItemTest<FilledBucketItem.Water>() {
 
     fun getWater() {
         super.retrieveItem(FilledBucketItem.Water)
-        assertTrue(item is FilledBucketItem.Water)
         assertTrue(item.fluid is WaterFluid)
     }
 }

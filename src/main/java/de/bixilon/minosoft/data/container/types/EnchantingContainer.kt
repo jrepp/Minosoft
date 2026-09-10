@@ -35,6 +35,7 @@ import de.bixilon.minosoft.data.text.ChatComponent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.packets.c2s.play.container.ContainerButtonC2SP
 
+@Suppress("DEPRECATION") // These compatibility identifiers remain until enchanting slot/item factories are replaced.
 class EnchantingContainer(session: PlaySession, type: ContainerType, title: ChatComponent?, id: Int) : InventorySynchronizedContainer(session, type, title, RangeSection(ENCHANTING_SLOTS, PlayerInventory.MAIN_SLOTS), id = id) {
     override val sections: Array<ContainerSection> get() = SECTIONS
     val costs by observedArray(Array(ENCHANTING_OPTIONS) { -1 })

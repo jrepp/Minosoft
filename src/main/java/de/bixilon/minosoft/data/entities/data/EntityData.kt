@@ -28,8 +28,10 @@ class EntityData(
     val session: PlaySession,
     data: Int2ObjectOpenHashMap<Any?>? = null,
 ) {
-    private val lock = RWLock.rwlock()
-    private val data: Int2ObjectOpenHashMap<Any> = Int2ObjectOpenHashMap()
+    @PublishedApi
+    internal val lock = RWLock.rwlock()
+    @PublishedApi
+    internal val data: Int2ObjectOpenHashMap<Any> = Int2ObjectOpenHashMap()
     private val observers: Int2ObjectOpenHashMap<MutableSet<(Any?) -> Unit>> = Int2ObjectOpenHashMap()
     private val observersLock = RWLock.rwlock()
 
@@ -86,7 +88,6 @@ class EntityData(
         }
     }
 
-    @Suppress("NON_PUBLIC_CALL_FROM_PUBLIC_INLINE")
     inline fun <reified K> get(field: EntityDataField, default: K): K {
         val index = session.registries.getEntityDataIndex(field) ?: return default // field is not present (in this version)
         lock.acquire()

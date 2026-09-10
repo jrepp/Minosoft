@@ -19,6 +19,7 @@ package de.bixilon.minosoft.modding.loader.fabric;
 
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation;
 import de.bixilon.minosoft.local.LocalConnection;
+import de.bixilon.minosoft.data.world.positions.ChunkPosition;
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession;
 import de.bixilon.minosoft.protocol.network.session.play.SessionTestUtil;
 import de.bixilon.minosoft.terrain.distant.DistantSourceCompleteness;
@@ -51,6 +52,40 @@ import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
 public final class DistantLodNetworkLifecycleTest {
+    @Test
+    public void missingTileInsideNativeViewIsRequestedWithoutDuplicatingResidentOrPendingTiles() {
+        final PlaySession session = session();
+        // SessionTestUtil starts the player at the origin. Leave (1,1) missing.
+        final long gap = (1L << ChunkPosition.SHIFT_Z) | 1L;
+        final List<DistantTerrainMessageV2> sent = new ArrayList<>();
+        final DistantLodNetworkClient client = new DistantLodNetworkClient(
+            session,
+            DistantHorizonsOptions.Companion.inMemory(),
+            16_384,
+            position -> position.getRaw() != gap,
+            ignored -> null,
+            ignored -> Unit.INSTANCE,
+            (tile, page) -> Unit.INSTANCE,
+            payload -> {
+                sent.add(DistantTerrainProtocolV2.INSTANCE.decode(payload));
+                return Unit.INSTANCE;
+            }
+        );
+        try {
+            client.receive(new DistantTerrainMessageV2.Hello(world(session, 23L), 32, 32, 0));
+            client.run();
+            assertEquals(sent.size(), 1, "Missing tile inside the native view square needs LOD coverage");
+            final DistantTerrainMessageV2.Request request = (DistantTerrainMessageV2.Request) sent.getFirst();
+            assertEquals(request.getPages().size(), 1);
+            assertEquals(request.getPages().getFirst().getKey().getX(), 1L);
+            assertEquals(request.getPages().getFirst().getKey().getZ(), 1L);
+            client.run();
+            assertEquals(sent.size(), 1, "Pending gap must not be requested twice");
+        } finally {
+            client.close();
+        }
+    }
+
     @Test
     public void v2HelloBeforePlayableWorldJoinSurvivesStateReplacement() {
         final PlaySession session = session();

@@ -27,7 +27,7 @@ import de.bixilon.minosoft.protocol.packets.c2s.play.item.ItemStackCreateC2SP
  * If you double-click on an item in an inventory, all items of the same type will be stacked together and selected
  */
 class PickAllContainerAction(
-    @Deprecated("packet only") val slot: Int,
+    val slot: Int,
 ) : ContainerAction {
 
     override fun execute(session: PlaySession, container: Container, transaction: ContainerTransaction) {

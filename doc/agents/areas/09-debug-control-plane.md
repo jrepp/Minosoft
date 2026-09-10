@@ -19,6 +19,10 @@ mutation API. One-shot version-one operations are implemented; subscriptions,
 advanced AOI layers, and connection-owned input state remain explicit later
 stages. The CLI now composes one-shot operations into checked scenario files.
 
+The next debugging/query/probe delivery is proposed in the
+[agent-native tooling assessment](../backlog/agent-native-debugging-plan.md).
+It reuses this control plane and distinguishes existing capabilities from targets.
+
 ## Current evidence
 
 | Status | Claim | Evidence |
@@ -27,7 +31,8 @@ stages. The CLI now composes one-shot operations into checked scenario files.
 | Verified | The compiled Java play utility is the only CLI protocol consumer; `play.sh` is a thin Java 25 shim that rejects other runtime features before Gradle or the CLI starts. | `util/play/Play.java`, `play.sh`, and `PlayUtilityTest`. |
 | Verified | Repository automation composes the existing discovery/client operations into expiring mutation leases, bounded hashed diagnosis bundles, stopped-world snapshots, and pose compare-and-restore checkpoints. These are launcher/storage workflows, not a second debug transport; restore re-resolves both role endpoints and uses the existing server-authoritative teleport operation. | `TrajectoryLeaseStore`, `TrajectoryDiagnostics`, `WorldSnapshot`, `TrajectoryCheckpointStore`, and focused `play-util` tests. |
 | Verified | The client publishes an opt-in endpoint and queues visual/input work onto the render path while state/block reads use explicit session/world seams. | `ClientDebugChannel`, live visual/input/AOI acceptance, and the dated evidence below. |
-| Verified | User and agent captures share `ScreenshotTaker`'s final-framebuffer snapshot. `visual.capture` returns PNG dimensions, frame/time, top-left RGBA8 semantics, a suggested vanilla-style filename, the user screenshot directory, and a SHA-256 verified by the CLI after writing. An omitted CLI output chooses a collision-safe `.run/agent-screenshots/<endpoint trajectory>/` artifact; an explicit path remains supported. | `ScreenshotTaker`, `ClientDebugChannel.capture`, `Play.debugVisual`, live F2/debug captures, and [screenshot/terrain evidence](../evidence/2026-07-28-screenshot-and-terrain-stability.md). |
+| Verified | `content.audit` returns one stable schema-versioned inventory of missing blockstates, models, and file-backed textures for the active client generation. Entries are bounded, deduplicated, lexically ordered, mapped to resource-pack target paths, and fingerprinted independently of frame/time state. The launcher writes the same JSON atomically through `content audit`, making consecutive unchanged captures byte-identical and directly consumable as a content-adapter backlog. The separate `content queue` command turns that cumulative backlog into a triage queue: every target is classified as `generate` (a distinct raster family or non-trivial model shape exists), `select` (only a generic placeholder exists, so the asset should be chosen from another package), or `resolved` (an authored pack already wins in the composed stack), and the deterministic queue probes each concrete non-generated package for exact and sibling-directory near-name candidates, recording per-entry family/shape detail, consumers, selection sources, and a per-target candidate list split into exact and near matches. A documented scoring rule ranks the backlog (`--top K`, optional `--authoring`), and `--csv` atomically exports the full triage as a deterministic RFC-4180 CSV (kind, resource, target, disposition, tier, priority, detail, consumerCount, consumers, candidateSources, candidateTargets) for production handoff. | `ContentAssetAudit`, `ClientDebugChannel.contentAudit`, `Play.runContentAudit`, `Play.runContentQueue`, `ContentSubmissionQueue`, `GeneratedTextureLibrary`, focused sorting/determinism tests, and consecutive `terrain-local-dojo` captures. |
+| Verified | User and agent captures share `ScreenshotTaker`'s final-framebuffer snapshot. `visual.capture` returns PNG dimensions, frame/time, top-left RGBA8 semantics, a suggested vanilla-style filename, the user screenshot directory, and a SHA-256 verified by the CLI after writing. An optional render-thread scene review inventory reports bounded frustum-candidate block states and their resolved model textures, renderer-visible entities, and held/visible item identities; diagnostic capture writes that same-frame inventory as `scene.json` beside `frame.png`. An omitted CLI output chooses a collision-safe `.run/agent-screenshots/<endpoint trajectory>/` artifact; an explicit path remains supported. | `ScreenshotTaker`, `ClientDebugChannel.capture`, `SceneReviewCapture`, `TrajectoryDiagnostics.captureVisual`, focused scene target tests, and [screenshot/terrain evidence](../evidence/2026-07-28-screenshot-and-terrain-stability.md). |
 | Verified | `debug visual motion-noise` measures camera-induced temporal residuals at an exact returned pose rather than comparing different views. It pairs each yaw-away/return capture with a stationary control at the same elapsed render-frame delta, reports whole-region luma/RGB errors plus a low-gradient speckle ratio, records requested and actual checkpoints, and writes bounded representative crops plus `report.json`. A compare-and-set `visual.background-throttle` override keeps terminal-owned probes at normal cadence without persisting a rendering-profile change, then restores only the state the command acquired. | `MotionNoiseAnalyzer`, `Play.debugMotionNoise`, `RenderContext.backgroundThrottleOverride`, `ClientDebugChannel.configureBackgroundThrottle`, focused utility tests, and [camera-motion noise evidence](../evidence/2026-07-28-camera-motion-noise-measurement.md). |
 | Verified | The pinned Fabric 1.20.4/Fabric Loader 0.19.3 server runs the Java 25 owned bridge using the same library and exposes tick-thread state, blocks/AOI, and Fabric loader diagnostics. Loader 0.15.11's ASM/Mixin stack cannot consume class-file major version 69. | `debug-server-fabric/`, `Play.prepareFabricServer`, [Java 25 baseline](../evidence/2026-07-30-java-25-baseline.md), and live server acceptance. |
 | Verified | Adapted Fabric mods add namespaced provider operations owned by the active pack generation. Iris exposes a bounded render-queue shader-pipeline reload, while the client exposes one bounded `render.substrate` snapshot for graph/provider/resource/timing acceptance. Shader diagnostics include linked frame/draw upload counts and bounded per-state keys, allowing live acceptance to distinguish compilation from actual dynamic entity/block/item identity delivery. | `FabricDiagnosticDebugProvider`, `IrisDebugProvider`, `ClientDebugChannel`, `FabricRegistrationScope`, [R0–R7 checkpoint](../evidence/2026-07-24-render-substrate-r0-r7.md), and [Iris pipeline boundary](../evidence/2026-07-26-iris-render-pipeline-support.md). |
@@ -77,7 +82,8 @@ stages. The CLI now composes one-shot operations into checked scenario files.
 | In progress | `world.teleport-player` provides a narrow server-authoritative dimension-transition canary: it selects one exact connected player (or the only player), requires an already loaded target dimension, bounds all finite coordinates to Minecraft's world limit, preserves optional yaw/pitch defaults, executes on the server thread, and returns exact previous/current poses for restoration. It deliberately does not expose a general privileged command surface. Input validation tests pass; live Nether/End Iris generation and restoration evidence awaits the next debug-server bridge reload. | `MinosoftDebugBridgeMod.teleportPlayer`, `MinosoftDebugBridgeModTest`, `core.capabilities`, `state.sample`, `render.substrate`, and the [Iris pipeline boundary](../evidence/2026-07-26-iris-render-pipeline-support.md). |
 | Verified | The immutable client player sample includes model-owned sprint state, allowing normal-path input acceptance to distinguish sprint activation from ordinary displacement. | `ClientDebugChannel`, `input.inject`, and [double-tap sprint evidence](../evidence/2026-07-23-double-tap-sprint.md). |
 | Verified | Both roles expose `metrics.snapshot` from shared core instrumentation: at most 256 named operation series, fixed latency buckets, outcome counters, total/max latency, and role-owned runtime gauges. | `DebugMetrics`, both status/metrics suppliers, core tests, live capabilities, and [automation evidence](../evidence/2026-07-23-automation-observability.md). |
-| Verified | The CLI consumes semantic lifecycle predicates and checked JSON scenarios through `DebugClient`, including assertions, visual baselines, matrix/repeat/soak execution, JSON/JUnit artifacts, and optional JFR around a run. | `Play`, [scenario protocol](../acceptance/scenarios.md), and live smoke/matrix/failure runs. |
+| Verified | The CLI consumes semantic lifecycle predicates and checked JSON scenarios through `DebugClient`, including assertions, typed expected-error steps, visual baselines, matrix/repeat/soak execution, JSON/JUnit artifacts, and optional JFR around a run. Managed content previews bind their control requests to the exact launched client PID, preventing another same-trajectory generation from receiving scene mutation or capture requests. | `Play`, [scenario protocol](../acceptance/scenarios.md), the content-placement rejection suite, and live smoke/matrix/failure runs. |
+| Verified | Flat content previews expose a version-aware art-review sculpture rather than a hand-picked family sample. `content.place-block-state-sculpture` deterministically pages every legal registry state into isolated cells, replaces final cell values and clears unused slots for a fixed block/page size, exports canonical Java property values, and reports the exact ordered states plus a catalog hash. `content preview --state-page all\|N` captures those pages with per-PNG manifests and a capture-set index carrying content/capture provenance. | `BlockStateSculptureCatalog`, `ClientDebugChannel.placeBlockStateSculpture`, `Play.runContentPreview`, `BlockStateSculptureCatalogIT`, `ContentPreviewTest`, and [content-forge preview evidence](../evidence/2026-08-10-content-forge-block-load-gate.md). |
 | Verified | macOS discovery directories are `0700`; descriptors, credentials, and sockets are `0600`; wrong credentials and stale descriptors are rejected in tests. | Live `stat` evidence plus `DebugDiscoveryTest` and `DebugChannelServerTest`. |
 | Observed | Windows named-pipe code compiles and applies an owner/SYSTEM DACL, but this pass did not execute it on a Windows host. | `DebugWindowsPipes` and cross-platform build configuration. |
 
@@ -175,9 +181,10 @@ Windows named pipes.
 | `core.capabilities` | both | transport-safe | operation names and owners, payload/deadline limits |
 | `core.status` | both | immutable snapshot | process, trajectory, generation, readiness summary |
 | `state.sample` | both | client session or server tick snapshot | named client/server view; `client.entities` is bounded to 128 nearby records |
-| `visual.capture` | client | render queue | final framebuffer PNG plus dimensions/frame/time, SHA-256, suggested filename, user screenshot directory, and top-left RGBA8 semantics |
+| `state.respawn` | client | render queue/session protocol | health- and `DEAD`-gated normal client respawn request for recovering interrupted live visual acceptance; rejects a living client |
+| `visual.capture` | client | render queue | final framebuffer PNG plus dimensions/frame/time, SHA-256, suggested filename, user screenshot directory, and top-left RGBA8 semantics; `includeScene=true` adds a bounded same-frame block/texture/item/entity review inventory |
 | `visual.sample` | client | render queue | ≤4096 points and ≤65536-pixel region hash/luminance |
-| `visual.prepare-reference` | client | render queue | clear transient GUI overlays; explicitly control HUD plus non-persistent hitbox, cloud, world-border, entity, and particle presentation; optionally pin/restore presentation-only time and clear/restore presentation-only weather without mutating authoritative world state |
+| `visual.prepare-reference` | client | render queue | clear transient GUI overlays; explicitly control HUD plus non-persistent hitbox, cloud, world-border, entity, particle, and first-person arm presentation; optionally pin/restore presentation-only time and clear/restore presentation-only weather without mutating authoritative world state |
 | `visual.background-throttle` | client | render queue | compare-and-set `default`/`enabled`/`disabled` non-persistent override for unfocused-window throttling; returns prior/current state and never changes the rendering profile |
 | `render.substrate` | client | render queue | selected graph, terrain/shader owners, bounded frame/terrain timings, visible mesh/vertex/state totals, generation/lease/resource counts, authored material-animation publication counters, per-contract scene bind plus actual OpenGL draw/vertex ledgers, and submitted/missing compiled main-view vertex/state ABI sets |
 | `render.terrain-diagnostics` | client | render queue | one complete atomic version-one world/provider/pipeline/material/coverage/scheduling/residency/submission snapshot, with optional 1–1,024 page area/prefix window, domain-registry-bound opaque cursor, and structured request/cursor rejection |
@@ -207,6 +214,7 @@ Windows named pipes.
 | `render.prepare-sun-scatter` | client | render queue/world presentation | force or restore the production sun-scatter draw while retaining its real matrix, mesh, position, and intensity path |
 | `render.prepare-fire-overlay` | client | render queue/world presentation | force or restore the first-person fire overlay without mutating player fire state |
 | `render.prepare-reference-hand` | client | render queue/hand presentation | bind or restore a generated opaque cyan/magenta skin-sized texture only for the first-person arm draw; report selected/reference texture IDs, draw/frame counters, exact binding, and unchanged player-skin state |
+| `content.place-block-state-sculpture` | client local world | render queue/local session runtime | one block’s legal registry states, 1–64 states per page, fixed isolated stage, canonical Java state keys and catalog hash |
 | `content.execute-local` | client local world | render queue/local session runtime | one bounded mounted function plus explicit origin/camera pose and execution metadata |
 | `input.inject` | client | render/input path | ≤256 key, text, mouse-move, or scroll events |
 | `world.blocks.sample` | both | loaded world state | inclusive box, ≤32768 cells, palette/RLE |
@@ -236,8 +244,8 @@ or debug menu. It clears poppable overlays, selects HUD visibility, and can
 disable the active renderer's hitbox manager and cloud pass without persisting
 a profile change; `hideHud`, `hideHitboxes`, and `hideClouds` default to true.
 An explicit `hideWorldBorder` can additionally suppress that transient pass for
-a checked reference and defaults to false. Explicit `hideEntities` and
-`hideParticles` controls also default to false. They suppress only the
+a checked reference and defaults to false. Explicit `hideEntities`,
+`hideParticles`, and `hideArm` controls also default to false. They suppress only the
 corresponding render-graph submissions: entities keep visibility, animation,
 and retained meshes, while particles keep their queue and simulation state.
 The operation does not mutate authoritative world or entity state. Scenario screenshot steps may
@@ -392,6 +400,7 @@ Commands:
 
 ./play.sh debug visual capture --role client --trajectory NAME --json
 ./play.sh debug visual capture /tmp/frame.png --role client --json
+./play.sh diagnose capture --trajectory NAME --visual --output .run/diagnostics/NAME
 ./play.sh debug visual sample --point 640,360 \
   --region 0,0,320,180 --role client --json
 ./play.sh debug visual motion-noise \
@@ -497,6 +506,11 @@ weaken loader/API ownership and compatibility evidence.
 
 ## Stable contracts
 
+- Windows listeners create their first pipe before publication and keep a successor
+  ready before returning an accepted connection. Shutdown wakes a synchronous
+  accept before closing its handle; accepted handles are closed without forced
+  disconnect so a peer can drain the final response. Windows-only lifecycle and
+  buffered-response regressions live in `DebugWindowsPipesTest`.
 - One protocol implementation and shared client serve the CLI and tests.
 - Discovery is per-user, versioned, atomic, trajectory-aware, and token-safe.
 - Operations are explicit, namespaced, deadline-bounded, and owner-thread aware.
@@ -506,6 +520,15 @@ weaken loader/API ownership and compatibility evidence.
 - Client-observed and server-authoritative state remain distinct.
 - Mod operations cannot outlive their registration/generation.
 - Unsupported future capability is absent from `core.capabilities`.
+
+## Item preview evidence
+
+Item previews explicitly mount the repository `content-preview` data pack and
+refuse captures when the placement function executes zero commands. Ordinary
+launches remove this preview mount. A camera-only function restores the requested
+pose after settling without replacing the settled item display; captures include
+same-frame scene diagnostics. See the [workspace item-preview evidence](../evidence/2026-09-09-workspace-item-preview.md)
+and `ContentPreviewTest` for reproduction and fixture isolation checks.
 
 ## References
 

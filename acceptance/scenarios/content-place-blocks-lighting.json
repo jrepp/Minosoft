@@ -1,0 +1,144 @@
+{
+  "name": "content-place-blocks-lighting",
+  "steps": [
+    {
+      "name": "client has joined and rendered",
+      "type": "wait",
+      "predicate": "client.render-ready",
+      "timeout": "3m"
+    },
+    {
+      "name": "night reference with HUD suppressed",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "timeOfDay": 18000, "clearWeather": true, "hideHud": true, "hideClouds": true, "hideHitboxes": true },
+      "assert": [
+        { "pointer": "/hudEnabled", "equals": false },
+        { "pointer": "/time", "equals": 18000 },
+        { "pointer": "/timePrepared", "equals": true }
+      ]
+    },
+    {
+      "name": "reset the fixture to a bare stone block at the origin",
+      "type": "request",
+      "role": "client",
+      "operation": "content.place-blocks",
+      "body": {
+        "blocks": [
+          { "x": 0, "y": 19, "z": 0, "state": "minecraft:stone" },
+          { "x": -2, "y": 19, "z": 0, "state": "minecraft:air" },
+          { "x": 2, "y": 19, "z": 0, "state": "minecraft:air" },
+          { "x": 0, "y": 19, "z": -2, "state": "minecraft:air" },
+          { "x": 0, "y": 19, "z": 2, "state": "minecraft:air" }
+        ],
+        "origin": { "x": 0.5, "y": 20.5, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": -4, "y": 21.0, "z": 0.5, "yaw": -90.0, "pitch": 27.0 }
+      },
+      "assert": [
+        { "pointer": "/placed", "equals": 5 },
+        { "pointer": "/camera/x", "equals": -4.0 }
+      ]
+    },
+    {
+      "name": "bare stone placement settles",
+      "type": "sleep",
+      "duration": "3s"
+    },
+    {
+      "name": "bare stone has no propagated block light",
+      "type": "request",
+      "role": "client",
+      "operation": "world.blocks.sample",
+      "body": {
+        "min": { "x": 0, "y": 19, "z": 0 },
+        "max": { "x": 1, "y": 19, "z": 0 }
+      },
+      "assert": [
+        { "pointer": "/volume", "equals": 2 },
+        { "pointer": "/notLoaded", "equals": 0 },
+        { "pointer": "/blockLight/0", "equals": 0 },
+        { "pointer": "/blockLight/1", "equals": 0 }
+      ]
+    },
+    {
+      "name": "re-clear UI before the dark reference capture",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "timeOfDay": 18000, "clearWeather": true, "hideHud": true, "hideClouds": true, "hideHitboxes": true },
+      "assert": [
+        { "pointer": "/hudEnabled", "equals": false },
+        { "pointer": "/overlaysCleared", "equals": true }
+      ]
+    },
+    {
+      "name": "stone at night without a torch renders dark",
+      "type": "screenshot",
+      "baseline": "../baselines/content-place-blocks/stone-no-torch.png",
+      "pixelThreshold": 0,
+      "maxChangedRatio": 0.0,
+      "maxMeanError": 0.0
+    },
+    {
+      "name": "add four torches around the stone",
+      "type": "request",
+      "role": "client",
+      "operation": "content.place-blocks",
+      "body": {
+        "blocks": [
+          { "x": 0, "y": 19, "z": 0, "state": "minecraft:stone" },
+          { "x": -2, "y": 19, "z": 0, "state": "minecraft:torch" },
+          { "x": 2, "y": 19, "z": 0, "state": "minecraft:torch" },
+          { "x": 0, "y": 19, "z": -2, "state": "minecraft:torch" },
+          { "x": 0, "y": 19, "z": 2, "state": "minecraft:torch" }
+        ],
+        "origin": { "x": 0.5, "y": 20.5, "z": 0.5, "yaw": 0.0, "pitch": 0.0 },
+        "camera": { "x": -4, "y": 21.0, "z": 0.5, "yaw": -90.0, "pitch": 27.0 }
+      },
+      "assert": [
+        { "pointer": "/placed", "equals": 5 }
+      ]
+    },
+    {
+      "name": "torch placement settles",
+      "type": "sleep",
+      "duration": "3s"
+    },
+    {
+      "name": "torches propagate block light beside the stone",
+      "type": "request",
+      "role": "client",
+      "operation": "world.blocks.sample",
+      "body": {
+        "min": { "x": 0, "y": 19, "z": 0 },
+        "max": { "x": 1, "y": 19, "z": 0 }
+      },
+      "assert": [
+        { "pointer": "/volume", "equals": 2 },
+        { "pointer": "/notLoaded", "equals": 0 },
+        { "pointer": "/blockLight/0", "equals": 0 },
+        { "pointer": "/blockLight/1", "equals": 13 }
+      ]
+    },
+    {
+      "name": "re-clear UI before the lit reference capture",
+      "type": "request",
+      "role": "client",
+      "operation": "visual.prepare-reference",
+      "body": { "timeOfDay": 18000, "clearWeather": true, "hideHud": true, "hideClouds": true, "hideHitboxes": true },
+      "assert": [
+        { "pointer": "/hudEnabled", "equals": false },
+        { "pointer": "/overlaysCleared", "equals": true }
+      ]
+    },
+    {
+      "name": "stone is lit by the adjacent torches",
+      "type": "screenshot",
+      "baseline": "../baselines/content-place-blocks/stone-with-torch.png",
+      "pixelThreshold": 0,
+      "maxChangedRatio": 0.0,
+      "maxMeanError": 0.0
+    }
+  ]
+}

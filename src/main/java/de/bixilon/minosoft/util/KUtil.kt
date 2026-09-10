@@ -87,7 +87,6 @@ object KUtil {
         else -> throw IllegalArgumentException("Don't know how to turn $this into a resource location!")
     }
 
-    @Deprecated("sheet")
     fun <T> T.synchronizedDeepCopy(): T {
         return when (this) {
             is Map<*, *> -> {

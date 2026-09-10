@@ -17,7 +17,6 @@ import de.bixilon.minosoft.modding.event.events.session.play.PlaySessionEvent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.packets.s2c.play.title.TitleTextS2CP
 
-@Deprecated("Observables")
 class TitleSetEvent(
     session: PlaySession,
     val title: ChatComponent,

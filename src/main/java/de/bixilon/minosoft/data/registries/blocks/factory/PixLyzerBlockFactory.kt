@@ -18,7 +18,6 @@ import de.bixilon.minosoft.data.registries.factory.clazz.ClassFactory
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.registries.registries.Registries
 
-@Deprecated("BlockFactory")
 interface PixLyzerBlockFactory<T : Block> : ClassFactory<T> {
 
     fun build(identifier: ResourceLocation, registries: Registries, data: Map<String, Any>): T

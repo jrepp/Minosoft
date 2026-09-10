@@ -17,7 +17,6 @@ import de.bixilon.minosoft.data.scoreboard.team.Team
 import de.bixilon.minosoft.modding.event.events.scoreboard.ScoreboardTeamMemberEvent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
-@Deprecated("Observables")
 class TeamMemberAddEvent(
     session: PlaySession,
     team: Team,

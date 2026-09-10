@@ -25,7 +25,6 @@ object OpenGlUtil {
             RenderingCapabilities.DEPTH_TEST -> GL_DEPTH_TEST
             RenderingCapabilities.FACE_CULLING -> GL_CULL_FACE
             RenderingCapabilities.POLYGON_OFFSET -> GL_POLYGON_OFFSET_FILL
-            else -> throw IllegalArgumentException("OpenGL does not support capability: $this")
         }
 
     val BlendingFunctions.gl: Int
@@ -45,7 +44,6 @@ object OpenGlUtil {
             BlendingFunctions.ONE_MINUS_CONSTANT_COLOR -> GL_ONE_MINUS_CONSTANT_COLOR
             BlendingFunctions.CONSTANT_ALPHA -> GL_CONSTANT_ALPHA
             BlendingFunctions.ONE_MINUS_CONSTANT_ALPHA -> GL_ONE_MINUS_CONSTANT_ALPHA
-            else -> throw IllegalArgumentException("OpenGL does not support blending function: $this")
         }
 
     val DepthFunctions.gl: Int
@@ -58,7 +56,6 @@ object OpenGlUtil {
             DepthFunctions.NOT_EQUAL -> GL_NOTEQUAL
             DepthFunctions.GREATER_OR_EQUAL -> GL_GEQUAL
             DepthFunctions.ALWAYS -> GL_ALWAYS
-            else -> throw IllegalArgumentException("OpenGL does not support depth function: $this")
         }
 
     val PolygonModes.gl: Int
@@ -66,7 +63,6 @@ object OpenGlUtil {
             PolygonModes.FILL -> GL_FILL
             PolygonModes.LINE -> GL_LINE
             PolygonModes.POINT -> GL_POINT
-            else -> throw IllegalArgumentException("OpenGL does not support polygon mode: $this")
         }
 
     val FaceTypes.gl: Int
@@ -80,7 +76,6 @@ object OpenGlUtil {
             FaceTypes.LEFT -> GL_LEFT
             FaceTypes.RIGHT -> GL_RIGHT
             FaceTypes.FRONT_AND_BACK -> GL_FRONT_AND_BACK
-            else -> throw IllegalArgumentException("OpenGL does not support face type: $this")
         }
 
     val IntegratedBufferTypes.gl: Int
@@ -89,6 +84,5 @@ object OpenGlUtil {
             IntegratedBufferTypes.ACCUM_BUFFER -> GL_ACCUM_BUFFER_BIT
             IntegratedBufferTypes.STENCIL_BUFFER -> GL_STENCIL_BUFFER_BIT
             IntegratedBufferTypes.COLOR_BUFFER -> GL_COLOR_BUFFER_BIT
-            else -> throw IllegalArgumentException("OpenGL does not support integrated buffer type: $this")
         }
 }

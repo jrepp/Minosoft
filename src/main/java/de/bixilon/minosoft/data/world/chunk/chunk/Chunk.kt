@@ -139,7 +139,6 @@ class Chunk(
         FabricBlockMutationEvents.dispatch(this, executed)
     }
 
-    @Deprecated("sections.create")
     fun getOrPut(height: Int, light: Boolean = true) = sections.create(height, light)
 
     override fun tick() {

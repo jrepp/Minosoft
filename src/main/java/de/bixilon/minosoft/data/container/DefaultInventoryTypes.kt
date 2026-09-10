@@ -15,7 +15,6 @@ package de.bixilon.minosoft.data.container
 
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 
-@Deprecated("Will be removed")
 object DefaultInventoryTypes {
     val HORSE = minecraft("horse")
 }

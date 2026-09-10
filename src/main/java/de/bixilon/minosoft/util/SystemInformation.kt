@@ -17,7 +17,6 @@ import de.bixilon.kutil.string.WhitespaceUtil.removeMultipleWhitespaces
 import de.bixilon.kutil.unit.Bytes.Companion.bytes
 import oshi.SystemInfo
 
-@Deprecated(message = "Will be refactored")
 object SystemInformation {
     val RUNTIME = Runtime.getRuntime()
     val SYSTEM_INFO = SystemInfo()

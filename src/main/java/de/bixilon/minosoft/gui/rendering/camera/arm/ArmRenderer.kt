@@ -63,6 +63,7 @@ class ArmRenderer(override val context: RenderContext) : WorldRenderer {
     private var referenceSkinTexture: DynamicTexture? = null
     private var refreshedOrdinarySkin: DynamicTexture? = null
     private var refreshedOrdinarySkinGeneration = Long.MIN_VALUE
+    var referenceSuppressed = false
     var armDraws: Long = 0L
         private set
     var lastArmDrawFrame: Long = -1L
@@ -211,6 +212,7 @@ class ArmRenderer(override val context: RenderContext) : WorldRenderer {
     }
 
     private fun drawHand() {
+        if (referenceSuppressed) return
         if (!context.camera.view.view.renderArm) return
         val entity = context.session.camera.entity.nullCast<PlayerEntity>() ?: return
         val renderer = entity.renderer?.nullCast<PlayerRenderer<*>>()
@@ -271,7 +273,8 @@ class ArmRenderer(override val context: RenderContext) : WorldRenderer {
                 translateAssign(-pivot)
             }
 
-            shader.transform = perspective * matrix
+            shader.viewProjection = perspective
+            shader.matrix = matrix.unsafe
 
             model.mesh.draw()
             armDraws++

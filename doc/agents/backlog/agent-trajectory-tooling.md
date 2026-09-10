@@ -8,6 +8,10 @@ This document mixes implemented checkpoints with remaining **Target** guidance.
 The status column and each workflow distinguish current behavior from the next
 acceptance boundary. Source and focused tests remain authoritative.
 
+The [2026-09-07 agent-native assessment](agent-native-debugging-plan.md)
+refines the next delivery order for debugging/query/probe work: typed discovery,
+persistent probes and presentation restoration precede deferred motion capture.
+
 ## Objective
 
 Reduce agent time spent rediscovering live ownership, collecting scattered

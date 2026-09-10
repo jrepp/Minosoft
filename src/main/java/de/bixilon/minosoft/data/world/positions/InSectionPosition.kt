@@ -30,9 +30,9 @@ value class InSectionPosition(
         assertPosition(z, 0, ChunkSize.SECTION_MAX_Z)
     }
 
-    override inline val x: Int get() = (index shr SHIFT_X) and MASK_X
-    override inline val y: Int get() = (index shr SHIFT_Y) and MASK_Y
-    override inline val z: Int get() = (index shr SHIFT_Z) and MASK_Z
+    override val x: Int get() = (index shr SHIFT_X) and MASK_X
+    override val y: Int get() = (index shr SHIFT_Y) and MASK_Y
+    override val z: Int get() = (index shr SHIFT_Z) and MASK_Z
 
     inline val xz: Int get() = index and ((MASK_X shl SHIFT_X) or (MASK_Z shl SHIFT_Z))
 
@@ -90,9 +90,9 @@ value class InSectionPosition(
     inline operator fun plus(other: _Vec3i) = InSectionPosition(this.x + other.x, this.y + other.y, this.z + other.z)
     inline operator fun minus(other: _Vec3i) = InSectionPosition(this.x - other.x, this.y - other.y, this.z - other.z)
 
-    override inline operator fun component1() = x
-    override inline operator fun component2() = y
-    override inline operator fun component3() = z
+    override operator fun component1() = x
+    override operator fun component2() = y
+    override operator fun component3() = z
 
     override fun toString() = "s($x $y $z)"
 

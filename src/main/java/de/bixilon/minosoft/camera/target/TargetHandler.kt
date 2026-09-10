@@ -44,6 +44,7 @@ class TargetHandler(
         private set
 
 
+    @Suppress("DEPRECATION") // The renderer-presence seam remains until PlaySession is split into modules.
     fun update() {
         val entity = camera.entity
         val position = if (camera.session.rendering == null) entity.physics.position + Vec3d(0.0f, entity.eyeHeight, 0.0f) else entity.renderInfo.eyePosition

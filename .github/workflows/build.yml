@@ -3,11 +3,11 @@ name: Gradle CI
 on:
   workflow_dispatch:
   push:
-    branches: [ master ]
-    paths-ignore: [ "**.md", "schemas/**", ".editorconfig", ".gitignore", ".gitattributes" ]
+    branches: [ main, master ]
+    paths-ignore: [ "**.md", "schemas/**", ".editorconfig", ".gitignore" ]
   pull_request:
-    branches: [ master ]
-    paths-ignore: [ "**.md", "schemas/**", ".editorconfig", ".gitignore", ".gitattributes" ]
+    branches: [ main, master ]
+    paths-ignore: [ "**.md", "schemas/**", ".editorconfig", ".gitignore" ]
 
 jobs:
   gradle:
@@ -47,11 +47,16 @@ jobs:
           path: ./it
           key: minosoft-assets
 
+      - name: Debug transport tests
+        timeout-minutes: 3
+        run: './gradlew :debug-core:test'
+
       - name: Build
         run: './gradlew assemble "-Pminosoft.updates=true"'
 
       - name: Unit test
-        run: './gradlew test'
+        # Do not run compiler workers alongside the timed telemetry A/B test.
+        run: './gradlew test --max-workers=1 --no-parallel --continue'
 
       - name: Install Mesa Iris acceptance dependencies
         if: matrix.os == 'ubuntu'
@@ -83,7 +88,7 @@ jobs:
           echo "9098dd9e0c18b80f7aba2839cea33ce9a614d97665bbfcac87ccce6e4771667c41602d99088852cb1642ccab20b2ceff9b98af8f2e795bd0d3b90b7c9cbab914  ${shader_pack}" \
             | sha512sum --check -
           export MINOSOFT_IRIS_TEST_PACK="${shader_pack}"
-          xvfb-run --auto-servernum ./gradlew test -x :debug-core:test \
+          xvfb-run --auto-servernum ./gradlew :test \
             --tests de.bixilon.minosoft.gui.rendering.shader.pipeline.OpenGlIrisCustomResourceComputeTest \
             --tests 'de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisShaderPackPlannerTest.external shader pack crosses the complete planner contract when configured'
 
@@ -107,3 +112,13 @@ jobs:
         with:
           name: 'minosoft-${{ matrix.os }}-aarch64'
           path: build/libs/minosoft-fat-*-aarch64-*.jar
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.os }}
+          path: |
+            **/build/test-results/**/*.xml
+            **/build/reports/tests/**
+          if-no-files-found: ignore

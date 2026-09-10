@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-// minosoft:scene_bridge ARM_SKELETAL ARM uTextures,uTexture,uTintColor,uSkinParts,uTransform
+// minosoft:scene_bridge ARM_SKELETAL ARM uTextures,uTexture,uTintColor,uSkinParts,uViewProjectionMatrix,uMatrix
 // minosoft:scene_bridge HELD_ITEM HELD_ITEM uTextures,uViewProjectionMatrix,uMatrix,uTintColor
 // minosoft:scene_bridge SKELETAL SKELETAL_TINTED uTextures,uViewProjectionMatrix,uCameraPosition,fog,uSkeletalBuffer,uTintColor,uOutlineColor
 
@@ -83,7 +83,8 @@ flat out uint finAllowTransparency;
 uniform uint uTexture;
 uniform vec4 uTintColor;
 uniform uint uSkinParts;
-uniform mat4 uTransform;
+uniform mat4 uViewProjectionMatrix;
+uniform mat4 uMatrix;
 
 #include "minosoft:tint"
 #include "minosoft:color"
@@ -91,9 +92,9 @@ uniform mat4 uTransform;
 #include "minosoft:animation"
 
 void run_skeletal(uint inTransformNormal, vec3 inPosition) {
-    vec4 position = uTransform * vec4(inPosition, 1.0);
-    gl_Position = renderStage < 0 ? vec4(0.0) : position;
-    vec3 normal = transformNormal(decodeNormal(inTransformNormal & 0xFFFu), uTransform);
+    vec4 position = uMatrix * vec4(inPosition, 1.0);
+    gl_Position = renderStage < 0 ? vec4(0.0) : uViewProjectionMatrix * position;
+    vec3 normal = transformNormal(decodeNormal(inTransformNormal & 0xFFFu), uMatrix);
     finTintColor = vec4(vec3(getShade(normal)), 1.0);
     finFragmentPosition = position.xyz;
 }

@@ -216,11 +216,27 @@ class IrisShaderPackPlannerTest {
         assertFalse("colortex6" in bloomBlur.resourceUsage.sampledCustomTextures)
         assertContains(
             plan.programs.single { it.name == "gbuffers_water" }.fragment,
-            "float minosoftWaterSurfaceScale",
+            "float minosoftWaterDiffuseScale",
+        )
+        assertContains(
+            plan.programs.single { it.name == "gbuffers_water" }.fragment,
+            "if (rtPos.z < 1.0 && !isWater){",
         )
         assertContains(
             plan.programs.single { it.name == "composite4" }.fragment,
             "color.rgb * mix(vec3(1.0), thresholdAbsorbedColor, 0.65)",
+        )
+        assertContains(
+            plan.programs.single { it.name == "composite6" }.fragment,
+            "if(hand) blendingFactor = 1.0; // minosoft: reject world history on the hand",
+        )
+        assertContains(
+            plan.programs.single { it.name == "composite6" }.fragment,
+            "bool hand = abs(dataUnpacked-0.75) < 0.01 && texture(depthtex0,taauTC).x < 1.0;",
+        )
+        assertFalse(
+            "texture(depthtex1,taauTC).x < 1.0" in
+                plan.programs.single { it.name == "composite6" }.fragment,
         )
         val composite = plan.programs.single { it.name == "composite1" }.fragment
         assertContains(composite, "#ifdef Ambient_SSS")
@@ -1961,7 +1977,7 @@ class IrisShaderPackPlannerTest {
         )
 
         assertEquals("iris-reference", plan.packName)
-        assertEquals("cb9601b6ace1e1c6ce02a8d4eb66f4f2f8ce04d2d022ddc973bb5b5c59198759", plan.fingerprint)
+        assertEquals("77ea5a23b0b29e149ff78ffdca11b3f236293124cc8e7c6ce32ecbc0ee124eef", plan.fingerprint)
         assertEquals("default", plan.selectedProfile)
         assertEquals(18.0f, plan.sunPathRotation)
         assertEquals(IrisSmoothingDirectives(40.0f, 12.0f, 4.0f), plan.smoothingDirectives)

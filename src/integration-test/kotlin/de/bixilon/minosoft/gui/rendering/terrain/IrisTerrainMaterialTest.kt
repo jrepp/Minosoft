@@ -47,7 +47,7 @@ class IrisTerrainMaterialTest {
         )
     }
 
-    fun `quad derives shared mid texture normal and tangent`() {
+    fun `clockwise north quad derives shared mid texture normal and tangent`() {
         val quad = IrisTerrainQuad.calculate(
             floatArrayOf(
                 0.0f, 0.0f, 0.0f,
@@ -69,11 +69,11 @@ class IrisTerrainMaterialTest {
         assertEquals(quad.midTexture.y, 0.5f, 0.001f)
         assertEquals(quad.normal.x, 0.0f, 0.001f)
         assertEquals(quad.normal.y, 0.0f, 0.001f)
-        assertEquals(quad.normal.z, 1.0f, 0.001f)
+        assertEquals(quad.normal.z, -1.0f, 0.001f)
         assertEquals(quad.tangent.x, 1.0f, 0.001f)
         assertEquals(quad.tangent.y, 0.0f, 0.001f)
         assertEquals(quad.tangent.z, 0.0f, 0.001f)
-        assertEquals(quad.tangent.w, 1.0f, 0.001f)
+        assertEquals(quad.tangent.w, -1.0f, 0.001f)
     }
 
     fun `resolver snapshots mapped block identity render type center and luminance`() {

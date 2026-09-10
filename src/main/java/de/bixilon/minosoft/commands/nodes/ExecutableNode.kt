@@ -13,7 +13,6 @@
 
 package de.bixilon.minosoft.commands.nodes
 
-import de.bixilon.kutil.cast.CastUtil.nullCast
 import de.bixilon.minosoft.commands.stack.CommandExecutor
 import de.bixilon.minosoft.commands.stack.CommandStack
 import de.bixilon.minosoft.commands.suggestion.Suggestion
@@ -22,7 +21,6 @@ import de.bixilon.minosoft.commands.util.CommandReader
 import de.bixilon.minosoft.data.text.BaseComponent
 import de.bixilon.minosoft.data.text.ChatComponent
 import de.bixilon.minosoft.data.text.TextComponent
-import de.bixilon.minosoft.data.text.formatting.TextFormattable
 import de.bixilon.minosoft.data.text.formatting.color.ChatColors
 import de.bixilon.minosoft.terminal.commands.CommandException
 
@@ -40,12 +38,9 @@ abstract class ExecutableNode(
         try {
             executor?.invoke(stack)
         } catch (exception: CommandException) {
-            val message = exception.nullCast<TextFormattable>()?.toText() ?: exception.message
-            if (message != null) {
-                val component = ChatComponent.of(message)
-                component.setFallbackColor(ChatColors.RED)
-                stack.print.print(BaseComponent(TextComponent("[ERROR] ").bold().color(ChatColors.RED), component))
-            }
+            val component = ChatComponent.of(exception.toText())
+            component.setFallbackColor(ChatColors.RED)
+            stack.print.print(BaseComponent(TextComponent("[ERROR] ").bold().color(ChatColors.RED), component))
         } catch (exception: Throwable) {
             exception.printStackTrace()
         }

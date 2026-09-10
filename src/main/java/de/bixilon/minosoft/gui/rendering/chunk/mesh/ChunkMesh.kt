@@ -40,11 +40,11 @@ class ChunkMesh(
     override fun draw() {
         if (occlusion == OcclusionStates.INVISIBLE) return
 
-        val query = query != null && occlusion == OcclusionStates.MAYBE
+        val query = query?.takeIf { occlusion == OcclusionStates.MAYBE }
 
-        if (query) this.query?.begin()
+        query?.begin()
         super.draw()
-        if (query) this.query?.end()
+        query?.end()
     }
 
     /**

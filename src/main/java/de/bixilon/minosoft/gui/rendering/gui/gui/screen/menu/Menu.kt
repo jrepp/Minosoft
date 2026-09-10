@@ -170,10 +170,6 @@ abstract class Menu(
                     break
                 }
             }
-            if (element == null) {
-                return true
-            }
-
             activeElement?.onMouseLeave()
             element.onMouseEnter(Vec2f.EMPTY, Vec2f.EMPTY)
             activeElement = element

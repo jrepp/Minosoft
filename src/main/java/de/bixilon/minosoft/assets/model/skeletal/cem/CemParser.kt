@@ -95,7 +95,7 @@ class CemParser(private val resolver: CemPartResolver? = null) {
         if (!base.isObject || !inline.isObject) fail(source, path, "CEM part must be an object.")
 
         val merged = (base as ObjectNode).deepCopy()
-        inline.fields().forEachRemaining { (key, value) ->
+        inline.properties().forEach { (key, value) ->
             if (key != "model") merged.set<JsonNode>(key, value)
         }
         return merged
@@ -126,7 +126,7 @@ class CemParser(private val resolver: CemPartResolver? = null) {
             if (!animations.isArray) fail(source, "$path.animations", "Expected an array.")
             animations.forEachIndexed { index, animation ->
                 if (!animation.isObject) fail(source, "$path.animations[$index]", "Expected an expression object.")
-                animation.fields().forEachRemaining { (target, expression) ->
+                animation.properties().forEach { (target, expression) ->
                     if (!expression.isTextual) fail(source, "$path.animations[$index].$target", "Expected an expression string.")
                     try {
                         expressions += SkeletalExpressionBinding(name, target, expression.asText())

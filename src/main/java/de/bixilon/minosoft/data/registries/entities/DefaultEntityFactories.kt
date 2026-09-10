@@ -10,6 +10,8 @@
  *
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
+@file:Suppress("DEPRECATION") // Incomplete protocol entities remain registered so their packets can be represented.
+
 package de.bixilon.minosoft.data.registries.entities
 
 import de.bixilon.kmath.vec.vec3.d.Vec3d

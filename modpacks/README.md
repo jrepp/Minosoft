@@ -46,6 +46,8 @@ cached binaries to this repository.
 List, prepare, or inspect packs without starting the client:
 
 ```sh
+./play.sh setup list
+./play.sh setup list --json
 ./play.sh modpack list
 ./play.sh modpack prepare sodium --trajectory experiment-a
 ./play.sh modpack inspect sodium --trajectory experiment-a
@@ -54,6 +56,12 @@ List, prepare, or inspect packs without starting the client:
 ./play.sh modpack prepare distant-horizons-bliss --trajectory dh-bliss-main
 ./play.sh modpack inspect distant-horizons-bliss --trajectory dh-bliss-main
 ```
+
+`setup list` reports the existing trajectory/modpack pairs in the configured
+out-of-source store. Its JSON form includes the exact path, whether the pack
+still has a source-controlled definition, and a ready-to-run launch command.
+`modpack list` remains the inventory of source-controlled pack definitions,
+including packs that have not been prepared into a trajectory yet.
 
 ## Pack contract
 

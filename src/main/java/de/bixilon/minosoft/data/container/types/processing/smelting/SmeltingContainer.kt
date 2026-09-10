@@ -41,6 +41,7 @@ abstract class SmeltingContainer(session: PlaySession, type: ContainerType, titl
     override val sections: Array<ContainerSection> get() = SECTIONS
 
 
+    @Suppress("DEPRECATION") // The smelting-input compatibility slot remains the active fallback.
     override fun getSlotType(slotId: Int): SlotType? {
         if (slotId == 0) {
             return SmeltingSlot

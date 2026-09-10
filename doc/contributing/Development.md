@@ -39,3 +39,9 @@ Generally I'd say TBA, but some basic rules are here. Feel free to contact me fi
 5. Test and check for impacts
 6. Submit **P**ull **R**equest (target branch should be `master`)
 7. Wait for merge
+
+## Focused terrain testing
+
+For water, lighting, and far-terrain changes, start with the deterministic
+[`localTerrainTest`](TerrainTesting.md) gate, then use the documented managed
+render scenarios when the change crosses into GPU or live-world behavior.

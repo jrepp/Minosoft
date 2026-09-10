@@ -20,9 +20,9 @@ import de.bixilon.minosoft.data.Axes
 value class DirectionVector private constructor(val value: Int) : _Vec3i {
     constructor() : this(0)
 
-    override inline val x: Int get() = Integer.signum((value and (MASK shl SHIFT_X)) shl (Int.SIZE_BITS - SHIFT_X - BITS))
-    override inline val y: Int get() = Integer.signum((value and (MASK shl SHIFT_Y)) shl (Int.SIZE_BITS - SHIFT_Y - BITS))
-    override inline val z: Int get() = Integer.signum((value and (MASK shl SHIFT_Z)) shl (Int.SIZE_BITS - SHIFT_Z - BITS))
+    override val x: Int get() = Integer.signum((value and (MASK shl SHIFT_X)) shl (Int.SIZE_BITS - SHIFT_X - BITS))
+    override val y: Int get() = Integer.signum((value and (MASK shl SHIFT_Y)) shl (Int.SIZE_BITS - SHIFT_Y - BITS))
+    override val z: Int get() = Integer.signum((value and (MASK shl SHIFT_Z)) shl (Int.SIZE_BITS - SHIFT_Z - BITS))
 
     operator fun get(axis: Axes) = when (axis) {
         Axes.X -> x
@@ -42,9 +42,9 @@ value class DirectionVector private constructor(val value: Int) : _Vec3i {
         return DirectionVector(without or (value shl shift))
     }
 
-    override inline operator fun component1() = x
-    override inline operator fun component2() = y
-    override inline operator fun component3() = z
+    override operator fun component1() = x
+    override operator fun component2() = y
+    override operator fun component3() = z
 
     override fun toString() = "v($x $y $z)"
 

@@ -48,7 +48,6 @@ object BlockDestroyedHandler : WorldEventHandler {
         addBlockBreakParticles(session, position, state)
     }
 
-    @Deprecated("replace")
     operator fun Shape.iterator(): Iterator<AABB> = when (this) {
         is AABB -> SingleIterator(this)
         is AABBList -> this.iterator()

@@ -46,7 +46,7 @@ class GeckoLibParser {
         if (!animations.isObject) fail(source, "$.animations", "Expected an object.")
 
         val result = linkedMapOf<String, SkeletalAnimationClip>()
-        animations.fields().forEachRemaining { (name, animation) ->
+        animations.properties().forEach { (name, animation) ->
             result[name] = parseAnimation(source, name, animation, "$.animations.$name")
         }
         return result
@@ -177,7 +177,7 @@ class GeckoLibParser {
         val bones = node["bones"]
         if (bones != null) {
             if (!bones.isObject) fail(source, "$path.bones", "Expected a bones object.")
-            bones.fields().forEachRemaining { (bone, animation) ->
+            bones.properties().forEach { (bone, animation) ->
                 if (!animation.isObject) fail(source, "$path.bones.$bone", "Expected a bone animation object.")
                 val boneChannels = mutableListOf<SkeletalAnimationChannel>()
                 listOf(
@@ -226,7 +226,7 @@ class GeckoLibParser {
         fun entries(field: String, consume: (Float, JsonNode, String) -> Unit) {
             val values = animation[field] ?: return
             if (!values.isObject) fail(source, "$path.$field", "Expected an event timeline object.")
-            values.fields().forEachRemaining { (rawTime, value) ->
+            values.properties().forEach { (rawTime, value) ->
                 if (events.size >= MAX_EVENTS) fail(source, "$path.$field", "Animation exceeds $MAX_EVENTS events.")
                 val time = rawTime.toFloatOrNull()
                     ?.takeIf { it.isFinite() && it >= 0.0f }
@@ -267,7 +267,7 @@ class GeckoLibParser {
             return listOf(parseKeyframe(source, 0.0f, node, path))
         }
         if (!node.isObject) fail(source, path, "Expected a vector or keyed channel object.")
-        val keyframes = node.fields().asSequence().map { (time, value) ->
+        val keyframes = node.properties().asSequence().map { (time, value) ->
             val seconds = time.toFloatOrNull() ?: fail(source, "$path.$time", "Keyframe key must be a time in seconds.")
             parseKeyframe(source, seconds, value, "$path.$time")
         }.sortedBy { it.timeSeconds }.toList()

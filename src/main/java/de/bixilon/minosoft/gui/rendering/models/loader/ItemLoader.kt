@@ -17,6 +17,7 @@ package de.bixilon.minosoft.gui.rendering.models.loader
 import de.bixilon.kutil.cast.CastUtil.nullCast
 import de.bixilon.kutil.latch.AbstractLatch
 import de.bixilon.kutil.reflection.ReflectionUtil.forceSet
+import de.bixilon.minosoft.assets.audit.ContentAssetAudit
 import de.bixilon.minosoft.assets.minecraft.MinecraftPackFormat
 import de.bixilon.minosoft.assets.util.InputStreamUtil.readJsonObject
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
@@ -46,9 +47,9 @@ class ItemLoader(private val loader: ModelLoader) {
     val assets = loader.context.session.assets
     val version = loader.context.session.version
 
-    fun loadItem(name: ResourceLocation): ItemModel? = loadItem(name, 0)
+    fun loadItem(name: ResourceLocation): ItemModel? = loadItem(name, 0, name)
 
-    private fun loadItem(name: ResourceLocation, depth: Int): ItemModel? {
+    private fun loadItem(name: ResourceLocation, depth: Int, consumer: ResourceLocation): ItemModel? {
         if (name == BUILTIN_ENTITY) {
             return ItemModel(textures = null, builtinEntity = true)
         }
@@ -65,11 +66,12 @@ class ItemLoader(private val loader: ModelLoader) {
         try {
             val data = assets.getOrNull(file)?.readJsonObject()
             if (data == null) {
+                loader.context.contentAssetAudit.missing(ContentAssetAudit.Kind.MODEL, file, consumer)
                 Log.log(LogMessageType.LOADING, LogLevels.WARN) { "Can not find item model $name" }
                 return null
             }
 
-            val parent = data["parent"]?.toString()?.let { loadItem(it.toResourceLocation(), depth + 1) }
+            val parent = data["parent"]?.toString()?.let { loadItem(it.toResourceLocation(), depth + 1, file) }
 
             val model = ItemModel.deserialize(parent, data)
             cache[file] = model
@@ -82,7 +84,7 @@ class ItemLoader(private val loader: ModelLoader) {
     private fun loadItem(item: Item): ItemModel? {
         val file = (if (item is CustomModel) item.getModelName(version) else item.identifier.itemModel()) ?: return null
 
-        return loadItem(file)
+        return loadItem(file, 0, item.identifier)
     }
 
     fun load(latch: AbstractLatch?) {

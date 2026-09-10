@@ -16,6 +16,7 @@ package de.bixilon.minosoft.gui.rendering.system.base.texture.texture
 import de.bixilon.kmath.vec.vec2.f.Vec2f
 import de.bixilon.kmath.vec.vec2.i.Vec2i
 import de.bixilon.kutil.cast.CastUtil.unsafeNull
+import de.bixilon.minosoft.assets.audit.ContentAssetAudit
 import de.bixilon.minosoft.gui.rendering.RenderConstants
 import de.bixilon.minosoft.gui.rendering.RenderContext
 import de.bixilon.minosoft.gui.rendering.system.base.texture.TextureStates
@@ -26,6 +27,7 @@ import de.bixilon.minosoft.gui.rendering.system.base.texture.data.TextureData
 import de.bixilon.minosoft.gui.rendering.system.base.texture.data.buffer.TextureBuffer
 import de.bixilon.minosoft.gui.rendering.system.base.texture.loader.TextureLoader
 import de.bixilon.minosoft.gui.rendering.system.base.texture.loader.TextureLoaderResult
+import de.bixilon.minosoft.gui.rendering.system.base.texture.loader.file.FileTextureLoader
 import de.bixilon.minosoft.gui.rendering.system.base.texture.shader.ShaderTexture
 import de.bixilon.minosoft.gui.rendering.textures.TextureUtil.readTexture
 import de.bixilon.minosoft.gui.rendering.textures.properties.AnimationProperties
@@ -90,6 +92,9 @@ class Texture(
         try {
             return loader.load(context)
         } catch (error: Throwable) {
+            if (error is FileNotFoundException && loader is FileTextureLoader) {
+                context.contentAssetAudit.missing(ContentAssetAudit.Kind.TEXTURE, loader.file)
+            }
             Log.log(LogMessageType.RENDERING, LogLevels.WARN) { "Can not load texture ${loader}: $error" }
             if (error !is FileNotFoundException) {
                 Log.log(LogMessageType.RENDERING, LogLevels.VERBOSE) { error }

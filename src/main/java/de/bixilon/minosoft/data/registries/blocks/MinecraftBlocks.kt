@@ -16,7 +16,6 @@ package de.bixilon.minosoft.data.registries.blocks
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 
 @Suppress("UNUSED")
-@Deprecated("Block factories")
 object MinecraftBlocks {
     // taken from 1.17.1
     val STONE = minecraft("stone")

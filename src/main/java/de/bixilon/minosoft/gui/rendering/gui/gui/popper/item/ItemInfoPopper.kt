@@ -55,12 +55,9 @@ class ItemInfoPopper(
                 text += TextComponent(" (${it}/${max})", color = ChatColors.DARK_GRAY)
             }
         }
-        stack.display?.lore?.let {
-            if (it.isEmpty()) return@let
-            for (line in it) {
-                text += "\n"
-                text += line
-            }
+        for (line in stack.display.lore) {
+            text += "\n"
+            text += line
         }
         stack.enchanting.enchantments.takeIf { it.isNotEmpty() }?.let {
             text += "\n"

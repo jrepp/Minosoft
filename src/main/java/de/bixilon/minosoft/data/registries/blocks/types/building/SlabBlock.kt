@@ -11,6 +11,8 @@
  * This software is not affiliated with Mojang AB, the original developer of Minecraft.
  */
 
+@file:Suppress("DEPRECATION") // BlockModelPrototype remains the active slab-model compatibility bridge.
+
 package de.bixilon.minosoft.data.registries.blocks.types.building
 
 import de.bixilon.kutil.cast.CastUtil.unsafeCast

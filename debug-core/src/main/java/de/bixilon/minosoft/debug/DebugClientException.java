@@ -10,6 +10,8 @@ package de.bixilon.minosoft.debug;
 import java.io.IOException;
 
 public class DebugClientException extends IOException {
+    private static final long serialVersionUID = 1L;
+
     private final String code;
 
     public DebugClientException(String code, String message) {

@@ -39,6 +39,7 @@ import kotlin.time.measureTime
 object RenderLoader {
 
     private fun RenderContext.setThread() {
+        @Suppress("SENSELESS_COMPARISON") // thread is an unsafe-null field before the render context starts.
         if (this.thread != null) { // unsafeNull
             throw IllegalStateException("Thread is already set!")
         }

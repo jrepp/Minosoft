@@ -111,7 +111,7 @@ class BitmapFontType(
             uvStart.fixUVStart()
 
             val uvEnd = MVec2f(offset)
-            uvEnd.x += width * pixel.x
+            uvEnd.x += (start + width) * pixel.x
             uvEnd.y += height * pixel.y
             uvEnd.fixUVEnd()
 

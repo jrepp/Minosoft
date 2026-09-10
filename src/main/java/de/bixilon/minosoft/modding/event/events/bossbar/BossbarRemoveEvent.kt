@@ -16,7 +16,6 @@ import de.bixilon.minosoft.data.bossbar.Bossbar
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import java.util.*
 
-@Deprecated("Observables")
 class BossbarRemoveEvent(
     session: PlaySession,
     uuid: UUID,

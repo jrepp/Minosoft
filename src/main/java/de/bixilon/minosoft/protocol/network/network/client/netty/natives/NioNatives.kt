@@ -15,10 +15,11 @@ package de.bixilon.minosoft.protocol.network.network.client.netty.natives
 
 import de.bixilon.kutil.concurrent.thread.NamedThreadFactory
 import io.netty.channel.Channel
-import io.netty.channel.nio.NioEventLoopGroup
+import io.netty.channel.MultiThreadIoEventLoopGroup
+import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.nio.NioSocketChannel
 
 object NioNatives : TransportNatives {
-    override val pool by lazy { NioEventLoopGroup(NamedThreadFactory("Nio#%d")) }
+    override val pool by lazy { MultiThreadIoEventLoopGroup(NamedThreadFactory("Nio#%d"), NioIoHandler.newFactory()) }
     override val channel: Class<out Channel> = NioSocketChannel::class.java
 }

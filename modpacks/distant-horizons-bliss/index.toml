@@ -4,11 +4,11 @@ hash-format = "sha256"
 
 [[files]]
 file = "fabric.mod.json"
-hash = "30558a85ffca2cd44c9d5ca19c93103283f10ebf9a9e2889b9a7a73ead341ed6"
+hash = "c3f4516861d277da74aa7ff3dea959121eb7550029e7fe06683aa980294f23ac"
 
 [[files]]
 file = "ladder.tsv"
-hash = "234820d6b153d2c6db0bbb62597c181856770829f76d52fce2b48193a91b0f63"
+hash = "bab36c500b7ee2aaaac5883dd5e3697c66e75b0f7bdd1eb2ba44b0e3a4de26bd"
 
 [[files]]
 file = "mods/fabric-api.pw.toml"
@@ -38,6 +38,26 @@ metafile = true
 [[files]]
 file = "mods/tectonic.pw.toml"
 hash = "9d31c9d5e43ec20bcc32ac21019962768c2be32208b1d96c0dbd1ddf4f4bccc4"
+metafile = true
+
+[[files]]
+file = "resourcepacks/faithful-32x.pw.toml"
+hash = "98bdb9ae76f4018dcf4516fd39188857413a76043626d2f84d01d010b4349c45"
+metafile = true
+
+[[files]]
+file = "resourcepacks/gui-revision.pw.toml"
+hash = "9dbdba7a14a4f46fe17233c6ef9a600b3c356bb54f73520fc6e240aac33aeb43"
+metafile = true
+
+[[files]]
+file = "resourcepacks/open-assets-lib.pw.toml"
+hash = "6bcabe4d74704a0bdc71e0025749fb4606a1bf17beadd5b0f3bfbbc55008bc96"
+metafile = true
+
+[[files]]
+file = "resourcepacks/vanilla-evolved.pw.toml"
+hash = "fa536773d5bdf61e0f0ee6aab48c39a53cd0751bbd0124309f19069f349fe8e6"
 metafile = true
 
 [[files]]

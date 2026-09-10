@@ -16,7 +16,6 @@ package de.bixilon.minosoft.modding.event.master
 import de.bixilon.minosoft.modding.event.events.Event
 import de.bixilon.minosoft.modding.event.listener.EventListener
 
-@Deprecated("That is a goofy way to handle events")
 interface AbstractEventMaster : Iterable<EventListener> {
     val size: Int
 

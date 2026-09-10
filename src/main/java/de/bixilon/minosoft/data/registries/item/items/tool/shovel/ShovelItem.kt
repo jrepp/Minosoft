@@ -30,7 +30,6 @@ import de.bixilon.minosoft.input.interaction.InteractionResults
 abstract class ShovelItem(identifier: ResourceLocation, registries: Registries, data: JsonObject) : InteractingToolItem(identifier) {
     override val tag: ResourceLocation get() = TAG
 
-    @Deprecated("Flattenables")
     protected val flattenables = data["flattenables_block_states"]?.toAnyMap()?.states(registries)
 
 

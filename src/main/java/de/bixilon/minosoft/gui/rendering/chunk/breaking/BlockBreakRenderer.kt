@@ -62,7 +62,7 @@ class BlockBreakRenderer(
         context.queue += { existing.mesh.unload() }
     }
 
-    private fun update(id: Int, position: BlockPosition, progress: Float) = lock.locked {
+    private fun update(id: Int, position: BlockPosition, progress: Float): Unit = lock.locked {
         val state = context.session.world[position] ?: return unload(id)
 
         val existing = instances[id]

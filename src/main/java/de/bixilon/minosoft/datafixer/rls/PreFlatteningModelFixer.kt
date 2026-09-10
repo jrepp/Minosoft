@@ -16,5 +16,4 @@ package de.bixilon.minosoft.datafixer.rls
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 
-@Deprecated("implement blocks")
 object PreFlatteningModelFixer : ResourceLocationFixer(minosoft("pre_flattening_models"))

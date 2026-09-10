@@ -26,6 +26,7 @@ data class ContainerType(
 
     override fun toString() = identifier.toString()
 
+    @Suppress("DEPRECATION") // UnknownContainer is the required fallback for unrecognized server container types.
     companion object : IdentifierCodec<ContainerType> {
         override fun deserialize(registries: Registries?, identifier: ResourceLocation, data: Map<String, Any>): ContainerType {
             return ContainerType(

@@ -14,7 +14,7 @@
 package de.bixilon.minosoft.data.registries.registries.registry.enums
 
 import de.bixilon.kutil.collections.primitive.Clearable
-import de.bixilon.kutil.json.JsonObject
+import de.bixilon.kutil.json.JsonUtil.toJsonObject
 import de.bixilon.kutil.primitive.IntUtil.toInt
 import de.bixilon.minosoft.data.registries.registries.Registries
 import de.bixilon.minosoft.data.registries.registries.registry.Parentable
@@ -40,7 +40,8 @@ class FakeEnumRegistry<T : RegistryFakeEnumerable>(
     }
 
     fun getId(value: T): Int {
-        return valueIdMap[value] ?: parent?.getId(value)!!
+        if (valueIdMap.containsKey(value)) return valueIdMap.getInt(value)
+        return parent?.getId(value)!!
     }
 
     fun update(data: Map<Any, Any>?, registries: Registries) {
@@ -49,11 +50,11 @@ class FakeEnumRegistry<T : RegistryFakeEnumerable>(
         }
 
         for ((id, value) in data) {
-            value as JsonObject
+            val objectValue = requireNotNull(value.toJsonObject()) { "Fake enum value must be an object: $value" }
             var itemId = id.toInt()
 
-            val item = codec.deserialize(registries, value)
-            value["id"]?.toInt()?.let { itemId = it }
+            val item = codec.deserialize(registries, objectValue)
+            objectValue["id"]?.toInt()?.let { itemId = it }
 
             idValueMap[itemId] = item
             valueIdMap[item] = itemId

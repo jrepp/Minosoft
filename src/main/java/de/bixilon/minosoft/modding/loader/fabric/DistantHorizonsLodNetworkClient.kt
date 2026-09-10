@@ -214,7 +214,10 @@ internal class DistantLodNetworkClient(
         expirePendingRequests()
 
         val nextCenter = session.player.physics.positionInfo.chunkPosition
-        val nextInner = session.world.view.viewDistance + 1
+        // Native delivery is not a complete square: rounded view boundaries
+        // and unloaded chunks can leave holes inside that radius. Walk from
+        // the player and let contains() skip only tiles actually retained.
+        val nextInner = 0
         val nextOuter = minOf(
             options.networkRadiusChunks,
             options.renderDistanceChunks,

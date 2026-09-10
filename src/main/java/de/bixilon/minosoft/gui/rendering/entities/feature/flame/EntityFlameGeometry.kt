@@ -74,7 +74,7 @@ object EntityFlameGeometry {
         return Layout(
             scale = scale,
             normalizedHeight = normalizedHeight,
-            zOffset = BASE_Z + floor(normalizedHeight).toFloat() * INTEGER_HEIGHT_Z_STEP,
+            zOffset = BASE_Z + floor(normalizedHeight) * INTEGER_HEIGHT_Z_STEP,
             quads = quads,
         )
     }

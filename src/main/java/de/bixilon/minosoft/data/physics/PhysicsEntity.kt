@@ -17,7 +17,6 @@ import de.bixilon.kmath.vec.vec3.d.MVec3d
 import de.bixilon.kmath.vec.vec3.d.Vec3d
 import de.bixilon.minosoft.data.registries.shapes.aabb.AABB
 
-@Deprecated("merge with new physics")
 interface PhysicsEntity {
     var position: Vec3d
     val velocity: MVec3d

@@ -17,7 +17,6 @@ import com.fasterxml.jackson.annotation.JacksonInject
 import com.fasterxml.jackson.annotation.JsonIgnore
 import com.fasterxml.jackson.annotation.JsonProperty
 import de.bixilon.kutil.concurrent.lock.Lock
-import de.bixilon.kutil.exception.Broken
 import de.bixilon.kutil.latch.AbstractLatch
 import de.bixilon.kutil.latch.AbstractLatch.Companion.child
 import de.bixilon.minosoft.config.profile.profiles.account.AccountProfileManager
@@ -166,7 +165,7 @@ class MicrosoftAccount(
             }
         }
 
-        return key ?: Broken()
+        return key
     }
 
     override fun toString(): String {

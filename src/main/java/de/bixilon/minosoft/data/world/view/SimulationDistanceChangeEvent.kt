@@ -16,7 +16,6 @@ package de.bixilon.minosoft.data.world.view
 import de.bixilon.minosoft.modding.event.events.session.play.PlaySessionEvent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
-@Deprecated("observables")
 class SimulationDistanceChangeEvent(
     session: PlaySession,
     val simulationDistance: Int,

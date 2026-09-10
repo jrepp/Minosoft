@@ -17,7 +17,6 @@ import de.bixilon.minosoft.data.entities.entities.LivingEntity
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minosoft
 import de.bixilon.minosoft.gui.rendering.entities.EntitiesRenderer
 import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerRenderer
-import de.bixilon.minosoft.gui.rendering.entities.renderer.living.player.PlayerSkinUvTexture
 import de.bixilon.minosoft.gui.rendering.models.loader.ModelLoader
 import de.bixilon.minosoft.gui.rendering.models.loader.SkeletalLoader.Companion.sModel
 
@@ -33,7 +32,7 @@ class FallbackLivingEntityRenderer(
             loader.skeletal.register(
                 MODEL,
                 template = PlayerRenderer.WIDE,
-                override = mapOf(PlayerRenderer.SKIN to PlayerSkinUvTexture),
+                override = mapOf(PlayerRenderer.SKIN to loader.context.textures.debugTexture),
             )
         }
     }

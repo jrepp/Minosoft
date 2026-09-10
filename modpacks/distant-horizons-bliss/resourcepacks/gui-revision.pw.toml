@@ -1,0 +1,14 @@
+# Copyright (C) 2026 Jacob Repp
+
+name = "GUI Revision"
+filename = "GUIRevision_2.1.0.zip"
+side = "client"
+
+[download]
+hash-format = "sha512"
+hash = "b7d0aaed77a3814e339321e9a4c643e7c5a9508acf2f6122421f07e5c2f81f7b2cefcaf95745ea192b1d77cebe92a69c02748cf07192a90f95848f206ed5013d"
+url = "https://cdn.modrinth.com/data/orgtdk9U/versions/10zyLoNq/GUIRevision_2.1.0.zip"
+
+[update.modrinth]
+mod-id = "orgtdk9U"
+version = "10zyLoNq"

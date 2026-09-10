@@ -367,6 +367,7 @@ class ShaderPipelineRegistry : AutoCloseable {
         ) {
             withPipeline(WorldShaderPipeline::restoreHostState)
             fallback.activate()
+            fallback.syncUniformsOnTargetTransition(fallback.native)
             sceneBinding.set(SceneBinding(fallback, fallback, null, null))
             return
         }
@@ -381,6 +382,7 @@ class ShaderPipelineRegistry : AutoCloseable {
                 )
             }
             fallback.activate()
+            fallback.syncUniformsOnTargetTransition(fallback.native)
             sceneBinding.set(SceneBinding(fallback, fallback, null, null))
             return
         }
@@ -389,10 +391,13 @@ class ShaderPipelineRegistry : AutoCloseable {
         withPipeline { pipeline -> pipeline.bindFrameState(selected, semantic, contract) }
         val uniforms = withPipeline { pipeline -> pipeline.sceneUniforms(fallback, selected) }
         sceneBinding.set(SceneBinding(fallback, selected, uniforms, contract))
-        if (selected !== fallback && sceneSyncing.get() != true) {
+        if (selected === fallback) {
+            fallback.syncUniformsOnTargetTransition(fallback.native)
+        } else if (sceneSyncing.get() != true) {
             sceneSyncing.set(true)
             try {
                 withPipeline { pipeline -> pipeline.syncSceneState(fallback, selected) }
+                fallback.markUniformTargetSynchronized(selected.native)
             } finally {
                 sceneSyncing.remove()
             }

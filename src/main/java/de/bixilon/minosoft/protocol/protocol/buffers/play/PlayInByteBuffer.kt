@@ -127,7 +127,6 @@ class PlayInByteBuffer : InByteBuffer {
         return readParticleData(type)
     }
 
-    @Deprecated("Should be made with factories")
     fun readParticleData(type: ParticleType): ParticleData {
         type.factory?.read(session, this, type)?.let { return it }
 

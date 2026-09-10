@@ -27,13 +27,15 @@ import kotlin.math.sqrt
 class DebugGenerator(val session: PlaySession) : ChunkGenerator {
     private val plains get() = session.registries.biome[minecraft("plains")] ?: FALLBACK_PLAINS
     private val swamp get() = session.registries.biome[minecraft("swamp")] ?: FALLBACK_SWAMP
-    private var size = (sqrt(session.registries.blockState.size.toFloat())).toInt() + 1
+    private val size = (sqrt(session.registries.blockState.size.toFloat())).toInt() + 1
+    private val arenaMaximum = size * BLOCK_SPACING + ARENA_MARGIN
 
 
     override fun generate(builder: ChunkBuilder) {
         if (generateTerrainCanary(builder)) return
 
         builder.biomes = DummyBiomeSource(plains)
+        generateArenaFloor(builder)
         if (builder.position.x < 0 || builder.position.z < 0) return
 
         val xOffset = builder.position.x * ChunkSize.SECTION_WIDTH_X
@@ -50,6 +52,26 @@ class DebugGenerator(val session: PlaySession) : ChunkGenerator {
                 val id = actuallyX * size + actuallyZ
                 val state = session.registries.blockState.getOrNull(id) ?: continue
                 builder[x, 8, z] = state
+            }
+        }
+    }
+
+    /**
+     * Gives the block-state catalog a bounded, continuous walking surface.
+     * One negative chunk is retained as a spawn/safety apron, while chunks
+     * beyond the generated catalog remain empty so accidental traversal does
+     * not turn the debug world into an unbounded terrain generator.
+     */
+    private fun generateArenaFloor(builder: ChunkBuilder) {
+        val stone = session.registries.block[minecraft("stone")]?.states?.default ?: return
+        val chunkX = builder.position.x * ChunkSize.SECTION_WIDTH_X
+        val chunkZ = builder.position.z * ChunkSize.SECTION_WIDTH_Z
+
+        for (x in 0 until ChunkSize.SECTION_WIDTH_X) {
+            if (chunkX + x !in ARENA_MINIMUM..arenaMaximum) continue
+            for (z in 0 until ChunkSize.SECTION_WIDTH_Z) {
+                if (chunkZ + z !in ARENA_MINIMUM..arenaMaximum) continue
+                builder[x, ARENA_FLOOR_Y, z] = stone
             }
         }
     }
@@ -99,6 +121,10 @@ class DebugGenerator(val session: PlaySession) : ChunkGenerator {
     }
 
     companion object {
+        private const val BLOCK_SPACING = 2
+        private const val ARENA_MINIMUM = -ChunkSize.SECTION_WIDTH_X
+        private const val ARENA_MARGIN = ChunkSize.SECTION_WIDTH_X - 1
+        private const val ARENA_FLOOR_Y = 7
         private val CANARY_CHUNK_X = 6..7
         private const val CANARY_CHUNK_Z = 6
         private const val CANARY_FLOOR_Y = 7

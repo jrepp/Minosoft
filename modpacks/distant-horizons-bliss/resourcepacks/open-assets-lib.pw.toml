@@ -1,0 +1,16 @@
+# Copyright (C) 2026 Jacob Repp
+# Upstream content license: CC BY 4.0
+# https://creativecommons.org/licenses/by/4.0/
+
+name = "Open Assets Lib"
+filename = "Open Assets Lib.zip"
+side = "client"
+
+[download]
+hash-format = "sha512"
+hash = "19cd77495e7e6333dd2892abe8ce4687d87d9eb603894e9c4f842b70a1d3ef91279ee26f527743d6d06100cdeb5dffa349a78d735e5c8754485e59967cea50cd"
+url = "https://cdn.modrinth.com/data/9HPMxaik/versions/FVgvOQ63/Open%20Assets%20Lib.zip"
+
+[update.modrinth]
+mod-id = "9HPMxaik"
+version = "FVgvOQ63"

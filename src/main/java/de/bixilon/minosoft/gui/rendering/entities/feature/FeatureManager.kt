@@ -71,8 +71,6 @@ class FeatureManager(val renderer: EntityRenderer<*>) : Iterable<EntityRenderFea
         features.forEach { it.enqueueUnload() }
     }
 
-    @Deprecated("What, why and how?")
-    @Suppress("DEPRECATION")
     fun invalidate() = features.forEach { it.invalidate() }
     fun updateVisibility(level: EntityVisibilityLevels) = features.forEach { it.updateVisibility(level) }
     fun collect(

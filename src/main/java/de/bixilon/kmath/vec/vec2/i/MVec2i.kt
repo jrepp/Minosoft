@@ -99,7 +99,7 @@ value class MVec2i(
     companion object {
         val EMPTY get() = MVec2i(0)
 
-        inline operator fun invoke(other: _Vec2i) = MVec2i(other.x.i, other.y.i)
+        inline operator fun invoke(other: _Vec2i) = MVec2i(other.x, other.y)
         inline operator fun invoke(other: _Vec2f) = MVec2i(other.x.i, other.y.i)
     }
 }

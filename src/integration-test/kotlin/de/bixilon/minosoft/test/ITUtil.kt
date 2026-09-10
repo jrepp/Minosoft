@@ -46,7 +46,6 @@ object ITUtil {
         if (version.flattened) loadPixlyzerData(version) else loadPreFlatteningData(version)
     }
 
-    @Deprecated("Its not implemented")
     fun todo() {
         throw SkipException("Not yet implemented!")
     }

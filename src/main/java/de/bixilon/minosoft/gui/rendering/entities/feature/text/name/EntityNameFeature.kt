@@ -132,7 +132,7 @@ class EntityNameFeature(renderer: EntityRenderer<*>) : BillboardTextFeature(rend
         return when (name) {
             NameTagVisibilities.HIDE_FOR_ENEMIES -> !sameTeam || (team.visibility.invisibleTeam && invisible)
             NameTagVisibilities.HIDE_FOR_MATES -> sameTeam || invisible
-            else -> Unreachable()
+            NameTagVisibilities.ALWAYS, NameTagVisibilities.NEVER -> Unreachable()
         }
     }
 

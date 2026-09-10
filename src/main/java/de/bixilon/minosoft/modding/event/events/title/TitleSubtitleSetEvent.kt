@@ -17,7 +17,6 @@ import de.bixilon.minosoft.modding.event.events.session.play.PlaySessionEvent
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 import de.bixilon.minosoft.protocol.packets.s2c.play.title.SubtitleS2CP
 
-@Deprecated("Observables")
 class TitleSubtitleSetEvent(
     session: PlaySession,
     val subtitle: ChatComponent,

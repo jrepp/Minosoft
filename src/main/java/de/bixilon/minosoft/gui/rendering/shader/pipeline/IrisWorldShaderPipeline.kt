@@ -1842,7 +1842,8 @@ class IrisWorldShaderPipeline private constructor(
                 "uTexture",
                 "uTintColor",
                 "uSkinParts",
-                "uTransform",
+                "uViewProjectionMatrix",
+                "uMatrix",
             ),
             SceneStateAbi.HELD_ITEM to setOf(
                 "uTextures",

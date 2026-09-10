@@ -23,7 +23,6 @@ import de.bixilon.minosoft.data.registries.identified.ResourceLocation
 import de.bixilon.minosoft.data.registries.registries.Registries
 import de.bixilon.minosoft.protocol.network.session.play.PlaySession
 
-@Deprecated("null")
 class EmptyFluid(identifier: ResourceLocation = this.identifier) : Fluid(identifier) {
 
     override fun getVelocityMultiplier(session: PlaySession): Double = Broken("empty")
@@ -40,7 +39,6 @@ class EmptyFluid(identifier: ResourceLocation = this.identifier) : Fluid(identif
         return matches(other.block.fluid)
     }
 
-    @Suppress("DEPRECATION")
     companion object : FluidFactory<EmptyFluid> {
         override val identifier = minecraft("empty")
 

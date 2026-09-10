@@ -88,7 +88,8 @@ open class Registry<T : RegistryItem>(
     }
 
     override fun getId(value: T): Int {
-        return valueIdMap[value] ?: parent?.getId(value)!!
+        if (valueIdMap.containsKey(value)) return valueIdMap.getInt(value)
+        return parent?.getId(value)!!
     }
 
     override fun updatePixlyzer(data: JsonObject?, version: Version, registries: Registries?) {

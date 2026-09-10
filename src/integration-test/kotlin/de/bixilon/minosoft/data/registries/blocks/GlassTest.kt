@@ -31,5 +31,4 @@ class GlassTest : BlockTest<Block>() {
     }
 }
 
-@Deprecated("")
 var GlassTest0: GlassTest = CastUtil.unsafeNull()

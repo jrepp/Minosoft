@@ -15,7 +15,6 @@ package de.bixilon.minosoft.data.registries.item
 
 import de.bixilon.minosoft.data.registries.identified.Namespaces.minecraft
 
-@Deprecated("item factories")
 object MinecraftItems {
     val LAPISLAZULI = minecraft("lapis_lazuli")
     val COAL = minecraft("coal")
