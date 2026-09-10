@@ -204,7 +204,10 @@ public final class Play {
         contentStacksDirectory = project.resolve("content-stacks");
         contentStackName = environment.getOrDefault("MINOSOFT_CONTENT_STACK", "").trim();
         contentStage = environment.getOrDefault("MINOSOFT_CONTENT_STAGE", "").trim();
-        modpackStore = resolveProjectPath(env("MINOSOFT_MODPACK_STORE", defaultModpackStore().toString()));
+        String configuredModpackStore = environment.get("MINOSOFT_MODPACK_STORE");
+        modpackStore = resolveProjectPath(configuredModpackStore == null || configuredModpackStore.isBlank()
+            ? defaultModpackStore().toString()
+            : configuredModpackStore);
         String configuredModpackCache = environment.get("MINOSOFT_MODPACK_CACHE");
         modpackCache = configuredModpackCache == null || configuredModpackCache.isBlank()
             ? null
@@ -5448,7 +5451,8 @@ public final class Play {
 
     private Path defaultModpackStore() {
         String home = environment.get("HOME");
-        require(home != null && !home.isBlank(), "HOME is required to choose the modpack store; set MINOSOFT_MODPACK_STORE.");
+        if (home == null || home.isBlank()) home = System.getProperty("user.home");
+        require(home != null && !home.isBlank(), "A user home is required to choose the modpack store; set MINOSOFT_MODPACK_STORE.");
         if (isMac()) return Path.of(home, "Library", "Caches", "Minosoft", "modpacks");
         if (isWindows()) return Path.of(environment.getOrDefault("LOCALAPPDATA", Path.of(home, ".cache").toString()), "Minosoft", "modpacks");
         return Path.of(environment.getOrDefault("XDG_CACHE_HOME", Path.of(home, ".cache").toString()), "minosoft", "modpacks");

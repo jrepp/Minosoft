@@ -52,7 +52,7 @@ jobs:
 
       - name: Unit test
         # Do not run compiler workers alongside the timed telemetry A/B test.
-        run: './gradlew test --max-workers=1 --no-parallel'
+        run: './gradlew test --max-workers=1 --no-parallel --continue'
 
       - name: Install Mesa Iris acceptance dependencies
         if: matrix.os == 'ubuntu'

@@ -33,7 +33,7 @@ class PlayUtilityTest {
     private val project = Path.of("").toAbsolutePath().normalize()
     private val java = Path.of(System.getProperty("java.home"), "bin", if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
 
-    private fun runPlay(vararg arguments: String, environment: Map<String, String> = emptyMap()): String {
+    private fun runPlay(vararg arguments: String, environment: Map<String, String> = emptyMap(), removedEnvironment: Set<String> = emptySet()): String {
         val command = mutableListOf(
             java.toString(),
             "-Dminosoft.project=$project",
@@ -44,12 +44,30 @@ class PlayUtilityTest {
         command += arguments
         val builder = ProcessBuilder(command).redirectErrorStream(true)
         builder.environment().putAll(environment)
+        removedEnvironment.forEach { builder.environment().remove(it) }
         val process = builder.start()
 
         assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Play utility did not finish.")
         val output = process.inputStream.bufferedReader().readText()
         assertEquals(0, process.exitValue(), output)
         return output
+    }
+
+    @Test
+    fun `launcher works without a HOME environment variable`() {
+        val output = runPlay("help", removedEnvironment = setOf("HOME", "MINOSOFT_MODPACK_STORE"))
+        assertTrue(output.contains("--canary"), output)
+    }
+
+    @Test
+    fun `explicit modpack store works without a HOME environment variable`() {
+        val store = createTempDirectory("play-store")
+        try {
+            val output = runPlay("help", environment = mapOf("MINOSOFT_MODPACK_STORE" to store.toString()), removedEnvironment = setOf("HOME"))
+            assertTrue(output.contains("--canary"), output)
+        } finally {
+            Files.deleteIfExists(store)
+        }
     }
 
     @Test
