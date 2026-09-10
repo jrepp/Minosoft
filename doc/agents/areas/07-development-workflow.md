@@ -14,6 +14,7 @@ map.
 | Status | Claim | Evidence |
 | --- | --- | --- |
 | Verified | Gradle provides compile, unit, integration, run, assemble, and fat-jar workflows. | `build.gradle.kts` and both CI definitions. |
+| Observed | Both ordinary and fat JAR packaging explicitly depend on generated version metadata. CI serializes unit-test workers to avoid compiler contention during the telemetry A/B measurement and retains test reports on failure. | `versionJsonTask`, `fatJar`, and `.github/workflows/build.yml`. |
 | Verified | CI runs Java 25 across Linux, Windows, and macOS; every output targets JVM 25. | CI setup, Gradle Java/Kotlin targets, and the [Java 25 baseline](../evidence/2026-07-30-java-25-baseline.md). |
 | Verified | Kotlin and Java compiler warnings fail the build in every JVM project. The accepted source-set baseline is a forced Java 25.0.4 rebuild of application, unit, integration, render-contract, debug-core, play-util, and Fabric bridge code with no compiler diagnostics. | Root Gradle JVM conventions and the [Java 25 baseline](../evidence/2026-07-30-java-25-baseline.md). |
 | Observed | Main/test Kotlin paths are unconventional. | Main is under `src/main/java`; unit tests are under `src/test/java`; integration tests use both `src/integration-test/kotlin` and the explicitly configured conventional `src/integration-test/java`. |

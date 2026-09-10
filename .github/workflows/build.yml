@@ -51,7 +51,8 @@ jobs:
         run: './gradlew assemble "-Pminosoft.updates=true"'
 
       - name: Unit test
-        run: './gradlew test'
+        # Do not run compiler workers alongside the timed telemetry A/B test.
+        run: './gradlew test --max-workers=1 --no-parallel'
 
       - name: Install Mesa Iris acceptance dependencies
         if: matrix.os == 'ubuntu'
@@ -107,3 +108,13 @@ jobs:
         with:
           name: 'minosoft-${{ matrix.os }}-aarch64'
           path: build/libs/minosoft-fat-*-aarch64-*.jar
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.os }}
+          path: |
+            **/build/test-results/**/*.xml
+            **/build/reports/tests/**
+          if-no-files-found: ignore

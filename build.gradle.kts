@@ -714,6 +714,7 @@ tasks.test {
 var destination: File? = null
 
 val fatJar = tasks.register("fatJar", fun Jar.() {
+    dependsOn(versionJsonTask)
     destination = destinationDirectory.get().asFile
     archiveBaseName.set("${project.name}-fat-${os.name.lowercase()}-${architecture.name.lowercase()}")
     manifest {
