@@ -506,6 +506,11 @@ weaken loader/API ownership and compatibility evidence.
 
 ## Stable contracts
 
+- Windows listeners create their first pipe before publication and keep a successor
+  ready before returning an accepted connection. Shutdown wakes a synchronous
+  accept before closing its handle; accepted handles are closed without forced
+  disconnect so a peer can drain the final response. Windows-only lifecycle and
+  buffered-response regressions live in `DebugWindowsPipesTest`.
 - One protocol implementation and shared client serve the CLI and tests.
 - Discovery is per-user, versioned, atomic, trajectory-aware, and token-safe.
 - Operations are explicit, namespaced, deadline-bounded, and owner-thread aware.
