@@ -47,6 +47,10 @@ jobs:
           path: ./it
           key: minosoft-assets
 
+      - name: Debug transport tests
+        timeout-minutes: 3
+        run: './gradlew :debug-core:test'
+
       - name: Build
         run: './gradlew assemble "-Pminosoft.updates=true"'
 

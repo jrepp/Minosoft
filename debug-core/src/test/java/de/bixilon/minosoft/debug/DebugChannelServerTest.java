@@ -9,6 +9,7 @@ package de.bixilon.minosoft.debug;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
@@ -26,6 +27,7 @@ class DebugChannelServerTest {
     Path temporary;
 
     @Test
+    @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void authenticatesDispatchesAndCleansUp() throws Exception {
         Path runtime = Path.of("/tmp", "md-" + UUID.randomUUID().toString().substring(0, 8));
         DebugPaths paths = new DebugPaths(temporary.resolve("state"), runtime);

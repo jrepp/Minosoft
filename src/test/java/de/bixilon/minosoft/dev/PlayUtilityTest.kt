@@ -45,12 +45,23 @@ class PlayUtilityTest {
         val builder = ProcessBuilder(command).redirectErrorStream(true)
         builder.environment().putAll(environment)
         removedEnvironment.forEach { builder.environment().remove(it) }
-        val process = builder.start()
-
-        assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Play utility did not finish.")
-        val output = process.inputStream.bufferedReader().readText()
-        assertEquals(0, process.exitValue(), output)
-        return output
+        val outputFile = Files.createTempFile("play-test-output", ".log")
+        try {
+            val process = builder.redirectOutput(outputFile.toFile()).start()
+            try {
+                assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Play utility did not finish.")
+                val output = Files.readString(outputFile)
+                assertEquals(0, process.exitValue(), output)
+                return output
+            } finally {
+                if (process.isAlive) {
+                    process.destroyForcibly()
+                    process.waitFor(5, TimeUnit.SECONDS)
+                }
+            }
+        } finally {
+            Files.deleteIfExists(outputFile)
+        }
     }
 
     @Test
