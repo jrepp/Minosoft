@@ -86,10 +86,13 @@ class DebugWindowsPipesTest {
         try {
             for (int attempt = 0; attempt < 32; attempt++) {
                 String address = address();
-                try (DebugTransportListener listener = DebugWindowsPipes.listen(address)) {
+                DebugTransportListener listener = DebugWindowsPipes.listen(address);
+                try {
                     var accepted = executor.submit(() -> assertThrows(IOException.class, listener::accept));
                     listener.close();
                     accepted.get(2, TimeUnit.SECONDS);
+                } finally {
+                    listener.close();
                 }
                 assertThrows(IOException.class, () -> DebugWindowsPipes.connect(address));
             }
