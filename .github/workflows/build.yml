@@ -84,7 +84,7 @@ jobs:
           echo "9098dd9e0c18b80f7aba2839cea33ce9a614d97665bbfcac87ccce6e4771667c41602d99088852cb1642ccab20b2ceff9b98af8f2e795bd0d3b90b7c9cbab914  ${shader_pack}" \
             | sha512sum --check -
           export MINOSOFT_IRIS_TEST_PACK="${shader_pack}"
-          xvfb-run --auto-servernum ./gradlew test -x :debug-core:test \
+          xvfb-run --auto-servernum ./gradlew :test \
             --tests de.bixilon.minosoft.gui.rendering.shader.pipeline.OpenGlIrisCustomResourceComputeTest \
             --tests 'de.bixilon.minosoft.gui.rendering.shader.pipeline.IrisShaderPackPlannerTest.external shader pack crosses the complete planner contract when configured'
 

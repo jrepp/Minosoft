@@ -14,6 +14,7 @@
 package de.bixilon.minosoft.dev
 
 import de.bixilon.minosoft.util.json.Jackson
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
@@ -37,7 +38,7 @@ class PlayUtilityTest {
             java.toString(),
             "-Dminosoft.project=$project",
             "-cp",
-            project.resolve("util/play/build/install/play-util/lib/*").toString(),
+            project.resolve("util/play/build/install/play-util/lib").toString() + File.separator + "*",
             "Play",
         )
         command += arguments
