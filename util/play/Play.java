@@ -155,6 +155,7 @@ public final class Play {
     private boolean jsonOutput;
     private long worldSeed;
     private String worldGenerator;
+    private boolean itemPreviewDataPack;
     private int clientGeneration = 1;
     private volatile Path activeClientDistribution;
     private String sessionId;
@@ -535,6 +536,7 @@ public final class Play {
         require(Files.isRegularFile(queueFile), "Content queue not found: " + queueFile
             + " — run './play.sh content queue --manifest " + definition.name() + " --json' first.");
         PreviewAsset resolved = resolvePreviewAsset(asset, queueFile);
+        itemPreviewDataPack = resolved.kind().equals("item");
         if (output == null) {
             output = runDirectory.resolve("previews").resolve(safeFileName(resolved.id().replace(':', '_')) + ".png");
         }
@@ -621,6 +623,7 @@ public final class Play {
                     writePreviewCapture(output, capture.response());
                     ObjectNode result = capture.response().result().deepCopy();
                     result.put("output", output.toString());
+                    result.set("placement", capture.placement().deepCopy());
                     captures.add(result);
                 }
             }
@@ -695,6 +698,7 @@ public final class Play {
     ) throws Exception {
         client.request("visual.prepare-reference", reference, 10_000);
         JsonNode placementResult = client.request(placementOperation, placement, 10_000);
+        validatePreviewPlacement(placementOperation, placementResult);
         ObjectNode flush = DebugJson.MAPPER.createObjectNode();
         flush.put("condition", "ALL").put("timeoutMs", settleMillis);
         try {
@@ -714,9 +718,15 @@ public final class Play {
         client.request("visual.prepare-reference", reference, 10_000);
         if (!placementOperation.equals("content.execute-local")) {
             placementResult = client.request(placementOperation, placement, 10_000);
+        } else {
+            ObjectNode cameraOnly = placement.deepCopy();
+            cameraOnly.put("function", "content_preview:camera");
+            JsonNode cameraResult = client.request("content.execute-local", cameraOnly, 10_000);
+            validatePreviewPlacement("content.execute-local", cameraResult);
+            ((ObjectNode) placementResult).set("captureCamera", cameraResult);
         }
         DebugResponse response = client.requestWithAttachment(
-            "visual.capture", DebugJson.MAPPER.createObjectNode(), 15_000
+            "visual.capture", DebugJson.MAPPER.createObjectNode().put("includeScene", true), 15_000
         );
         require(response.hasAttachment(), "visual.capture returned no PNG.");
         return new PreviewPageCapture(placementResult, response);
@@ -731,6 +741,27 @@ public final class Play {
             "visual.capture attachment hash did not match its metadata.");
         if (output.getParent() != null) Files.createDirectories(output.getParent());
         Files.write(output, attachment);
+    }
+
+    static void validatePreviewPlacement(String operation, JsonNode placement) {
+        if (operation.equals("content.execute-local")) {
+            require(placement.path("executed").asInt(0) > 0,
+                "Item preview function did not execute; verify that the content-preview data pack is mounted.");
+        }
+    }
+
+    static ArrayNode configurePreviewDataPack(ArrayNode configured, Path previewPack, boolean enabled) {
+        Path normalized = previewPack.toAbsolutePath().normalize();
+        ArrayNode result = DebugJson.MAPPER.createArrayNode();
+        for (JsonNode entry : configured) {
+            String path = entry.path("path").asText("");
+            if (!path.equals(normalized.toString())) result.add(entry.deepCopy());
+        }
+        if (enabled) {
+            require(Files.isRegularFile(normalized.resolve("pack.mcmeta")), "Content-preview data pack is missing: " + normalized);
+            result.addObject().put("type", "DIRECTORY").put("path", normalized.toString());
+        }
+        return result;
     }
 
     private ObjectNode previewCaptureManifest(
@@ -4160,6 +4191,8 @@ public final class Play {
             entry.put("path", fixture.dataPacks.toAbsolutePath().normalize().toString());
         }
         configuredData.addAll(preservedData);
+        configuredData = configurePreviewDataPack(configuredData, project.resolve("acceptance/datapacks/content-preview"), itemPreviewDataPack);
+        assets.set("data_packs", configuredData);
 
         Files.createDirectories(profile.getParent());
         Path candidate = profile.resolveSibling("." + profile.getFileName() + ".resourcepacks." + ProcessHandle.current().pid());
@@ -4171,7 +4204,7 @@ public final class Play {
         }
         System.out.println(
             "Configured " + managedResourcePacks.size()
-                + " managed resource pack(s) and " + pack.contentFixtures.size()
+                + " managed resource pack(s) and " + (pack.contentFixtures.size() + (itemPreviewDataPack ? 1 : 0))
                 + " managed data pack(s) in " + profile + "."
         );
     }

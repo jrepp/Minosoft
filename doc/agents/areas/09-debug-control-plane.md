@@ -516,6 +516,15 @@ weaken loader/API ownership and compatibility evidence.
 - Mod operations cannot outlive their registration/generation.
 - Unsupported future capability is absent from `core.capabilities`.
 
+## Item preview evidence
+
+Item previews explicitly mount the repository `content-preview` data pack and
+refuse captures when the placement function executes zero commands. Ordinary
+launches remove this preview mount. A camera-only function restores the requested
+pose after settling without replacing the settled item display; captures include
+same-frame scene diagnostics. See the [workspace item-preview evidence](../evidence/2026-09-09-workspace-item-preview.md)
+and `ContentPreviewTest` for reproduction and fixture isolation checks.
+
 ## References
 
 - [Base/kernel evidence map](01-base.md)

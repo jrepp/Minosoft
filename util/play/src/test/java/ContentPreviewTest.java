@@ -13,6 +13,10 @@
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.io.TempDir;
 import de.bixilon.minosoft.debug.DebugJson;
 import org.junit.jupiter.api.Test;
 
@@ -21,6 +25,23 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ContentPreviewTest {
+    @Test
+    void itemPreviewMountIsExplicitIdempotentAndRemovedForOrdinaryLaunches(@TempDir Path root) throws Exception {
+        Path pack = root.resolve("content-preview"); Files.createDirectories(pack); Files.writeString(pack.resolve("pack.mcmeta"), "{}");
+        ArrayNode existing = DebugJson.MAPPER.createArrayNode(); existing.addObject().put("type", "DIRECTORY").put("path", root.resolve("user-pack").toString());
+        ArrayNode enabled = Play.configurePreviewDataPack(existing, pack, true);
+        assertEquals(2, enabled.size());
+        assertEquals(enabled, Play.configurePreviewDataPack(enabled, pack, true));
+        assertEquals(existing, Play.configurePreviewDataPack(enabled, pack, false));
+        assertThrows(RuntimeException.class, () -> Play.configurePreviewDataPack(existing, root.resolve("missing"), true));
+    }
+
+    @Test
+    void aMissingItemFunctionCannotProduceSuccessfulPreviewEvidence() {
+        assertThrows(RuntimeException.class, () -> Play.validatePreviewPlacement("content.execute-local", DebugJson.MAPPER.createObjectNode().put("executed", 0)));
+        Play.validatePreviewPlacement("content.execute-local", DebugJson.MAPPER.createObjectNode().put("executed", 1));
+        Play.validatePreviewPlacement("content.place-blocks", DebugJson.MAPPER.createObjectNode());
+    }
     @Test
     void resourceIdsPreferBlockstatesOverEarlierItemQueueEntries() throws Exception {
         JsonNode queue = DebugJson.MAPPER.readTree("""
